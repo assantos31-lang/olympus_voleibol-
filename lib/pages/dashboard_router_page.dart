@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'athlete_dashboard_page.dart';
 import 'coach_dashboard_page.dart';
-import 'member_dashboard_page.dart'; // ← Adicionado: import do Member
+import 'member_dashboard_page.dart';
+import 'complete_profile_page.dart';
 import 'profiles_page.dart';
 
 class DashboardRouterPage extends StatefulWidget {
@@ -38,13 +39,34 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
 
       final profile = await supabase
           .from('profiles')
-          .select('user_type')
+          .select()
           .eq('id', user.id)
           .maybeSingle();
 
       if (!mounted) return;
 
       final userType = profile?['user_type'] ?? 'member';
+
+      // Verifica se é atleta e se precisa completar o cadastro
+      final fullName = profile?['full_name'];
+      final cpf = profile?['cpf'];
+      final phone = profile?['phone'];
+
+      final needsCompleteProfile = userType == 'athlete' &&
+          (fullName == null ||
+              fullName.toString().isEmpty ||
+              cpf == null ||
+              phone == null);
+
+      if (needsCompleteProfile && mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const CompleteProfilePage(),
+          ),
+        );
+        return;
+      }
 
       Widget dashboard;
       // Define o widget baseado no tipo
@@ -56,7 +78,7 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
           dashboard = const CoachDashboardPage();
           break;
         case 'member':
-          dashboard = const MemberDashboardPage(); // ← Adicionado: case member
+          dashboard = const MemberDashboardPage();
           break;
         case 'admin':
           dashboard = const ProfilesPage();

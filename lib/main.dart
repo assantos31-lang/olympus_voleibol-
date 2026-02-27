@@ -7,7 +7,8 @@ import 'pages/register_page.dart';
 import 'pages/profiles_page.dart';
 import 'pages/athlete_dashboard_page.dart';
 import 'pages/coach_dashboard_page.dart';
-import 'pages/member_dashboard_page.dart'; // ← Adicionado: import do Member
+import 'pages/member_dashboard_page.dart';
+import 'pages/complete_profile_page.dart'; // ← Adicionado
 import 'pages/dashboard_router_page.dart';
 
 void main() async {
@@ -48,8 +49,9 @@ class MyApp extends StatelessWidget {
         '/profiles': (context) => const ProfilesPage(),
         '/athlete-dashboard': (context) => const AthleteDashboardPage(),
         '/coach-dashboard': (context) => const CoachDashboardPage(),
-        '/member-dashboard': (context) =>
-            const MemberDashboardPage(), // ← Adicionado: rota do Member
+        '/member-dashboard': (context) => const MemberDashboardPage(),
+        '/complete-profile': (context) =>
+            const CompleteProfilePage(), // ← Adicionado
         '/dashboard': (context) => const DashboardRouterPage(),
       },
     );
