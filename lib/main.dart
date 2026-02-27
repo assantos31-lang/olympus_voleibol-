@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:provider/provider.dart'; // ← Adicionar
+import 'package:provider/provider.dart';
 import 'services/auth_service.dart';
 import 'pages/login_page.dart';
 import 'pages/register_page.dart';
 import 'pages/profiles_page.dart';
+import 'pages/athlete_dashboard_page.dart';
+import 'pages/coach_dashboard_page.dart';
+import 'pages/member_dashboard_page.dart'; // ← Adicionado: import do Member
+import 'pages/dashboard_router_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +46,11 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const LoginPage(),
         '/register': (context) => const RegisterPage(),
         '/profiles': (context) => const ProfilesPage(),
+        '/athlete-dashboard': (context) => const AthleteDashboardPage(),
+        '/coach-dashboard': (context) => const CoachDashboardPage(),
+        '/member-dashboard': (context) =>
+            const MemberDashboardPage(), // ← Adicionado: rota do Member
+        '/dashboard': (context) => const DashboardRouterPage(),
       },
     );
   }
@@ -101,7 +110,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
     }
 
     if (_isLoggedIn) {
-      return const ProfilesPage();
+      return const DashboardRouterPage();
     }
 
     return const LoginPage();
