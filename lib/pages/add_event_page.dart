@@ -3,9 +3,17 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AddEventPage extends StatefulWidget {
-  const AddEventPage({super.key});
+  final List<Map<String, String>>? registeredAthletes;
+  final List<Map<String, String>>? registeredTechnicians;
+
+  const AddEventPage({
+    super.key,
+    this.registeredAthletes,
+    this.registeredTechnicians,
+  });
 
   @override
   State<AddEventPage> createState() => _AddEventPageState();
@@ -15,10 +23,8 @@ class _AddEventPageState extends State<AddEventPage> {
   final _formKey = GlobalKey<FormState>();
   final goldenColor = const Color(0xFFE4C050);
 
-  // Tipo de evento selecionado
   EventType _selectedType = EventType.treino;
 
-  // Controllers
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
   final _opponentController = TextEditingController();
@@ -29,22 +35,89 @@ class _AddEventPageState extends State<AddEventPage> {
   final _cidadeController = TextEditingController();
   final _estadoController = TextEditingController();
 
-  // Filtros
   String _filtroGenero = 'Todos';
-  String _filtroPessoa = 'Atleta'; // 'Atleta' ou 'Tecnico'
-
-  // Formato de sets para jogos
+  String _filtroPessoa = 'Atleta';
   String _setsFormat = '1 Set';
 
-  // Atletas selecionados
   final List<String> _selectedAthletes = [];
   final List<String> _selectedTechnicians = [];
 
-  // Estado de loading para busca de CEP
   bool _isSearchingCep = false;
 
-  // Dados mockados para demonstração
-  final List<Map<String, String>> _mockAthletes = [
+  // ✅ Estados para dados do Supabase
+  List<Map<String, String>> _athletesFromSupabase = [];
+  List<Map<String, String>> _techniciansFromSupabase = [];
+  bool _isLoadingProfiles = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProfilesFromSupabase();
+  }
+
+  // ✅ Busca perfis do Supabase - CORREÇÃO: removido specialty
+  Future<void> _fetchProfilesFromSupabase() async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      // Busca atletas: profiles com user_type = 'athlete'
+      final athletesResponse = await supabase
+          .from('profiles')
+          .select('id, full_name, user_type')
+          .eq('user_type', 'athlete');
+
+      // Busca técnicos: profiles com user_type = 'coach'
+      // ✅ CORREÇÃO: removido specialty (coluna não existe)
+      final coachesResponse = await supabase
+          .from('profiles')
+          .select('id, full_name, user_type')
+          .eq('user_type', 'coach');
+
+      // Mapeia atletas
+      final athletesList = athletesResponse.map<Map<String, String>>((p) {
+        return {
+          'uid': p['id']?.toString() ?? '',
+          'nome': p['full_name'] ?? 'Usuário',
+          'genero': 'Masculino', // Default
+        };
+      }).toList();
+
+      // Mapeia técnicos
+      final techniciansList = coachesResponse.map<Map<String, String>>((p) {
+        return {
+          'uid': p['id']?.toString() ?? '',
+          'nome': p['full_name'] ?? 'Técnico',
+          'especialidade': 'Técnico', // ✅ Valor fixo
+        };
+      }).toList();
+
+      setState(() {
+        _athletesFromSupabase = athletesList;
+        _techniciansFromSupabase = techniciansList;
+        _isLoadingProfiles = false;
+      });
+    } catch (e) {
+      setState(() => _isLoadingProfiles = false);
+      _showError('Erro ao carregar perfis: ${e.toString()}');
+    }
+  }
+
+  // ✅ Prioridade: parâmetros > Supabase > mock data
+  List<Map<String, String>> get _athletesList =>
+      widget.registeredAthletes?.isNotEmpty == true
+          ? widget.registeredAthletes!
+          : _athletesFromSupabase.isNotEmpty
+              ? _athletesFromSupabase
+              : _mockAthletes;
+
+  List<Map<String, String>> get _techniciansList =>
+      widget.registeredTechnicians?.isNotEmpty == true
+          ? widget.registeredTechnicians!
+          : _techniciansFromSupabase.isNotEmpty
+              ? _techniciansFromSupabase
+              : _mockTechnicians;
+
+  static const List<Map<String, String>> _mockAthletes = [
     {'nome': 'Ana Silva', 'genero': 'Feminino'},
     {'nome': 'Beatriz Costa', 'genero': 'Feminino'},
     {'nome': 'Carla Souza', 'genero': 'Feminino'},
@@ -53,7 +126,7 @@ class _AddEventPageState extends State<AddEventPage> {
     {'nome': 'Lucas Oliveira', 'genero': 'Masculino'},
   ];
 
-  final List<Map<String, String>> _mockTechnicians = [
+  static const List<Map<String, String>> _mockTechnicians = [
     {'nome': 'Carlos Mendes', 'especialidade': 'Técnico Principal'},
     {'nome': 'Mariana Alves', 'especialidade': 'Preparadora Física'},
     {'nome': 'Roberto Dias', 'especialidade': 'Assistente'},
@@ -73,22 +146,17 @@ class _AddEventPageState extends State<AddEventPage> {
     super.dispose();
   }
 
-  // Buscar endereço por CEP via ViaCEP
   Future<void> _buscarCep(String cep) async {
     if (cep.length != 8) {
       _showError('CEP deve conter 8 dígitos');
       return;
     }
 
-    setState(() {
-      _isSearchingCep = true;
-    });
+    setState(() => _isSearchingCep = true);
 
     try {
       final response = await http
-          .get(
-            Uri.parse('https://viacep.com.br/ws/$cep/json/'),
-          )
+          .get(Uri.parse('https://viacep.com.br/ws/$cep/json/'))
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
@@ -103,31 +171,24 @@ class _AddEventPageState extends State<AddEventPage> {
           });
           _showSuccess('CEP encontrado com sucesso!');
         } else {
-          setState(() {
-            _isSearchingCep = false;
-          });
+          setState(() => _isSearchingCep = false);
           _showError('CEP não encontrado. Verifique o número digitado.');
         }
       } else {
-        setState(() {
-          _isSearchingCep = false;
-        });
+        setState(() => _isSearchingCep = false);
         _showError('Erro na conexão. Tente novamente.');
       }
     } on TimeoutException {
-      setState(() {
-        _isSearchingCep = false;
-      });
+      setState(() => _isSearchingCep = false);
       _showError('Tempo de resposta excedido. Verifique sua conexão.');
     } catch (e) {
-      setState(() {
-        _isSearchingCep = false;
-      });
+      setState(() => _isSearchingCep = false);
       _showError('Erro ao buscar CEP. Verifique sua conexão com a internet.');
     }
   }
 
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -145,6 +206,7 @@ class _AddEventPageState extends State<AddEventPage> {
   }
 
   void _showSuccess(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -221,10 +283,8 @@ class _AddEventPageState extends State<AddEventPage> {
   }
 
   List<Map<String, String>> _getFilteredAthletes() {
-    if (_filtroGenero == 'Todos') {
-      return _mockAthletes;
-    }
-    return _mockAthletes.where((a) => a['genero'] == _filtroGenero).toList();
+    if (_filtroGenero == 'Todos') return _athletesList;
+    return _athletesList.where((a) => a['genero'] == _filtroGenero).toList();
   }
 
   void _toggleAthleteSelection(String nome) {
@@ -249,8 +309,6 @@ class _AddEventPageState extends State<AddEventPage> {
 
   void _salvarEvento() {
     if (!_formKey.currentState!.validate()) return;
-
-    // TODO: Implementar salvamento no Supabase
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text('Evento salvo com sucesso!'),
@@ -292,11 +350,8 @@ class _AddEventPageState extends State<AddEventPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // Seleção do tipo de evento
             _buildEventTypeSelector(),
             const SizedBox(height: 24),
-
-            // Campos específicos por tipo
             if (_selectedType == EventType.amistoso ||
                 _selectedType == EventType.campeonato) ...[
               _buildOpponentField(),
@@ -304,16 +359,10 @@ class _AddEventPageState extends State<AddEventPage> {
               _buildSetsFormatSelector(),
               const SizedBox(height: 24),
             ],
-
-            // Data e Hora
             _buildDateTimeFields(),
             const SizedBox(height: 24),
-
-            // Convocação de Atletas/Técnicos
             _buildConvocationSection(),
             const SizedBox(height: 24),
-
-            // Endereço com CEP
             _buildAddressSection(),
             const SizedBox(height: 32),
           ],
@@ -407,9 +456,7 @@ class _AddEventPageState extends State<AddEventPage> {
               prefixStyle: TextStyle(color: Color(0xFFE4C050)),
             ),
             validator: (value) {
-              if (value?.isEmpty ?? true) {
-                return 'Informe o adversário';
-              }
+              if (value?.isEmpty ?? true) return 'Informe o adversário';
               return null;
             },
           ),
@@ -595,8 +642,6 @@ class _AddEventPageState extends State<AddEventPage> {
           ),
         ),
         const SizedBox(height: 12),
-
-        // Tabs: Atleta / Técnico
         Row(
           children: [
             _buildConvocationTab('Atleta', 'Atleta'),
@@ -604,8 +649,6 @@ class _AddEventPageState extends State<AddEventPage> {
           ],
         ),
         const SizedBox(height: 16),
-
-        // Filtro de gênero (só para atletas)
         if (_filtroPessoa == 'Atleta') ...[
           Row(
             children: [
@@ -623,38 +666,47 @@ class _AddEventPageState extends State<AddEventPage> {
           ),
           const SizedBox(height: 16),
         ],
-
-        // Lista de pessoas para selecionar
-        Container(
-          constraints: const BoxConstraints(maxHeight: 200),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.2)),
+        // ✅ Loading indicator
+        if (_isLoadingProfiles)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32.0),
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFE4C050)),
+              ),
+            ),
+          )
+        else
+          Container(
+            constraints: const BoxConstraints(maxHeight: 200),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withOpacity(0.2)),
+            ),
+            child: ListView(
+              padding: const EdgeInsets.all(8),
+              children: _filtroPessoa == 'Atleta'
+                  ? _getFilteredAthletes().map((athlete) {
+                      return _buildPersonTile(
+                        name: athlete['nome']!,
+                        subtitle: athlete['genero'],
+                        isSelected: _selectedAthletes.contains(athlete['nome']),
+                        onToggle: () =>
+                            _toggleAthleteSelection(athlete['nome']!),
+                      );
+                    }).toList()
+                  : _techniciansList.map((tech) {
+                      return _buildPersonTile(
+                        name: tech['nome']!,
+                        subtitle: tech['especialidade'],
+                        isSelected: _selectedTechnicians.contains(tech['nome']),
+                        onToggle: () =>
+                            _toggleTechnicianSelection(tech['nome']!),
+                      );
+                    }).toList(),
+            ),
           ),
-          child: ListView(
-            padding: const EdgeInsets.all(8),
-            children: _filtroPessoa == 'Atleta'
-                ? _getFilteredAthletes().map((athlete) {
-                    return _buildPersonTile(
-                      name: athlete['nome']!,
-                      subtitle: athlete['genero'],
-                      isSelected: _selectedAthletes.contains(athlete['nome']),
-                      onToggle: () => _toggleAthleteSelection(athlete['nome']!),
-                    );
-                  }).toList()
-                : _mockTechnicians.map((tech) {
-                    return _buildPersonTile(
-                      name: tech['nome']!,
-                      subtitle: tech['especialidade'],
-                      isSelected: _selectedTechnicians.contains(tech['nome']),
-                      onToggle: () => _toggleTechnicianSelection(tech['nome']!),
-                    );
-                  }).toList(),
-          ),
-        ),
-
-        // Selecionados
         if (_filtroPessoa == 'Atleta' && _selectedAthletes.isNotEmpty) ...[
           const SizedBox(height: 12),
           Wrap(
@@ -790,8 +842,6 @@ class _AddEventPageState extends State<AddEventPage> {
           ),
         ),
         const SizedBox(height: 12),
-
-        // CEP
         TextFormField(
           controller: _cepController,
           style: const TextStyle(color: Colors.white),
@@ -838,24 +888,15 @@ class _AddEventPageState extends State<AddEventPage> {
             fillColor: Colors.white.withOpacity(0.05),
           ),
           validator: (value) {
-            if (value?.isEmpty ?? true) {
-              return 'Informe o CEP';
-            }
-            if (value!.length != 8) {
-              return 'CEP deve ter 8 dígitos';
-            }
+            if (value?.isEmpty ?? true) return 'Informe o CEP';
+            if (value!.length != 8) return 'CEP deve ter 8 dígitos';
             return null;
           },
           onChanged: (valor) {
-            // Busca automática ao completar 8 dígitos
-            if (valor.length == 8) {
-              _buscarCep(valor);
-            }
+            if (valor.length == 8) _buscarCep(valor);
           },
         ),
         const SizedBox(height: 16),
-
-        // Rua
         TextFormField(
           controller: _ruaController,
           style: const TextStyle(color: Colors.white),
@@ -884,8 +925,6 @@ class _AddEventPageState extends State<AddEventPage> {
           },
         ),
         const SizedBox(height: 16),
-
-        // Número e Bairro
         Row(
           children: [
             Expanded(
@@ -955,8 +994,6 @@ class _AddEventPageState extends State<AddEventPage> {
           ],
         ),
         const SizedBox(height: 16),
-
-        // Cidade e Estado
         Row(
           children: [
             Expanded(
