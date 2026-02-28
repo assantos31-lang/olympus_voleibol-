@@ -5,6 +5,7 @@ import 'coach_dashboard_page.dart';
 import 'member_dashboard_page.dart';
 import 'complete_profile_page.dart';
 import 'profiles_page.dart';
+import 'admin_home_page.dart'; // ← Alteração: import adicionado
 
 class DashboardRouterPage extends StatefulWidget {
   const DashboardRouterPage({super.key});
@@ -81,7 +82,8 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
           dashboard = const MemberDashboardPage();
           break;
         case 'admin':
-          dashboard = const ProfilesPage();
+          dashboard =
+              const AdminHomePage(); // ← Alteração: redireciona para AdminHomePage
           break;
         default:
           dashboard = const ProfilesPage();

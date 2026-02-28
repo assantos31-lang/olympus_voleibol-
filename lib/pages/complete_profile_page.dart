@@ -40,6 +40,9 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
   bool _isFetchingCep = false;
   bool _isUploading = false;
 
+  // 🔹 LocationIQ API Key (substitua pelo seu token)
+  final String _locationIQToken = 'pk.5a7a05184e41c916429dceb50cf02718';
+
   final Map<String, List<Map<String, String>>> _positions = {
     'Masculino': [
       {'value': 'Ponteiro', 'label': 'Ponteiro'},
@@ -103,34 +106,149 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
 
   Future<void> _fetchAddressByCep(String cep) async {
     setState(() => _isFetchingCep = true);
+
     try {
-      final response =
-          await http.get(Uri.parse('https://viacep.com.br/ws/$cep/json/'));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['erro'] == null && mounted) {
-          setState(() {
-            _streetController.text = data['logradouro'] ?? '';
-            _neighborhoodController.text = data['bairro'] ?? '';
-            _cityController.text = data['localidade'] ?? '';
-            _stateController.text = data['uf'] ?? '';
-          });
+      // 🔹 Tentativa 1: ViaCEP (gratuito, sem token)
+      debugPrint('🔍 Buscando CEP $cep via ViaCEP...');
+      final viaCepSuccess = await _tryViaCep(cep);
+
+      if (!viaCepSuccess) {
+        // 🔹 Tentativa 2: LocationIQ (fallback)
+        debugPrint('⚠️ ViaCEP falhou. Tentando LocationIQ...');
+        final locationIQSuccess = await _tryLocationIQ(cep);
+
+        if (!locationIQSuccess) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('✅ Endereço preenchido automaticamente!'),
-                duration: Duration(seconds: 2),
+                content: Text('❌ CEP não encontrado em nenhuma base de dados'),
+                backgroundColor: Colors.red,
               ),
             );
           }
         }
       }
     } catch (e) {
-      debugPrint('Erro ao buscar CEP: $e');
+      debugPrint('❌ Erro ao buscar CEP: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ Erro de conexão. Verifique sua internet.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isFetchingCep = false);
       }
+    }
+  }
+
+  /// 🔹 ViaCEP - API gratuita para CEPs brasileiros
+  Future<bool> _tryViaCep(String cep) async {
+    try {
+      final response = await http
+          .get(Uri.parse('https://viacep.com.br/ws/$cep/json/'))
+          .timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        // Verifica se CEP é válido
+        if (data['erro'] == true) {
+          debugPrint('❌ ViaCEP: CEP não encontrado');
+          return false;
+        }
+
+        // Preenche os campos
+        if (mounted) {
+          setState(() {
+            _streetController.text = data['logradouro'] ?? '';
+            _neighborhoodController.text = data['bairro'] ?? '';
+            _cityController.text = data['localidade'] ?? '';
+            _stateController.text = data['uf'] ?? '';
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Endereço encontrado via ViaCEP!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+
+        debugPrint('✅ ViaCEP: Endereço encontrado com sucesso!');
+        return true;
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint('❌ ViaCEP: Erro de conexão - $e');
+      return false;
+    }
+  }
+
+  /// 🔹 LocationIQ - Fallback quando ViaCEP falha
+  Future<bool> _tryLocationIQ(String cep) async {
+    try {
+      // Formata CEP para formato brasileiro (com hífen)
+      final formattedCep = '${cep.substring(0, 5)}-${cep.substring(5)}';
+
+      final response = await http
+          .get(Uri.parse('https://us1.locationiq.com/v1/search.php'
+              '?key=$_locationIQToken'
+              '&postalcode=$formattedCep'
+              '&format=json'
+              '&addressdetails=1'))
+          .timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data is List && data.isNotEmpty) {
+          final address = data[0]['address'];
+
+          if (mounted) {
+            setState(() {
+              _streetController.text = address['road'] ??
+                  address['pedestrian'] ??
+                  address['footway'] ??
+                  '';
+              _neighborhoodController.text = address['suburb'] ??
+                  address['neighbourhood'] ??
+                  address['quarter'] ??
+                  '';
+              _cityController.text = address['city'] ??
+                  address['town'] ??
+                  address['village'] ??
+                  address['municipality'] ??
+                  '';
+              _stateController.text = address['state'] ?? '';
+            });
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ Endereço encontrado via LocationIQ!'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+
+          debugPrint('✅ LocationIQ: Endereço encontrado com sucesso!');
+          return true;
+        }
+
+        debugPrint('❌ LocationIQ: Nenhum resultado encontrado');
+        return false;
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint('❌ LocationIQ: Erro de conexão - $e');
+      return false;
     }
   }
 
