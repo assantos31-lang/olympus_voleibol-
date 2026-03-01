@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	
+	<!-- ✅ PERMISSÕES DE LOCALIZAÇÃO PARA CHECK-IN -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Precisamos da sua localização para confirmar sua presença no evento via check-in</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Precisamos da sua localização para confirmar sua presença no evento via check-in</string>
 </dict>
 </plist>
