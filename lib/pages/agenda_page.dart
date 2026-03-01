@@ -17,11 +17,19 @@ class _AgendaPageState extends State<AgendaPage> {
   bool _loading = true;
   String? _error;
   String _filtroSelecionado = 'Todos';
+  String _filtroMes = '';
+  String _filtroGenero = 'Todos';
 
   @override
   void initState() {
     super.initState();
+    _setMesAtual();
     _buscarEventos();
+  }
+
+  void _setMesAtual() {
+    final now = DateTime.now();
+    _filtroMes = '${now.month.toString().padLeft(2, '0')}/${now.year}';
   }
 
   Future<void> _buscarEventos() async {
@@ -50,7 +58,7 @@ class _AgendaPageState extends State<AgendaPage> {
 
       setState(() {
         _eventos = List<Map<String, dynamic>>.from(response);
-        _aplicarFiltro();
+        _aplicarFiltros();
         _loading = false;
       });
     } catch (e) {
@@ -61,17 +69,41 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
-  void _aplicarFiltro() {
-    if (_filtroSelecionado == 'Todos') {
-      _eventosFiltrados = _eventos;
-    } else {
-      _eventosFiltrados = _eventos
+  void _aplicarFiltros() {
+    List<Map<String, dynamic>> eventosFiltrados = _eventos;
+
+    if (_filtroSelecionado != 'Todos') {
+      eventosFiltrados = eventosFiltrados
           .where((evento) =>
               (evento['event_type'] ?? '').toLowerCase() ==
               _filtroSelecionado.toLowerCase())
           .toList();
     }
-    setState(() {});
+
+    if (_filtroMes.isNotEmpty) {
+      eventosFiltrados = eventosFiltrados.where((evento) {
+        final dataEvento = evento['event_date'] ?? '';
+        if (dataEvento.toString().length >= 7) {
+          final mesAnoEvento = dataEvento.toString().substring(3);
+          return mesAnoEvento == _filtroMes;
+        }
+        return false;
+      }).toList();
+    }
+
+    if (_filtroGenero != 'Todos') {
+      eventosFiltrados = eventosFiltrados
+          .where((evento) =>
+              (evento['gender'] ?? evento['category'] ?? '')
+                  .toString()
+                  .toLowerCase() ==
+              _filtroGenero.toLowerCase())
+          .toList();
+    }
+
+    setState(() {
+      _eventosFiltrados = eventosFiltrados;
+    });
   }
 
   Future<void> _refreshEventos() async {
@@ -80,7 +112,6 @@ class _AgendaPageState extends State<AgendaPage> {
 
   String _formatarData(String dataStr) {
     try {
-      // Assumindo formato DD/MM/YYYY
       final parts = dataStr.split('/');
       if (parts.length == 3) {
         final date = DateTime(
@@ -121,6 +152,47 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
+  void _editarEvento(Map<String, dynamic> evento) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddEventPage(evento: evento),
+      ),
+    );
+
+    if (result == true) {
+      _refreshEventos();
+    }
+  }
+
+  List<String> _getMesesDisponiveis() {
+    final now = DateTime.now();
+    final anoAtual = now.year;
+    final meses = <String>[];
+
+    for (int i = 1; i <= 12; i++) {
+      meses.add('${i.toString().padLeft(2, '0')}/$anoAtual');
+    }
+
+    return meses;
+  }
+
+  String _formatarNomeMes(String mesAno) {
+    try {
+      final parts = mesAno.split('/');
+      if (parts.length == 2) {
+        final mes = int.parse(parts[0]);
+        final ano = parts[1];
+        final mesNome =
+            DateFormat('MMMM', 'pt_BR').format(DateTime(int.parse(ano), mes));
+        return '${mesNome[0].toUpperCase()}${mesNome.substring(1)} $ano';
+      }
+      return mesAno;
+    } catch (e) {
+      return mesAno;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -132,8 +204,7 @@ class _AgendaPageState extends State<AgendaPage> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        backgroundColor:
-            const Color(0xFF1E3A5F), // Azul escuro similar à imagem
+        backgroundColor: const Color(0xFF1E3A5F),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
@@ -146,7 +217,87 @@ class _AgendaPageState extends State<AgendaPage> {
       ),
       body: Column(
         children: [
-          // Botões de filtro
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: Colors.grey[50],
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: DropdownButton<String>(
+                      value: _filtroMes,
+                      hint: Text('Mês',
+                          style: TextStyle(color: Colors.grey[600])),
+                      isExpanded: true,
+                      underline: const SizedBox(),
+                      items: _getMesesDisponiveis().map((mes) {
+                        return DropdownMenuItem(
+                          value: mes,
+                          child: Text(
+                            _formatarNomeMes(mes),
+                            style: TextStyle(
+                              fontWeight: _filtroMes == mes
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                              color: _filtroMes == mes
+                                  ? Colors.blue
+                                  : Colors.black,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (valor) {
+                        if (valor != null) {
+                          setState(() {
+                            _filtroMes = valor;
+                            _aplicarFiltros();
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: DropdownButton<String>(
+                      value: _filtroGenero == 'Todos' ? null : _filtroGenero,
+                      hint: Text('Gênero',
+                          style: TextStyle(color: Colors.grey[600])),
+                      isExpanded: true,
+                      underline: const SizedBox(),
+                      items: [
+                        DropdownMenuItem(value: 'Todos', child: Text('Todos')),
+                        DropdownMenuItem(
+                            value: 'masculino', child: Text('Masculino')),
+                        DropdownMenuItem(
+                            value: 'feminino', child: Text('Feminino')),
+                        DropdownMenuItem(value: 'misto', child: Text('Misto')),
+                      ],
+                      onChanged: (valor) {
+                        setState(() {
+                          _filtroGenero = valor ?? 'Todos';
+                          _aplicarFiltros();
+                        });
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
@@ -169,7 +320,6 @@ class _AgendaPageState extends State<AgendaPage> {
               ],
             ),
           ),
-          // Lista de eventos
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -181,12 +331,11 @@ class _AgendaPageState extends State<AgendaPage> {
                             Icon(Icons.error_outline,
                                 size: 48, color: Colors.red[300]),
                             const SizedBox(height: 16),
-                            Text(_error!,
-                                style: const TextStyle(color: Colors.red)),
+                            Text(_error!, style: TextStyle(color: Colors.red)),
                             const SizedBox(height: 16),
                             ElevatedButton(
                               onPressed: _buscarEventos,
-                              child: const Text('Tentar Novamente'),
+                              child: Text('Tentar Novamente'),
                             ),
                           ],
                         ),
@@ -200,9 +349,10 @@ class _AgendaPageState extends State<AgendaPage> {
                                     size: 64, color: Colors.grey[400]),
                                 const SizedBox(height: 16),
                                 Text(
-                                  _filtroSelecionado == 'Todos'
-                                      ? 'Nenhum evento cadastrado'
-                                      : 'Nenhum evento do tipo "${_filtroSelecionado}"',
+                                  _filtroSelecionado == 'Todos' &&
+                                          _filtroGenero == 'Todos'
+                                      ? 'Nenhum evento neste mês'
+                                      : 'Nenhum evento encontrado',
                                   style: TextStyle(
                                     fontSize: 18,
                                     color: Colors.grey[600],
@@ -235,7 +385,6 @@ class _AgendaPageState extends State<AgendaPage> {
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(12),
                                     onTap: () {
-                                      // Navegar para detalhes do evento
                                       _mostrarDetalhesEvento(evento);
                                     },
                                     child: Padding(
@@ -272,19 +421,39 @@ class _AgendaPageState extends State<AgendaPage> {
                                                 ),
                                               ),
                                               const Spacer(),
-                                              if (evento['allow_checkin'] ==
-                                                  true)
-                                                Icon(
-                                                  Icons.qr_code,
-                                                  color: Colors.green[700],
-                                                  size: 20,
+                                              PopupMenuButton<String>(
+                                                icon: Icon(
+                                                  Icons.more_vert,
+                                                  color: Colors.grey[600],
                                                 ),
+                                                onSelected: (value) {
+                                                  if (value == 'editar') {
+                                                    _editarEvento(evento);
+                                                  }
+                                                },
+                                                itemBuilder: (context) => [
+                                                  PopupMenuItem(
+                                                    value: 'editar',
+                                                    child: Row(
+                                                      children: [
+                                                        Icon(
+                                                          Icons.edit,
+                                                          size: 18,
+                                                          color: Colors.blue,
+                                                        ),
+                                                        SizedBox(width: 8),
+                                                        Text('Editar evento'),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
                                             ],
                                           ),
                                           const SizedBox(height: 12),
                                           Text(
                                             evento['event_name'] ?? 'Sem nome',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 18,
                                               fontWeight: FontWeight.bold,
                                             ),
@@ -362,8 +531,8 @@ class _AgendaPageState extends State<AgendaPage> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _navegarParaCadastroEvento,
-        icon: const Icon(Icons.add),
-        label: const Text('Cadastrar Evento'),
+        icon: Icon(Icons.add),
+        label: Text('Cadastrar Evento'),
       ),
     );
   }
@@ -382,7 +551,7 @@ class _AgendaPageState extends State<AgendaPage> {
       onTap: () {
         setState(() {
           _filtroSelecionado = tipo;
-          _aplicarFiltro();
+          _aplicarFiltros();
         });
       },
       borderRadius: BorderRadius.circular(12),
@@ -422,7 +591,7 @@ class _AgendaPageState extends State<AgendaPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
@@ -452,7 +621,7 @@ class _AgendaPageState extends State<AgendaPage> {
                     const SizedBox(height: 24),
                     Text(
                       evento['event_name'] ?? 'Detalhes do Evento',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
                       ),
@@ -473,6 +642,13 @@ class _AgendaPageState extends State<AgendaPage> {
                       'Tipo',
                       evento['event_type'] ?? '',
                     ),
+                    if (evento['gender'] != null &&
+                        evento['gender'].toString().isNotEmpty)
+                      _buildDetailRow(
+                        Icons.people,
+                        'Gênero',
+                        evento['gender'],
+                      ),
                     if (evento['set_format'] != null &&
                         evento['set_format'].toString().isNotEmpty)
                       _buildDetailRow(
@@ -481,8 +657,8 @@ class _AgendaPageState extends State<AgendaPage> {
                         evento['set_format'],
                       ),
                     if (evento['street'] != null) ...[
-                      const Divider(),
-                      const Text('Localização',
+                      Divider(),
+                      Text('Localização',
                           style: TextStyle(
                               fontSize: 16, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
@@ -499,7 +675,7 @@ class _AgendaPageState extends State<AgendaPage> {
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: () => Navigator.pop(context),
-                        child: const Text('Fechar'),
+                        child: Text('Fechar'),
                       ),
                     ),
                   ],
@@ -532,7 +708,7 @@ class _AgendaPageState extends State<AgendaPage> {
                 ),
                 Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                   ),

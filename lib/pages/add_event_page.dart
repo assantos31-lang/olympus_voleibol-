@@ -8,11 +8,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class AddEventPage extends StatefulWidget {
   final List<Map<String, String>>? registeredAthletes;
   final List<Map<String, String>>? registeredTechnicians;
+  final Map<String, dynamic>? evento; // ✅ ADICIONADO: Para edição
 
   const AddEventPage({
     super.key,
     this.registeredAthletes,
     this.registeredTechnicians,
+    this.evento, // ✅ ADICIONADO
   });
 
   @override
@@ -21,11 +23,9 @@ class AddEventPage extends StatefulWidget {
 
 class _AddEventPageState extends State<AddEventPage> {
   final _formKey = GlobalKey<FormState>();
-
   // 🎨 CORES BASEADAS NA IMAGEM (Azul Marinho e Dourado)
   final goldenColor = const Color(0xFFD4AF37); // Dourado metálico
   final techColor = const Color(0xFF1E3A8A); // Azul marinho para técnicos
-
   // Cores de fundo
   final backgroundColor = const Color(0xFFF8F9FA); // Branco acinzentado
   final cardColor = const Color(0xFF0A2463); // Azul marinho escuro
@@ -41,7 +41,6 @@ class _AddEventPageState extends State<AddEventPage> {
   final _bairroController = TextEditingController();
   final _cidadeController = TextEditingController();
   final _estadoController = TextEditingController();
-
   String _filtroGenero = 'Todos';
   String _filtroPessoa = 'Atleta';
   String _setsFormat = '1 Set';
@@ -50,6 +49,8 @@ class _AddEventPageState extends State<AddEventPage> {
   bool _isSearchingCep = false;
   bool _enableCheckIn = false; // ✅ Controle de check-in
   bool _isSaving = false; // ✅ Indicador de salvamento
+  bool _isEditing = false; // ✅ ADICIONADO: Modo de edição
+  String? _eventId; // ✅ ADICIONADO: ID do evento sendo editado
 
   // ✅ Estados para dados do Supabase
   List<Map<String, String>> _athletesFromSupabase = [];
@@ -60,6 +61,51 @@ class _AddEventPageState extends State<AddEventPage> {
   void initState() {
     super.initState();
     _fetchProfilesFromSupabase();
+    _loadEventData(); // ✅ ADICIONADO: Carrega dados se estiver editando
+  }
+
+  // ✅ ADICIONADO: Carrega dados do evento para edição
+  void _loadEventData() {
+    if (widget.evento != null) {
+      setState(() {
+        _isEditing = true;
+        _eventId = widget.evento!['id'];
+
+        // Carrega tipo do evento
+        final eventType = widget.evento!['event_type'] ?? 'treino';
+        if (eventType == 'treino') {
+          _selectedType = EventType.treino;
+        } else if (eventType == 'amistoso') {
+          _selectedType = EventType.amistoso;
+        } else if (eventType == 'campeonato') {
+          _selectedType = EventType.campeonato;
+        }
+
+        // Carrega nome do adversário (remove "Olympus VS " se existir)
+        final eventName = widget.evento!['event_name'] ?? '';
+        if (eventName.contains('Olympus VS ')) {
+          _opponentController.text = eventName.replaceFirst('Olympus VS ', '');
+        }
+
+        // Carrega data e hora
+        _dateController.text = widget.evento!['event_date'] ?? '';
+        _timeController.text = widget.evento!['event_time'] ?? '';
+
+        // Carrega formato de sets
+        _setsFormat = widget.evento!['set_format'] ?? '1 Set';
+
+        // Carrega endereço
+        _cepController.text = widget.evento!['cep'] ?? '';
+        _ruaController.text = widget.evento!['street'] ?? '';
+        _numeroController.text = widget.evento!['street_number'] ?? '';
+        _bairroController.text = widget.evento!['neighborhood'] ?? '';
+        _cidadeController.text = widget.evento!['city'] ?? '';
+        _estadoController.text = widget.evento!['state'] ?? '';
+
+        // Carrega status de check-in
+        _enableCheckIn = widget.evento!['allow_checkin'] ?? false;
+      });
+    }
   }
 
   // ✅ Busca perfis do Supabase - CORREÇÃO: removido specialty
@@ -337,7 +383,7 @@ class _AddEventPageState extends State<AddEventPage> {
     }
   }
 
-  // ✅ CORREÇÃO PRINCIPAL: Inserção real no Supabase com nomes corretos das colunas
+  // ✅ CORREÇÃO PRINCIPAL: Inserção/Atualização real no Supabase com nomes corretos das colunas
   Future<void> _salvarEvento() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -377,12 +423,32 @@ class _AddEventPageState extends State<AddEventPage> {
         'created_at': DateTime.now().toIso8601String(),
       };
 
-      // Insere o evento no Supabase
-      final response = await supabase.from('events').insert(eventData).select();
-      if (response.isEmpty) {
-        throw Exception('Falha ao criar evento');
+      dynamic response;
+
+      // ✅ ADICIONADO: Verifica se é edição ou criação
+      if (_isEditing && _eventId != null) {
+        // Atualiza evento existente
+        response = await supabase
+            .from('events')
+            .update(eventData)
+            .eq('id', _eventId!)
+            .select();
+      } else {
+        // Insere novo evento
+        response = await supabase.from('events').insert(eventData).select();
       }
+
+      if (response.isEmpty) {
+        throw Exception(
+            'Falha ao ${_isEditing ? 'atualizar' : 'criar'} evento');
+      }
+
       final eventId = response[0]['id'];
+
+      // ✅ Se estiver editando, remove convocações antigas antes de inserir as novas
+      if (_isEditing) {
+        await supabase.from('checkins').delete().eq('event_id', eventId);
+      }
 
       // ✅ Insere os atletas convocados (se houver) - AGORA COM TRATAMENTO DE ERRO RLS
       if (_selectedAthletes.isNotEmpty) {
@@ -452,7 +518,7 @@ class _AddEventPageState extends State<AddEventPage> {
       if (!mounted) return;
 
       _showSuccess(
-          'Evento salvo com sucesso!${_enableCheckIn ? '\nCheck-in habilitado' : ''}');
+          'Evento ${_isEditing ? 'atualizado' : 'salvo'} com sucesso!${_enableCheckIn ? '\nCheck-in habilitado' : ''}');
 
       // Aguarda um breve momento para o usuário ver a mensagem
       await Future.delayed(const Duration(milliseconds: 500));
@@ -465,7 +531,8 @@ class _AddEventPageState extends State<AddEventPage> {
       if (mounted) {
         setState(() => _isSaving = false);
       }
-      _showError('Erro ao salvar evento: ${e.toString()}');
+      _showError(
+          'Erro ao ${_isEditing ? 'atualizar' : 'salvar'} evento: ${e.toString()}');
     }
   }
 
@@ -556,9 +623,9 @@ class _AddEventPageState extends State<AddEventPage> {
                                   Color(0xFF0A2463)),
                             ),
                           )
-                        : const Text(
-                            'Salvar Evento',
-                            style: TextStyle(
+                        : Text(
+                            _isEditing ? 'Atualizar Evento' : 'Salvar Evento',
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
