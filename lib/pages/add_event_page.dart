@@ -46,6 +46,7 @@ class _AddEventPageState extends State<AddEventPage> {
   String _setsFormat = '1 Set';
   final List<String> _selectedAthletes = [];
   final List<String> _selectedTechnicians = [];
+
   bool _isSearchingCep = false;
   bool _enableCheckIn = false;
   bool _isSaving = false;
@@ -149,6 +150,7 @@ class _AddEventPageState extends State<AddEventPage> {
           .from('profiles')
           .select('id, full_name, user_type')
           .eq('user_type', 'coach');
+
       final athletesList = athletesResponse.map<Map<String, String>>((p) {
         return {
           'uid': p['id']?.toString() ?? '',
@@ -156,6 +158,7 @@ class _AddEventPageState extends State<AddEventPage> {
           'genero': 'Masculino',
         };
       }).toList();
+
       final techniciansList = coachesResponse.map<Map<String, String>>((p) {
         return {
           'uid': p['id']?.toString() ?? '',
@@ -163,6 +166,7 @@ class _AddEventPageState extends State<AddEventPage> {
           'especialidade': 'Técnico',
         };
       }).toList();
+
       if (mounted) {
         setState(() {
           _athletesFromSupabase = athletesList;
@@ -412,6 +416,7 @@ class _AddEventPageState extends State<AddEventPage> {
         _showError('Usuário não autenticado');
         return;
       }
+
       final eventData = {
         'user_id': user.id,
         'event_name': _opponentController.text.isNotEmpty
@@ -430,6 +435,7 @@ class _AddEventPageState extends State<AddEventPage> {
         'allow_checkin': _enableCheckIn,
         'gender': _generoEvento, // ✅ ADICIONADO: Gênero do evento
       };
+
       dynamic response;
       if (_isEditing && _eventId != null) {
         response = await supabase
@@ -441,14 +447,18 @@ class _AddEventPageState extends State<AddEventPage> {
         eventData['created_at'] = DateTime.now().toIso8601String();
         response = await supabase.from('events').insert(eventData).select();
       }
+
       if (response.isEmpty) {
         throw Exception(
             'Falha ao ${_isEditing ? 'atualizar' : 'criar'} evento');
       }
+
       final eventId = response[0]['id'];
+
       if (_isEditing) {
         await supabase.from('convocations').delete().eq('event_id', eventId);
       }
+
       if (_selectedAthletes.isNotEmpty) {
         final athleteConvocations = <Map<String, dynamic>>[];
         for (var athleteName in _selectedAthletes) {
@@ -468,6 +478,7 @@ class _AddEventPageState extends State<AddEventPage> {
           await supabase.from('convocations').insert(athleteConvocations);
         }
       }
+
       if (_selectedTechnicians.isNotEmpty) {
         final technicianConvocations = <Map<String, dynamic>>[];
         for (var techName in _selectedTechnicians) {
@@ -487,10 +498,12 @@ class _AddEventPageState extends State<AddEventPage> {
           await supabase.from('convocations').insert(technicianConvocations);
         }
       }
+
       if (mounted) {
         setState(() => _isSaving = false);
       }
       if (!mounted) return;
+
       final totalConvocados =
           _selectedAthletes.length + _selectedTechnicians.length;
       _showSuccess(
@@ -520,12 +533,16 @@ class _AddEventPageState extends State<AddEventPage> {
             SizedBox(width: 8),
             Text(
               'Novo Evento',
-              style:
-                  TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                fontFamily: 'Roboto',
+                fontSize: 20,
+              ),
             ),
           ],
         ),
-        backgroundColor: cardColor,
+        backgroundColor: const Color(0xFF1E3A5F),
         foregroundColor: Colors.white,
         elevation: 2,
       ),
