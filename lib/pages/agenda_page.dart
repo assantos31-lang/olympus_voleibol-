@@ -83,7 +83,6 @@ class _AgendaPageState extends State<AgendaPage> {
 
       for (var evento in _eventos) {
         final eventId = evento['id'];
-
         // ✅ CORREÇÃO: Busca na tabela convocations
         final convocationsResponse = await _supabase
             .from('convocations')
@@ -239,6 +238,17 @@ class _AgendaPageState extends State<AgendaPage> {
       default:
         return Colors.purple;
     }
+  }
+
+  // ✅ NOVO: Retorna a cor de fundo do card baseada no gênero
+  Color _getCorFundoCard(String genero) {
+    final generoLower = genero.toLowerCase();
+    if (generoLower == 'masculino') {
+      return const Color(0xFFE3F2FD); // Azul bem claro
+    } else if (generoLower == 'feminino') {
+      return const Color(0xFFF3E5F5); // Lilás bem claro
+    }
+    return Colors.white; // Padrão
   }
 
   void _navegarParaCadastroEvento() async {
@@ -1146,15 +1156,12 @@ class _AgendaPageState extends State<AgendaPage> {
                           style: TextStyle(color: Colors.grey[600])),
                       isExpanded: true,
                       underline: const SizedBox(),
-                      items: [
-                        const DropdownMenuItem(
-                            value: 'Todos', child: Text('Todos')),
-                        const DropdownMenuItem(
+                      items: const [
+                        DropdownMenuItem(value: 'Todos', child: Text('Todos')),
+                        DropdownMenuItem(
                             value: 'masculino', child: Text('Masculino')),
-                        const DropdownMenuItem(
+                        DropdownMenuItem(
                             value: 'feminino', child: Text('Feminino')),
-                        const DropdownMenuItem(
-                            value: 'misto', child: Text('Misto')),
                       ],
                       onChanged: (valor) {
                         setState(() {
@@ -1219,10 +1226,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                     size: 64, color: Colors.grey[400]),
                                 const SizedBox(height: 16),
                                 Text(
-                                  _filtroSelecionado == 'Todos' &&
-                                          _filtroGenero == 'Todos'
-                                      ? 'Nenhum evento neste mês'
-                                      : 'Nenhum evento encontrado',
+                                  'Nenhum evento encontrado',
                                   style: TextStyle(
                                     fontSize: 18,
                                     color: Colors.grey[600],
@@ -1257,6 +1261,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                     evento['event_type'] ?? '');
                                 final eventType = evento['event_type'] ?? '';
                                 final hasPlacar = evento['score'] != null;
+                                final genero = evento['gender'] ?? '';
 
                                 return Card(
                                   margin: const EdgeInsets.only(bottom: 12),
@@ -1264,6 +1269,8 @@ class _AgendaPageState extends State<AgendaPage> {
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
+                                  // ✅ NOVO: Cor de fundo baseada no gênero
+                                  color: _getCorFundoCard(genero),
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(12),
                                     onTap: () {
@@ -1303,6 +1310,42 @@ class _AgendaPageState extends State<AgendaPage> {
                                                 ),
                                               ),
                                               const Spacer(),
+                                              // ✅ NOVO: Badge de gênero
+                                              if (genero.isNotEmpty)
+                                                Container(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 4,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color:
+                                                        genero.toLowerCase() ==
+                                                                'masculino'
+                                                            ? Colors.blue[100]
+                                                            : Colors
+                                                                .purple[100],
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            12),
+                                                  ),
+                                                  child: Text(
+                                                    genero[0].toUpperCase() +
+                                                        genero.substring(1),
+                                                    style: TextStyle(
+                                                      color:
+                                                          genero.toLowerCase() ==
+                                                                  'masculino'
+                                                              ? Colors.blue[900]
+                                                              : Colors
+                                                                  .purple[900],
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              const SizedBox(width: 8),
                                               PopupMenuButton<String>(
                                                 icon: Icon(
                                                   Icons.more_vert,

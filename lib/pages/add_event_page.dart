@@ -40,7 +40,8 @@ class _AddEventPageState extends State<AddEventPage> {
   final _cidadeController = TextEditingController();
   final _estadoController = TextEditingController();
 
-  String _filtroGenero = 'Todos';
+  String _filtroGeneroAtleta = 'Todos'; // Filtro para atletas
+  String _generoEvento = 'masculino'; // ✅ Gênero do evento
   String _filtroPessoa = 'Atleta';
   String _setsFormat = '1 Set';
   final List<String> _selectedAthletes = [];
@@ -67,7 +68,6 @@ class _AddEventPageState extends State<AddEventPage> {
       setState(() {
         _isEditing = true;
         _eventId = widget.evento!['id'];
-
         final eventType = widget.evento!['event_type'] ?? 'treino';
         if (eventType == 'treino') {
           _selectedType = EventType.treino;
@@ -76,12 +76,10 @@ class _AddEventPageState extends State<AddEventPage> {
         } else if (eventType == 'campeonato') {
           _selectedType = EventType.campeonato;
         }
-
         final eventName = widget.evento!['event_name'] ?? '';
         if (eventName.contains('Olympus VS ')) {
           _opponentController.text = eventName.replaceFirst('Olympus VS ', '');
         }
-
         _dateController.text = widget.evento!['event_date'] ?? '';
         _timeController.text = widget.evento!['event_time'] ?? '';
         _setsFormat = widget.evento!['set_format'] ?? '1 Set';
@@ -92,8 +90,9 @@ class _AddEventPageState extends State<AddEventPage> {
         _cidadeController.text = widget.evento!['city'] ?? '';
         _estadoController.text = widget.evento!['state'] ?? '';
         _enableCheckIn = widget.evento!['allow_checkin'] ?? false;
+        // ✅ Carrega gênero do evento
+        _generoEvento = widget.evento!['gender'] ?? 'masculino';
       });
-
       await Future.delayed(const Duration(milliseconds: 500));
       _loadConvocados();
     }
@@ -101,15 +100,12 @@ class _AddEventPageState extends State<AddEventPage> {
 
   Future<void> _loadConvocados() async {
     if (_eventId == null) return;
-
     try {
       final supabase = Supabase.instance.client;
-
       final convocationsResponse = await supabase
           .from('convocations')
           .select('user_id')
           .eq('event_id', _eventId!);
-
       for (var convocation in convocationsResponse) {
         final userId = convocation['user_id'];
         if (userId != null) {
@@ -118,11 +114,9 @@ class _AddEventPageState extends State<AddEventPage> {
               .select('full_name, user_type')
               .eq('id', userId)
               .single();
-
           if (profileResponse != null) {
             final fullName = profileResponse['full_name'] ?? '';
             final userType = profileResponse['user_type'] ?? '';
-
             if (userType == 'athlete') {
               if (!_selectedAthletes.contains(fullName)) {
                 setState(() {
@@ -147,17 +141,14 @@ class _AddEventPageState extends State<AddEventPage> {
   Future<void> _fetchProfilesFromSupabase() async {
     try {
       final supabase = Supabase.instance.client;
-
       final athletesResponse = await supabase
           .from('profiles')
           .select('id, full_name, user_type')
           .eq('user_type', 'athlete');
-
       final coachesResponse = await supabase
           .from('profiles')
           .select('id, full_name, user_type')
           .eq('user_type', 'coach');
-
       final athletesList = athletesResponse.map<Map<String, String>>((p) {
         return {
           'uid': p['id']?.toString() ?? '',
@@ -165,7 +156,6 @@ class _AddEventPageState extends State<AddEventPage> {
           'genero': 'Masculino',
         };
       }).toList();
-
       final techniciansList = coachesResponse.map<Map<String, String>>((p) {
         return {
           'uid': p['id']?.toString() ?? '',
@@ -173,7 +163,6 @@ class _AddEventPageState extends State<AddEventPage> {
           'especialidade': 'Técnico',
         };
       }).toList();
-
       if (mounted) {
         setState(() {
           _athletesFromSupabase = athletesList;
@@ -237,14 +226,11 @@ class _AddEventPageState extends State<AddEventPage> {
       _showError('CEP deve conter 8 dígitos');
       return;
     }
-
     setState(() => _isSearchingCep = true);
-
     try {
       final response = await http
           .get(Uri.parse('https://viacep.com.br/ws/$cep/json/'))
           .timeout(const Duration(seconds: 10));
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['erro'] == null) {
@@ -340,7 +326,6 @@ class _AddEventPageState extends State<AddEventPage> {
         );
       },
     );
-
     if (picked != null) {
       if (mounted) {
         setState(() {
@@ -374,7 +359,6 @@ class _AddEventPageState extends State<AddEventPage> {
         );
       },
     );
-
     if (picked != null) {
       if (mounted) {
         setState(() {
@@ -385,8 +369,10 @@ class _AddEventPageState extends State<AddEventPage> {
   }
 
   List<Map<String, String>> _getFilteredAthletes() {
-    if (_filtroGenero == 'Todos') return _athletesList;
-    return _athletesList.where((a) => a['genero'] == _filtroGenero).toList();
+    if (_filtroGeneroAtleta == 'Todos') return _athletesList;
+    return _athletesList
+        .where((a) => a['genero'] == _filtroGeneroAtleta)
+        .toList();
   }
 
   void _toggleAthleteSelection(String nome) {
@@ -415,13 +401,10 @@ class _AddEventPageState extends State<AddEventPage> {
 
   Future<void> _salvarEvento() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isSaving = true);
-
     try {
       final supabase = Supabase.instance.client;
       final user = supabase.auth.currentUser;
-
       if (user == null) {
         if (mounted) {
           setState(() => _isSaving = false);
@@ -429,7 +412,6 @@ class _AddEventPageState extends State<AddEventPage> {
         _showError('Usuário não autenticado');
         return;
       }
-
       final eventData = {
         'user_id': user.id,
         'event_name': _opponentController.text.isNotEmpty
@@ -446,10 +428,9 @@ class _AddEventPageState extends State<AddEventPage> {
         'state': _estadoController.text,
         'set_format': _setsFormat,
         'allow_checkin': _enableCheckIn,
+        'gender': _generoEvento, // ✅ ADICIONADO: Gênero do evento
       };
-
       dynamic response;
-
       if (_isEditing && _eventId != null) {
         response = await supabase
             .from('events')
@@ -460,29 +441,21 @@ class _AddEventPageState extends State<AddEventPage> {
         eventData['created_at'] = DateTime.now().toIso8601String();
         response = await supabase.from('events').insert(eventData).select();
       }
-
       if (response.isEmpty) {
         throw Exception(
             'Falha ao ${_isEditing ? 'atualizar' : 'criar'} evento');
       }
-
       final eventId = response[0]['id'];
-
-      // Remove convocações antigas se estiver editando
       if (_isEditing) {
         await supabase.from('convocations').delete().eq('event_id', eventId);
       }
-
-      // Insere atletas convocados na tabela convocations
       if (_selectedAthletes.isNotEmpty) {
         final athleteConvocations = <Map<String, dynamic>>[];
-
         for (var athleteName in _selectedAthletes) {
           final athlete = _athletesList.firstWhere(
             (a) => a['nome'] == athleteName,
             orElse: () => {'uid': ''},
           );
-
           if (athlete['uid']!.isNotEmpty) {
             athleteConvocations.add({
               'event_id': eventId,
@@ -491,22 +464,17 @@ class _AddEventPageState extends State<AddEventPage> {
             });
           }
         }
-
         if (athleteConvocations.isNotEmpty) {
           await supabase.from('convocations').insert(athleteConvocations);
         }
       }
-
-      // Insere técnicos convocados na tabela convocations
       if (_selectedTechnicians.isNotEmpty) {
         final technicianConvocations = <Map<String, dynamic>>[];
-
         for (var techName in _selectedTechnicians) {
           final technician = _techniciansList.firstWhere(
             (t) => t['nome'] == techName,
             orElse: () => {'uid': ''},
           );
-
           if (technician['uid']!.isNotEmpty) {
             technicianConvocations.add({
               'event_id': eventId,
@@ -515,25 +483,19 @@ class _AddEventPageState extends State<AddEventPage> {
             });
           }
         }
-
         if (technicianConvocations.isNotEmpty) {
           await supabase.from('convocations').insert(technicianConvocations);
         }
       }
-
       if (mounted) {
         setState(() => _isSaving = false);
       }
-
       if (!mounted) return;
-
       final totalConvocados =
           _selectedAthletes.length + _selectedTechnicians.length;
       _showSuccess(
           'Evento ${_isEditing ? 'atualizado' : 'salvo'} com sucesso!\n$totalConvocados convocados registrados${_enableCheckIn ? ' • Check-in habilitado' : ''}');
-
       await Future.delayed(const Duration(milliseconds: 500));
-
       if (mounted) {
         Navigator.of(context).pop(true);
       }
@@ -576,6 +538,8 @@ class _AddEventPageState extends State<AddEventPage> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   _buildEventTypeSelector(),
+                  const SizedBox(height: 24),
+                  _buildGenderSelector(), // ✅ NOVO: Seletor de gênero do evento
                   const SizedBox(height: 24),
                   if (_selectedType == EventType.amistoso ||
                       _selectedType == EventType.campeonato) ...[
@@ -643,6 +607,63 @@ class _AddEventPageState extends State<AddEventPage> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ NOVO: Widget para selecionar gênero do evento
+  Widget _buildGenderSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Gênero do Evento',
+          style: TextStyle(
+            color: Color(0xFF0A2463),
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _buildGenderChip('masculino', 'Masculino')),
+            const SizedBox(width: 8),
+            Expanded(child: _buildGenderChip('feminino', 'Feminino')),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGenderChip(String value, String label) {
+    final isSelected = _generoEvento == value;
+    return GestureDetector(
+      onTap: () {
+        if (mounted) {
+          setState(() => _generoEvento = value);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? goldenColor : Colors.grey[200],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? Colors.transparent
+                : const Color(0xFF0A2463).withOpacity(0.3),
+          ),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color:
+                isSelected ? const Color(0xFF0A2463) : const Color(0xFF0A2463),
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
         ),
       ),
     );
@@ -1146,7 +1167,7 @@ class _AddEventPageState extends State<AddEventPage> {
   }
 
   Widget _buildGenderFilterChip(String label) {
-    final isSelected = _filtroGenero == label;
+    final isSelected = _filtroGeneroAtleta == label;
     return FilterChip(
       label: Text(
         label,
@@ -1158,7 +1179,7 @@ class _AddEventPageState extends State<AddEventPage> {
       selected: isSelected,
       onSelected: (selected) {
         if (mounted) {
-          setState(() => _filtroGenero = label);
+          setState(() => _filtroGeneroAtleta = label);
         }
       },
       backgroundColor: Colors.grey[200],
@@ -1257,8 +1278,9 @@ class _AddEventPageState extends State<AddEventPage> {
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(Color(0xFFD4AF37)),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Color(0xFFD4AF37),
+                        ),
                       ),
                     ),
                   )
