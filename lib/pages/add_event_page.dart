@@ -8,13 +8,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class AddEventPage extends StatefulWidget {
   final List<Map<String, String>>? registeredAthletes;
   final List<Map<String, String>>? registeredTechnicians;
-  final Map<String, dynamic>? evento; // ✅ ADICIONADO: Para edição
+  final Map<String, dynamic>? evento;
 
   const AddEventPage({
     super.key,
     this.registeredAthletes,
     this.registeredTechnicians,
-    this.evento, // ✅ ADICIONADO
+    this.evento,
   });
 
   @override
@@ -23,13 +23,11 @@ class AddEventPage extends StatefulWidget {
 
 class _AddEventPageState extends State<AddEventPage> {
   final _formKey = GlobalKey<FormState>();
-  // 🎨 CORES BASEADAS NA IMAGEM (Azul Marinho e Dourado)
-  final goldenColor = const Color(0xFFD4AF37); // Dourado metálico
-  final techColor = const Color(0xFF1E3A8A); // Azul marinho para técnicos
-  // Cores de fundo
-  final backgroundColor = const Color(0xFFF8F9FA); // Branco acinzentado
-  final cardColor = const Color(0xFF0A2463); // Azul marinho escuro
-  final surfaceColor = const Color(0xFF1E3A8A); // Azul marinho médio
+  final goldenColor = const Color(0xFFD4AF37);
+  final techColor = const Color(0xFF1E3A8A);
+  final backgroundColor = const Color(0xFFF8F9FA);
+  final cardColor = const Color(0xFF0A2463);
+  final surfaceColor = const Color(0xFF1E3A8A);
 
   EventType _selectedType = EventType.treino;
   final _dateController = TextEditingController();
@@ -41,18 +39,18 @@ class _AddEventPageState extends State<AddEventPage> {
   final _bairroController = TextEditingController();
   final _cidadeController = TextEditingController();
   final _estadoController = TextEditingController();
+
   String _filtroGenero = 'Todos';
   String _filtroPessoa = 'Atleta';
   String _setsFormat = '1 Set';
   final List<String> _selectedAthletes = [];
   final List<String> _selectedTechnicians = [];
   bool _isSearchingCep = false;
-  bool _enableCheckIn = false; // ✅ Controle de check-in
-  bool _isSaving = false; // ✅ Indicador de salvamento
-  bool _isEditing = false; // ✅ ADICIONADO: Modo de edição
-  String? _eventId; // ✅ ADICIONADO: ID do evento sendo editado
+  bool _enableCheckIn = false;
+  bool _isSaving = false;
+  bool _isEditing = false;
+  String? _eventId;
 
-  // ✅ Estados para dados do Supabase
   List<Map<String, String>> _athletesFromSupabase = [];
   List<Map<String, String>> _techniciansFromSupabase = [];
   bool _isLoadingProfiles = true;
@@ -61,17 +59,15 @@ class _AddEventPageState extends State<AddEventPage> {
   void initState() {
     super.initState();
     _fetchProfilesFromSupabase();
-    _loadEventData(); // ✅ ADICIONADO: Carrega dados se estiver editando
+    _loadEventData();
   }
 
-  // ✅ ADICIONADO: Carrega dados do evento para edição
-  void _loadEventData() {
+  void _loadEventData() async {
     if (widget.evento != null) {
       setState(() {
         _isEditing = true;
         _eventId = widget.evento!['id'];
 
-        // Carrega tipo do evento
         final eventType = widget.evento!['event_type'] ?? 'treino';
         if (eventType == 'treino') {
           _selectedType = EventType.treino;
@@ -81,66 +77,100 @@ class _AddEventPageState extends State<AddEventPage> {
           _selectedType = EventType.campeonato;
         }
 
-        // Carrega nome do adversário (remove "Olympus VS " se existir)
         final eventName = widget.evento!['event_name'] ?? '';
         if (eventName.contains('Olympus VS ')) {
           _opponentController.text = eventName.replaceFirst('Olympus VS ', '');
         }
 
-        // Carrega data e hora
         _dateController.text = widget.evento!['event_date'] ?? '';
         _timeController.text = widget.evento!['event_time'] ?? '';
-
-        // Carrega formato de sets
         _setsFormat = widget.evento!['set_format'] ?? '1 Set';
-
-        // Carrega endereço
         _cepController.text = widget.evento!['cep'] ?? '';
         _ruaController.text = widget.evento!['street'] ?? '';
         _numeroController.text = widget.evento!['street_number'] ?? '';
         _bairroController.text = widget.evento!['neighborhood'] ?? '';
         _cidadeController.text = widget.evento!['city'] ?? '';
         _estadoController.text = widget.evento!['state'] ?? '';
-
-        // Carrega status de check-in
         _enableCheckIn = widget.evento!['allow_checkin'] ?? false;
       });
+
+      await Future.delayed(const Duration(milliseconds: 500));
+      _loadConvocados();
     }
   }
 
-  // ✅ Busca perfis do Supabase - CORREÇÃO: removido specialty
+  Future<void> _loadConvocados() async {
+    if (_eventId == null) return;
+
+    try {
+      final supabase = Supabase.instance.client;
+
+      final convocationsResponse = await supabase
+          .from('convocations')
+          .select('user_id')
+          .eq('event_id', _eventId!);
+
+      for (var convocation in convocationsResponse) {
+        final userId = convocation['user_id'];
+        if (userId != null) {
+          final profileResponse = await supabase
+              .from('profiles')
+              .select('full_name, user_type')
+              .eq('id', userId)
+              .single();
+
+          if (profileResponse != null) {
+            final fullName = profileResponse['full_name'] ?? '';
+            final userType = profileResponse['user_type'] ?? '';
+
+            if (userType == 'athlete') {
+              if (!_selectedAthletes.contains(fullName)) {
+                setState(() {
+                  _selectedAthletes.add(fullName);
+                });
+              }
+            } else if (userType == 'coach') {
+              if (!_selectedTechnicians.contains(fullName)) {
+                setState(() {
+                  _selectedTechnicians.add(fullName);
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('Erro ao carregar convocados: $e');
+    }
+  }
+
   Future<void> _fetchProfilesFromSupabase() async {
     try {
       final supabase = Supabase.instance.client;
 
-      // Busca atletas: profiles com user_type = 'athlete'
       final athletesResponse = await supabase
           .from('profiles')
           .select('id, full_name, user_type')
           .eq('user_type', 'athlete');
 
-      // Busca técnicos: profiles com user_type = 'coach'
-      // ✅ CORREÇÃO: removido specialty (coluna não existe)
       final coachesResponse = await supabase
           .from('profiles')
           .select('id, full_name, user_type')
           .eq('user_type', 'coach');
 
-      // Mapeia atletas
       final athletesList = athletesResponse.map<Map<String, String>>((p) {
         return {
           'uid': p['id']?.toString() ?? '',
           'nome': p['full_name'] ?? 'Usuário',
-          'genero': 'Masculino', // Default
+          'genero': 'Masculino',
         };
       }).toList();
 
-      // Mapeia técnicos
       final techniciansList = coachesResponse.map<Map<String, String>>((p) {
         return {
           'uid': p['id']?.toString() ?? '',
           'nome': p['full_name'] ?? 'Técnico',
-          'especialidade': 'Técnico', // ✅ Valor fixo
+          'especialidade': 'Técnico',
         };
       }).toList();
 
@@ -159,7 +189,6 @@ class _AddEventPageState extends State<AddEventPage> {
     }
   }
 
-  // ✅ Prioridade: parâmetros > Supabase > mock data
   List<Map<String, String>> get _athletesList =>
       widget.registeredAthletes?.isNotEmpty == true
           ? widget.registeredAthletes!
@@ -311,6 +340,7 @@ class _AddEventPageState extends State<AddEventPage> {
         );
       },
     );
+
     if (picked != null) {
       if (mounted) {
         setState(() {
@@ -335,7 +365,6 @@ class _AddEventPageState extends State<AddEventPage> {
             timePickerTheme: const TimePickerThemeData(
               backgroundColor: Color(0xFFF8F9FA),
               dialBackgroundColor: Color(0xFF0A2463),
-              // ✅ CORREÇÃO: Números do dial em branco para contraste
               dialTextColor: Colors.white,
               hourMinuteTextColor: Color(0xFF0A2463),
               entryModeIconColor: Color(0xFF0A2463),
@@ -345,6 +374,7 @@ class _AddEventPageState extends State<AddEventPage> {
         );
       },
     );
+
     if (picked != null) {
       if (mounted) {
         setState(() {
@@ -383,7 +413,6 @@ class _AddEventPageState extends State<AddEventPage> {
     }
   }
 
-  // ✅ CORREÇÃO PRINCIPAL: Inserção/Atualização real no Supabase com nomes corretos das colunas
   Future<void> _salvarEvento() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -391,9 +420,8 @@ class _AddEventPageState extends State<AddEventPage> {
 
     try {
       final supabase = Supabase.instance.client;
-
-      // Obtém o usuário atual
       final user = supabase.auth.currentUser;
+
       if (user == null) {
         if (mounted) {
           setState(() => _isSaving = false);
@@ -402,7 +430,6 @@ class _AddEventPageState extends State<AddEventPage> {
         return;
       }
 
-      // Prepara os dados do evento - ✅ CORREÇÃO DOS NOMES DAS COLUNAS
       final eventData = {
         'user_id': user.id,
         'event_name': _opponentController.text.isNotEmpty
@@ -417,24 +444,20 @@ class _AddEventPageState extends State<AddEventPage> {
         'neighborhood': _bairroController.text,
         'city': _cidadeController.text,
         'state': _estadoController.text,
-        'set_format': _setsFormat, // ✅ CORREÇÃO: sets_format → set_format
-        'allow_checkin':
-            _enableCheckIn, // ✅ CORREÇÃO: check_in_enabled → allow_checkin
-        'created_at': DateTime.now().toIso8601String(),
+        'set_format': _setsFormat,
+        'allow_checkin': _enableCheckIn,
       };
 
       dynamic response;
 
-      // ✅ ADICIONADO: Verifica se é edição ou criação
       if (_isEditing && _eventId != null) {
-        // Atualiza evento existente
         response = await supabase
             .from('events')
             .update(eventData)
             .eq('id', _eventId!)
             .select();
       } else {
-        // Insere novo evento
+        eventData['created_at'] = DateTime.now().toIso8601String();
         response = await supabase.from('events').insert(eventData).select();
       }
 
@@ -445,68 +468,56 @@ class _AddEventPageState extends State<AddEventPage> {
 
       final eventId = response[0]['id'];
 
-      // ✅ Se estiver editando, remove convocações antigas antes de inserir as novas
+      // Remove convocações antigas se estiver editando
       if (_isEditing) {
-        await supabase.from('checkins').delete().eq('event_id', eventId);
+        await supabase.from('convocations').delete().eq('event_id', eventId);
       }
 
-      // ✅ Insere os atletas convocados (se houver) - AGORA COM TRATAMENTO DE ERRO RLS
+      // Insere atletas convocados na tabela convocations
       if (_selectedAthletes.isNotEmpty) {
-        try {
-          final athleteConvocations = _selectedAthletes
-              .map((athleteName) {
-                // Busca o UID do atleta pelo nome
-                final athlete = _athletesList.firstWhere(
-                  (a) => a['nome'] == athleteName,
-                  orElse: () => {'uid': ''},
-                );
-                return {
-                  'event_id': eventId,
-                  'user_id': athlete['uid'] ?? '',
-                  // ✅ REMOVIDO: 'role' e 'check_in_status' não existem na tabela checkins
-                };
-              })
-              .where((c) => c['user_id'].isNotEmpty)
-              .toList();
+        final athleteConvocations = <Map<String, dynamic>>[];
 
-          if (athleteConvocations.isNotEmpty) {
-            // ✅ CORREÇÃO: tabela 'convocations' → 'checkins'
-            await supabase.from('checkins').insert(athleteConvocations);
+        for (var athleteName in _selectedAthletes) {
+          final athlete = _athletesList.firstWhere(
+            (a) => a['nome'] == athleteName,
+            orElse: () => {'uid': ''},
+          );
+
+          if (athlete['uid']!.isNotEmpty) {
+            athleteConvocations.add({
+              'event_id': eventId,
+              'user_id': athlete['uid'],
+              'status': 'pending',
+            });
           }
-        } catch (e) {
-          // ✅ CORREÇÃO: Ignora erro de RLS na tabela checkins - o evento foi salvo
-          print(
-              'Aviso: Não foi possível inserir checkins (RLS): ${e.toString()}');
+        }
+
+        if (athleteConvocations.isNotEmpty) {
+          await supabase.from('convocations').insert(athleteConvocations);
         }
       }
 
-      // ✅ Insere os técnicos convocados (se houver) - AGORA COM TRATAMENTO DE ERRO RLS
+      // Insere técnicos convocados na tabela convocations
       if (_selectedTechnicians.isNotEmpty) {
-        try {
-          final technicianConvocations = _selectedTechnicians
-              .map((techName) {
-                // Busca o UID do técnico pelo nome
-                final technician = _techniciansList.firstWhere(
-                  (t) => t['nome'] == techName,
-                  orElse: () => {'uid': ''},
-                );
-                return {
-                  'event_id': eventId,
-                  'user_id': technician['uid'] ?? '',
-                  // ✅ REMOVIDO: 'role' e 'check_in_status' não existem na tabela checkins
-                };
-              })
-              .where((c) => c['user_id'].isNotEmpty)
-              .toList();
+        final technicianConvocations = <Map<String, dynamic>>[];
 
-          if (technicianConvocations.isNotEmpty) {
-            // ✅ CORREÇÃO: tabela 'convocations' → 'checkins'
-            await supabase.from('checkins').insert(technicianConvocations);
+        for (var techName in _selectedTechnicians) {
+          final technician = _techniciansList.firstWhere(
+            (t) => t['nome'] == techName,
+            orElse: () => {'uid': ''},
+          );
+
+          if (technician['uid']!.isNotEmpty) {
+            technicianConvocations.add({
+              'event_id': eventId,
+              'user_id': technician['uid'],
+              'status': 'pending',
+            });
           }
-        } catch (e) {
-          // ✅ CORREÇÃO: Ignora erro de RLS na tabela checkins - o evento foi salvo
-          print(
-              'Aviso: Não foi possível inserir checkins de técnicos (RLS): ${e.toString()}');
+        }
+
+        if (technicianConvocations.isNotEmpty) {
+          await supabase.from('convocations').insert(technicianConvocations);
         }
       }
 
@@ -514,16 +525,15 @@ class _AddEventPageState extends State<AddEventPage> {
         setState(() => _isSaving = false);
       }
 
-      // ✅ CORREÇÃO: Verifica mounted antes de mostrar sucesso e navegar
       if (!mounted) return;
 
+      final totalConvocados =
+          _selectedAthletes.length + _selectedTechnicians.length;
       _showSuccess(
-          'Evento ${_isEditing ? 'atualizado' : 'salvo'} com sucesso!${_enableCheckIn ? '\nCheck-in habilitado' : ''}');
+          'Evento ${_isEditing ? 'atualizado' : 'salvo'} com sucesso!\n$totalConvocados convocados registrados${_enableCheckIn ? ' • Check-in habilitado' : ''}');
 
-      // Aguarda um breve momento para o usuário ver a mensagem
       await Future.delayed(const Duration(milliseconds: 500));
 
-      // ✅ CORREÇÃO: Navegação segura
       if (mounted) {
         Navigator.of(context).pop(true);
       }
@@ -580,12 +590,11 @@ class _AddEventPageState extends State<AddEventPage> {
                   const SizedBox(height: 24),
                   _buildAddressSection(),
                   const SizedBox(height: 16),
-                  _buildCheckInOption(), // ✅ Nova opção de check-in
-                  const SizedBox(height: 80), // Espaço para o botão fixo
+                  _buildCheckInOption(),
+                  const SizedBox(height: 80),
                 ],
               ),
             ),
-            // ✅ BOTÃO FIXO NO RODAPÉ (Sticky Footer)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -606,7 +615,6 @@ class _AddEventPageState extends State<AddEventPage> {
                     onPressed: _isSaving ? null : _salvarEvento,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: goldenColor,
-                      // ✅ CORREÇÃO DE CONTRASTE: Texto azul escuro sobre fundo dourado
                       foregroundColor: const Color(0xFF0A2463),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -738,7 +746,6 @@ class _AddEventPageState extends State<AddEventPage> {
     return FilterChip(
       label: Text(
         label,
-        // ✅ CORREÇÃO DE CONTRASTE: Texto azul escuro sobre fundo dourado
         style: TextStyle(
           color: isSelected ? const Color(0xFF0A2463) : const Color(0xFF0A2463),
           fontSize: 13,
@@ -818,7 +825,6 @@ class _AddEventPageState extends State<AddEventPage> {
           ),
         ),
         const SizedBox(height: 8),
-        // ✅ CORREÇÃO: Botões do mesmo tamanho usando SizedBox com largura fixa
         SizedBox(
           height: 80,
           child: Row(
@@ -861,7 +867,6 @@ class _AddEventPageState extends State<AddEventPage> {
             Text(
               label,
               textAlign: TextAlign.center,
-              // ✅ CORREÇÃO DE CONTRASTE: Texto azul escuro sobre fundo dourado
               style: TextStyle(
                 color: isSelected
                     ? const Color(0xFF0A2463)
@@ -1014,10 +1019,8 @@ class _AddEventPageState extends State<AddEventPage> {
         if (_filtroPessoa == 'Atleta') ...[
           Row(
             children: [
-              Text(
-                'Gênero: ',
-                style: TextStyle(color: Colors.grey[600], fontSize: 14),
-              ),
+              Text('Gênero: ',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14)),
               const SizedBox(width: 8),
               _buildGenderFilterChip('Todos'),
               const SizedBox(width: 8),
@@ -1028,7 +1031,6 @@ class _AddEventPageState extends State<AddEventPage> {
           ),
           const SizedBox(height: 16),
         ],
-        // ✅ Loading indicator
         if (_isLoadingProfiles)
           const Center(
             child: Padding(
@@ -1072,7 +1074,6 @@ class _AddEventPageState extends State<AddEventPage> {
                     }).toList(),
             ),
           ),
-        // ✅ CORREÇÃO 2: Mostrar chips independentemente da aba, com cores diferentes
         if (_selectedAthletes.isNotEmpty) ...[
           const SizedBox(height: 12),
           Wrap(
@@ -1080,12 +1081,9 @@ class _AddEventPageState extends State<AddEventPage> {
             runSpacing: 8,
             children: _selectedAthletes.map((name) {
               return Chip(
-                label: Text(
-                  name,
-                  // ✅ CORREÇÃO DE CONTRASTE: Texto azul escuro sobre fundo dourado
-                  style:
-                      const TextStyle(fontSize: 12, color: Color(0xFF0A2463)),
-                ),
+                label: Text(name,
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFF0A2463))),
                 backgroundColor: goldenColor.withOpacity(0.3),
                 side: const BorderSide(color: Color(0xFFD4AF37), width: 1),
                 deleteIcon:
@@ -1102,10 +1100,8 @@ class _AddEventPageState extends State<AddEventPage> {
             runSpacing: 8,
             children: _selectedTechnicians.map((name) {
               return Chip(
-                label: Text(
-                  name,
-                  style: const TextStyle(fontSize: 12, color: Colors.white),
-                ),
+                label: Text(name,
+                    style: const TextStyle(fontSize: 12, color: Colors.white)),
                 backgroundColor: techColor.withOpacity(0.3),
                 side: const BorderSide(color: Color(0xFF1E3A8A), width: 1),
                 deleteIcon:
@@ -1138,7 +1134,6 @@ class _AddEventPageState extends State<AddEventPage> {
         ),
         child: Text(
           label,
-          // ✅ CORREÇÃO DE CONTRASTE: Texto azul escuro sobre fundo dourado
           style: TextStyle(
             color:
                 isSelected ? const Color(0xFF0A2463) : const Color(0xFF0A2463),
@@ -1155,7 +1150,6 @@ class _AddEventPageState extends State<AddEventPage> {
     return FilterChip(
       label: Text(
         label,
-        // ✅ CORREÇÃO DE CONTRASTE: Texto azul escuro sobre fundo dourado
         style: TextStyle(
           color: isSelected ? const Color(0xFF0A2463) : const Color(0xFF0A2463),
           fontSize: 12,
@@ -1197,22 +1191,14 @@ class _AddEventPageState extends State<AddEventPage> {
             ? NetworkImage(avatarUrl)
             : null,
         child: avatarUrl == null || avatarUrl.isEmpty
-            ? Icon(
-                Icons.person,
-                color: goldenColor,
-                size: 20,
-              )
+            ? Icon(Icons.person, color: goldenColor, size: 20)
             : null,
       ),
-      title: Text(
-        name,
-        style: const TextStyle(color: Color(0xFF0A2463), fontSize: 14),
-      ),
+      title: Text(name,
+          style: const TextStyle(color: Color(0xFF0A2463), fontSize: 14)),
       subtitle: subtitle != null
-          ? Text(
-              subtitle,
-              style: TextStyle(color: Colors.grey[600], fontSize: 12),
-            )
+          ? Text(subtitle,
+              style: TextStyle(color: Colors.grey[600], fontSize: 12))
           : null,
       trailing: Checkbox(
         value: isSelected,
@@ -1271,9 +1257,8 @@ class _AddEventPageState extends State<AddEventPage> {
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Color(0xFFD4AF37),
-                        ),
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Color(0xFFD4AF37)),
                       ),
                     ),
                   )
