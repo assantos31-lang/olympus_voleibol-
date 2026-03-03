@@ -19,6 +19,9 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   String? _error;
   String _filtroMes = '';
 
+  // ✅ NOVO: filtro por tipo
+  String _filtroTipo = 'todos';
+
   @override
   void initState() {
     super.initState();
@@ -49,8 +52,7 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
 
       print('🔍 User ID: ${user.id}');
 
-      // CORREÇÃO PRINCIPAL: Usar JOIN para buscar convocações e eventos juntos
-      // Isso evita problemas de RLS na tabela events e faz apenas 1 requisição
+      // ✅ Ajuste mínimo: incluir championship_name e endereço no select
       final response = await _supabase.from('convocations').select('''
             status,
             events (
@@ -59,7 +61,13 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
               event_type,
               event_date,
               event_time,
-              gender
+              gender,
+              championship_name,
+              street,
+              street_number,
+              neighborhood,
+              city,
+              state
             )
           ''').eq('user_id', user.id);
 
@@ -84,15 +92,12 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         final status = item['status'] ?? 'pending';
 
         if (eventData != null) {
-          // Adiciona o status dentro do objeto do evento para facilitar o acesso
           eventData['convocation_status'] = status;
           eventosList.add(eventData);
 
           statusMap[eventData['id']] = {'status': status};
         }
       }
-
-      print('✅ Eventos processados: ${eventosList.length}');
 
       // Ordenar por data e hora
       eventosList.sort((a, b) {
@@ -108,7 +113,7 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       setState(() {
         _eventos = eventosList;
         _convocationStatus = statusMap;
-        _aplicarFiltros();
+        _aplicarFiltros(); // ✅ sem loop (não chama setState)
         _loading = false;
       });
     } catch (e, stackTrace) {
@@ -121,6 +126,7 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     }
   }
 
+  // ✅ Correção do loop: aqui NÃO deve ter setState
   void _aplicarFiltros() {
     List<Map<String, dynamic>> eventosFiltrados = _eventos;
 
@@ -135,9 +141,16 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       }).toList();
     }
 
-    setState(() {
-      _eventosFiltrados = eventosFiltrados;
-    });
+    // ✅ NOVO: filtro por tipo
+    if (_filtroTipo != 'todos') {
+      eventosFiltrados = eventosFiltrados.where((evento) {
+        final tipo =
+            (evento['event_type'] ?? '').toString().toLowerCase().trim();
+        return tipo == _filtroTipo;
+      }).toList();
+    }
+
+    _eventosFiltrados = eventosFiltrados;
   }
 
   Future<void> _refreshEventos() async {
@@ -175,17 +188,19 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     }
   }
 
-  Color _getCorFundoCard(String genero) {
+  // ✅ NOVO: cores do CARD por tipo
+  Color _getCorFundoCard(String genero, String tipo) {
+    final t = tipo.toLowerCase().trim();
+    if (t == 'treino') return const Color(0xFFE3F2FD); // azul claro
+    if (t == 'amistoso') return const Color(0xFFE8F5E9); // verde claro
+    if (t == 'campeonato') return const Color(0xFFFFF8E1); // âmbar claro
+
     final generoLower = genero.toLowerCase();
-    if (generoLower == 'masculino') {
-      return const Color(0xFFE3F2FD);
-    } else if (generoLower == 'feminino') {
-      return const Color(0xFFF3E5F5);
-    }
+    if (generoLower == 'masculino') return const Color(0xFFE3F2FD);
+    if (generoLower == 'feminino') return const Color(0xFFF3E5F5);
     return Colors.white;
   }
 
-  // ✅ Ajuste mínimo: seu banco usa 'rejected' (não 'declined')
   Color _getStatusColor(String? status) {
     switch (status?.toLowerCase()) {
       case 'accepted':
@@ -197,7 +212,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     }
   }
 
-  // ✅ Ajuste mínimo: seu banco usa 'rejected' (não 'declined')
   String _getStatusLabel(String? status) {
     switch (status?.toLowerCase()) {
       case 'accepted':
@@ -209,9 +223,97 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     }
   }
 
-  // ✅ Correção cirúrgica:
-  // - Aceitar: status='accepted', justification=null
-  // - Recusar: abre diálogo obrigatório e salva status='rejected' + justification
+  bool _podeEditar(Map<String, dynamic> evento) {
+    final tipo = (evento['event_type'] ?? '').toString().toLowerCase().trim();
+    final dataStr = (evento['event_date'] ?? '').toString().trim();
+    final horaStr = (evento['event_time'] ?? '').toString().trim();
+
+    if (tipo.isEmpty || dataStr.isEmpty || horaStr.isEmpty) return false;
+
+    try {
+      final dp = dataStr.split('/');
+      final tp = horaStr.split(':');
+      if (dp.length != 3 || tp.length < 2) return false;
+
+      final eventDateTime = DateTime(
+        int.parse(dp[2]),
+        int.parse(dp[1]),
+        int.parse(dp[0]),
+        int.parse(tp[0]),
+        int.parse(tp[1]),
+      );
+
+      final now = DateTime.now();
+      if (eventDateTime.isBefore(now)) return false;
+
+      int horasLimite;
+      switch (tipo) {
+        case 'treino':
+          horasLimite = 3;
+          break;
+        case 'amistoso':
+          horasLimite = 12;
+          break;
+        case 'campeonato':
+          horasLimite = 48;
+          break;
+        default:
+          horasLimite = 3;
+      }
+
+      return eventDateTime.difference(now).inMinutes >= (horasLimite * 60);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  String _getPrazoInfo(Map<String, dynamic> evento) {
+    final tipo = (evento['event_type'] ?? '').toString().toLowerCase().trim();
+    switch (tipo) {
+      case 'treino':
+        return 'Treino: edição permitida até 3h antes do evento.';
+      case 'amistoso':
+        return 'Amistoso: edição permitida até 12h antes do evento.';
+      case 'campeonato':
+        return 'Campeonato: edição permitida até 48h antes do evento.';
+      default:
+        return '';
+    }
+  }
+
+  // ✅ NOVO: dialog para editar (aceitar/recusar novamente)
+  Future<void> _editarResposta(Map<String, dynamic> evento) async {
+    final escolha = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Editar resposta'),
+        content: const Text('Deseja aceitar ou recusar esta convocação?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'rejected'),
+            child: const Text('Recusar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, 'accepted'),
+            child: const Text('Aceitar'),
+          ),
+        ],
+      ),
+    );
+
+    if (escolha == null) return;
+
+    if (escolha == 'accepted') {
+      await _responderConvocacao(evento, true);
+    } else if (escolha == 'rejected') {
+      await _responderConvocacao(evento, false);
+    }
+  }
+
   Future<void> _responderConvocacao(
       Map<String, dynamic> evento, bool aceitar) async {
     try {
@@ -239,7 +341,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         return;
       }
 
-      // Recusar -> justificativa obrigatória
       final controller = TextEditingController();
       final justification = await showDialog<String>(
         context: context,
@@ -261,7 +362,7 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
             ElevatedButton(
               onPressed: () {
                 final text = controller.text.trim();
-                if (text.isEmpty) return; // não permite confirmar vazio
+                if (text.isEmpty) return;
                 Navigator.pop(context, text);
               },
               child: const Text('Confirmar'),
@@ -323,6 +424,37 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     } catch (e) {
       return mesAno;
     }
+  }
+
+  // ✅ NOVO: UI de filtros por tipo (Todos, Treino, Amistoso, Campeonatos)
+  Widget _buildFiltroTipoButtons() {
+    Widget chip(String label, String value) {
+      final selected = _filtroTipo == value;
+      return ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) {
+          setState(() {
+            _filtroTipo = value;
+            _aplicarFiltros();
+          });
+        },
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          chip('Todos', 'todos'),
+          chip('Treino', 'treino'),
+          chip('Amistoso', 'amistoso'),
+          chip('Campeonatos', 'campeonato'),
+        ],
+      ),
+    );
   }
 
   @override
@@ -398,6 +530,10 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
               ],
             ),
           ),
+
+          // ✅ NOVO: botões de filtro por tipo
+          _buildFiltroTipoButtons(),
+
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -445,15 +581,49 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                 final evento = _eventosFiltrados[index];
                                 final eventId = evento['id'];
 
-                                // Pega o status do mapa ou do próprio objeto evento
                                 final statusData = _convocationStatus[eventId];
                                 final status = statusData?['status'] ??
                                     evento['convocation_status'] ??
                                     'pending';
 
-                                final corTipo = _getCorTipoEvento(
-                                    evento['event_type'] ?? '');
-                                final genero = evento['gender'] ?? '';
+                                final eventType =
+                                    (evento['event_type'] ?? '').toString();
+                                final corTipo = _getCorTipoEvento(eventType);
+                                final genero =
+                                    (evento['gender'] ?? '').toString();
+
+                                // ✅ prazo + bloqueio
+                                final podeEditar = _podeEditar(evento);
+                                final prazoInfo = _getPrazoInfo(evento);
+
+                                // ✅ NOVO: campeonato
+                                final championshipName =
+                                    (evento['championship_name'] ?? '')
+                                        .toString()
+                                        .trim();
+
+                                // ✅ NOVO: endereço completo
+                                String? enderecoCompleto;
+                                final street =
+                                    (evento['street'] ?? '').toString().trim();
+                                if (street.isNotEmpty) {
+                                  final numero = (evento['street_number'] ?? '')
+                                      .toString()
+                                      .trim();
+                                  final bairro = (evento['neighborhood'] ?? '')
+                                      .toString()
+                                      .trim();
+                                  final cidade =
+                                      (evento['city'] ?? '').toString().trim();
+                                  final estado =
+                                      (evento['state'] ?? '').toString().trim();
+
+                                  enderecoCompleto = '$street'
+                                      '${numero.isNotEmpty ? ', $numero' : ''}'
+                                      '${bairro.isNotEmpty ? ' - $bairro' : ''}'
+                                      '${cidade.isNotEmpty ? ' - $cidade' : ''}'
+                                      '${estado.isNotEmpty ? '/$estado' : ''}';
+                                }
 
                                 return Card(
                                   margin: const EdgeInsets.only(bottom: 12),
@@ -461,7 +631,7 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  color: _getCorFundoCard(genero),
+                                  color: _getCorFundoCard(genero, eventType),
                                   child: Padding(
                                     padding: const EdgeInsets.all(16),
                                     child: Column(
@@ -486,6 +656,7 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                               child: Text(
                                                 (evento['event_type'] ??
                                                         'Geral')
+                                                    .toString()
                                                     .toUpperCase(),
                                                 style: TextStyle(
                                                   color: corTipo,
@@ -525,12 +696,39 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                         ),
                                         const SizedBox(height: 12),
                                         Text(
-                                          evento['event_name'] ?? 'Sem nome',
+                                          (evento['event_name'] ?? 'Sem nome')
+                                              .toString(),
                                           style: const TextStyle(
                                             fontSize: 18,
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
+
+                                        // ✅ NOVO: nome do campeonato
+                                        if (eventType.toLowerCase().trim() ==
+                                                'campeonato' &&
+                                            championshipName.isNotEmpty) ...[
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            children: [
+                                              Icon(Icons.emoji_events,
+                                                  size: 16,
+                                                  color: Colors.amber[700]),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  championshipName,
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    color: Colors.amber[900],
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+
                                         const SizedBox(height: 8),
                                         Row(
                                           children: [
@@ -542,7 +740,8 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                             const SizedBox(width: 8),
                                             Text(
                                               _formatarData(
-                                                  evento['event_date'] ?? ''),
+                                                  (evento['event_date'] ?? '')
+                                                      .toString()),
                                               style: TextStyle(
                                                   color: Colors.grey[700]),
                                             ),
@@ -558,26 +757,75 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                             ),
                                             const SizedBox(width: 8),
                                             Text(
-                                              evento['event_time'] ?? '',
+                                              (evento['event_time'] ?? '')
+                                                  .toString(),
                                               style: TextStyle(
                                                   color: Colors.grey[700]),
                                             ),
                                           ],
                                         ),
+
+                                        // ✅ NOVO: endereço
+                                        if (enderecoCompleto != null &&
+                                            enderecoCompleto.isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.location_on,
+                                                size: 16,
+                                                color: Colors.grey[600],
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  enderecoCompleto,
+                                                  style: TextStyle(
+                                                    color: Colors.grey[700],
+                                                    fontSize: 13,
+                                                  ),
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+
                                         const SizedBox(height: 12),
+
+                                        // ✅ texto informativo
+                                        if (prazoInfo.isNotEmpty) ...[
+                                          Text(
+                                            prazoInfo,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey[600],
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                        ],
+
+                                        // ✅ PENDENTE -> Aceitar/Recusar (bloqueia após prazo)
                                         if (status == 'pending')
                                           Row(
                                             children: [
                                               Expanded(
                                                 child: ElevatedButton.icon(
-                                                  onPressed: () =>
-                                                      _responderConvocacao(
-                                                          evento, false),
+                                                  onPressed: podeEditar
+                                                      ? () =>
+                                                          _responderConvocacao(
+                                                              evento, false)
+                                                      : null,
                                                   icon: const Icon(Icons.close),
                                                   label: const Text('Recusar'),
                                                   style:
                                                       ElevatedButton.styleFrom(
-                                                    backgroundColor: Colors.red,
+                                                    backgroundColor: podeEditar
+                                                        ? Colors.red
+                                                        : Colors.grey,
                                                     foregroundColor:
                                                         Colors.white,
                                                   ),
@@ -586,15 +834,18 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                               const SizedBox(width: 12),
                                               Expanded(
                                                 child: ElevatedButton.icon(
-                                                  onPressed: () =>
-                                                      _responderConvocacao(
-                                                          evento, true),
+                                                  onPressed: podeEditar
+                                                      ? () =>
+                                                          _responderConvocacao(
+                                                              evento, true)
+                                                      : null,
                                                   icon: const Icon(Icons.check),
                                                   label: const Text('Aceitar'),
                                                   style:
                                                       ElevatedButton.styleFrom(
-                                                    backgroundColor:
-                                                        Colors.green,
+                                                    backgroundColor: podeEditar
+                                                        ? Colors.green
+                                                        : Colors.grey,
                                                     foregroundColor:
                                                         Colors.white,
                                                   ),
@@ -602,6 +853,30 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                               ),
                                             ],
                                           ),
+
+                                        // ✅ EDITAR -> sempre aparece quando já respondeu (habilita/desabilita por prazo)
+                                        if (status != 'pending') ...[
+                                          const SizedBox(height: 8),
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: ElevatedButton.icon(
+                                              onPressed: podeEditar
+                                                  ? () =>
+                                                      _editarResposta(evento)
+                                                  : null,
+                                              icon: const Icon(Icons.edit),
+                                              label:
+                                                  const Text('Editar resposta'),
+                                              // ✅ Botão editar com cor diferente
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: podeEditar
+                                                    ? Colors.deepPurple
+                                                    : Colors.grey,
+                                                foregroundColor: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ),
                                   ),

@@ -305,6 +305,65 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
+  // ✅ NOVO: Método para excluir evento
+  Future<void> _excluirEvento(Map<String, dynamic> evento) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir evento'),
+        content: const Text(
+          'Tem certeza que deseja excluir este evento? Esta ação não pode ser desfeita.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmado != true) return;
+
+    try {
+      final eventId = evento['id'];
+      if (eventId == null) return;
+
+      // ✅ Excluir convocações relacionadas primeiro (evita erro de foreign key)
+      await _supabase.from('convocations').delete().eq('event_id', eventId);
+
+      // ✅ Excluir o evento
+      await _supabase.from('events').delete().eq('id', eventId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Evento excluído com sucesso!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _refreshEventos();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Erro ao excluir evento: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _mostrarCheckinDetalhes(Map<String, dynamic> evento) async {
     final eventId = evento['id']?.toString();
     if (eventId == null) return;
@@ -1323,6 +1382,13 @@ class _AgendaPageState extends State<AgendaPage> {
                                     : (quantidades['athletes']! +
                                         quantidades['technicians']!);
 
+                                // ✅ NOVO: dados de convocações para exibição no card
+                                final aceitos = stats?['total_aceitos'] ?? 0;
+                                final pendentes =
+                                    stats?['total_pendentes'] ?? 0;
+                                final recusados =
+                                    stats?['total_recusados'] ?? 0;
+
                                 final checkinData = _checkinInfo[eventId];
                                 final allowCheckin =
                                     evento['allow_checkin'] ?? false;
@@ -1331,6 +1397,25 @@ class _AgendaPageState extends State<AgendaPage> {
                                 final eventType = evento['event_type'] ?? '';
                                 final hasPlacar = evento['score'] != null;
                                 final genero = evento['gender'] ?? '';
+                                // ✅ NOVO: Nome do campeonato
+                                final championshipName =
+                                    evento['championship_name'] ?? '';
+
+                                // ✅ NOVO: montar endereço completo
+                                String? enderecoCompleto;
+                                if (evento['street'] != null &&
+                                    evento['street'].toString().isNotEmpty) {
+                                  final rua = evento['street'] ?? '';
+                                  final numero = evento['street_number'] ?? '';
+                                  final bairro = evento['neighborhood'] ?? '';
+                                  final cidade = evento['city'] ?? '';
+                                  final estado = evento['state'] ?? '';
+
+                                  enderecoCompleto = '$rua, $numero'
+                                      '${bairro.isNotEmpty ? ' - $bairro' : ''}'
+                                      '${cidade.isNotEmpty ? ' - $cidade' : ''}'
+                                      '${estado.isNotEmpty ? '/$estado' : ''}';
+                                }
 
                                 return Card(
                                   margin: const EdgeInsets.only(bottom: 12),
@@ -1339,275 +1424,358 @@ class _AgendaPageState extends State<AgendaPage> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   color: _getCorFundoCard(genero),
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(12),
-                                    onTap: () {
-                                      _mostrarDetalhesEvento(evento);
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(16),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 6,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: corTipo.withOpacity(0.1),
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                                border:
+                                                    Border.all(color: corTipo),
+                                              ),
+                                              child: Text(
+                                                (eventType ?? 'Geral')
+                                                    .toUpperCase(),
+                                                style: TextStyle(
+                                                  color: corTipo,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            if (genero.isNotEmpty)
                                               Container(
                                                 padding:
                                                     const EdgeInsets.symmetric(
-                                                  horizontal: 12,
-                                                  vertical: 6,
+                                                  horizontal: 8,
+                                                  vertical: 4,
                                                 ),
                                                 decoration: BoxDecoration(
-                                                  color:
-                                                      corTipo.withOpacity(0.1),
+                                                  color: genero.toLowerCase() ==
+                                                          'masculino'
+                                                      ? Colors.blue[100]
+                                                      : Colors.purple[100],
                                                   borderRadius:
-                                                      BorderRadius.circular(20),
-                                                  border: Border.all(
-                                                      color: corTipo),
+                                                      BorderRadius.circular(12),
                                                 ),
                                                 child: Text(
-                                                  (evento['event_type'] ??
-                                                          'Geral')
-                                                      .toUpperCase(),
+                                                  genero[0].toUpperCase() +
+                                                      genero.substring(1),
                                                   style: TextStyle(
-                                                    color: corTipo,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 12,
-                                                  ),
-                                                ),
-                                              ),
-                                              const Spacer(),
-                                              if (genero.isNotEmpty)
-                                                Container(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 4,
-                                                  ),
-                                                  decoration: BoxDecoration(
                                                     color:
                                                         genero.toLowerCase() ==
                                                                 'masculino'
-                                                            ? Colors.blue[100]
+                                                            ? Colors.blue[900]
                                                             : Colors
-                                                                .purple[100],
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            12),
-                                                  ),
-                                                  child: Text(
-                                                    genero[0].toUpperCase() +
-                                                        genero.substring(1),
-                                                    style: TextStyle(
-                                                      color:
-                                                          genero.toLowerCase() ==
-                                                                  'masculino'
-                                                              ? Colors.blue[900]
-                                                              : Colors
-                                                                  .purple[900],
-                                                      fontSize: 11,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
+                                                                .purple[900],
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
-                                              const SizedBox(width: 8),
-                                              PopupMenuButton<String>(
-                                                icon: Icon(
-                                                  Icons.more_vert,
-                                                  color: Colors.grey[600],
-                                                ),
-                                                onSelected: (value) {
-                                                  if (value == 'editar') {
-                                                    _editarEvento(evento);
-                                                  } else if (value ==
-                                                      'placar') {
-                                                    _inserirPlacar(evento);
-                                                  } else if (value ==
-                                                      'checkin') {
-                                                    _mostrarCheckinDetalhes(
-                                                        evento);
-                                                  }
-                                                },
-                                                itemBuilder: (context) {
-                                                  final items =
-                                                      <PopupMenuItem<String>>[];
-                                                  items.add(const PopupMenuItem(
-                                                    value: 'editar',
+                                              ),
+                                            const SizedBox(width: 8),
+                                            PopupMenuButton<String>(
+                                              icon: Icon(
+                                                Icons.more_vert,
+                                                color: Colors.grey[600],
+                                              ),
+                                              onSelected: (value) {
+                                                if (value == 'editar') {
+                                                  _editarEvento(evento);
+                                                } else if (value == 'placar') {
+                                                  _inserirPlacar(evento);
+                                                } else if (value == 'checkin') {
+                                                  _mostrarCheckinDetalhes(
+                                                      evento);
+                                                } else if (value == 'excluir') {
+                                                  // ✅ NOVO: Opção excluir
+                                                  _excluirEvento(evento);
+                                                }
+                                              },
+                                              itemBuilder: (context) {
+                                                final items =
+                                                    <PopupMenuItem<String>>[];
+                                                items.add(const PopupMenuItem(
+                                                  value: 'editar',
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(
+                                                        Icons.edit,
+                                                        size: 18,
+                                                        color: Colors.blue,
+                                                      ),
+                                                      SizedBox(width: 8),
+                                                      Text('Editar evento'),
+                                                    ],
+                                                  ),
+                                                ));
+
+                                                if (eventType == 'amistoso' ||
+                                                    eventType == 'campeonato') {
+                                                  items.add(PopupMenuItem(
+                                                    value: 'placar',
                                                     child: Row(
                                                       children: [
                                                         Icon(
-                                                          Icons.edit,
+                                                          Icons.score,
                                                           size: 18,
-                                                          color: Colors.blue,
+                                                          color:
+                                                              Color(0xFFD4AF37),
                                                         ),
                                                         SizedBox(width: 8),
-                                                        Text('Editar evento'),
+                                                        Text(hasPlacar
+                                                            ? 'Editar placar'
+                                                            : 'Inserir placar'),
                                                       ],
                                                     ),
                                                   ));
+                                                }
 
-                                                  if (eventType == 'amistoso' ||
-                                                      eventType ==
-                                                          'campeonato') {
-                                                    items.add(PopupMenuItem(
-                                                      value: 'placar',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons.score,
-                                                            size: 18,
-                                                            color: Color(
-                                                                0xFFD4AF37),
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text(hasPlacar
-                                                              ? 'Editar placar'
-                                                              : 'Inserir placar'),
-                                                        ],
+                                                if (allowCheckin) {
+                                                  items.add(PopupMenuItem(
+                                                    value: 'checkin',
+                                                    child: Row(
+                                                      children: [
+                                                        Icon(
+                                                          Icons.people_outline,
+                                                          size: 18,
+                                                          color: Colors.green,
+                                                        ),
+                                                        SizedBox(width: 8),
+                                                        Text('Ver convocados'),
+                                                      ],
+                                                    ),
+                                                  ));
+                                                }
+
+                                                // ✅ NOVO: Opção excluir no menu
+                                                items.add(PopupMenuItem(
+                                                  value: 'excluir',
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(
+                                                        Icons.delete_outline,
+                                                        size: 18,
+                                                        color: Colors.red,
                                                       ),
-                                                    ));
-                                                  }
-
-                                                  if (allowCheckin) {
-                                                    items.add(PopupMenuItem(
-                                                      value: 'checkin',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons
-                                                                .people_outline,
-                                                            size: 18,
-                                                            color: Colors.green,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text(
-                                                              'Ver convocados'),
-                                                        ],
+                                                      SizedBox(width: 8),
+                                                      Text(
+                                                        'Excluir evento',
+                                                        style: TextStyle(
+                                                            color: Colors.red),
                                                       ),
-                                                    ));
-                                                  }
+                                                    ],
+                                                  ),
+                                                ));
 
-                                                  return items;
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 12),
-                                          Text(
-                                            evento['event_name'] ?? 'Sem nome',
-                                            style: const TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.bold,
+                                                return items;
+                                              },
                                             ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          evento['event_name'] ?? 'Sem nome',
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
                                           ),
-                                          const SizedBox(height: 8),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.calendar_today,
-                                                size: 16,
-                                                color: Colors.grey[600],
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                _formatarData(
-                                                    evento['event_date'] ?? ''),
-                                                style: TextStyle(
-                                                    color: Colors.grey[700]),
-                                              ),
-                                            ],
-                                          ),
+                                        ),
+                                        // ✅ NOVO: Exibir nome do campeonato se existir
+                                        if (eventType == 'campeonato' &&
+                                            championshipName != null &&
+                                            championshipName.isNotEmpty) ...[
                                           const SizedBox(height: 4),
                                           Row(
                                             children: [
                                               Icon(
-                                                Icons.access_time,
+                                                Icons.emoji_events,
+                                                size: 16,
+                                                color: Colors.amber[700],
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  championshipName,
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    color: Colors.amber[900],
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.calendar_today,
+                                              size: 16,
+                                              color: Colors.grey[600],
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              _formatarData(
+                                                  evento['event_date'] ?? ''),
+                                              style: TextStyle(
+                                                  color: Colors.grey[700]),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.access_time,
+                                              size: 16,
+                                              color: Colors.grey[600],
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              evento['event_time'] ?? '',
+                                              style: TextStyle(
+                                                  color: Colors.grey[700]),
+                                            ),
+                                          ],
+                                        ),
+                                        // ✅ ENDEREÇO MOVIDO PARA ABAIXO DO RELÓGIO
+                                        if (enderecoCompleto != null) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.location_on,
                                                 size: 16,
                                                 color: Colors.grey[600],
                                               ),
                                               const SizedBox(width: 8),
-                                              Text(
-                                                evento['event_time'] ?? '',
-                                                style: TextStyle(
-                                                    color: Colors.grey[700]),
+                                              Expanded(
+                                                child: Text(
+                                                  enderecoCompleto,
+                                                  style: TextStyle(
+                                                    color: Colors.grey[700],
+                                                    fontSize: 13,
+                                                  ),
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
                                               ),
                                             ],
                                           ),
+                                        ],
+                                        Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.people_outline,
+                                              size: 16,
+                                              color: Color(0xFFD4AF37),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              '$totalConvocados convocad${totalConvocados == 1 ? 'o' : 'os'} (${quantidades['athletes']} atletas, ${quantidades['technicians']} técn${quantidades['technicians'] == 1 ? 'ico' : 'icos'})',
+                                              style: const TextStyle(
+                                                color: Color(0xFF1E3A5F),
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        // ✅ NOVO: Status das convocações (aceitos, pendentes, recusados)
+                                        if (stats != null) ...[
+                                          const SizedBox(height: 4),
                                           Row(
                                             children: [
-                                              const Icon(
-                                                Icons.people_outline,
+                                              Icon(
+                                                Icons.check_circle_outline,
                                                 size: 16,
-                                                color: Color(0xFFD4AF37),
+                                                color: Colors.green[600],
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                '$aceitos aceitou',
+                                                style: TextStyle(
+                                                  color: Colors.green[700],
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Icon(
+                                                Icons.hourglass_empty,
+                                                size: 16,
+                                                color: Colors.orange[600],
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                '$pendentes pendente${pendentes == 1 ? '' : 's'}',
+                                                style: TextStyle(
+                                                  color: Colors.orange[700],
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Icon(
+                                                Icons.cancel_outlined,
+                                                size: 16,
+                                                color: Colors.red[600],
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                '$recusados recusou',
+                                                style: TextStyle(
+                                                  color: Colors.red[700],
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                        if (allowCheckin &&
+                                            checkinData != null) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.check_circle,
+                                                size: 16,
+                                                color: Colors.green[600],
                                               ),
                                               const SizedBox(width: 8),
                                               Text(
-                                                '$totalConvocados convocad${totalConvocados == 1 ? 'o' : 'os'} (${quantidades['athletes']} atletas, ${quantidades['technicians']} técn${quantidades['technicians'] == 1 ? 'ico' : 'icos'})',
-                                                style: const TextStyle(
-                                                  color: Color(0xFF1E3A5F),
+                                                'Check-in: ${checkinData['checked_in']} aceitou, ${checkinData['pending']} pendente${checkinData['pending'] == 1 ? '' : 's'}',
+                                                style: TextStyle(
+                                                  color: Colors.green[700],
                                                   fontWeight: FontWeight.w600,
-                                                  fontSize: 14,
+                                                  fontSize: 13,
                                                 ),
                                               ),
                                             ],
                                           ),
-                                          if (allowCheckin &&
-                                              checkinData != null) ...[
-                                            const SizedBox(height: 4),
-                                            Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.check_circle,
-                                                  size: 16,
-                                                  color: Colors.green[600],
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Text(
-                                                  'Check-in: ${checkinData['checked_in']} aceitou, ${checkinData['pending']} pendente${checkinData['pending'] == 1 ? '' : 's'}',
-                                                  style: TextStyle(
-                                                    color: Colors.green[700],
-                                                    fontWeight: FontWeight.w600,
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                          if (hasPlacar) ...[
-                                            const SizedBox(height: 12),
-                                            _buildPlacarCard(evento, eventId),
-                                          ],
-                                          if (evento['location'] != null &&
-                                              evento['location']
-                                                  .toString()
-                                                  .isNotEmpty) ...[
-                                            const SizedBox(height: 4),
-                                            Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.location_on,
-                                                  size: 16,
-                                                  color: Colors.grey[600],
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Expanded(
-                                                  child: Text(
-                                                    evento['location'],
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[700]),
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
                                         ],
-                                      ),
+                                        if (hasPlacar) ...[
+                                          const SizedBox(height: 12),
+                                          _buildPlacarCard(evento, eventId),
+                                        ],
+                                      ],
                                     ),
                                   ),
                                 );
@@ -1816,7 +1984,7 @@ class _AgendaPageState extends State<AgendaPage> {
       },
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         decoration: BoxDecoration(
           color: selecionado ? corBase.withOpacity(0.15) : Colors.grey[100],
           borderRadius: BorderRadius.circular(12),
@@ -1827,18 +1995,23 @@ class _AgendaPageState extends State<AgendaPage> {
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (selecionado) Icon(Icons.check, size: 16, color: corBase),
-            if (selecionado) const SizedBox(width: 4),
+            if (selecionado) Icon(Icons.check, size: 14, color: corBase),
+            if (selecionado) const SizedBox(width: 2),
             Icon(icone,
-                size: 16, color: selecionado ? corBase : Colors.grey[600]),
+                size: 14, color: selecionado ? corBase : Colors.grey[600]),
             const SizedBox(width: 4),
-            Text(
-              tipo,
-              style: TextStyle(
-                fontWeight: selecionado ? FontWeight.bold : FontWeight.normal,
-                color: selecionado ? corBase : Colors.grey[700],
-                fontSize: 12,
+            Flexible(
+              child: Text(
+                tipo,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: selecionado ? FontWeight.bold : FontWeight.normal,
+                  color: selecionado ? corBase : Colors.grey[700],
+                  fontSize: 11,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],

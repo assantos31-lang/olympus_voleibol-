@@ -33,6 +33,8 @@ class _AddEventPageState extends State<AddEventPage> {
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
   final _opponentController = TextEditingController();
+  final _championshipNameController =
+      TextEditingController(); // ✅ ALTERADO: championship_name (inglês)
   final _cepController = TextEditingController();
   final _ruaController = TextEditingController();
   final _numeroController = TextEditingController();
@@ -44,9 +46,10 @@ class _AddEventPageState extends State<AddEventPage> {
   String _generoEvento = 'masculino'; // ✅ Gênero do evento
   String _filtroPessoa = 'Atleta';
   String _setsFormat = '1 Set';
+  String _championshipName = ''; // ✅ ALTERADO: championship_name (inglês)
+
   final List<String> _selectedAthletes = [];
   final List<String> _selectedTechnicians = [];
-
   bool _isSearchingCep = false;
   bool _enableCheckIn = false;
   bool _isSaving = false;
@@ -93,6 +96,9 @@ class _AddEventPageState extends State<AddEventPage> {
         _enableCheckIn = widget.evento!['allow_checkin'] ?? false;
         // ✅ Carrega gênero do evento
         _generoEvento = widget.evento!['gender'] ?? 'masculino';
+        // ✅ ALTERADO: Carrega championship_name (inglês)
+        _championshipName = widget.evento!['championship_name'] ?? '';
+        _championshipNameController.text = _championshipName;
       });
       await Future.delayed(const Duration(milliseconds: 500));
       _loadConvocados();
@@ -107,6 +113,7 @@ class _AddEventPageState extends State<AddEventPage> {
           .from('convocations')
           .select('user_id')
           .eq('event_id', _eventId!);
+
       for (var convocation in convocationsResponse) {
         final userId = convocation['user_id'];
         if (userId != null) {
@@ -115,6 +122,7 @@ class _AddEventPageState extends State<AddEventPage> {
               .select('full_name, user_type')
               .eq('id', userId)
               .single();
+
           if (profileResponse != null) {
             final fullName = profileResponse['full_name'] ?? '';
             final userType = profileResponse['user_type'] ?? '';
@@ -216,6 +224,7 @@ class _AddEventPageState extends State<AddEventPage> {
     _dateController.dispose();
     _timeController.dispose();
     _opponentController.dispose();
+    _championshipNameController.dispose(); // ✅ ALTERADO
     _cepController.dispose();
     _ruaController.dispose();
     _numeroController.dispose();
@@ -230,11 +239,14 @@ class _AddEventPageState extends State<AddEventPage> {
       _showError('CEP deve conter 8 dígitos');
       return;
     }
+
     setState(() => _isSearchingCep = true);
+
     try {
       final response = await http
           .get(Uri.parse('https://viacep.com.br/ws/$cep/json/'))
           .timeout(const Duration(seconds: 10));
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['erro'] == null) {
@@ -330,6 +342,7 @@ class _AddEventPageState extends State<AddEventPage> {
         );
       },
     );
+
     if (picked != null) {
       if (mounted) {
         setState(() {
@@ -363,6 +376,7 @@ class _AddEventPageState extends State<AddEventPage> {
         );
       },
     );
+
     if (picked != null) {
       if (mounted) {
         setState(() {
@@ -405,7 +419,16 @@ class _AddEventPageState extends State<AddEventPage> {
 
   Future<void> _salvarEvento() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // ✅ Validação do nome do campeonato se for campeonato
+    if (_selectedType == EventType.campeonato &&
+        _championshipNameController.text.trim().isEmpty) {
+      _showError('Informe o nome do campeonato');
+      return;
+    }
+
     setState(() => _isSaving = true);
+
     try {
       final supabase = Supabase.instance.client;
       final user = supabase.auth.currentUser;
@@ -433,10 +456,15 @@ class _AddEventPageState extends State<AddEventPage> {
         'state': _estadoController.text,
         'set_format': _setsFormat,
         'allow_checkin': _enableCheckIn,
-        'gender': _generoEvento, // ✅ ADICIONADO: Gênero do evento
+        'gender': _generoEvento,
+        // ✅ ALTERADO: championship_name (inglês) para corresponder ao banco
+        'championship_name': _selectedType == EventType.campeonato
+            ? _championshipNameController.text.trim()
+            : null,
       };
 
       dynamic response;
+
       if (_isEditing && _eventId != null) {
         response = await supabase
             .from('events')
@@ -502,13 +530,16 @@ class _AddEventPageState extends State<AddEventPage> {
       if (mounted) {
         setState(() => _isSaving = false);
       }
+
       if (!mounted) return;
 
       final totalConvocados =
           _selectedAthletes.length + _selectedTechnicians.length;
       _showSuccess(
           'Evento ${_isEditing ? 'atualizado' : 'salvo'} com sucesso!\n$totalConvocados convocados registrados${_enableCheckIn ? ' • Check-in habilitado' : ''}');
+
       await Future.delayed(const Duration(milliseconds: 500));
+
       if (mounted) {
         Navigator.of(context).pop(true);
       }
@@ -555,8 +586,13 @@ class _AddEventPageState extends State<AddEventPage> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   _buildEventTypeSelector(),
-                  const SizedBox(height: 24),
-                  _buildGenderSelector(), // ✅ NOVO: Seletor de gênero do evento
+                  const SizedBox(height: 16),
+                  // ✅ Campo para nome do campeonato/liga - abaixo do tipo de evento
+                  if (_selectedType == EventType.campeonato) ...[
+                    _buildChampionshipNameField(), // ✅ ALTERADO
+                    const SizedBox(height: 24),
+                  ],
+                  _buildGenderSelector(), // ✅ Seletor de gênero do evento
                   const SizedBox(height: 24),
                   if (_selectedType == EventType.amistoso ||
                       _selectedType == EventType.campeonato) ...[
@@ -629,7 +665,7 @@ class _AddEventPageState extends State<AddEventPage> {
     );
   }
 
-  // ✅ NOVO: Widget para selecionar gênero do evento
+  // ✅ Widget para selecionar gênero do evento
   Widget _buildGenderSelector() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -683,6 +719,47 @@ class _AddEventPageState extends State<AddEventPage> {
           ),
         ),
       ),
+    );
+  }
+
+  // ✅ ALTERADO: Campo para championship_name (inglês)
+  Widget _buildChampionshipNameField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Nome do Campeonato/Liga',
+          style: TextStyle(
+            color: Color(0xFF0A2463),
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF0A2463).withOpacity(0.3)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextFormField(
+            controller: _championshipNameController,
+            style: const TextStyle(color: Color(0xFF0A2463)),
+            decoration: const InputDecoration(
+              hintText: 'Ex: Liga de Jundiaí, Campeonato Paulista...',
+              hintStyle: TextStyle(color: Colors.grey),
+              border: InputBorder.none,
+              prefixIcon: Icon(Icons.emoji_events, color: Color(0xFFD4AF37)),
+            ),
+            onChanged: (value) {
+              setState(() {
+                _championshipName = value;
+              });
+            },
+          ),
+        ),
+      ],
     );
   }
 
