@@ -18,6 +18,9 @@ class _AgendaPageState extends State<AgendaPage> {
       {}; // {eventId: {'athletes': n, 'technicians': n}}
   Map<String, Map<String, int>> _checkinInfo =
       {}; // {eventId: {'checked_in': n, 'pending': n}}
+  // ✅ NOVO (cirúrgico): cache da view event_convocation_stats
+  // {eventId: {'total_convocados': n, 'total_aceitos': n, 'total_pendentes': n, 'total_recusados': n}}
+  Map<String, Map<String, int>> _convocationStats = {};
   bool _loading = true;
   String? _error;
   String _filtroSelecionado = 'Todos';
@@ -66,6 +69,10 @@ class _AgendaPageState extends State<AgendaPage> {
         _loading = false;
       });
 
+      // ✅ NOVO: pega stats em lote (evita zero por RLS e evita loops)
+      await _buscarConvocationStats();
+
+      // Mantemos suas funções, mas com correções internas
       await _buscarQuantidadeConvocados();
       await _buscarCheckinInfo();
     } catch (e) {
@@ -76,40 +83,77 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
-  // ✅ CORREÇÃO: Busca da tabela 'convocations' ao invés de 'checkins'
+  // ✅ NOVO (cirúrgico): busca a view uma vez e guarda em mapa
+  Future<void> _buscarConvocationStats() async {
+    try {
+      final ids =
+          _eventos.map((e) => e['id']?.toString()).whereType<String>().toList();
+
+      if (ids.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _convocationStats = {};
+          });
+        }
+        return;
+      }
+
+      final resp = await _supabase
+          .from('event_convocation_stats')
+          .select(
+              'event_id,total_convocados,total_aceitos,total_pendentes,total_recusados')
+          .inFilter('event_id', ids);
+
+      final map = <String, Map<String, int>>{};
+      for (final row in resp) {
+        final eventId = row['event_id']?.toString();
+        if (eventId == null) continue;
+        map[eventId] = {
+          'total_convocados': (row['total_convocados'] ?? 0) as int,
+          'total_aceitos': (row['total_aceitos'] ?? 0) as int,
+          'total_pendentes': (row['total_pendentes'] ?? 0) as int,
+          'total_recusados': (row['total_recusados'] ?? 0) as int,
+        };
+      }
+
+      if (mounted) {
+        setState(() {
+          _convocationStats = map;
+        });
+      }
+    } catch (e) {
+      // Não quebra a tela; apenas mantém vazio e segue
+      print('Erro ao buscar event_convocation_stats: $e');
+    }
+  }
+
+  // ✅ CORREÇÃO: total NÃO depende de profiles (RLS). Tentamos split via join se der.
   Future<void> _buscarQuantidadeConvocados() async {
     try {
       final quantidades = <String, Map<String, int>>{};
 
       for (var evento in _eventos) {
-        final eventId = evento['id'];
-        // ✅ CORREÇÃO: Busca na tabela convocations
+        final eventId = evento['id']?.toString();
+        if (eventId == null) continue;
+
+        // ✅ Busca convocations + tenta join do profiles(user_type)
         final convocationsResponse = await _supabase
             .from('convocations')
-            .select('user_id')
+            .select('user_id, profiles(user_type)')
             .eq('event_id', eventId);
 
+        // ✅ Total sempre correto (independe de profiles)
         int atletas = 0;
         int tecnicos = 0;
 
-        // Para cada convocation, busca o user_type no profiles
         for (var convocation in convocationsResponse) {
-          final userId = convocation['user_id'];
-          if (userId != null) {
-            final profileResponse = await _supabase
-                .from('profiles')
-                .select('user_type')
-                .eq('id', userId)
-                .single();
+          final profile = convocation['profiles'];
+          final userType = profile != null ? profile['user_type'] : null;
 
-            if (profileResponse != null) {
-              final userType = profileResponse['user_type'];
-              if (userType == 'athlete') {
-                atletas++;
-              } else if (userType == 'coach') {
-                tecnicos++;
-              }
-            }
+          if (userType == 'athlete') {
+            atletas++;
+          } else if (userType == 'coach') {
+            tecnicos++;
           }
         }
 
@@ -126,36 +170,25 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
-  // ✅ CORREÇÃO: Busca status das convocações da tabela 'convocations'
+  // ✅ CORREÇÃO: usa a VIEW (evita loops e evita "zerado")
   Future<void> _buscarCheckinInfo() async {
     try {
       final checkinData = <String, Map<String, int>>{};
 
       for (var evento in _eventos) {
-        final eventId = evento['id'];
+        final eventId = evento['id']?.toString();
+        if (eventId == null) continue;
+
         final allowCheckin = evento['allow_checkin'] ?? false;
+        if (!allowCheckin) continue;
 
-        if (allowCheckin) {
-          // ✅ CORREÇÃO: Busca na tabela convocations
-          final convocationsResponse = await _supabase
-              .from('convocations')
-              .select('status')
-              .eq('event_id', eventId);
+        final stats = _convocationStats[eventId];
+        if (stats == null) continue;
 
-          int checkedIn = 0;
-          int pending = 0;
+        final checkedIn = stats['total_aceitos'] ?? 0;
+        final pending = stats['total_pendentes'] ?? 0;
 
-          for (var convocation in convocationsResponse) {
-            final status = convocation['status'] ?? 'pending';
-            if (status == 'accepted') {
-              checkedIn++;
-            } else {
-              pending++;
-            }
-          }
-
-          checkinData[eventId] = {'checked_in': checkedIn, 'pending': pending};
-        }
+        checkinData[eventId] = {'checked_in': checkedIn, 'pending': pending};
       }
 
       if (mounted) {
@@ -240,15 +273,14 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
-  // ✅ NOVO: Retorna a cor de fundo do card baseada no gênero
   Color _getCorFundoCard(String genero) {
     final generoLower = genero.toLowerCase();
     if (generoLower == 'masculino') {
-      return const Color(0xFFE3F2FD); // Azul bem claro
+      return const Color(0xFFE3F2FD);
     } else if (generoLower == 'feminino') {
-      return const Color(0xFFF3E5F5); // Lilás bem claro
+      return const Color(0xFFF3E5F5);
     }
-    return Colors.white; // Padrão
+    return Colors.white;
   }
 
   void _navegarParaCadastroEvento() async {
@@ -256,7 +288,6 @@ class _AgendaPageState extends State<AgendaPage> {
       context,
       MaterialPageRoute(builder: (context) => const AddEventPage()),
     );
-
     if (result == true) {
       _refreshEventos();
     }
@@ -269,20 +300,19 @@ class _AgendaPageState extends State<AgendaPage> {
         builder: (context) => AddEventPage(evento: evento),
       ),
     );
-
     if (result == true) {
       _refreshEventos();
     }
   }
 
   Future<void> _mostrarCheckinDetalhes(Map<String, dynamic> evento) async {
-    final eventId = evento['id'];
+    final eventId = evento['id']?.toString();
+    if (eventId == null) return;
 
     try {
-      // ✅ CORREÇÃO: Busca na tabela convocations
       final convocationsResponse = await _supabase
           .from('convocations')
-          .select('user_id, status')
+          .select('user_id, status, justification')
           .eq('event_id', eventId);
 
       List<Map<String, dynamic>> participantes = [];
@@ -301,6 +331,7 @@ class _AgendaPageState extends State<AgendaPage> {
               'nome': profileResponse['full_name'] ?? 'Sem nome',
               'tipo': profileResponse['user_type'] ?? 'unknown',
               'status': convocation['status'] ?? 'pending',
+              'justification': convocation['justification'],
             });
           }
         }
@@ -375,10 +406,22 @@ class _AgendaPageState extends State<AgendaPage> {
                         child: Column(
                           children: [
                             ...participantes.map((participante) {
-                              final isAceitou =
-                                  participante['status'] == 'accepted';
+                              final status =
+                                  (participante['status'] ?? 'pending')
+                                      .toString();
+                              final isAceitou = status == 'accepted';
+                              final isRecusou = status == 'rejected';
                               final isAtleta =
                                   participante['tipo'] == 'athlete';
+
+                              final labelStatus = isAceitou
+                                  ? 'Aceitou'
+                                  : (isRecusou ? 'Recusou' : 'Pendente');
+                              final colorStatus = isAceitou
+                                  ? Colors.green[700]
+                                  : (isRecusou
+                                      ? Colors.red[700]
+                                      : Colors.grey[600]);
 
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 8),
@@ -386,57 +429,79 @@ class _AgendaPageState extends State<AgendaPage> {
                                 decoration: BoxDecoration(
                                   color: isAceitou
                                       ? Colors.green[50]
-                                      : Colors.grey[100],
+                                      : (isRecusou
+                                          ? Colors.red[50]
+                                          : Colors.grey[100]),
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
                                     color: isAceitou
                                         ? Colors.green[300]!
-                                        : Colors.grey[300]!,
+                                        : (isRecusou
+                                            ? Colors.red[300]!
+                                            : Colors.grey[300]!),
                                   ),
                                 ),
-                                child: Row(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Icon(
-                                      isAceitou
-                                          ? Icons.check_circle
-                                          : Icons.cancel,
-                                      color: isAceitou
-                                          ? Colors.green[700]
-                                          : Colors.grey[500],
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            participante['nome'],
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 14,
-                                            ),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          isAceitou
+                                              ? Icons.check_circle
+                                              : (isRecusou
+                                                  ? Icons.cancel
+                                                  : Icons.hourglass_empty),
+                                          color: colorStatus,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                participante['nome'],
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                              Text(
+                                                isAtleta ? 'Atleta' : 'Técnico',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[600],
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                          Text(
-                                            isAtleta ? 'Atleta' : 'Técnico',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey[600],
-                                            ),
+                                        ),
+                                        Text(
+                                          labelStatus,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: colorStatus,
+                                            fontWeight: FontWeight.w600,
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                      ],
                                     ),
-                                    Text(
-                                      isAceitou ? 'Aceitou' : 'Pendente',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: isAceitou
-                                            ? Colors.green[700]
-                                            : Colors.grey[600],
-                                        fontWeight: FontWeight.w500,
+                                    if (isRecusou &&
+                                        (participante['justification'] ?? '')
+                                            .toString()
+                                            .trim()
+                                            .isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Justificativa: ${participante['justification']}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.red[700],
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
-                                    ),
+                                    ],
                                   ],
                                 ),
                               );
@@ -791,8 +856,8 @@ class _AgendaPageState extends State<AgendaPage> {
                                           focusedBorder: OutlineInputBorder(
                                             borderRadius:
                                                 BorderRadius.circular(12),
-                                            borderSide: BorderSide(
-                                              color: const Color(0xFFD4AF37),
+                                            borderSide: const BorderSide(
+                                              color: Color(0xFFD4AF37),
                                               width: 2,
                                             ),
                                           ),
@@ -893,7 +958,6 @@ class _AgendaPageState extends State<AgendaPage> {
 
                             int olympusWins = 0;
                             int opponentWins = 0;
-
                             for (int i = 0; i < totalSets; i++) {
                               if (olympusSets[i] != null &&
                                   opponentSets[i] != null) {
@@ -1212,7 +1276,7 @@ class _AgendaPageState extends State<AgendaPage> {
                             const SizedBox(height: 16),
                             ElevatedButton(
                               onPressed: _buscarEventos,
-                              child: Text('Tentar Novamente'),
+                              child: const Text('Tentar Novamente'),
                             ),
                           ],
                         ),
@@ -1247,13 +1311,18 @@ class _AgendaPageState extends State<AgendaPage> {
                               itemCount: _eventosFiltrados.length,
                               itemBuilder: (context, index) {
                                 final evento = _eventosFiltrados[index];
-                                final eventId = evento['id'];
+                                final eventId = evento['id']?.toString() ?? '';
                                 final quantidades =
                                     _quantidadeConvocados[eventId] ??
                                         {'athletes': 0, 'technicians': 0};
-                                final totalConvocados =
-                                    quantidades['athletes']! +
-                                        quantidades['technicians']!;
+
+                                // ✅ CORREÇÃO PRINCIPAL: total vem da view (se existir), senão fallback
+                                final stats = _convocationStats[eventId];
+                                final totalConvocados = stats != null
+                                    ? (stats['total_convocados'] ?? 0)
+                                    : (quantidades['athletes']! +
+                                        quantidades['technicians']!);
+
                                 final checkinData = _checkinInfo[eventId];
                                 final allowCheckin =
                                     evento['allow_checkin'] ?? false;
@@ -1269,7 +1338,6 @@ class _AgendaPageState extends State<AgendaPage> {
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  // ✅ NOVO: Cor de fundo baseada no gênero
                                   color: _getCorFundoCard(genero),
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(12),
@@ -1310,7 +1378,6 @@ class _AgendaPageState extends State<AgendaPage> {
                                                 ),
                                               ),
                                               const Spacer(),
-                                              // ✅ NOVO: Badge de gênero
                                               if (genero.isNotEmpty)
                                                 Container(
                                                   padding: const EdgeInsets
@@ -1380,6 +1447,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                                       ],
                                                     ),
                                                   ));
+
                                                   if (eventType == 'amistoso' ||
                                                       eventType ==
                                                           'campeonato') {
@@ -1390,11 +1458,10 @@ class _AgendaPageState extends State<AgendaPage> {
                                                           Icon(
                                                             Icons.score,
                                                             size: 18,
-                                                            color: const Color(
+                                                            color: Color(
                                                                 0xFFD4AF37),
                                                           ),
-                                                          const SizedBox(
-                                                              width: 8),
+                                                          SizedBox(width: 8),
                                                           Text(hasPlacar
                                                               ? 'Editar placar'
                                                               : 'Inserir placar'),
@@ -1402,6 +1469,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                                       ),
                                                     ));
                                                   }
+
                                                   if (allowCheckin) {
                                                     items.add(PopupMenuItem(
                                                       value: 'checkin',
@@ -1413,14 +1481,14 @@ class _AgendaPageState extends State<AgendaPage> {
                                                             size: 18,
                                                             color: Colors.green,
                                                           ),
-                                                          const SizedBox(
-                                                              width: 8),
+                                                          SizedBox(width: 8),
                                                           Text(
                                                               'Ver convocados'),
                                                         ],
                                                       ),
                                                     ));
                                                   }
+
                                                   return items;
                                                 },
                                               ),
@@ -1469,17 +1537,16 @@ class _AgendaPageState extends State<AgendaPage> {
                                           ),
                                           Row(
                                             children: [
-                                              Icon(
+                                              const Icon(
                                                 Icons.people_outline,
                                                 size: 16,
-                                                color: const Color(0xFFD4AF37),
+                                                color: Color(0xFFD4AF37),
                                               ),
                                               const SizedBox(width: 8),
                                               Text(
                                                 '$totalConvocados convocad${totalConvocados == 1 ? 'o' : 'os'} (${quantidades['athletes']} atletas, ${quantidades['technicians']} técn${quantidades['technicians'] == 1 ? 'ico' : 'icos'})',
-                                                style: TextStyle(
-                                                  color:
-                                                      const Color(0xFF1E3A5F),
+                                                style: const TextStyle(
+                                                  color: Color(0xFF1E3A5F),
                                                   fontWeight: FontWeight.w600,
                                                   fontSize: 14,
                                                 ),
@@ -1784,7 +1851,7 @@ class _AgendaPageState extends State<AgendaPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: RoundedRectangleBorder(
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
@@ -1814,10 +1881,10 @@ class _AgendaPageState extends State<AgendaPage> {
                     const SizedBox(height: 24),
                     Text(
                       evento['event_name'] ?? 'Detalhes do Evento',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
-                        color: const Color(0xFF1E3A5F),
+                        color: Color(0xFF1E3A5F),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -1852,15 +1919,15 @@ class _AgendaPageState extends State<AgendaPage> {
                       ),
                     if (evento['score'] != null) ...[
                       const SizedBox(height: 8),
-                      _buildPlacarCard(evento, evento['id']),
+                      _buildPlacarCard(evento, evento['id'].toString()),
                     ],
                     if (evento['street'] != null) ...[
                       const Divider(),
-                      Text('Localização',
+                      const Text('Localização',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: const Color(0xFF1E3A5F),
+                            color: Color(0xFF1E3A5F),
                           )),
                       const SizedBox(height: 8),
                       _buildDetailRow(Icons.location_on, 'Endereço',
@@ -1917,10 +1984,10 @@ class _AgendaPageState extends State<AgendaPage> {
                 ),
                 Text(
                   value,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
-                    color: const Color(0xFF1E3A5F),
+                    color: Color(0xFF1E3A5F),
                   ),
                 ),
               ],

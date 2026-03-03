@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:typed_data';
 import '../services/auth_service.dart';
+import 'athlete_agenda_page.dart'; // ← NOVO IMPORT
 
 class AthleteDashboardPage extends StatefulWidget {
   const AthleteDashboardPage({super.key});
@@ -61,6 +62,16 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     ).then((_) => _loadProfile());
   }
 
+  // ← NOVO: Navegar para agenda do atleta
+  void _navigateToAgenda() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AthleteAgendaPage(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -110,6 +121,27 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 30),
+            // ← NOVO: Botão para acessar agenda
+            ElevatedButton.icon(
+              onPressed: _navigateToAgenda,
+              icon: const Icon(Icons.calendar_today, size: 24),
+              label: const Text(
+                'Minha Agenda',
+                style: TextStyle(fontSize: 18),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 16,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ],
@@ -676,7 +708,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
     }
   }
 
-  // ← CORREÇÃO: Calendário simplificado (sem locale)
   Future<void> _selectDate() async {
     final DateTime? picked = await showDatePicker(
       context: context,
