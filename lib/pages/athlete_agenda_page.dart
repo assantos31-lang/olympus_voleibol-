@@ -1,6 +1,10 @@
+import 'dart:convert';
+import 'dart:math' show sin, cos, sqrt, asin;
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AthleteAgendaPage extends StatefulWidget {
   const AthleteAgendaPage({Key? key}) : super(key: key);
@@ -13,14 +17,21 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
   List<Map<String, dynamic>> _eventos = [];
   List<Map<String, dynamic>> _eventosFiltrados = [];
-  // Mantemos o mapa de status caso precise acessar fora do objeto evento
   Map<String, Map<String, String>> _convocationStatus = {};
   bool _loading = true;
   String? _error;
   String _filtroMes = '';
-
-  // ✅ NOVO: filtro por tipo
   String _filtroTipo = 'todos';
+  // ✅ NOVO: Filtro por status da convocação
+  String _filtroStatus = 'todos';
+  // ✅ NOVO: Contadores de status
+  Map<String, int> _statusCounts = {
+    'accepted': 0,
+    'rejected': 0,
+    'pending': 0,
+  };
+  static const String _geocodeAccessKey = 'pk.5a7a05184e41c916429dceb50cf02718';
+  static const String _eventsEmbedFk = 'convocations_event_id_fkey';
 
   @override
   void initState() {
@@ -34,47 +45,137 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     _filtroMes = '${now.month.toString().padLeft(2, '0')}/${now.year}';
   }
 
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: Colors.green.shade700,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  double _calcularDistanciaMetros(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const double raioTerra = 6371000;
+    final dLat = _degToRad(lat2 - lat1);
+    final dLon = _degToRad(lon2 - lon1);
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_degToRad(lat1)) *
+            cos(_degToRad(lat2)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+    final c = 2 * asin(sqrt(a));
+    return raioTerra * c;
+  }
+
+  double _degToRad(double deg) {
+    return deg * (3.141592653589793 / 180.0);
+  }
+
+  Future<Map<String, String>> _buscarCheckinsDoUsuario(
+    String userId,
+    List<String> eventIds,
+  ) async {
+    if (eventIds.isEmpty) return {};
+    final rows = await _supabase
+        .from('checkins')
+        .select('event_id, check_in_status')
+        .eq('user_id', userId)
+        .inFilter('event_id', eventIds);
+    final map = <String, String>{};
+    for (final r in rows) {
+      final eid = (r['event_id'] ?? '').toString();
+      if (eid.isEmpty) continue;
+      map[eid] = (r['check_in_status'] ?? '').toString();
+    }
+    return map;
+  }
+
+  // ✅ NOVO: Calcular contadores de status
+  void _calcularStatusCounts() {
+    final counts = {'accepted': 0, 'rejected': 0, 'pending': 0};
+    for (var evento in _eventos) {
+      final status =
+          (evento['convocation_status'] ?? 'pending').toString().toLowerCase();
+      if (counts.containsKey(status)) {
+        counts[status] = counts[status]! + 1;
+      }
+    }
+    setState(() {
+      _statusCounts = counts;
+    });
+  }
+
   Future<void> _buscarEventos() async {
     setState(() {
       _loading = true;
       _error = null;
     });
-
     try {
       final user = _supabase.auth.currentUser;
       if (user == null) {
+        if (!mounted) return;
         setState(() {
           _error = 'Usuário não autenticado';
           _loading = false;
         });
         return;
       }
-
-      print('🔍 User ID: ${user.id}');
-
-      // ✅ Ajuste mínimo: incluir championship_name e endereço no select
       final response = await _supabase.from('convocations').select('''
-            status,
-            events (
-              id,
-              event_name,
-              event_type,
-              event_date,
-              event_time,
-              gender,
-              championship_name,
-              street,
-              street_number,
-              neighborhood,
-              city,
-              state
-            )
-          ''').eq('user_id', user.id);
-
-      print('📋 Resposta da Query: ${response.length}');
-      print('📋 Dados: $response');
+event_id,
+status,
+events!$_eventsEmbedFk (
+id,
+event_name,
+event_type,
+event_date,
+event_time,
+gender,
+championship_name,
+street,
+street_number,
+neighborhood,
+city,
+state,
+cep,
+latitude,
+longitude
+)
+''').eq('user_id', user.id);
 
       if (response.isEmpty) {
+        if (!mounted) return;
         setState(() {
           _eventos = [];
           _eventosFiltrados = [];
@@ -83,42 +184,73 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         return;
       }
 
-      // Processar os dados do JOIN
       final eventosList = <Map<String, dynamic>>[];
       final statusMap = <String, Map<String, String>>{};
-
-      for (var item in response) {
+      for (final item in response) {
         final eventData = item['events'];
-        final status = item['status'] ?? 'pending';
-
+        final status =
+            (item['status'] ?? 'pending').toString().toLowerCase().trim();
         if (eventData != null) {
-          eventData['convocation_status'] = status;
-          eventosList.add(eventData);
-
-          statusMap[eventData['id']] = {'status': status};
+          final mapEvento = Map<String, dynamic>.from(eventData);
+          final eid = (mapEvento['id'] ?? '').toString();
+          if (eid.isEmpty) continue;
+          mapEvento['convocation_status'] = status;
+          eventosList.add(mapEvento);
+          statusMap[eid] = {'status': status};
         }
       }
 
-      // Ordenar por data e hora
+      // ✅ AUTO-REJECT: Verifica e atualiza pendentes vencidos
+      final idsParaAtualizar = <String>[];
+      for (final evento in eventosList) {
+        final status = (evento['convocation_status'] ?? 'pending')
+            .toString()
+            .toLowerCase();
+        if (status == 'pending') {
+          if (!_podeEditar(evento)) {
+            final eid = evento['id'].toString();
+            evento['convocation_status'] = 'rejected';
+            statusMap[eid] = {'status': 'rejected'};
+            idsParaAtualizar.add(eid);
+          }
+        }
+      }
+      if (idsParaAtualizar.isNotEmpty) {
+        await Future.wait(idsParaAtualizar.map((eid) => _supabase
+            .from('convocations')
+            .update({'status': 'rejected', 'justification': 'Prazo expirado'})
+            .eq('event_id', eid)
+            .eq('user_id', user.id)));
+      }
+
+      final eventIds = eventosList.map((e) => e['id'].toString()).toList();
+      final checkinMap = await _buscarCheckinsDoUsuario(user.id, eventIds);
+      for (final e in eventosList) {
+        final id = e['id'].toString();
+        e['check_in_status'] = checkinMap[id];
+      }
       eventosList.sort((a, b) {
-        final dateA = a['event_date'] ?? '';
-        final dateB = b['event_date'] ?? '';
-        final timeA = a['event_time'] ?? '';
-        final timeB = b['event_time'] ?? '';
+        final dateA = (a['event_date'] ?? '').toString();
+        final dateB = (b['event_date'] ?? '').toString();
+        final timeA = (a['event_time'] ?? '').toString();
+        final timeB = (b['event_time'] ?? '').toString();
         final compare = dateA.compareTo(dateB);
         if (compare != 0) return compare;
         return timeA.compareTo(timeB);
       });
-
+      if (!mounted) return;
       setState(() {
         _eventos = eventosList;
         _convocationStatus = statusMap;
-        _aplicarFiltros(); // ✅ sem loop (não chama setState)
+        _aplicarFiltros();
         _loading = false;
       });
+      // ✅ NOVO: Calcular contadores após carregar eventos
+      _calcularStatusCounts();
     } catch (e, stackTrace) {
       print('❌ Erro: $e');
       print('❌ Stack: $stackTrace');
+      if (!mounted) return;
       setState(() {
         _error = 'Erro ao carregar eventos: $e';
         _loading = false;
@@ -126,22 +258,18 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     }
   }
 
-  // ✅ Correção do loop: aqui NÃO deve ter setState
   void _aplicarFiltros() {
-    List<Map<String, dynamic>> eventosFiltrados = _eventos;
-
+    var eventosFiltrados = _eventos;
     if (_filtroMes.isNotEmpty) {
       eventosFiltrados = eventosFiltrados.where((evento) {
-        final dataEvento = evento['event_date'] ?? '';
-        if (dataEvento.toString().length >= 7) {
-          final mesAnoEvento = dataEvento.toString().substring(3);
+        final dataEvento = (evento['event_date'] ?? '').toString();
+        if (dataEvento.length >= 7) {
+          final mesAnoEvento = dataEvento.substring(3);
           return mesAnoEvento == _filtroMes;
         }
         return false;
       }).toList();
     }
-
-    // ✅ NOVO: filtro por tipo
     if (_filtroTipo != 'todos') {
       eventosFiltrados = eventosFiltrados.where((evento) {
         final tipo =
@@ -149,7 +277,16 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         return tipo == _filtroTipo;
       }).toList();
     }
-
+    // ✅ NOVO: Filtro por status da convocação
+    if (_filtroStatus != 'todos') {
+      eventosFiltrados = eventosFiltrados.where((evento) {
+        final status = (evento['convocation_status'] ?? 'pending')
+            .toString()
+            .toLowerCase()
+            .trim();
+        return status == _filtroStatus;
+      }).toList();
+    }
     _eventosFiltrados = eventosFiltrados;
   }
 
@@ -162,11 +299,14 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       final parts = dataStr.split('/');
       if (parts.length == 3) {
         final date = DateTime(
-            int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
+          int.parse(parts[2]),
+          int.parse(parts[1]),
+          int.parse(parts[0]),
+        );
         return DateFormat('dd/MM/yyyy (EEEE)', 'pt_BR').format(date);
       }
       return dataStr;
-    } catch (e) {
+    } catch (_) {
       return dataStr;
     }
   }
@@ -188,13 +328,11 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     }
   }
 
-  // ✅ NOVO: cores do CARD por tipo
   Color _getCorFundoCard(String genero, String tipo) {
     final t = tipo.toLowerCase().trim();
-    if (t == 'treino') return const Color(0xFFE3F2FD); // azul claro
-    if (t == 'amistoso') return const Color(0xFFE8F5E9); // verde claro
-    if (t == 'campeonato') return const Color(0xFFFFF8E1); // âmbar claro
-
+    if (t == 'treino') return const Color(0xFFE3F2FD);
+    if (t == 'amistoso') return const Color(0xFFE8F5E9);
+    if (t == 'campeonato') return const Color(0xFFFFF8E1);
     final generoLower = genero.toLowerCase();
     if (generoLower == 'masculino') return const Color(0xFFE3F2FD);
     if (generoLower == 'feminino') return const Color(0xFFF3E5F5);
@@ -227,14 +365,11 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     final tipo = (evento['event_type'] ?? '').toString().toLowerCase().trim();
     final dataStr = (evento['event_date'] ?? '').toString().trim();
     final horaStr = (evento['event_time'] ?? '').toString().trim();
-
     if (tipo.isEmpty || dataStr.isEmpty || horaStr.isEmpty) return false;
-
     try {
       final dp = dataStr.split('/');
       final tp = horaStr.split(':');
       if (dp.length != 3 || tp.length < 2) return false;
-
       final eventDateTime = DateTime(
         int.parse(dp[2]),
         int.parse(dp[1]),
@@ -242,10 +377,8 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         int.parse(tp[0]),
         int.parse(tp[1]),
       );
-
       final now = DateTime.now();
       if (eventDateTime.isBefore(now)) return false;
-
       int horasLimite;
       switch (tipo) {
         case 'treino':
@@ -260,9 +393,8 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         default:
           horasLimite = 3;
       }
-
       return eventDateTime.difference(now).inMinutes >= (horasLimite * 60);
-    } catch (e) {
+    } catch (_) {
       return false;
     }
   }
@@ -281,7 +413,59 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     }
   }
 
-  // ✅ NOVO: dialog para editar (aceitar/recusar novamente)
+  Map<String, dynamic> _verificarJanelaCheckIn(Map<String, dynamic> evento) {
+    final dataStr = (evento['event_date'] ?? '').toString().trim();
+    final horaStr = (evento['event_time'] ?? '').toString().trim();
+    if (dataStr.isEmpty || horaStr.isEmpty) {
+      return {
+        'disponivel': false,
+        'mensagem': 'Horário do evento não definido'
+      };
+    }
+    try {
+      final dp = dataStr.split('/');
+      final tp = horaStr.split(':');
+      if (dp.length != 3 || tp.length < 2) {
+        return {
+          'disponivel': false,
+          'mensagem': 'Formato de data/hora inválido'
+        };
+      }
+      final eventDateTime = DateTime(
+        int.parse(dp[2]),
+        int.parse(dp[1]),
+        int.parse(dp[0]),
+        int.parse(tp[0]),
+        int.parse(tp[1]),
+      );
+      final now = DateTime.now();
+      final inicioJanela = eventDateTime.subtract(const Duration(minutes: 10));
+      final fimJanela = eventDateTime.add(const Duration(minutes: 30));
+      if (now.isBefore(inicioJanela)) {
+        final minutosRestantes = inicioJanela.difference(now).inMinutes;
+        return {
+          'disponivel': false,
+          'mensagem': 'Check-in disponível em $minutosRestantes min',
+          'bloqueado': true,
+        };
+      }
+      if (now.isAfter(fimJanela)) {
+        return {
+          'disponivel': false,
+          'mensagem': 'Check-in encerrado',
+          'bloqueado': true,
+        };
+      }
+      return {
+        'disponivel': true,
+        'mensagem': 'Check-in disponível',
+        'bloqueado': false,
+      };
+    } catch (_) {
+      return {'disponivel': false, 'mensagem': 'Erro ao verificar horário'};
+    }
+  }
+
   Future<void> _editarResposta(Map<String, dynamic> evento) async {
     final escolha = await showDialog<String>(
       context: context,
@@ -304,9 +488,7 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         ],
       ),
     );
-
     if (escolha == null) return;
-
     if (escolha == 'accepted') {
       await _responderConvocacao(evento, true);
     } else if (escolha == 'rejected') {
@@ -315,32 +497,24 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   }
 
   Future<void> _responderConvocacao(
-      Map<String, dynamic> evento, bool aceitar) async {
+    Map<String, dynamic> evento,
+    bool aceitar,
+  ) async {
     try {
       final user = _supabase.auth.currentUser;
       if (user == null) return;
-
       final eventId = evento['id'];
-
       if (aceitar) {
         await _supabase
             .from('convocations')
             .update({'status': 'accepted', 'justification': null})
             .eq('event_id', eventId)
             .eq('user_id', user.id);
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Convocação aceita!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          _refreshEventos();
-        }
+        if (!mounted) return;
+        _showSuccess('Convocação aceita!');
+        _refreshEventos();
         return;
       }
-
       final controller = TextEditingController();
       final justification = await showDialog<String>(
         context: context,
@@ -370,63 +544,120 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
           ],
         ),
       );
-
       if (justification == null) return;
-
       await _supabase
           .from('convocations')
           .update({'status': 'rejected', 'justification': justification})
           .eq('event_id', eventId)
           .eq('user_id', user.id);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('❌ Convocação recusada'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        _refreshEventos();
-      }
+      if (!mounted) return;
+      _showError('Convocação recusada');
+      _refreshEventos();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      _showError('Erro: $e');
     }
   }
 
-  List<String> _getMesesDisponiveis() {
-    final now = DateTime.now();
-    final anoAtual = now.year;
-    final meses = <String>[];
-    for (int i = 1; i <= 12; i++) {
-      meses.add('${i.toString().padLeft(2, '0')}/$anoAtual');
+  Future<Map<String, double>> _geocodeCep(String cep) async {
+    final cepLimpo = cep.replaceAll(RegExp(r'[^0-9]'), '');
+    if (cepLimpo.isEmpty) throw Exception('CEP inválido');
+    final uri = Uri.parse('https://api.positionstack.com/v1/forward'
+        '?access_key=$_geocodeAccessKey'
+        '&query=$cepLimpo'
+        '&country=BR'
+        '&limit=1');
+    final resp = await http.get(uri);
+    if (resp.statusCode != 200) {
+      throw Exception('Erro geocode (${resp.statusCode})');
     }
-    return meses;
+    final body = json.decode(resp.body) as Map<String, dynamic>;
+    final data = (body['data'] as List?) ?? const [];
+    if (data.isEmpty) throw Exception('CEP não encontrado no geocode');
+    final first = data.first as Map<String, dynamic>;
+    final lat = (first['latitude'] as num?)?.toDouble();
+    final lng = (first['longitude'] as num?)?.toDouble();
+    if (lat == null || lng == null) throw Exception('Geocode inválido');
+    return {'lat': lat, 'lng': lng};
   }
 
-  String _formatarNomeMes(String mesAno) {
+  Future<void> _fazerCheckIn(Map<String, dynamic> evento) async {
     try {
-      final parts = mesAno.split('/');
-      if (parts.length == 2) {
-        final mes = int.parse(parts[0]);
-        final ano = parts[1];
-        final mesNome =
-            DateFormat('MMMM', 'pt_BR').format(DateTime(int.parse(ano), mes));
-        return '${mesNome[0].toUpperCase()}${mesNome.substring(1)} $ano';
+      final user = _supabase.auth.currentUser;
+      if (user == null) {
+        _showError('Usuário não autenticado');
+        return;
       }
-      return mesAno;
+      final eventLat = (evento['latitude'] as num?)?.toDouble();
+      final eventLng = (evento['longitude'] as num?)?.toDouble();
+      print('📍 Coordenadas do evento: lat=$eventLat, lng=$eventLng');
+      if (eventLat == null || eventLng == null) {
+        _showError('⚠️ Evento sem coordenadas! '
+            'O administrador precisa geocodificar o endereço ao criar o evento.');
+        return;
+      }
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) {
+        _showError('Ative o GPS para fazer check-in.');
+        return;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever ||
+          permission == LocationPermission.denied) {
+        _showError('Permissão de localização negada.');
+        return;
+      }
+      if (!mounted) return;
+      _showSuccess('📡 Obtendo sua localização...');
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10),
+      );
+      print('📍 Sua posição: lat=${pos.latitude}, lng=${pos.longitude}');
+      print('📍 Precisão do GPS: ${pos.accuracy}m');
+      final distancia = _calcularDistanciaMetros(
+        pos.latitude,
+        pos.longitude,
+        eventLat,
+        eventLng,
+      );
+      print('📍 Distância calculada: ${distancia.toStringAsFixed(0)}m');
+      const raioMaximo = 200.0;
+      if (distancia > raioMaximo) {
+        _showError('❌ Você está muito longe do local! '
+            'Distância: ${distancia.toStringAsFixed(0)}m '
+            'Máximo permitido: ${raioMaximo.toStringAsFixed(0)}m '
+            'Aproxime-se mais do local do evento.');
+        return;
+      }
+      print('✅ Dentro do raio de ${raioMaximo}m. Chamando stored procedure...');
+      final res = await _supabase.rpc('do_checkin', params: {
+        'p_event_id': evento['id'],
+        'p_event_lat': eventLng,
+        'p_event_lng': eventLat,
+        'p_check_lat': pos.longitude,
+        'p_check_lng': pos.latitude,
+      });
+      final ok = res?['ok'] == true;
+      final st = (res?['status'] ?? '').toString();
+      print('📍 Resultado do check-in: ok=$ok, status=$st');
+      if (!mounted) return;
+      if (ok) {
+        _showSuccess('✅ Check-in confirmado com sucesso!');
+        await _refreshEventos();
+      } else {
+        _showError('❌ Check-in não permitido: $st');
+      }
     } catch (e) {
-      return mesAno;
+      print('❌ Erro no check-in: $e');
+      if (!mounted) return;
+      _showError('Erro no check-in: $e');
     }
   }
 
-  // ✅ NOVO: UI de filtros por tipo (Todos, Treino, Amistoso, Campeonatos)
   Widget _buildFiltroTipoButtons() {
     Widget chip(String label, String value) {
       final selected = _filtroTipo == value;
@@ -455,6 +686,141 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         ],
       ),
     );
+  }
+
+  // ✅ NOVO: Widget para filtro de status com marcador e BADGES
+  Widget _buildFiltroStatusButtons() {
+    Widget chip(String label, String value, Color badgeColor) {
+      final selected = _filtroStatus == value;
+      final count = _statusCounts[value] ?? 0;
+      Color chipColor;
+      switch (value) {
+        case 'accepted':
+          chipColor = Colors.green;
+          break;
+        case 'rejected':
+          chipColor = Colors.red;
+          break;
+        case 'pending':
+          chipColor = Colors.orange;
+          break;
+        default:
+          chipColor = Colors.blue;
+      }
+      return ChoiceChip(
+        label: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label),
+            if (count > 0) ...[
+              const SizedBox(width: 6),
+              // ✅ BADGE estilo imagem
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: badgeColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  count.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        selected: selected,
+        selectedColor: chipColor.withOpacity(0.2),
+        onSelected: (_) {
+          setState(() {
+            _filtroStatus = value;
+            _aplicarFiltros();
+          });
+        },
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ✅ MARCADOR/TÍTULO
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              'Status da Convocação',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1E3A5F),
+              ),
+            ),
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              chip('Todos', 'todos', Colors.grey),
+              chip('Aceitou', 'accepted', Colors.green),
+              chip('Recusou', 'rejected', Colors.red),
+              chip('Pendentes', 'pending', Colors.orange),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<String> _getMesesDisponiveis() {
+    final meses = <String>{};
+    for (final e in _eventos) {
+      final data = (e['event_date'] ?? '').toString();
+      if (data.length >= 7) meses.add(data.substring(3));
+    }
+    final list = meses.toList();
+    list.sort((a, b) {
+      final ap = a.split('/');
+      final bp = b.split('/');
+      if (ap.length != 2 || bp.length != 2) return a.compareTo(b);
+      final ay = int.tryParse(ap[1]) ?? 0;
+      final by = int.tryParse(bp[1]) ?? 0;
+      if (ay != by) return ay.compareTo(by);
+      final am = int.tryParse(ap[0]) ?? 0;
+      final bm = int.tryParse(bp[0]) ?? 0;
+      return am.compareTo(bm);
+    });
+    return list.isEmpty ? <String>[_filtroMes] : list;
+  }
+
+  String _formatarNomeMes(String mesAno) {
+    final p = mesAno.split('/');
+    if (p.length != 2) return mesAno;
+    final m = int.tryParse(p[0]) ?? 1;
+    final y = int.tryParse(p[1]) ?? 2000;
+    const nomes = [
+      'Janeiro',
+      'Fevereiro',
+      'Março',
+      'Abril',
+      'Maio',
+      'Junho',
+      'Julho',
+      'Agosto',
+      'Setembro',
+      'Outubro',
+      'Novembro',
+      'Dezembro',
+    ];
+    final nome = (m >= 1 && m <= 12) ? nomes[m - 1] : 'Mês';
+    return '$nome/$y';
   }
 
   @override
@@ -496,8 +862,10 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                     ),
                     child: DropdownButton<String>(
                       value: _filtroMes,
-                      hint: Text('Mês',
-                          style: TextStyle(color: Colors.grey[600])),
+                      hint: Text(
+                        'Mês',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
                       isExpanded: true,
                       underline: const SizedBox(),
                       items: _getMesesDisponiveis().map((mes) {
@@ -530,10 +898,9 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
               ],
             ),
           ),
-
-          // ✅ NOVO: botões de filtro por tipo
           _buildFiltroTipoButtons(),
-
+          // ✅ NOVO: Adicionado filtro de status com marcador e badges
+          _buildFiltroStatusButtons(),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -545,7 +912,10 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                             Icon(Icons.error_outline,
                                 size: 48, color: Colors.red[300]),
                             const SizedBox(height: 16),
-                            Text(_error!, style: TextStyle(color: Colors.red)),
+                            Text(
+                              _error!,
+                              style: const TextStyle(color: Colors.red),
+                            ),
                             const SizedBox(height: 16),
                             ElevatedButton(
                               onPressed: _buscarEventos,
@@ -579,30 +949,25 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                               itemCount: _eventosFiltrados.length,
                               itemBuilder: (context, index) {
                                 final evento = _eventosFiltrados[index];
-                                final eventId = evento['id'];
-
+                                final eventId = evento['id'].toString();
                                 final statusData = _convocationStatus[eventId];
-                                final status = statusData?['status'] ??
-                                    evento['convocation_status'] ??
-                                    'pending';
-
+                                final status = (statusData?['status'] ??
+                                        evento['convocation_status'] ??
+                                        'pending')
+                                    .toString()
+                                    .toLowerCase()
+                                    .trim();
                                 final eventType =
                                     (evento['event_type'] ?? '').toString();
                                 final corTipo = _getCorTipoEvento(eventType);
                                 final genero =
                                     (evento['gender'] ?? '').toString();
-
-                                // ✅ prazo + bloqueio
                                 final podeEditar = _podeEditar(evento);
                                 final prazoInfo = _getPrazoInfo(evento);
-
-                                // ✅ NOVO: campeonato
                                 final championshipName =
                                     (evento['championship_name'] ?? '')
                                         .toString()
                                         .trim();
-
-                                // ✅ NOVO: endereço completo
                                 String? enderecoCompleto;
                                 final street =
                                     (evento['street'] ?? '').toString().trim();
@@ -617,14 +982,19 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                       (evento['city'] ?? '').toString().trim();
                                   final estado =
                                       (evento['state'] ?? '').toString().trim();
-
                                   enderecoCompleto = '$street'
                                       '${numero.isNotEmpty ? ', $numero' : ''}'
                                       '${bairro.isNotEmpty ? ' - $bairro' : ''}'
                                       '${cidade.isNotEmpty ? ' - $cidade' : ''}'
                                       '${estado.isNotEmpty ? '/$estado' : ''}';
                                 }
-
+                                final checkinStatus =
+                                    (evento['check_in_status'] ?? '')
+                                        .toString()
+                                        .trim();
+                                final jaFezCheckin = checkinStatus.isNotEmpty;
+                                final janelaCheckIn =
+                                    _verificarJanelaCheckIn(evento);
                                 return Card(
                                   margin: const EdgeInsets.only(bottom: 12),
                                   elevation: 2,
@@ -703,8 +1073,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
-
-                                        // ✅ NOVO: nome do campeonato
                                         if (eventType.toLowerCase().trim() ==
                                                 'campeonato' &&
                                             championshipName.isNotEmpty) ...[
@@ -728,20 +1096,18 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                             ],
                                           ),
                                         ],
-
                                         const SizedBox(height: 8),
                                         Row(
                                           children: [
-                                            Icon(
-                                              Icons.calendar_today,
-                                              size: 16,
-                                              color: Colors.grey[600],
-                                            ),
+                                            Icon(Icons.calendar_today,
+                                                size: 16,
+                                                color: Colors.grey[600]),
                                             const SizedBox(width: 8),
                                             Text(
                                               _formatarData(
-                                                  (evento['event_date'] ?? '')
-                                                      .toString()),
+                                                (evento['event_date'] ?? '')
+                                                    .toString(),
+                                              ),
                                               style: TextStyle(
                                                   color: Colors.grey[700]),
                                             ),
@@ -750,11 +1116,9 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                         const SizedBox(height: 4),
                                         Row(
                                           children: [
-                                            Icon(
-                                              Icons.access_time,
-                                              size: 16,
-                                              color: Colors.grey[600],
-                                            ),
+                                            Icon(Icons.access_time,
+                                                size: 16,
+                                                color: Colors.grey[600]),
                                             const SizedBox(width: 8),
                                             Text(
                                               (evento['event_time'] ?? '')
@@ -764,18 +1128,14 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                             ),
                                           ],
                                         ),
-
-                                        // ✅ NOVO: endereço
                                         if (enderecoCompleto != null &&
                                             enderecoCompleto.isNotEmpty) ...[
                                           const SizedBox(height: 4),
                                           Row(
                                             children: [
-                                              Icon(
-                                                Icons.location_on,
-                                                size: 16,
-                                                color: Colors.grey[600],
-                                              ),
+                                              Icon(Icons.location_on,
+                                                  size: 16,
+                                                  color: Colors.grey[600]),
                                               const SizedBox(width: 8),
                                               Expanded(
                                                 child: Text(
@@ -792,23 +1152,18 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                             ],
                                           ),
                                         ],
-
                                         const SizedBox(height: 12),
-
-                                        // ✅ texto informativo
                                         if (prazoInfo.isNotEmpty) ...[
                                           Text(
                                             prazoInfo,
                                             style: TextStyle(
                                               fontSize: 11,
-                                              color: Colors.grey[600],
+                                              color: Colors.red,
                                               fontStyle: FontStyle.italic,
                                             ),
                                           ),
                                           const SizedBox(height: 8),
                                         ],
-
-                                        // ✅ PENDENTE -> Aceitar/Recusar (bloqueia após prazo)
                                         if (status == 'pending')
                                           Row(
                                             children: [
@@ -853,8 +1208,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                               ),
                                             ],
                                           ),
-
-                                        // ✅ EDITAR -> sempre aparece quando já respondeu (habilita/desabilita por prazo)
                                         if (status != 'pending') ...[
                                           const SizedBox(height: 8),
                                           SizedBox(
@@ -867,13 +1220,106 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                               icon: const Icon(Icons.edit),
                                               label:
                                                   const Text('Editar resposta'),
-                                              // ✅ Botão editar com cor diferente
                                               style: ElevatedButton.styleFrom(
                                                 backgroundColor: podeEditar
                                                     ? Colors.deepPurple
                                                     : Colors.grey,
                                                 foregroundColor: Colors.white,
                                               ),
+                                            ),
+                                          ),
+                                        ],
+                                        const SizedBox(height: 10),
+                                        if (jaFezCheckin)
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                checkinStatus == 'ok'
+                                                    ? Icons.verified
+                                                    : Icons.error,
+                                                color: checkinStatus == 'ok'
+                                                    ? Colors.green
+                                                    : Colors.red,
+                                                size: 18,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                'Check-in: $checkinStatus',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: checkinStatus == 'ok'
+                                                      ? Colors.green
+                                                      : Colors.red,
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        else
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: ElevatedButton.icon(
+                                              onPressed: status == 'accepted' &&
+                                                      janelaCheckIn[
+                                                              'disponivel'] ==
+                                                          true
+                                                  ? () => _fazerCheckIn(evento)
+                                                  : null,
+                                              icon:
+                                                  const Icon(Icons.my_location),
+                                              label: Text(
+                                                status == 'accepted'
+                                                    ? (janelaCheckIn[
+                                                                'disponivel'] ==
+                                                            true
+                                                        ? 'Fazer Check-in'
+                                                        : janelaCheckIn[
+                                                            'mensagem'])
+                                                    : 'Fazer Check-in (aceite a convocação)',
+                                              ),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: status ==
+                                                            'accepted' &&
+                                                        janelaCheckIn[
+                                                                'disponivel'] ==
+                                                            true
+                                                    ? Colors.green
+                                                    : Colors.grey,
+                                                foregroundColor: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        if (status == 'accepted' &&
+                                            !jaFezCheckin) ...[
+                                          const SizedBox(height: 8),
+                                          Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: Colors.red[50],
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                  color: Colors.red[200]!),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.info_outline,
+                                                  size: 16,
+                                                  color: Colors.red[700],
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    '📍 Check-in: raio de 200m | Disponível 10 min antes até 30 min após o evento',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: Colors.red[900],
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ],

@@ -33,8 +33,7 @@ class _AddEventPageState extends State<AddEventPage> {
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
   final _opponentController = TextEditingController();
-  final _championshipNameController =
-      TextEditingController(); // ✅ ALTERADO: championship_name (inglês)
+  final _championshipNameController = TextEditingController();
   final _cepController = TextEditingController();
   final _ruaController = TextEditingController();
   final _numeroController = TextEditingController();
@@ -42,11 +41,11 @@ class _AddEventPageState extends State<AddEventPage> {
   final _cidadeController = TextEditingController();
   final _estadoController = TextEditingController();
 
-  String _filtroGeneroAtleta = 'Todos'; // Filtro para atletas
-  String _generoEvento = 'masculino'; // ✅ Gênero do evento
+  String _filtroGeneroAtleta = 'Todos';
+  String _generoEvento = 'masculino';
   String _filtroPessoa = 'Atleta';
   String _setsFormat = '1 Set';
-  String _championshipName = ''; // ✅ ALTERADO: championship_name (inglês)
+  String _championshipName = '';
 
   final List<String> _selectedAthletes = [];
   final List<String> _selectedTechnicians = [];
@@ -80,10 +79,12 @@ class _AddEventPageState extends State<AddEventPage> {
         } else if (eventType == 'campeonato') {
           _selectedType = EventType.campeonato;
         }
+
         final eventName = widget.evento!['event_name'] ?? '';
         if (eventName.contains('Olympus VS ')) {
           _opponentController.text = eventName.replaceFirst('Olympus VS ', '');
         }
+
         _dateController.text = widget.evento!['event_date'] ?? '';
         _timeController.text = widget.evento!['event_time'] ?? '';
         _setsFormat = widget.evento!['set_format'] ?? '1 Set';
@@ -94,12 +95,12 @@ class _AddEventPageState extends State<AddEventPage> {
         _cidadeController.text = widget.evento!['city'] ?? '';
         _estadoController.text = widget.evento!['state'] ?? '';
         _enableCheckIn = widget.evento!['allow_checkin'] ?? false;
-        // ✅ Carrega gênero do evento
+
         _generoEvento = widget.evento!['gender'] ?? 'masculino';
-        // ✅ ALTERADO: Carrega championship_name (inglês)
         _championshipName = widget.evento!['championship_name'] ?? '';
         _championshipNameController.text = _championshipName;
       });
+
       await Future.delayed(const Duration(milliseconds: 500));
       _loadConvocados();
     }
@@ -107,6 +108,7 @@ class _AddEventPageState extends State<AddEventPage> {
 
   Future<void> _loadConvocados() async {
     if (_eventId == null) return;
+
     try {
       final supabase = Supabase.instance.client;
       final convocationsResponse = await supabase
@@ -126,6 +128,7 @@ class _AddEventPageState extends State<AddEventPage> {
           if (profileResponse != null) {
             final fullName = profileResponse['full_name'] ?? '';
             final userType = profileResponse['user_type'] ?? '';
+
             if (userType == 'athlete') {
               if (!_selectedAthletes.contains(fullName)) {
                 setState(() {
@@ -150,10 +153,12 @@ class _AddEventPageState extends State<AddEventPage> {
   Future<void> _fetchProfilesFromSupabase() async {
     try {
       final supabase = Supabase.instance.client;
+
       final athletesResponse = await supabase
           .from('profiles')
           .select('id, full_name, user_type')
           .eq('user_type', 'athlete');
+
       final coachesResponse = await supabase
           .from('profiles')
           .select('id, full_name, user_type')
@@ -224,7 +229,7 @@ class _AddEventPageState extends State<AddEventPage> {
     _dateController.dispose();
     _timeController.dispose();
     _opponentController.dispose();
-    _championshipNameController.dispose(); // ✅ ALTERADO
+    _championshipNameController.dispose();
     _cepController.dispose();
     _ruaController.dispose();
     _numeroController.dispose();
@@ -282,6 +287,70 @@ class _AddEventPageState extends State<AddEventPage> {
         setState(() => _isSearchingCep = false);
       }
       _showError('Erro ao buscar CEP. Verifique sua conexão com a internet.');
+    }
+  }
+
+  // ✅ CORREÇÃO: Geocodificação com tratamento de erro robusto
+  Future<Map<String, double>?> _geocodeAddress() async {
+    try {
+      final address = [
+        _ruaController.text,
+        _numeroController.text,
+        _bairroController.text,
+        _cidadeController.text,
+        _estadoController.text,
+        _cepController.text,
+      ].where((e) => e.isNotEmpty).join(' ');
+
+      if (address.trim().isEmpty) {
+        print('⚠️ Endereço vazio para geocodificação');
+        return null;
+      }
+
+      print('📍 Geocodificando: $address');
+
+      final url = Uri.parse(
+          'https://us1.locationiq.com/v1/search?key=pk.5a7a05184e41c916429dceb50cf02718&q=${Uri.encodeComponent(address)}&format=json&limit=1');
+
+      final response = await http.get(url).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          print('❌ Timeout na geocodificação');
+          throw Exception('Timeout na API de geocodificação');
+        },
+      );
+
+      print('📡 Status code: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as List;
+
+        if (data.isEmpty) {
+          print('❌ Endereço não encontrado na API');
+          return null;
+        }
+
+        final lat = double.tryParse(data[0]['lat']);
+        final lng = double.tryParse(data[0]['lon']);
+
+        if (lat == null || lng == null) {
+          print(
+              '❌ Coordenadas inválidas: lat=${data[0]['lat']}, lng=${data[0]['lon']}');
+          return null;
+        }
+
+        print('✅ Coordenadas obtidas: lat=$lat, lng=$lng');
+        return {
+          'latitude': lat,
+          'longitude': lng,
+        };
+      } else {
+        print('❌ Erro HTTP ${response.statusCode}: ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('❌ Erro na geocodificação: $e');
+      return null;
     }
   }
 
@@ -417,21 +486,52 @@ class _AddEventPageState extends State<AddEventPage> {
     }
   }
 
+  // ✅ CORREÇÃO: Validação e salvamento com geocodificação obrigatória
   Future<void> _salvarEvento() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // ✅ Validação do nome do campeonato se for campeonato
     if (_selectedType == EventType.campeonato &&
         _championshipNameController.text.trim().isEmpty) {
       _showError('Informe o nome do campeonato');
       return;
     }
 
+    // ✅ VALIDAR SE ENDEREÇO ESTÁ PREENCHIDO
+    if (_ruaController.text.isEmpty ||
+        _numeroController.text.isEmpty ||
+        _bairroController.text.isEmpty ||
+        _cidadeController.text.isEmpty ||
+        _estadoController.text.isEmpty) {
+      _showError('Preencha todos os campos de endereço obrigatórios');
+      return;
+    }
+
     setState(() => _isSaving = true);
 
     try {
+      // ✅ 1. Geocodificar endereço (OBRIGATÓRIO)
+      _showSuccess('📡 Geocodificando endereço...');
+      final coords = await _geocodeAddress();
+
+      if (coords == null) {
+        setState(() => _isSaving = false);
+        _showError(
+          '❌ Não foi possível obter as coordenadas do endereço.\n\n'
+          'Verifique se:\n'
+          '• O endereço está correto e completo\n'
+          '• Você tem conexão com internet\n'
+          '• O CEP é válido\n\n'
+          'Tente buscar o CEP novamente ou corrija o endereço.',
+        );
+        return;
+      }
+
+      print(
+          '✅ Geocodificação concluída: ${coords['latitude']}, ${coords['longitude']}');
+
       final supabase = Supabase.instance.client;
       final user = supabase.auth.currentUser;
+
       if (user == null) {
         if (mounted) {
           setState(() => _isSaving = false);
@@ -457,10 +557,12 @@ class _AddEventPageState extends State<AddEventPage> {
         'set_format': _setsFormat,
         'allow_checkin': _enableCheckIn,
         'gender': _generoEvento,
-        // ✅ ALTERADO: championship_name (inglês) para corresponder ao banco
         'championship_name': _selectedType == EventType.campeonato
             ? _championshipNameController.text.trim()
             : null,
+        // ✅ 2. Incluir coordenadas OBRIGATORIAMENTE
+        'latitude': coords['latitude'],
+        'longitude': coords['longitude'],
       };
 
       dynamic response;
@@ -489,11 +591,13 @@ class _AddEventPageState extends State<AddEventPage> {
 
       if (_selectedAthletes.isNotEmpty) {
         final athleteConvocations = <Map<String, dynamic>>[];
+
         for (var athleteName in _selectedAthletes) {
           final athlete = _athletesList.firstWhere(
             (a) => a['nome'] == athleteName,
             orElse: () => {'uid': ''},
           );
+
           if (athlete['uid']!.isNotEmpty) {
             athleteConvocations.add({
               'event_id': eventId,
@@ -502,6 +606,7 @@ class _AddEventPageState extends State<AddEventPage> {
             });
           }
         }
+
         if (athleteConvocations.isNotEmpty) {
           await supabase.from('convocations').insert(athleteConvocations);
         }
@@ -509,11 +614,13 @@ class _AddEventPageState extends State<AddEventPage> {
 
       if (_selectedTechnicians.isNotEmpty) {
         final technicianConvocations = <Map<String, dynamic>>[];
+
         for (var techName in _selectedTechnicians) {
           final technician = _techniciansList.firstWhere(
             (t) => t['nome'] == techName,
             orElse: () => {'uid': ''},
           );
+
           if (technician['uid']!.isNotEmpty) {
             technicianConvocations.add({
               'event_id': eventId,
@@ -522,6 +629,7 @@ class _AddEventPageState extends State<AddEventPage> {
             });
           }
         }
+
         if (technicianConvocations.isNotEmpty) {
           await supabase.from('convocations').insert(technicianConvocations);
         }
@@ -536,7 +644,11 @@ class _AddEventPageState extends State<AddEventPage> {
       final totalConvocados =
           _selectedAthletes.length + _selectedTechnicians.length;
       _showSuccess(
-          'Evento ${_isEditing ? 'atualizado' : 'salvo'} com sucesso!\n$totalConvocados convocados registrados${_enableCheckIn ? ' • Check-in habilitado' : ''}');
+        '✅ Evento ${_isEditing ? 'atualizado' : 'salvo'} com sucesso!\n'
+        '$totalConvocados convocados registrados'
+        '${_enableCheckIn ? ' • Check-in habilitado' : ''}\n'
+        '📍 Coordenadas: ${coords['latitude']!.toStringAsFixed(6)}, ${coords['longitude']!.toStringAsFixed(6)}',
+      );
 
       await Future.delayed(const Duration(milliseconds: 500));
 
@@ -587,12 +699,11 @@ class _AddEventPageState extends State<AddEventPage> {
                 children: [
                   _buildEventTypeSelector(),
                   const SizedBox(height: 16),
-                  // ✅ Campo para nome do campeonato/liga - abaixo do tipo de evento
                   if (_selectedType == EventType.campeonato) ...[
-                    _buildChampionshipNameField(), // ✅ ALTERADO
+                    _buildChampionshipNameField(),
                     const SizedBox(height: 24),
                   ],
-                  _buildGenderSelector(), // ✅ Seletor de gênero do evento
+                  _buildGenderSelector(),
                   const SizedBox(height: 24),
                   if (_selectedType == EventType.amistoso ||
                       _selectedType == EventType.campeonato) ...[
@@ -665,7 +776,6 @@ class _AddEventPageState extends State<AddEventPage> {
     );
   }
 
-  // ✅ Widget para selecionar gênero do evento
   Widget _buildGenderSelector() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -722,7 +832,6 @@ class _AddEventPageState extends State<AddEventPage> {
     );
   }
 
-  // ✅ ALTERADO: Campo para championship_name (inglês)
   Widget _buildChampionshipNameField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
