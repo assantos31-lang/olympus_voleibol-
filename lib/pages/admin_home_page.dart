@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import 'agenda_page.dart';
+import 'admin_financial_page.dart'; // ← NOVO IMPORT
 
 class AdminHomePage extends StatelessWidget {
   const AdminHomePage({super.key});
@@ -135,6 +136,40 @@ class AdminHomePage extends StatelessWidget {
                             icon: const Icon(Icons.calendar_month),
                             label: const Text(
                               'Agenda',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white.withOpacity(0.1),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(
+                                    color: Colors.white.withOpacity(0.3)),
+                              ),
+                              elevation: 0,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        // ← NOVO: Botão Financeiro
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (context) =>
+                                        const AdminFinancialPage()),
+                              );
+                            },
+                            icon: const Icon(Icons.attach_money),
+                            label: const Text(
+                              'Financeiro',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,

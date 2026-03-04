@@ -55,6 +55,35 @@ class _CheckInPageState extends State<CheckInPage> {
     }
   }
 
+  // ✅ NOVO: Método para forçar atualização da posição GPS
+  Future<Position?> _forceRefreshLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return null;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return null;
+      }
+
+      // ✅ Força obtenção de nova posição (ignora cache)
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        forceAndroidLocationManager: true, // ✅ Força GPS real no Android
+      );
+
+      setState(() {
+        _currentPosition = position;
+      });
+
+      return position;
+    } catch (e) {
+      print('Erro ao forçar atualização de localização: $e');
+      return null;
+    }
+  }
+
   Future<void> _fetchMyEvents() async {
     try {
       final supabase = Supabase.instance.client;
@@ -92,10 +121,16 @@ class _CheckInPageState extends State<CheckInPage> {
   }
 
   Future<void> _doCheckIn(String eventId, String eventName) async {
-    if (_currentPosition == null) {
+    // ✅ CORREÇÃO PRINCIPAL: Força atualização da posição ANTES do check-in
+    final freshPosition = await _forceRefreshLocation();
+
+    if (freshPosition == null && _currentPosition == null) {
       _showError('Localização não disponível. Tente novamente.');
       return;
     }
+
+    // Usa a posição mais recente
+    final positionToUse = freshPosition ?? _currentPosition!;
 
     setState(() => _isCheckingIn = true);
 
@@ -141,8 +176,8 @@ class _CheckInPageState extends State<CheckInPage> {
       if (eventResponse['latitude'] != null &&
           eventResponse['longitude'] != null) {
         final distance = _calculateDistance(
-          _currentPosition!.latitude,
-          _currentPosition!.longitude,
+          positionToUse.latitude,
+          positionToUse.longitude,
           eventResponse['latitude'],
           eventResponse['longitude'],
         );
@@ -164,8 +199,8 @@ class _CheckInPageState extends State<CheckInPage> {
           .from('checkins')
           .update({
             'checked_in_at': DateTime.now().toIso8601String(),
-            'check_in_latitude': _currentPosition!.latitude,
-            'check_in_longitude': _currentPosition!.longitude,
+            'check_in_latitude': positionToUse.latitude,
+            'check_in_longitude': positionToUse.longitude,
             'check_in_status': 'confirmed',
           })
           .eq('event_id', eventId)

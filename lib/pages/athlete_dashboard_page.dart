@@ -8,7 +8,8 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:typed_data';
 import '../services/auth_service.dart';
-import 'athlete_agenda_page.dart'; // ← NOVO IMPORT
+import 'athlete_agenda_page.dart';
+import 'athlete_financial_page.dart'; // ← NOVO IMPORT
 
 class AthleteDashboardPage extends StatefulWidget {
   const AthleteDashboardPage({super.key});
@@ -68,6 +69,16 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
       context,
       MaterialPageRoute(
         builder: (context) => const AthleteAgendaPage(),
+      ),
+    );
+  }
+
+  // ← NOVO: Navegar para financeiro do atleta
+  void _navigateToFinancial() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AthleteFinancialPage(),
       ),
     );
   }
@@ -144,6 +155,27 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+            // ← NOVO: Botão para acessar financeiro
+            ElevatedButton.icon(
+              onPressed: _navigateToFinancial,
+              icon: const Icon(Icons.attach_money, size: 24),
+              label: const Text(
+                'Financeiro',
+                style: TextStyle(fontSize: 18),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 16,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -156,7 +188,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
 // ============================================================================
 class AthleteProfilePage extends StatefulWidget {
   final Map<String, dynamic>? profile;
-
   const AthleteProfilePage({super.key, this.profile});
 
   @override
@@ -262,7 +293,6 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                         );
 
                         if (!mounted) return;
-
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('✅ Senha alterada com sucesso!'),
@@ -516,7 +546,6 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
 // ============================================================================
 class _AthleteProfileEditDialog extends StatefulWidget {
   final Map<String, dynamic> profile;
-
   const _AthleteProfileEditDialog({required this.profile});
 
   @override
@@ -528,7 +557,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
   final supabase = Supabase.instance.client;
-
   late TextEditingController _fullNameController;
   late MaskedTextController _phoneController;
   late TextEditingController _birthDateController;
@@ -536,7 +564,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   late MaskedTextController _cpfController;
   late TextEditingController _genderController;
   late TextEditingController _positionController;
-
   // Campos de endereço
   late MaskedTextController _zipCodeController;
   late TextEditingController _streetController;
@@ -545,12 +572,10 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   late TextEditingController _neighborhoodController;
   late TextEditingController _cityController;
   late TextEditingController _stateController;
-
   XFile? _selectedImage;
   bool _isLoading = false;
   bool _isUploading = false;
   bool _isFetchingCep = false;
-
   String _selectedGender = '';
 
   final Map<String, List<Map<String, String>>> _positions = {
@@ -587,7 +612,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
         TextEditingController(text: widget.profile['gender'] ?? '');
     _positionController =
         TextEditingController(text: widget.profile['court_position'] ?? '');
-
     _zipCodeController = MaskedTextController(
         mask: '00000-000', text: widget.profile['zip_code'] ?? '');
     _streetController =
@@ -601,7 +625,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
     _cityController = TextEditingController(text: widget.profile['city'] ?? '');
     _stateController =
         TextEditingController(text: widget.profile['state'] ?? '');
-
     _selectedGender = widget.profile['gender'] ?? '';
 
     _zipCodeController.addListener(_onZipCodeChanged);
@@ -616,6 +639,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
 
   Future<void> _fetchAddressByCep(String cep) async {
     setState(() => _isFetchingCep = true);
+
     try {
       final response =
           await http.get(Uri.parse('https://viacep.com.br/ws/$cep/json/'));
@@ -628,6 +652,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
             _cityController.text = data['localidade'] ?? '';
             _stateController.text = data['uf'] ?? '';
           });
+
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -655,6 +680,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
         maxHeight: 800,
         imageQuality: 85,
       );
+
       if (image != null && mounted) {
         setState(() {
           _selectedImage = image;
@@ -715,6 +741,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
       firstDate: DateTime(1900),
       lastDate: DateTime.now(),
     );
+
     if (picked != null && mounted) {
       setState(() {
         _birthDateController.text = DateFormat('dd/MM/yyyy').format(picked);
@@ -763,7 +790,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
       await supabase.from('profiles').update(data).eq('id', user.id);
 
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('✅ Perfil atualizado com sucesso!'),
@@ -1095,6 +1121,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
         },
       );
     }
+
     if (widget.profile['avatar_url'] != null &&
         widget.profile['avatar_url'].toString().isNotEmpty) {
       return Image.network(
@@ -1104,6 +1131,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
             const Icon(Icons.person, size: 60, color: Colors.grey),
       );
     }
+
     return const Icon(Icons.person, size: 60, color: Colors.grey);
   }
 
