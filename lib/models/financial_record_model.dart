@@ -4,6 +4,7 @@ class FinancialRecord {
   final String type;
   final String? description;
   final double value;
+  final int day; // ADICIONADO
   final int month;
   final int year;
   final String? receiptUrl;
@@ -18,6 +19,7 @@ class FinancialRecord {
     required this.type,
     this.description,
     required this.value,
+    required this.day, // ADICIONADO
     required this.month,
     required this.year,
     this.receiptUrl,
@@ -34,6 +36,7 @@ class FinancialRecord {
       type: map['type'],
       description: map['description'],
       value: double.parse(map['value'].toString()),
+      day: map['day'] ?? DateTime.now().day, // ADICIONADO
       month: map['month'],
       year: map['year'],
       receiptUrl: map['receipt_url'],
@@ -53,6 +56,7 @@ class FinancialRecord {
       'type': type,
       'description': description,
       'value': value,
+      'day': day, // ADICIONADO
       'month': month,
       'year': year,
       'receipt_url': receiptUrl,

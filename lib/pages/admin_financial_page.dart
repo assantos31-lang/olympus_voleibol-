@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import '../models/financial_record_model.dart';
@@ -32,7 +33,7 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     try {
       final response = await _supabase
           .from('profiles')
-          .select('id, full_name')
+          .select('id, full_name, phone')
           .eq('user_type', 'athlete')
           .order('full_name');
 
@@ -52,34 +53,36 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
 
     try {
       debugPrint(
-          '🔍 BUSCANDO: mês=$_selectedMonth, ano=$_selectedYear, status=$_selectedStatus, tipo=$_selectedType');
+          '🔍 BUSCANDO: mês=$_selectedMonth, ano=$_selectedYear, tipo=$_selectedType');
 
+      // CORREÇÃO: Sempre busca TODOS os registros do mês/ano (sem filtro de status)
       var query = _supabase
           .from('financial_records')
           .select()
           .eq('month', _selectedMonth)
           .eq('year', _selectedYear);
 
-      if (_selectedStatus != 'all') {
-        query = query.eq('status', _selectedStatus);
-      }
+      // Filtra apenas por tipo, não por status
       if (_selectedType != 'all') {
         query = query.eq('type', _selectedType);
       }
 
       debugPrint('📊 Executando query...');
       final response = await query.order('created_at', ascending: false);
+
       debugPrint('✅ RETORNO DO BANCO: ${(response as List).length} registros');
 
       final records =
           (response as List).map((r) => FinancialRecord.fromMap(r)).toList();
+
       debugPrint('📋 Após mapeamento: ${records.length} registros');
 
+      // Buscar dados dos atletas
       final athleteIds = records.map((r) => r.athleteId).toSet().toList();
       if (athleteIds.isNotEmpty) {
         final athletesResponse = await _supabase
             .from('profiles')
-            .select('id, full_name')
+            .select('id, full_name, phone')
             .filter('id', 'in', "(${athleteIds.join(',')})");
 
         _athleteData = {
@@ -376,140 +379,369 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     final descriptionController = TextEditingController();
     int selectedMonth = _selectedMonth;
     int selectedYear = _selectedYear;
+    int selectedDay = DateTime.now().day;
+    bool showOtherDescription = false;
     final formKey = GlobalKey<FormState>();
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Cadastrar Registro Financeiro'),
+          title: const Text(
+            'Cadastrar Registro Financeiro',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
           content: SingleChildScrollView(
             child: Form(
               key: formKey,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  DropdownButtonFormField<String>(
-                    value: selectedAthleteId,
-                    decoration: const InputDecoration(
-                      labelText: 'Atleta *',
-                      border: OutlineInputBorder(),
-                    ),
-                    hint: const Text('Selecione um atleta'),
-                    items: _athletes.map((athlete) {
-                      return DropdownMenuItem<String>(
-                        value: athlete['id'] as String,
-                        child: Text(athlete['full_name'] ?? 'Sem nome'),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setDialogState(() {
-                        selectedAthleteId = value;
-                      });
-                    },
-                    validator: (value) =>
-                        value == null ? 'Campo obrigatório' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: selectedType,
-                    decoration: const InputDecoration(
-                      labelText: 'Tipo *',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                          value: 'monthly', child: Text('Mensalidade')),
-                      DropdownMenuItem(value: 'games', child: Text('Jogos')),
-                      DropdownMenuItem(
-                          value: 'maintenance', child: Text('Manutenção')),
-                      DropdownMenuItem(value: 'other', child: Text('Outros')),
-                    ],
-                    onChanged: (value) {
-                      setDialogState(() {
-                        selectedType = value!;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: valueController,
-                    decoration: const InputDecoration(
-                      labelText: 'Valor (R\$) *',
-                      border: OutlineInputBorder(),
-                      prefixText: 'R\$ ',
-                    ),
-                    keyboardType: TextInputType.number,
-                    validator: (value) {
-                      if (value == null || value.isEmpty)
-                        return 'Campo obrigatório';
-                      if (double.tryParse(value) == null)
-                        return 'Valor inválido';
-                      return null;
-                    },
-                  ),
-                  if (selectedType == 'other') ...[
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: descriptionController,
-                      decoration: const InputDecoration(
-                        labelText: 'Descrição *',
-                        border: OutlineInputBorder(),
-                        hintText: 'Informe do que se trata',
+                  // Card - Atleta
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE3F2FD), Color(0xFFBBDEFB)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      maxLines: 2,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF90CAF9)),
+                    ),
+                    child: DropdownButtonFormField<String>(
+                      value: selectedAthleteId,
+                      decoration: const InputDecoration(
+                        labelText: 'Atleta *',
+                        labelStyle:
+                            TextStyle(fontSize: 11, color: Color(0xFF1565C0)),
+                        border: InputBorder.none,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      ),
+                      hint: const Text('Selecione um atleta',
+                          style: TextStyle(fontSize: 12)),
+                      isExpanded: true,
+                      icon: const Icon(Icons.keyboard_arrow_down,
+                          color: Color(0xFF1976D2), size: 18),
+                      style: const TextStyle(fontSize: 12),
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: 'all',
+                          child: Text('Todos',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF424242),
+                                fontWeight: FontWeight.w500,
+                              )),
+                        ),
+                        ..._athletes.map((athlete) {
+                          return DropdownMenuItem<String>(
+                            value: athlete['id'] as String,
+                            child: Text(athlete['full_name'] ?? 'Sem nome',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF424242),
+                                  fontWeight: FontWeight.w500,
+                                )),
+                          );
+                        }),
+                      ],
+                      onChanged: (value) {
+                        selectedAthleteId = value;
+                      },
+                      validator: (value) =>
+                          value == null ? 'Campo obrigatório' : null,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Card - Tipo
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFF3E5F5), Color(0xFFE1BEE7)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFCE93D8)),
+                    ),
+                    child: DropdownButtonFormField<String>(
+                      value: selectedType,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo *',
+                        labelStyle:
+                            TextStyle(fontSize: 11, color: Color(0xFF7B1FA2)),
+                        border: InputBorder.none,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      ),
+                      isExpanded: true,
+                      icon: const Icon(Icons.keyboard_arrow_down,
+                          color: Color(0xFF8E24AA), size: 18),
+                      style: const TextStyle(fontSize: 12),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'monthly',
+                          child: Text('Mensalidade',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF424242),
+                                fontWeight: FontWeight.w500,
+                              )),
+                        ),
+                        DropdownMenuItem(
+                          value: 'games',
+                          child: Text('Jogos',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF424242),
+                                fontWeight: FontWeight.w500,
+                              )),
+                        ),
+                        DropdownMenuItem(
+                          value: 'maintenance',
+                          child: Text('Manutenção',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF424242),
+                                fontWeight: FontWeight.w500,
+                              )),
+                        ),
+                        DropdownMenuItem(
+                          value: 'other',
+                          child: Text('Outros',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF424242),
+                                fontWeight: FontWeight.w500,
+                              )),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        setDialogState(() {
+                          selectedType = value!;
+                          showOtherDescription = value == 'other';
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Card - Valor
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE8F5E9), Color(0xFFC8E6C9)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFA5D6A7)),
+                    ),
+                    child: TextFormField(
+                      controller: valueController,
+                      decoration: const InputDecoration(
+                        labelText: 'Valor (R\$) *',
+                        labelStyle:
+                            TextStyle(fontSize: 11, color: Color(0xFF388E3C)),
+                        border: InputBorder.none,
+                        prefixText: 'R\$ ',
+                        hintText: '0,00',
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      ),
+                      style: const TextStyle(fontSize: 12),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        CurrencyInputFormatter(),
+                      ],
                       validator: (value) {
-                        if (selectedType == 'other' &&
-                            (value == null || value.isEmpty)) {
-                          return 'Campo obrigatório para "Outros"';
-                        }
+                        if (value == null || value.isEmpty)
+                          return 'Campo obrigatório';
+                        final numericValue = value
+                            .replaceAll(RegExp(r'[^\d,]'), '')
+                            .replaceAll(',', '.');
+                        if (double.tryParse(numericValue) == null)
+                          return 'Valor inválido';
                         return null;
                       },
                     ),
+                  ),
+                  // Card - Descrição (apenas para Outros)
+                  if (showOtherDescription) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFFF3E0), Color(0xFFFFE0B2)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFFFCC80)),
+                      ),
+                      child: TextFormField(
+                        controller: descriptionController,
+                        decoration: const InputDecoration(
+                          labelText: 'Descrição *',
+                          labelStyle:
+                              TextStyle(fontSize: 11, color: Color(0xFFF57C00)),
+                          border: InputBorder.none,
+                          hintText: 'Informe do que se trata',
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        ),
+                        style: const TextStyle(fontSize: 12),
+                        maxLines: 2,
+                        validator: (value) {
+                          if (showOtherDescription &&
+                              (value == null || value.isEmpty)) {
+                            return 'Campo obrigatório para "Outros"';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
                   ],
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
+                  // Cards - Dia, Mês, Ano
                   Row(
                     children: [
                       Expanded(
-                        child: DropdownButtonFormField<int>(
-                          value: selectedMonth,
-                          decoration: const InputDecoration(
-                            labelText: 'Mês *',
-                            border: OutlineInputBorder(),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFAFAFA), Color(0xFFF5F5F5)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFE0E0E0)),
                           ),
-                          items: List.generate(12, (i) => i + 1).map((m) {
-                            return DropdownMenuItem(
-                              value: m,
-                              child: Text(DateFormat.MMMM('pt_BR')
-                                  .format(DateTime(2024, m))),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setDialogState(() {
-                              selectedMonth = value!;
-                            });
-                          },
+                          child: DropdownButtonFormField<int>(
+                            value: selectedDay,
+                            decoration: const InputDecoration(
+                              labelText: 'Dia *',
+                              labelStyle: TextStyle(
+                                  fontSize: 11, color: Color(0xFF616161)),
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 8),
+                            ),
+                            isExpanded: true,
+                            icon: const Icon(Icons.keyboard_arrow_down,
+                                color: Color(0xFF757575), size: 18),
+                            style: const TextStyle(fontSize: 12),
+                            items: List.generate(31, (i) => i + 1).map((d) {
+                              return DropdownMenuItem(
+                                value: d,
+                                child: Text(d.toString(),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF424242),
+                                      fontWeight: FontWeight.w500,
+                                    )),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              selectedDay = value!;
+                            },
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       Expanded(
-                        child: DropdownButtonFormField<int>(
-                          value: selectedYear,
-                          decoration: const InputDecoration(
-                            labelText: 'Ano *',
-                            border: OutlineInputBorder(),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFAFAFA), Color(0xFFF5F5F5)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFE0E0E0)),
                           ),
-                          items: [2026, 2027, 2028, 2029, 2030].map((y) {
-                            return DropdownMenuItem(
-                              value: y,
-                              child: Text(y.toString()),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setDialogState(() {
+                          child: DropdownButtonFormField<int>(
+                            value: selectedMonth,
+                            decoration: const InputDecoration(
+                              labelText: 'Mês *',
+                              labelStyle: TextStyle(
+                                  fontSize: 11, color: Color(0xFF616161)),
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 8),
+                            ),
+                            isExpanded: true,
+                            icon: const Icon(Icons.keyboard_arrow_down,
+                                color: Color(0xFF757575), size: 18),
+                            style: const TextStyle(fontSize: 12),
+                            items: List.generate(12, (i) => i + 1).map((m) {
+                              return DropdownMenuItem(
+                                value: m,
+                                child: Text(
+                                    DateFormat.MMMM('pt_BR')
+                                        .format(DateTime(2024, m)),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF424242),
+                                      fontWeight: FontWeight.w500,
+                                    )),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              selectedMonth = value!;
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFAFAFA), Color(0xFFF5F5F5)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFE0E0E0)),
+                          ),
+                          child: DropdownButtonFormField<int>(
+                            value: selectedYear,
+                            decoration: const InputDecoration(
+                              labelText: 'Ano *',
+                              labelStyle: TextStyle(
+                                  fontSize: 11, color: Color(0xFF616161)),
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 8),
+                            ),
+                            isExpanded: true,
+                            icon: const Icon(Icons.keyboard_arrow_down,
+                                color: Color(0xFF757575), size: 18),
+                            style: const TextStyle(fontSize: 12),
+                            items: [2026, 2027, 2028, 2029, 2030].map((y) {
+                              return DropdownMenuItem(
+                                value: y,
+                                child: Text(y.toString(),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF424242),
+                                      fontWeight: FontWeight.w500,
+                                    )),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
                               selectedYear = value!;
-                            });
-                          },
+                            },
+                          ),
                         ),
                       ),
                     ],
@@ -521,19 +753,25 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
+              child: const Text('Cancelar', style: TextStyle(fontSize: 12)),
             ),
             ElevatedButton(
               onPressed: () async {
                 if (formKey.currentState!.validate()) {
                   try {
+                    final numericValue = valueController.text
+                        .replaceAll(RegExp(r'[^\d,]'), '')
+                        .replaceAll(',', '.');
+
                     await _supabase.from('financial_records').insert({
-                      'athlete_id': selectedAthleteId,
+                      'athlete_id':
+                          selectedAthleteId == 'all' ? null : selectedAthleteId,
                       'type': selectedType,
-                      'value': double.parse(valueController.text),
+                      'value': double.parse(numericValue),
                       'description': selectedType == 'other'
                           ? descriptionController.text
                           : null,
+                      'day': selectedDay,
                       'month': selectedMonth,
                       'year': selectedYear,
                       'status': 'pending',
@@ -562,7 +800,7 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                   }
                 }
               },
-              child: const Text('Cadastrar'),
+              child: const Text('Cadastrar', style: TextStyle(fontSize: 12)),
             ),
           ],
         ),
@@ -579,10 +817,8 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       }).eq('id', recordId);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Aprovado!'), backgroundColor: Colors.green),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Aprovado!'), backgroundColor: Colors.green));
         _loadRecords();
       }
     } catch (e) {
@@ -599,10 +835,8 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       }).eq('id', recordId);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Rejeitado!'), backgroundColor: Colors.red),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Rejeitado!'), backgroundColor: Colors.red));
         _loadRecords();
       }
     } catch (e) {
@@ -639,36 +873,82 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     }
   }
 
+  Future<void> _navigateToAthleteProfile(FinancialRecord record) async {
+    final athlete = _athleteData[record.athleteId];
+    if (athlete == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Atleta não encontrado'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Navegar para o perfil do atleta
+    // Substitua pela rota correta do seu app
+    Navigator.pushNamed(
+      context,
+      '/athlete-profile',
+      arguments: {
+        'athleteId': record.athleteId,
+        'athleteName': athlete['full_name'],
+        'recordId': record.id,
+      },
+    );
+  }
+
   String _getAthleteName(String athleteId) {
+    if (athleteId == 'all') return 'Todos';
     final athlete = _athleteData[athleteId];
     return athlete?['full_name'] ?? 'Atleta não encontrado';
   }
 
-  Widget _buildStatusBadge(String status) {
+  // Verifica se o registro está atrasado
+  bool _isOverdue(FinancialRecord record) {
+    if (record.status != 'pending') return false;
+    final dueDate = DateTime(record.year, record.month, record.day);
+    final today = DateTime.now();
+    return dueDate.isBefore(DateTime(today.year, today.month, today.day));
+  }
+
+  Widget _buildStatusBadge(String status, {bool isOverdue = false}) {
     Color bgColor;
     Color textColor;
     IconData icon;
+    String label;
 
-    switch (status) {
-      case 'approved':
-        bgColor = Colors.green;
-        textColor = Colors.white;
-        icon = Icons.check_circle;
-        break;
-      case 'pending':
-        bgColor = Colors.orange;
-        textColor = Colors.white;
-        icon = Icons.schedule;
-        break;
-      case 'rejected':
-        bgColor = Colors.red;
-        textColor = Colors.white;
-        icon = Icons.cancel;
-        break;
-      default:
-        bgColor = Colors.grey;
-        textColor = Colors.white;
-        icon = Icons.help_outline;
+    if (isOverdue) {
+      bgColor = Colors.red;
+      textColor = Colors.white;
+      icon = Icons.warning;
+      label = 'Atrasado';
+    } else {
+      switch (status) {
+        case 'approved':
+          bgColor = Colors.green;
+          textColor = Colors.white;
+          icon = Icons.check_circle;
+          label = 'Aprovado';
+          break;
+        case 'pending':
+          bgColor = Colors.orange;
+          textColor = Colors.white;
+          icon = Icons.schedule;
+          label = 'Pendente';
+          break;
+        case 'rejected':
+          bgColor = Colors.red;
+          textColor = Colors.white;
+          icon = Icons.cancel;
+          label = 'Rejeitado';
+          break;
+        default:
+          bgColor = Colors.grey;
+          textColor = Colors.white;
+          icon = Icons.help_outline;
+          label = 'Desconhecido';
+      }
     }
 
     return Container(
@@ -683,11 +963,7 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
           Icon(icon, size: 12, color: textColor),
           const SizedBox(width: 4),
           Text(
-            status == 'approved'
-                ? 'Aprovado'
-                : status == 'pending'
-                    ? 'Pendente'
-                    : 'Rejeitado',
+            label,
             style: TextStyle(
               color: textColor,
               fontSize: 11,
@@ -701,10 +977,54 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
 
   @override
   Widget build(BuildContext context) {
+    // CORREÇÃO: Cards de resumo SEMPRE mostram dados completos (independente do filtro)
     final totalRecords = _records.length;
     final approvedRecords =
         _records.where((r) => r.status == 'approved').length;
-    final pendingRecords = _records.where((r) => r.status == 'pending').length;
+    final pendingRecords = _records.where((r) {
+      if (r.status != 'pending') return false;
+      final dueDate = DateTime(r.year, r.month, r.day);
+      final today = DateTime.now();
+      return !dueDate.isBefore(DateTime(today.year, today.month, today.day));
+    }).length;
+    final overdueRecords = _records.where((r) {
+      if (r.status != 'pending') return false;
+      final dueDate = DateTime(r.year, r.month, r.day);
+      final today = DateTime.now();
+      return dueDate.isBefore(DateTime(today.year, today.month, today.day));
+    }).length;
+
+    // Cálculo dos valores
+    final totalValue = _records.fold<double>(0, (sum, r) => sum + r.value);
+    final approvedValue = _records
+        .where((r) => r.status == 'approved')
+        .fold<double>(0, (sum, r) => sum + r.value);
+    final pendingValue = _records.where((r) {
+      if (r.status != 'pending') return false;
+      final dueDate = DateTime(r.year, r.month, r.day);
+      final today = DateTime.now();
+      return !dueDate.isBefore(DateTime(today.year, today.month, today.day));
+    }).fold<double>(0, (sum, r) => sum + r.value);
+    final overdueValue = _records.where((r) {
+      if (r.status != 'pending') return false;
+      final dueDate = DateTime(r.year, r.month, r.day);
+      final today = DateTime.now();
+      return dueDate.isBefore(DateTime(today.year, today.month, today.day));
+    }).fold<double>(0, (sum, r) => sum + r.value);
+
+    // Valores por tipo
+    final monthlyValue = _records
+        .where((r) => r.type == 'monthly')
+        .fold<double>(0, (sum, r) => sum + r.value);
+    final gamesValue = _records
+        .where((r) => r.type == 'games')
+        .fold<double>(0, (sum, r) => sum + r.value);
+    final maintenanceValue = _records
+        .where((r) => r.type == 'maintenance')
+        .fold<double>(0, (sum, r) => sum + r.value);
+    final otherValue = _records
+        .where((r) => r.type == 'other')
+        .fold<double>(0, (sum, r) => sum + r.value);
 
     return Scaffold(
       appBar: AppBar(
@@ -734,49 +1054,103 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       body: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(12),
             color: const Color(0xFFF5F5F5),
             child: Column(
               children: [
+                // Card TOTAL grande em cima
                 Row(
                   children: [
                     Expanded(
-                      child: _buildSummaryCard(
-                        'Total',
-                        totalRecords,
-                        Icons.receipt_long,
-                        const Color(0xFF2C3E5A),
-                        const Color(0xFF667eea),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildSummaryCard(
-                        'Pagos',
-                        approvedRecords,
-                        Icons.check_circle,
-                        Colors.green,
-                        const Color(0xFF43e97b),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildSummaryCard(
-                        'Pendentes',
-                        pendingRecords,
-                        Icons.schedule,
-                        Colors.orange,
-                        const Color(0xFFf093fb),
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedStatus = 'all';
+                            _loadRecords();
+                          });
+                        },
+                        child: _buildCompactCard(
+                          'Total',
+                          totalRecords,
+                          Icons.receipt_long,
+                          const Color(0xFF2C3E5A),
+                          totalValue,
+                          _selectedStatus == 'all',
+                          large: true,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 6),
+                // Cards Pagos, Pendentes e Atrasados abaixo
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedStatus = 'approved';
+                            _loadRecords();
+                          });
+                        },
+                        child: _buildCompactCard(
+                          'Pagos',
+                          approvedRecords,
+                          Icons.check_circle,
+                          Colors.green,
+                          approvedValue,
+                          _selectedStatus == 'approved',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedStatus = 'pending';
+                            _loadRecords();
+                          });
+                        },
+                        child: _buildCompactCard(
+                          'Pendentes',
+                          pendingRecords,
+                          Icons.schedule,
+                          Colors.orange,
+                          pendingValue,
+                          _selectedStatus == 'pending',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedStatus = 'overdue';
+                            _loadRecords();
+                          });
+                        },
+                        child: _buildCompactCard(
+                          'Atrasados',
+                          overdueRecords,
+                          Icons.warning,
+                          Colors.red,
+                          overdueValue,
+                          _selectedStatus == 'overdue',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Cards de Tipo com valores
                 Container(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.grey.withOpacity(0.08),
@@ -786,44 +1160,97 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                       ),
                     ],
                   ),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: _buildTypeButton('all', 'Todos', Icons.apps),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildTypeValueCard(
+                              'Mensalidade',
+                              Icons.account_balance_wallet,
+                              const Color(0xFF667eea),
+                              monthlyValue,
+                              _selectedType == 'monthly',
+                              () {
+                                setState(() {
+                                  _selectedType = _selectedType == 'monthly'
+                                      ? 'all'
+                                      : 'monthly';
+                                  _loadRecords();
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: _buildTypeValueCard(
+                              'Jogos',
+                              Icons.sports_soccer,
+                              const Color(0xFFf093fb),
+                              gamesValue,
+                              _selectedType == 'games',
+                              () {
+                                setState(() {
+                                  _selectedType = _selectedType == 'games'
+                                      ? 'all'
+                                      : 'games';
+                                  _loadRecords();
+                                });
+                              },
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: _buildTypeButton('monthly', 'Mensalidade',
-                            Icons.account_balance_wallet),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildTypeValueCard(
+                              'Manutenção',
+                              Icons.build,
+                              const Color(0xFF4facfe),
+                              maintenanceValue,
+                              _selectedType == 'maintenance',
+                              () {
+                                setState(() {
+                                  _selectedType = _selectedType == 'maintenance'
+                                      ? 'all'
+                                      : 'maintenance';
+                                  _loadRecords();
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: _buildTypeValueCard(
+                              'Outros',
+                              Icons.receipt_long,
+                              const Color(0xFFfa709a),
+                              otherValue,
+                              _selectedType == 'other',
+                              () {
+                                setState(() {
+                                  _selectedType = _selectedType == 'other'
+                                      ? 'all'
+                                      : 'other';
+                                  _loadRecords();
+                                });
+                              },
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildTypeButton(
-                          'games', 'Jogos', Icons.sports_soccer),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: _buildTypeButton(
-                          'maintenance', 'Manutenção', Icons.build),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: _buildTypeButton(
-                          'other', 'Outros', Icons.receipt_long),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
+                // Filtros - REDUZIDOS
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.grey.withOpacity(0.08),
@@ -842,25 +1269,25 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                             const Text(
                               'Mês',
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 9,
                                 color: Color(0xFF757575),
-                                fontWeight: FontWeight.w500,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 2),
                             Container(
                               padding:
-                                  const EdgeInsets.symmetric(horizontal: 12),
+                                  const EdgeInsets.symmetric(horizontal: 6),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFF5F5F5),
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(6),
                               ),
                               child: DropdownButton<int>(
                                 value: _selectedMonth,
                                 isExpanded: true,
                                 underline: const SizedBox(),
                                 icon: const Icon(Icons.keyboard_arrow_down,
-                                    color: Color(0xFF757575), size: 20),
+                                    color: Color(0xFF757575), size: 14),
                                 items: List.generate(12, (i) => i + 1)
                                     .map((m) => DropdownMenuItem(
                                           value: m,
@@ -868,7 +1295,7 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                                             DateFormat.MMMM('pt_BR')
                                                 .format(DateTime(2024, m)),
                                             style: const TextStyle(
-                                              fontSize: 14,
+                                              fontSize: 11,
                                               color: Color(0xFF424242),
                                               fontWeight: FontWeight.w500,
                                             ),
@@ -884,7 +1311,7 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 4),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -892,32 +1319,32 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                             const Text(
                               'Ano',
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 9,
                                 color: Color(0xFF757575),
-                                fontWeight: FontWeight.w500,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 2),
                             Container(
                               padding:
-                                  const EdgeInsets.symmetric(horizontal: 12),
+                                  const EdgeInsets.symmetric(horizontal: 6),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFF5F5F5),
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(6),
                               ),
                               child: DropdownButton<int>(
                                 value: _selectedYear,
                                 isExpanded: true,
                                 underline: const SizedBox(),
                                 icon: const Icon(Icons.keyboard_arrow_down,
-                                    color: Color(0xFF757575), size: 20),
+                                    color: Color(0xFF757575), size: 14),
                                 items: [2026, 2027, 2028, 2029, 2030]
                                     .map((y) => DropdownMenuItem(
                                           value: y,
                                           child: Text(
                                             y.toString(),
                                             style: const TextStyle(
-                                              fontSize: 14,
+                                              fontSize: 11,
                                               color: Color(0xFF424242),
                                               fontWeight: FontWeight.w500,
                                             ),
@@ -933,45 +1360,92 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 4),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Status',
+                              'Tipo',
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 9,
                                 color: Color(0xFF757575),
-                                fontWeight: FontWeight.w500,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 2),
                             Container(
                               padding:
-                                  const EdgeInsets.symmetric(horizontal: 12),
+                                  const EdgeInsets.symmetric(horizontal: 6),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFF5F5F5),
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(6),
                               ),
                               child: DropdownButton<String>(
-                                value: _selectedStatus,
+                                value: _selectedType,
                                 isExpanded: true,
                                 underline: const SizedBox(),
                                 icon: const Icon(Icons.keyboard_arrow_down,
-                                    color: Color(0xFF757575), size: 20),
+                                    color: Color(0xFF757575), size: 14),
                                 items: const [
                                   DropdownMenuItem(
-                                      value: 'all', child: Text('Todos')),
+                                    value: 'all',
+                                    child: Text(
+                                      'Todos',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF424242),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
                                   DropdownMenuItem(
-                                      value: 'pending',
-                                      child: Text('Pendentes')),
+                                    value: 'monthly',
+                                    child: Text(
+                                      'Mensalidade',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF424242),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
                                   DropdownMenuItem(
-                                      value: 'approved',
-                                      child: Text('Aprovados')),
+                                    value: 'games',
+                                    child: Text(
+                                      'Jogos',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF424242),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'maintenance',
+                                    child: Text(
+                                      'Manutenção',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF424242),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'other',
+                                    child: Text(
+                                      'Outros',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF424242),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
                                 ],
                                 onChanged: (v) => setState(() {
-                                  _selectedStatus = v!;
+                                  _selectedType = v!;
                                   _loadRecords();
                                 }),
                               ),
@@ -1010,26 +1484,29 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                         ),
                       )
                     : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _records.length,
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _getFilteredRecords().length,
                         itemBuilder: (context, index) {
-                          final record = _records[index];
+                          final record = _getFilteredRecords()[index];
                           final typeColor = _getTypeColor(record.type);
+                          final dueDate =
+                              '${record.day.toString().padLeft(2, '0')}/${record.month.toString().padLeft(2, '0')}/${record.year}';
+                          final isOverdue = _isOverdue(record);
 
                           return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
+                            margin: const EdgeInsets.only(bottom: 8),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [Colors.white, const Color(0xFFFAFAFA)],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
                                   color: Colors.grey.withOpacity(0.1),
-                                  spreadRadius: 2,
-                                  blurRadius: 8,
+                                  spreadRadius: 1,
+                                  blurRadius: 6,
                                   offset: const Offset(0, 2),
                                 ),
                               ],
@@ -1038,26 +1515,26 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                               color: Colors.transparent,
                               child: InkWell(
                                 onTap: () => _showRecordDetails(record),
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(12),
                                 child: Padding(
-                                  padding: const EdgeInsets.all(16),
+                                  padding: const EdgeInsets.all(12),
                                   child: Row(
                                     children: [
                                       Container(
-                                        width: 50,
-                                        height: 50,
+                                        width: 40,
+                                        height: 40,
                                         decoration: BoxDecoration(
                                           color: typeColor.withOpacity(0.1),
                                           borderRadius:
-                                              BorderRadius.circular(12),
+                                              BorderRadius.circular(10),
                                         ),
                                         child: Icon(
                                           _getTypeIcon(record.type),
                                           color: typeColor,
-                                          size: 26,
+                                          size: 20,
                                         ),
                                       ),
-                                      const SizedBox(width: 12),
+                                      const SizedBox(width: 10),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
@@ -1067,34 +1544,28 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                                               record.typeLabel,
                                               style: const TextStyle(
                                                 fontWeight: FontWeight.w600,
-                                                fontSize: 16,
+                                                fontSize: 14,
                                                 color: Color(0xFF2C3E5A),
                                               ),
                                             ),
-                                            const SizedBox(height: 4),
+                                            const SizedBox(height: 2),
                                             Text(
                                               'Atleta: ${_getAthleteName(record.athleteId)}',
                                               style: const TextStyle(
                                                 color: Color(0xFF757575),
-                                                fontSize: 13,
+                                                fontSize: 11,
                                               ),
                                             ),
-                                            if (record.description != null)
-                                              Text(
-                                                record.description!,
-                                                style: const TextStyle(
-                                                  color: Color(0xFF757575),
-                                                  fontSize: 12,
-                                                  fontStyle: FontStyle.italic,
-                                                ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
                                             Text(
-                                              'Mês: ${record.month}/${record.year}',
-                                              style: const TextStyle(
-                                                color: Color(0xFF757575),
-                                                fontSize: 13,
+                                              'Vencimento: $dueDate',
+                                              style: TextStyle(
+                                                color: isOverdue
+                                                    ? Colors.red
+                                                    : const Color(0xFF757575),
+                                                fontSize: 10,
+                                                fontWeight: isOverdue
+                                                    ? FontWeight.w600
+                                                    : FontWeight.normal,
                                               ),
                                             ),
                                           ],
@@ -1108,12 +1579,15 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                                             'R\$ ${record.value.toStringAsFixed(2)}',
                                             style: const TextStyle(
                                               fontWeight: FontWeight.bold,
-                                              fontSize: 18,
+                                              fontSize: 14,
                                               color: Color(0xFF2C3E5A),
                                             ),
                                           ),
-                                          const SizedBox(height: 6),
-                                          _buildStatusBadge(record.status),
+                                          const SizedBox(height: 4),
+                                          _buildStatusBadge(
+                                            record.status,
+                                            isOverdue: isOverdue,
+                                          ),
                                         ],
                                       ),
                                     ],
@@ -1130,56 +1604,186 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     );
   }
 
-  Widget _buildSummaryCard(String label, int value, IconData icon,
-      Color baseColor, Color gradientColor) {
+  // CORREÇÃO: Filtra os registros baseado no status selecionado (apenas para a lista)
+  List<FinancialRecord> _getFilteredRecords() {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+
+    return _records.where((record) {
+      // Se status for all, mostra todos
+      if (_selectedStatus == 'all') return true;
+
+      // Se status for approved ou rejected, filtra normalmente
+      if (_selectedStatus == 'approved' || _selectedStatus == 'rejected') {
+        return record.status == _selectedStatus;
+      }
+
+      // Se status for pending, mostra apenas pendentes que ainda não venceram
+      if (_selectedStatus == 'pending') {
+        if (record.status != 'pending') return false;
+        final dueDate = DateTime(record.year, record.month, record.day);
+        return !dueDate.isBefore(todayDate);
+      }
+
+      // Se status for overdue, mostra apenas pendentes que já venceram
+      if (_selectedStatus == 'overdue') {
+        if (record.status != 'pending') return false;
+        final dueDate = DateTime(record.year, record.month, record.day);
+        return dueDate.isBefore(todayDate);
+      }
+
+      return true;
+    }).toList();
+  }
+
+  // Card compacto para status - REDUZIDO
+  Widget _buildCompactCard(String label, int value, IconData icon,
+      Color baseColor, double amount, bool isSelected,
+      {bool large = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+      padding: EdgeInsets.symmetric(
+          vertical: large ? 10 : 8, horizontal: large ? 10 : 6),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [baseColor.withOpacity(0.1), gradientColor.withOpacity(0.2)],
+          colors: isSelected
+              ? [baseColor, baseColor.withOpacity(0.7)]
+              : [baseColor.withOpacity(0.08), baseColor.withOpacity(0.15)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: baseColor.withOpacity(0.3),
-          width: 1.5,
+          color: isSelected ? baseColor : baseColor.withOpacity(0.2),
+          width: isSelected ? 2 : 1,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: baseColor.withOpacity(0.15),
-            spreadRadius: 1,
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        boxShadow: isSelected
+            ? [
+                BoxShadow(
+                  color: baseColor.withOpacity(0.3),
+                  spreadRadius: 1,
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : [],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            color: baseColor,
-            size: 22,
-          ),
-          const SizedBox(height: 6),
+          Icon(icon,
+              color: isSelected ? Colors.white : baseColor,
+              size: large ? 20 : 16),
+          const SizedBox(height: 4),
           Text(
             value.toString(),
             style: TextStyle(
-              fontSize: 22,
+              fontSize: large ? 24 : 16,
               fontWeight: FontWeight.bold,
-              color: baseColor,
+              color: isSelected ? Colors.white : baseColor,
             ),
           ),
           const SizedBox(height: 2),
           Text(
             label,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: large ? 11 : 9,
               fontWeight: FontWeight.w600,
-              color: baseColor.withOpacity(0.8),
+              color: isSelected ? Colors.white : baseColor.withOpacity(0.8),
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 3),
+          Text(
+            'R\$ ${amount.toStringAsFixed(0)}',
+            style: TextStyle(
+              fontSize: large ? 13 : 10,
+              fontWeight: FontWeight.w700,
+              color: isSelected ? Colors.white : baseColor,
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // Card para tipos com valor - REDUZIDO
+  Widget _buildTypeValueCard(
+    String label,
+    IconData icon,
+    Color baseColor,
+    double amount,
+    bool isSelected,
+    VoidCallback onTap,
+  ) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+        decoration: BoxDecoration(
+          gradient: isSelected
+              ? LinearGradient(
+                  colors: [baseColor, baseColor.withOpacity(0.7)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : LinearGradient(
+                  colors: [
+                    baseColor.withOpacity(0.05),
+                    baseColor.withOpacity(0.1)
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? baseColor : baseColor.withOpacity(0.2),
+            width: isSelected ? 1.5 : 1,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: baseColor.withOpacity(0.3),
+                    spreadRadius: 1,
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : [],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? Colors.white : baseColor,
+              size: 18,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                color: isSelected ? Colors.white : baseColor,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'R\$ ${amount.toStringAsFixed(0)}',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: isSelected ? Colors.white : baseColor,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1253,6 +1857,9 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
 
   void _showRecordDetails(FinancialRecord record) {
     final typeColor = _getTypeColor(record.type);
+    final dueDate =
+        '${record.day.toString().padLeft(2, '0')}/${record.month.toString().padLeft(2, '0')}/${record.year}';
+    final isOverdue = _isOverdue(record);
 
     showModalBottomSheet(
       context: context,
@@ -1366,24 +1973,40 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                         ),
                         const Divider(height: 32),
                         _buildDetailRow(
-                          icon: record.status == 'approved'
-                              ? Icons.check_circle
-                              : record.status == 'pending'
-                                  ? Icons.schedule
-                                  : Icons.cancel,
+                          icon: isOverdue
+                              ? Icons.warning
+                              : record.status == 'approved'
+                                  ? Icons.check_circle
+                                  : record.status == 'pending'
+                                      ? Icons.schedule
+                                      : Icons.cancel,
                           label: 'Status',
-                          value: record.statusLabel,
-                          valueColor: record.status == 'approved'
-                              ? Colors.green
-                              : record.status == 'pending'
-                                  ? Colors.orange
-                                  : Colors.red,
+                          value: isOverdue ? 'Atrasado' : record.statusLabel,
+                          valueColor: isOverdue
+                              ? Colors.red
+                              : record.status == 'approved'
+                                  ? Colors.green
+                                  : record.status == 'pending'
+                                      ? Colors.orange
+                                      : Colors.red,
                           valueWeight: FontWeight.w600,
-                          iconColor: record.status == 'approved'
-                              ? Colors.green
-                              : record.status == 'pending'
-                                  ? Colors.orange
-                                  : Colors.red,
+                          iconColor: isOverdue
+                              ? Colors.red
+                              : record.status == 'approved'
+                                  ? Colors.green
+                                  : record.status == 'pending'
+                                      ? Colors.orange
+                                      : Colors.red,
+                        ),
+                        const Divider(height: 32),
+                        _buildDetailRow(
+                          icon: Icons.calendar_today,
+                          label: 'Data vencimento',
+                          value: dueDate,
+                          valueColor:
+                              isOverdue ? Colors.red : const Color(0xFF616161),
+                          valueWeight:
+                              isOverdue ? FontWeight.w600 : FontWeight.normal,
                         ),
                         const Divider(height: 32),
                         _buildDetailRow(
@@ -1405,7 +2028,282 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  if (record.receiptUrl != null)
+                  // Botões de ação - Aprovar e Rejeitar PRIMEIRO (apenas para pendentes)
+                  if (record.status == 'pending') ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.green[600]!,
+                                  Colors.green[400]!
+                                ],
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.green.withOpacity(0.3),
+                                  spreadRadius: 1,
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () async {
+                                  await _approvePayment(record.id);
+                                  if (mounted) {
+                                    Navigator.pop(context);
+                                  }
+                                },
+                                borderRadius: BorderRadius.circular(12),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.check,
+                                        color: Colors.white, size: 20),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'Aprovar',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [Colors.red[600]!, Colors.red[400]!],
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.red.withOpacity(0.3),
+                                  spreadRadius: 1,
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () async {
+                                  await _rejectPayment(record.id);
+                                  if (mounted) {
+                                    Navigator.pop(context);
+                                  }
+                                },
+                                borderRadius: BorderRadius.circular(12),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.close,
+                                        color: Colors.white, size: 20),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'Rejeitar',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else if (record.status != 'pending') ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            record.status == 'approved'
+                                ? Icons.check_circle
+                                : Icons.cancel,
+                            color: record.status == 'approved'
+                                ? Colors.green
+                                : Colors.red,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  record.status == 'approved'
+                                      ? 'Pagamento Aprovado'
+                                      : 'Pagamento Rejeitado',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                    color: Colors.grey[800],
+                                  ),
+                                ),
+                                Text(
+                                  'Registro finalizado',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _editRecord(record);
+                            },
+                            icon: const Icon(Icons.edit, size: 18),
+                            label: const Text('Editar'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2C3E5A),
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  // Botões de ação - Enviar mensagem (Perfil) e Fechar AGORA VÊM DEPOIS
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF25D366),
+                                const Color(0xFF128C7E)
+                              ],
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF25D366).withOpacity(0.3),
+                                spreadRadius: 1,
+                                blurRadius: 6,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.pop(context);
+                                _navigateToAthleteProfile(record);
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.person,
+                                      color: Colors.white, size: 20),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Enviar Mensagem',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF2C3E5A),
+                                const Color(0xFF4A6FA5)
+                              ],
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF2C3E5A).withOpacity(0.3),
+                                spreadRadius: 1,
+                                blurRadius: 6,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => Navigator.pop(context),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.close,
+                                      color: Colors.white, size: 20),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Fechar',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (record.receiptUrl != null) ...[
+                    const SizedBox(height: 12),
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
@@ -1472,175 +2370,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                  if (record.status == 'pending') ...[
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.green[600]!,
-                                  Colors.green[400]!
-                                ],
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.green.withOpacity(0.3),
-                                  spreadRadius: 1,
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () async {
-                                  await _approvePayment(record.id);
-                                  if (mounted) {
-                                    Navigator.pop(context);
-                                  }
-                                },
-                                borderRadius: BorderRadius.circular(12),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.check,
-                                        color: Colors.white, size: 20),
-                                    const SizedBox(width: 8),
-                                    const Text(
-                                      'Aprovar',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [Colors.red[600]!, Colors.red[400]!],
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.red.withOpacity(0.3),
-                                  spreadRadius: 1,
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () async {
-                                  await _rejectPayment(record.id);
-                                  if (mounted) {
-                                    Navigator.pop(context);
-                                  }
-                                },
-                                borderRadius: BorderRadius.circular(12),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.close,
-                                        color: Colors.white, size: 20),
-                                    const SizedBox(width: 8),
-                                    const Text(
-                                      'Rejeitar',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ] else if (record.status != 'pending') ...[
-                    const SizedBox(height: 20),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            record.status == 'approved'
-                                ? Icons.check_circle
-                                : Icons.cancel,
-                            color: record.status == 'approved'
-                                ? Colors.green
-                                : Colors.red,
-                            size: 24,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  record.status == 'approved'
-                                      ? 'Pagamento Aprovado'
-                                      : 'Pagamento Rejeitado',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 15,
-                                    color: Colors.grey[800],
-                                  ),
-                                ),
-                                Text(
-                                  'Registro finalizado',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              _editRecord(record);
-                            },
-                            icon: const Icon(Icons.edit, size: 18),
-                            label: const Text('Editar'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2C3E5A),
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ],
                       ),
                     ),
                   ],
@@ -1718,6 +2447,47 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
           Expanded(child: Text(value)),
         ],
       ),
+    );
+  }
+}
+
+// Formatter para moeda brasileira
+class CurrencyInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.isEmpty) {
+      return newValue;
+    }
+
+    // Remove tudo que não é dígito
+    String text = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
+
+    // Converte para centavos
+    int value = int.tryParse(text) ?? 0;
+
+    // Formata como moeda brasileira
+    String formatted = (value / 100).toStringAsFixed(2);
+    formatted = formatted.replaceAll('.', ',');
+
+    // Adiciona separador de milhar
+    final parts = formatted.split(',');
+    String integerPart = parts[0];
+    String decimalPart = parts.length > 1 ? parts[1] : '00';
+
+    // Adiciona pontos para milhar
+    integerPart = integerPart.replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]}.',
+    );
+
+    final result = 'R\$ $integerPart,$decimalPart';
+
+    return TextEditingValue(
+      text: result,
+      selection: TextSelection.collapsed(offset: result.length),
     );
   }
 }
