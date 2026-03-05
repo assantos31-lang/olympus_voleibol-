@@ -152,29 +152,27 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         });
         return;
       }
-
       final response = await _supabase.from('convocations').select('''
-        event_id,
-        status,
-        events!$_eventsEmbedFk (
-          id,
-          event_name,
-          event_type,
-          event_date,
-          event_time,
-          gender,
-          championship_name,
-          street,
-          street_number,
-          neighborhood,
-          city,
-          state,
-          cep,
-          latitude,
-          longitude
-        )
-      ''').eq('user_id', user.id);
-
+event_id,
+status,
+events!$_eventsEmbedFk (
+id,
+event_name,
+event_type,
+event_date,
+event_time,
+gender,
+championship_name,
+street,
+street_number,
+neighborhood,
+city,
+state,
+cep,
+latitude,
+longitude
+)
+''').eq('user_id', user.id);
       if (response.isEmpty) {
         if (!mounted) return;
         setState(() {
@@ -184,7 +182,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         });
         return;
       }
-
       final eventosList = <Map<String, dynamic>>[];
       final statusMap = <String, Map<String, String>>{};
       for (final item in response) {
@@ -200,7 +197,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
           statusMap[eid] = {'status': status};
         }
       }
-
       // ✅ AUTO-REJECT: Verifica e atualiza pendentes vencidos
       final idsParaAtualizar = <String>[];
       for (final evento in eventosList) {
@@ -223,24 +219,22 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
             .eq('event_id', eid)
             .eq('user_id', user.id)));
       }
-
       final eventIds = eventosList.map((e) => e['id'].toString()).toList();
       final checkinMap = await _buscarCheckinsDoUsuario(user.id, eventIds);
       for (final e in eventosList) {
         final id = e['id'].toString();
         e['check_in_status'] = checkinMap[id];
       }
-
+      // ✅ CORREÇÃO: Ordenar dos mais recentes aos mais antigos (decrescente)
       eventosList.sort((a, b) {
         final dateA = (a['event_date'] ?? '').toString();
         final dateB = (b['event_date'] ?? '').toString();
         final timeA = (a['event_time'] ?? '').toString();
         final timeB = (b['event_time'] ?? '').toString();
-        final compare = dateA.compareTo(dateB);
+        final compare = dateB.compareTo(dateA); // ✅ Invertido: B antes de A
         if (compare != 0) return compare;
-        return timeA.compareTo(timeB);
+        return timeB.compareTo(timeA); // ✅ Invertido: B antes de A
       });
-
       if (!mounted) return;
       setState(() {
         _eventos = eventosList;
@@ -615,14 +609,12 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       }
       if (!mounted) return;
       _showSuccess('📡 Obtendo sua localização...');
-
       // ✅ CORREÇÃO CRÍTICA: Forçar GPS a obter posição FRESCA (ignorar cache)
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
         forceAndroidLocationManager: true, // ✅ FORÇA GPS REAL - ignora cache
         timeLimit: const Duration(seconds: 15),
       );
-
       print('📍 Sua posição: lat=${pos.latitude}, lng=${pos.longitude}');
       print('📍 Precisão do GPS: ${pos.accuracy}m');
       final distancia = _calcularDistanciaMetros(
@@ -641,7 +633,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         return;
       }
       print('✅ Dentro do raio de ${raioMaximo}m. Chamando stored procedure...');
-
       // ✅ CORREÇÃO PRINCIPAL: Latitude e longitude na ordem CORRETA
       final res = await _supabase.rpc('do_checkin', params: {
         'p_event_id': evento['id'],
@@ -650,7 +641,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         'p_check_lat': pos.latitude, // ✅ latitude correta (não longitude)
         'p_check_lng': pos.longitude, // ✅ longitude correta (não latitude)
       });
-
       final ok = res?['ok'] == true;
       final st = (res?['status'] ?? '').toString();
       print('📍 Resultado do check-in: ok=$ok, status=$st');
@@ -871,7 +861,7 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                       border: Border.all(color: Colors.grey[300]!),
                     ),
                     child: DropdownButton<String>(
-                      value: _filtroMes,
+                      value: _filtroMes.isEmpty ? null : _filtroMes,
                       hint: Text(
                         'Mês',
                         style: TextStyle(color: Colors.grey[600]),

@@ -16,7 +16,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
   Map<String, Map<String, dynamic>> _athleteData = {};
   List<Map<String, dynamic>> _athletes = [];
   bool _isLoading = true;
-
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = 2026;
   String _selectedStatus = 'all';
@@ -64,19 +63,16 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       if (_selectedStatus != 'all') {
         query = query.eq('status', _selectedStatus);
       }
-
       if (_selectedType != 'all') {
         query = query.eq('type', _selectedType);
       }
 
       debugPrint('📊 Executando query...');
       final response = await query.order('created_at', ascending: false);
-
       debugPrint('✅ RETORNO DO BANCO: ${(response as List).length} registros');
 
       final records =
           (response as List).map((r) => FinancialRecord.fromMap(r)).toList();
-
       debugPrint('📋 Após mapeamento: ${records.length} registros');
 
       final athleteIds = records.map((r) => r.athleteId).toSet().toList();
@@ -106,6 +102,228 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     }
   }
 
+  Future<void> _deleteRecord(String recordId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar Exclusão'),
+        content: const Text('Tem certeza que deseja excluir este registro?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      try {
+        await _supabase.from('financial_records').delete().eq('id', recordId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Registro excluído!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          await _loadRecords();
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erro ao excluir: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  void _editRecord(FinancialRecord record) {
+    final valueController =
+        TextEditingController(text: record.value.toString());
+    final descriptionController =
+        TextEditingController(text: record.description ?? '');
+    int selectedMonth = record.month;
+    int selectedYear = record.year;
+    String selectedType = record.type;
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Editar Registro'),
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: selectedType,
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo *',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'monthly', child: Text('Mensalidade')),
+                      DropdownMenuItem(value: 'games', child: Text('Jogos')),
+                      DropdownMenuItem(
+                          value: 'maintenance', child: Text('Manutenção')),
+                      DropdownMenuItem(value: 'other', child: Text('Outros')),
+                    ],
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedType = value!;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: valueController,
+                    decoration: const InputDecoration(
+                      labelText: 'Valor (R\$) *',
+                      border: OutlineInputBorder(),
+                      prefixText: 'R\$ ',
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (value) {
+                      if (value == null || value.isEmpty)
+                        return 'Campo obrigatório';
+                      if (double.tryParse(value) == null)
+                        return 'Valor inválido';
+                      return null;
+                    },
+                  ),
+                  if (selectedType == 'other') ...[
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: descriptionController,
+                      decoration: const InputDecoration(
+                        labelText: 'Descrição *',
+                        border: OutlineInputBorder(),
+                        hintText: 'Informe do que se trata',
+                      ),
+                      maxLines: 2,
+                      validator: (value) {
+                        if (selectedType == 'other' &&
+                            (value == null || value.isEmpty)) {
+                          return 'Campo obrigatório para "Outros"';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: selectedMonth,
+                          decoration: const InputDecoration(
+                            labelText: 'Mês *',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: List.generate(12, (i) => i + 1).map((m) {
+                            return DropdownMenuItem(
+                              value: m,
+                              child: Text(DateFormat.MMMM('pt_BR')
+                                  .format(DateTime(2024, m))),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedMonth = value!;
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: selectedYear,
+                          decoration: const InputDecoration(
+                            labelText: 'Ano *',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [2026, 2027, 2028, 2029, 2030].map((y) {
+                            return DropdownMenuItem(
+                              value: y,
+                              child: Text(y.toString()),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedYear = value!;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  try {
+                    await _supabase.from('financial_records').update({
+                      'type': selectedType,
+                      'value': double.parse(valueController.text),
+                      'description': selectedType == 'other'
+                          ? descriptionController.text
+                          : null,
+                      'month': selectedMonth,
+                      'year': selectedYear,
+                    }).eq('id', record.id);
+
+                    if (mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('✅ Registro atualizado!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                      await _loadRecords();
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Erro ao atualizar: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                }
+              },
+              child: const Text('Salvar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   IconData _getTypeIcon(String type) {
     switch (type) {
       case 'monthly':
@@ -130,9 +348,24 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       case 'maintenance':
         return const Color(0xFF4facfe);
       case 'other':
-        return const Color(0xFF43e97b);
+        return const Color(0xFFfa709a);
       default:
-        return const Color(0xFF667eea);
+        return const Color(0xFF2C3E5A);
+    }
+  }
+
+  String _getTypeLabel(String type) {
+    switch (type) {
+      case 'monthly':
+        return 'Mensalidade';
+      case 'games':
+        return 'Jogos';
+      case 'maintenance':
+        return 'Manutenção';
+      case 'other':
+        return 'Outros';
+      default:
+        return 'Todos';
     }
   }
 
@@ -141,10 +374,8 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     String selectedType = 'monthly';
     final valueController = TextEditingController();
     final descriptionController = TextEditingController();
-
     int selectedMonth = _selectedMonth;
     int selectedYear = _selectedYear;
-
     final formKey = GlobalKey<FormState>();
 
     showDialog(
@@ -470,6 +701,11 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
 
   @override
   Widget build(BuildContext context) {
+    final totalRecords = _records.length;
+    final approvedRecords =
+        _records.where((r) => r.status == 'approved').length;
+    final pendingRecords = _records.where((r) => r.status == 'pending').length;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -498,182 +734,253 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       body: Column(
         children: [
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.all(16),
             color: const Color(0xFFF5F5F5),
             child: Column(
               children: [
                 Row(
                   children: [
                     Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.grey.withOpacity(0.08),
-                              spreadRadius: 1,
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: DropdownButton<int>(
-                          value: _selectedMonth,
-                          isExpanded: true,
-                          underline: const SizedBox(),
-                          icon: const Icon(Icons.keyboard_arrow_down,
-                              color: Color(0xFF757575)),
-                          items: List.generate(12, (i) => i + 1)
-                              .map((m) => DropdownMenuItem(
-                                    value: m,
-                                    child: Text(
-                                      DateFormat.MMMM('pt_BR')
-                                          .format(DateTime(2024, m)),
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        color: Color(0xFF424242),
-                                      ),
-                                    ),
-                                  ))
-                              .toList(),
-                          onChanged: (v) => setState(() {
-                            _selectedMonth = v!;
-                            _loadRecords();
-                          }),
-                        ),
+                      child: _buildSummaryCard(
+                        'Total',
+                        totalRecords,
+                        Icons.receipt_long,
+                        const Color(0xFF2C3E5A),
+                        const Color(0xFF667eea),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.grey.withOpacity(0.08),
-                              spreadRadius: 1,
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: DropdownButton<int>(
-                          value: _selectedYear,
-                          isExpanded: true,
-                          underline: const SizedBox(),
-                          icon: const Icon(Icons.keyboard_arrow_down,
-                              color: Color(0xFF757575)),
-                          items: [2026, 2027, 2028, 2029, 2030]
-                              .map((y) => DropdownMenuItem(
-                                    value: y,
-                                    child: Text(
-                                      y.toString(),
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        color: Color(0xFF424242),
-                                      ),
-                                    ),
-                                  ))
-                              .toList(),
-                          onChanged: (v) => setState(() {
-                            _selectedYear = v!;
-                            _loadRecords();
-                          }),
-                        ),
+                      child: _buildSummaryCard(
+                        'Pagos',
+                        approvedRecords,
+                        Icons.check_circle,
+                        Colors.green,
+                        const Color(0xFF43e97b),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildSummaryCard(
+                        'Pendentes',
+                        pendingRecords,
+                        Icons.schedule,
+                        Colors.orange,
+                        const Color(0xFFf093fb),
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.08),
+                        spreadRadius: 1,
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _buildTypeButton('all', 'Todos', Icons.apps),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: _buildTypeButton('monthly', 'Mensalidade',
+                            Icons.account_balance_wallet),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.grey.withOpacity(0.08),
-                              spreadRadius: 1,
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: DropdownButton<String>(
-                          value: _selectedStatus,
-                          isExpanded: true,
-                          underline: const SizedBox(),
-                          icon: const Icon(Icons.keyboard_arrow_down,
-                              color: Color(0xFF757575)),
-                          items: const [
-                            DropdownMenuItem(
-                                value: 'all', child: Text('Todos')),
-                            DropdownMenuItem(
-                                value: 'pending', child: Text('Pendentes')),
-                            DropdownMenuItem(
-                                value: 'approved', child: Text('Aprovados')),
-                          ],
-                          onChanged: (v) => setState(() {
-                            _selectedStatus = v!;
-                            _loadRecords();
-                          }),
-                        ),
-                      ),
+                      child: _buildTypeButton(
+                          'games', 'Jogos', Icons.sports_soccer),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.grey.withOpacity(0.08),
-                              spreadRadius: 1,
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: DropdownButton<String>(
-                          value: _selectedType,
-                          isExpanded: true,
-                          underline: const SizedBox(),
-                          icon: const Icon(Icons.keyboard_arrow_down,
-                              color: Color(0xFF757575)),
-                          items: const [
-                            DropdownMenuItem(
-                                value: 'all', child: Text('Todos Tipos')),
-                            DropdownMenuItem(
-                                value: 'monthly', child: Text('Mensalidade')),
-                            DropdownMenuItem(
-                                value: 'games', child: Text('Jogos')),
-                            DropdownMenuItem(
-                                value: 'maintenance',
-                                child: Text('Manutenção')),
-                            DropdownMenuItem(
-                                value: 'other', child: Text('Outros')),
-                          ],
-                          onChanged: (v) => setState(() {
-                            _selectedType = v!;
-                            _loadRecords();
-                          }),
-                        ),
-                      ),
+                      child: _buildTypeButton(
+                          'maintenance', 'Manutenção', Icons.build),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: _buildTypeButton(
+                          'other', 'Outros', Icons.receipt_long),
                     ),
                   ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.08),
+                        spreadRadius: 1,
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Mês',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF757575),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF5F5F5),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: DropdownButton<int>(
+                                value: _selectedMonth,
+                                isExpanded: true,
+                                underline: const SizedBox(),
+                                icon: const Icon(Icons.keyboard_arrow_down,
+                                    color: Color(0xFF757575), size: 20),
+                                items: List.generate(12, (i) => i + 1)
+                                    .map((m) => DropdownMenuItem(
+                                          value: m,
+                                          child: Text(
+                                            DateFormat.MMMM('pt_BR')
+                                                .format(DateTime(2024, m)),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              color: Color(0xFF424242),
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ))
+                                    .toList(),
+                                onChanged: (v) => setState(() {
+                                  _selectedMonth = v!;
+                                  _loadRecords();
+                                }),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Ano',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF757575),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF5F5F5),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: DropdownButton<int>(
+                                value: _selectedYear,
+                                isExpanded: true,
+                                underline: const SizedBox(),
+                                icon: const Icon(Icons.keyboard_arrow_down,
+                                    color: Color(0xFF757575), size: 20),
+                                items: [2026, 2027, 2028, 2029, 2030]
+                                    .map((y) => DropdownMenuItem(
+                                          value: y,
+                                          child: Text(
+                                            y.toString(),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              color: Color(0xFF424242),
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ))
+                                    .toList(),
+                                onChanged: (v) => setState(() {
+                                  _selectedYear = v!;
+                                  _loadRecords();
+                                }),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Status',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF757575),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF5F5F5),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: DropdownButton<String>(
+                                value: _selectedStatus,
+                                isExpanded: true,
+                                underline: const SizedBox(),
+                                icon: const Icon(Icons.keyboard_arrow_down,
+                                    color: Color(0xFF757575), size: 20),
+                                items: const [
+                                  DropdownMenuItem(
+                                      value: 'all', child: Text('Todos')),
+                                  DropdownMenuItem(
+                                      value: 'pending',
+                                      child: Text('Pendentes')),
+                                  DropdownMenuItem(
+                                      value: 'approved',
+                                      child: Text('Aprovados')),
+                                ],
+                                onChanged: (v) => setState(() {
+                                  _selectedStatus = v!;
+                                  _loadRecords();
+                                }),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -823,6 +1130,127 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     );
   }
 
+  Widget _buildSummaryCard(String label, int value, IconData icon,
+      Color baseColor, Color gradientColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [baseColor.withOpacity(0.1), gradientColor.withOpacity(0.2)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: baseColor.withOpacity(0.3),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: baseColor.withOpacity(0.15),
+            spreadRadius: 1,
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Icon(
+            icon,
+            color: baseColor,
+            size: 22,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value.toString(),
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: baseColor,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: baseColor.withOpacity(0.8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypeButton(String type, String label, IconData icon) {
+    final isSelected = _selectedType == type;
+    final baseColor = _getTypeColor(type);
+    final lightColor = baseColor.withOpacity(0.15);
+    final mediumColor = baseColor.withOpacity(0.6);
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedType = type;
+            _loadRecords();
+          });
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+          decoration: BoxDecoration(
+            gradient: isSelected
+                ? LinearGradient(
+                    colors: [baseColor, mediumColor],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : null,
+            color: isSelected ? null : lightColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? baseColor : Colors.transparent,
+              width: 1.5,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: baseColor.withOpacity(0.4),
+                      spreadRadius: 2,
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ]
+                : [],
+          ),
+          child: Column(
+            children: [
+              Icon(
+                icon,
+                color: isSelected ? Colors.white : baseColor,
+                size: 22,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                  color: isSelected ? Colors.white : baseColor,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showRecordDetails(FinancialRecord record) {
     final typeColor = _getTypeColor(record.type);
 
@@ -894,6 +1322,14 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                             ),
                           ],
                         ),
+                      ),
+                      IconButton(
+                        icon:
+                            const Icon(Icons.delete_outline, color: Colors.red),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _deleteRecord(record.id);
+                        },
                       ),
                     ],
                   ),
@@ -1067,7 +1503,12 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                             child: Material(
                               color: Colors.transparent,
                               child: InkWell(
-                                onTap: () => _approvePayment(record.id),
+                                onTap: () async {
+                                  await _approvePayment(record.id);
+                                  if (mounted) {
+                                    Navigator.pop(context);
+                                  }
+                                },
                                 borderRadius: BorderRadius.circular(12),
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1112,7 +1553,12 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                             child: Material(
                               color: Colors.transparent,
                               child: InkWell(
-                                onTap: () => _rejectPayment(record.id),
+                                onTap: () async {
+                                  await _rejectPayment(record.id);
+                                  if (mounted) {
+                                    Navigator.pop(context);
+                                  }
+                                },
                                 borderRadius: BorderRadius.circular(12),
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1135,6 +1581,67 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                           ),
                         ),
                       ],
+                    ),
+                  ] else if (record.status != 'pending') ...[
+                    const SizedBox(height: 20),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            record.status == 'approved'
+                                ? Icons.check_circle
+                                : Icons.cancel,
+                            color: record.status == 'approved'
+                                ? Colors.green
+                                : Colors.red,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  record.status == 'approved'
+                                      ? 'Pagamento Aprovado'
+                                      : 'Pagamento Rejeitado',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                    color: Colors.grey[800],
+                                  ),
+                                ),
+                                Text(
+                                  'Registro finalizado',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _editRecord(record);
+                            },
+                            icon: const Icon(Icons.edit, size: 18),
+                            label: const Text('Editar'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2C3E5A),
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                   const SizedBox(height: 24),
