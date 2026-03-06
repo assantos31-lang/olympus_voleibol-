@@ -23,6 +23,8 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
   final _authService = AuthService();
   Map<String, dynamic>? _profile;
   bool _isLoading = true;
+  // ✅ Contador de convocações pendentes
+  int _pendingCount = 0;
 
   // ✅ Cores do logo Olympus Voleibol
   static const Color olympusBlue = Color(0xFF1E3A5F);
@@ -44,7 +46,30 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
           _profile = profile;
           _isLoading = false;
         });
+        // ✅ NOVO: Carregar contador de pendentes após carregar perfil
+        _loadPendingCount();
       }
+    }
+  }
+
+  // ✅ NOVO: Carregar quantidade de convocações pendentes
+  Future<void> _loadPendingCount() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        final response = await supabase
+            .from('convocations')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('status', 'pending');
+        if (mounted) {
+          setState(() {
+            _pendingCount = response.length;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar pendentes: $e');
     }
   }
 
@@ -74,7 +99,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
       MaterialPageRoute(
         builder: (context) => const AthleteAgendaPage(),
       ),
-    );
+    ).then((_) => _loadPendingCount());
   }
 
   void _navigateToFinancial() {
@@ -92,7 +117,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
         _profile?['full_name']?.toString().split(' ').first ?? 'Atleta';
     final position = _profile?['court_position']?.toString() ?? 'Não definida';
     final avatarUrl = _profile?['avatar_url']?.toString();
-
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -207,6 +231,127 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     );
   }
 
+  // ✅ NOVO: Widget de Card/Tile de Dashboard
+  Widget _buildDashboardCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+    int? badgeCount,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.2),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+          border: Border.all(
+            color: color.withOpacity(0.3),
+            width: 2,
+          ),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  // Ícone
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      icon,
+                      size: 32,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  // Texto
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: color,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Seta
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    color: color.withOpacity(0.5),
+                    size: 18,
+                  ),
+                ],
+              ),
+            ),
+            // Badge de pendentes
+            if (badgeCount != null && badgeCount > 0)
+              Positioned(
+                right: 12,
+                top: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.red.withOpacity(0.4),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    badgeCount.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -214,7 +359,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
         body: Center(child: CircularProgressIndicator()),
       );
     }
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Área do Atleta'),
@@ -233,19 +377,19 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
           ),
         ],
       ),
-      body: Center(
+      body: SingleChildScrollView(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // ✅ Card de Informações do Atleta
+            // ✅ Card de Informações do Atleta - MOVIDO PARA O TOPO
             _buildAthleteInfoCard(),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
             const Icon(
               Icons.construction,
               size: 100,
               color: olympusGold,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
             const Text(
               'Em criação',
               style: TextStyle(
@@ -253,54 +397,32 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             Text(
               'Esta página estará disponível em breve',
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 14,
                 color: Colors.grey[600],
               ),
             ),
-            const SizedBox(height: 30),
-            ElevatedButton.icon(
-              onPressed: _navigateToAgenda,
-              icon: const Icon(Icons.calendar_today, size: 24),
-              label: const Text(
-                'Minha Agenda',
-                style: TextStyle(fontSize: 18),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: olympusGold,
-                foregroundColor: olympusBlue,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 16,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+            const SizedBox(height: 24),
+            // ✅ Cards de Dashboard
+            _buildDashboardCard(
+              icon: Icons.calendar_today,
+              title: 'Minha Agenda',
+              subtitle: 'Veja suas convocações e eventos',
+              color: olympusGold,
+              onTap: _navigateToAgenda,
+              badgeCount: _pendingCount > 0 ? _pendingCount : null,
             ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: _navigateToFinancial,
-              icon: const Icon(Icons.attach_money, size: 24),
-              label: const Text(
-                'Financeiro',
-                style: TextStyle(fontSize: 18),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: olympusGold,
-                foregroundColor: olympusBlue,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 16,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+            _buildDashboardCard(
+              icon: Icons.attach_money,
+              title: 'Financeiro',
+              subtitle: 'Acompanhe seus pagamentos',
+              color: olympusBlue,
+              onTap: _navigateToFinancial,
             ),
+            const SizedBox(height: 20),
           ],
         ),
       ),
@@ -321,7 +443,6 @@ class AthleteProfilePage extends StatefulWidget {
 
 class _AthleteProfilePageState extends State<AthleteProfilePage> {
   final supabase = Supabase.instance.client;
-
   // ✅ Cores do logo Olympus Voleibol
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
@@ -332,7 +453,6 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
     final newPasswordCtrl = TextEditingController();
     final confirmCtrl = TextEditingController();
     bool _isLoading = false;
-
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
