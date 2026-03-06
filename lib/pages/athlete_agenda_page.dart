@@ -30,6 +30,12 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     'rejected': 0,
     'pending': 0,
   };
+
+  // Cores do logo Olympus Voleibol
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+
   static const String _geocodeAccessKey = 'pk.5a7a05184e41c916429dceb50cf02718';
   static const String _eventsEmbedFk = 'convocations_event_id_fkey';
 
@@ -152,6 +158,7 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         });
         return;
       }
+
       final response = await _supabase.from('convocations').select('''
 event_id,
 status,
@@ -173,6 +180,7 @@ latitude,
 longitude
 )
 ''').eq('user_id', user.id);
+
       if (response.isEmpty) {
         if (!mounted) return;
         setState(() {
@@ -182,6 +190,7 @@ longitude
         });
         return;
       }
+
       final eventosList = <Map<String, dynamic>>[];
       final statusMap = <String, Map<String, String>>{};
       for (final item in response) {
@@ -197,6 +206,7 @@ longitude
           statusMap[eid] = {'status': status};
         }
       }
+
       // ✅ AUTO-REJECT: Verifica e atualiza pendentes vencidos
       final idsParaAtualizar = <String>[];
       for (final evento in eventosList) {
@@ -212,6 +222,7 @@ longitude
           }
         }
       }
+
       if (idsParaAtualizar.isNotEmpty) {
         await Future.wait(idsParaAtualizar.map((eid) => _supabase
             .from('convocations')
@@ -219,12 +230,14 @@ longitude
             .eq('event_id', eid)
             .eq('user_id', user.id)));
       }
+
       final eventIds = eventosList.map((e) => e['id'].toString()).toList();
       final checkinMap = await _buscarCheckinsDoUsuario(user.id, eventIds);
       for (final e in eventosList) {
         final id = e['id'].toString();
         e['check_in_status'] = checkinMap[id];
       }
+
       // ✅ CORREÇÃO: Ordenar dos mais recentes aos mais antigos (decrescente)
       eventosList.sort((a, b) {
         final dateA = (a['event_date'] ?? '').toString();
@@ -235,6 +248,7 @@ longitude
         if (compare != 0) return compare;
         return timeB.compareTo(timeA); // ✅ Invertido: B antes de A
       });
+
       if (!mounted) return;
       setState(() {
         _eventos = eventosList;
@@ -716,10 +730,7 @@ longitude
               const SizedBox(width: 6),
               // ✅ BADGE estilo imagem
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: badgeColor,
                   borderRadius: BorderRadius.circular(10),
@@ -834,7 +845,7 @@ longitude
             fontWeight: FontWeight.bold,
           ),
         ),
-        backgroundColor: const Color(0xFF1E3A5F),
+        backgroundColor: olympusBlue,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
@@ -847,60 +858,107 @@ longitude
       ),
       body: Column(
         children: [
+          // ✅ FILTROS MODERNOS COM CORES OLYMPUS
           Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.grey[50],
-            child: Row(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  olympusBlue,
+                  olympusLightBlue,
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(24),
+                bottomRight: Radius.circular(24),
+              ),
+            ),
+            child: Column(
               children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey[300]!),
-                    ),
-                    child: DropdownButton<String>(
-                      value: _filtroMes.isEmpty ? null : _filtroMes,
-                      hint: Text(
-                        'Mês',
-                        style: TextStyle(color: Colors.grey[600]),
+                // Filtro de Mês
+                _buildModernDropdown(
+                  icon: Icons.calendar_month,
+                  value: _filtroMes.isEmpty ? null : _filtroMes,
+                  hint: 'Mês',
+                  items: _getMesesDisponiveis().map((mes) {
+                    return DropdownMenuItem(
+                      value: mes,
+                      child: Text(
+                        _formatarNomeMes(mes),
+                        style: TextStyle(
+                          fontWeight: _filtroMes == mes
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                          color: _filtroMes == mes ? olympusBlue : Colors.black,
+                        ),
                       ),
-                      isExpanded: true,
-                      underline: const SizedBox(),
-                      items: _getMesesDisponiveis().map((mes) {
-                        return DropdownMenuItem(
-                          value: mes,
-                          child: Text(
-                            _formatarNomeMes(mes),
-                            style: TextStyle(
-                              fontWeight: _filtroMes == mes
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              color: _filtroMes == mes
-                                  ? const Color(0xFF1E3A5F)
-                                  : Colors.black,
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (valor) {
-                        if (valor != null) {
-                          setState(() {
-                            _filtroMes = valor;
-                            _aplicarFiltros();
-                          });
-                        }
-                      },
-                    ),
-                  ),
+                    );
+                  }).toList(),
+                  onChanged: (valor) {
+                    if (valor != null) {
+                      setState(() {
+                        _filtroMes = valor;
+                        _aplicarFiltros();
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                // Filtro de Tipo
+                _buildModernChipFilter(
+                  label: 'Tipo de Evento',
+                  icon: Icons.category_outlined,
+                  options: const [
+                    {'value': 'todos', 'label': 'Todos'},
+                    {'value': 'treino', 'label': 'Treino'},
+                    {'value': 'amistoso', 'label': 'Amistoso'},
+                    {'value': 'campeonato', 'label': 'Campeonatos'},
+                  ],
+                  selectedValue: _filtroTipo,
+                  onSelected: (value) {
+                    setState(() {
+                      _filtroTipo = value;
+                      _aplicarFiltros();
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                // Filtro de Status
+                _buildModernChipFilter(
+                  label: 'Status da Convocação',
+                  icon: Icons.visibility_outlined,
+                  options: [
+                    {'value': 'todos', 'label': 'Todos'},
+                    {
+                      'value': 'accepted',
+                      'label': 'Aceitou',
+                      'count': _statusCounts['accepted'] ?? 0
+                    },
+                    {
+                      'value': 'rejected',
+                      'label': 'Recusou',
+                      'count': _statusCounts['rejected'] ?? 0
+                    },
+                    {
+                      'value': 'pending',
+                      'label': 'Pendentes',
+                      'count': _statusCounts['pending'] ?? 0
+                    },
+                  ],
+                  selectedValue: _filtroStatus,
+                  onSelected: (value) {
+                    setState(() {
+                      _filtroStatus = value;
+                      _aplicarFiltros();
+                    });
+                  },
+                  showBadges: true,
                 ),
               ],
             ),
           ),
-          _buildFiltroTipoButtons(),
-          // ✅ NOVO: Adicionado filtro de status com marcador e badges
-          _buildFiltroStatusButtons(),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -995,6 +1053,7 @@ longitude
                                 final jaFezCheckin = checkinStatus.isNotEmpty;
                                 final janelaCheckIn =
                                     _verificarJanelaCheckIn(evento);
+
                                 return Card(
                                   margin: const EdgeInsets.only(bottom: 12),
                                   elevation: 2,
@@ -1331,6 +1390,202 @@ longitude
                             ),
                           ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ NOVO: Widget de Dropdown Moderno com cores Olympus
+  Widget _buildModernDropdown({
+    required IconData icon,
+    required dynamic value,
+    required String hint,
+    required List<DropdownMenuItem<dynamic>> items,
+    required ValueChanged<dynamic> onChanged,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 16,
+                  color: olympusGold,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  hint,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: olympusGold.withOpacity(0.8),
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<dynamic>(
+                value: value,
+                hint: Text(
+                  hint,
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+                isExpanded: true,
+                items: items,
+                onChanged: onChanged,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E5A),
+                ),
+                icon: Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: olympusGold,
+                  size: 20,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  // ✅ NOVO: Widget de Filtro com Chips Modernos
+  Widget _buildModernChipFilter({
+    required String label,
+    required IconData icon,
+    required List<Map<String, dynamic>> options,
+    required String selectedValue,
+    required ValueChanged<String> onSelected,
+    bool showBadges = false,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 16,
+                  color: olympusGold,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: olympusGold.withOpacity(0.8),
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: options.map((option) {
+                final value = option['value'] as String;
+                final labelText = option['label'] as String;
+                final count = option['count'] as int?;
+                final selected = selectedValue == value;
+
+                Color chipColor;
+                switch (value) {
+                  case 'accepted':
+                    chipColor = Colors.green;
+                    break;
+                  case 'rejected':
+                    chipColor = Colors.red;
+                    break;
+                  case 'pending':
+                    chipColor = Colors.orange;
+                    break;
+                  default:
+                    chipColor = olympusBlue;
+                }
+
+                return ChoiceChip(
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(labelText),
+                      if (showBadges && count != null && count > 0) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: chipColor,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            count.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  selected: selected,
+                  selectedColor: chipColor.withOpacity(0.2),
+                  labelStyle: TextStyle(
+                    color: selected ? chipColor : Colors.grey[700],
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                    fontSize: 13,
+                  ),
+                  onSelected: (_) => onSelected(value),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 8),
         ],
       ),
     );
