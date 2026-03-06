@@ -29,6 +29,11 @@ class _AgendaPageState extends State<AgendaPage> {
   String _filtroGenero = 'Todos';
   Set<String> _placaresExpandidos = {}; // IDs dos placares expandidos
 
+  // ✅ Cores do logo Olympus Voleibol
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+
   @override
   void initState() {
     super.initState();
@@ -61,7 +66,6 @@ class _AgendaPageState extends State<AgendaPage> {
           .eq('user_id', user.id)
           .order('event_date', ascending: true)
           .order('event_time', ascending: true);
-
       setState(() {
         _eventos = List<Map<String, dynamic>>.from(response);
         _aplicarFiltros();
@@ -344,7 +348,6 @@ class _AgendaPageState extends State<AgendaPage> {
   Future<void> _exportarConvocados(Map<String, dynamic> evento) async {
     final eventId = evento['id']?.toString();
     if (eventId == null) return;
-
     try {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -355,20 +358,16 @@ class _AgendaPageState extends State<AgendaPage> {
           ),
         );
       }
-
       final convocationsResponse = await _supabase
           .from('convocations')
           .select('user_id, status, justification')
           .eq('event_id', eventId);
-
       // ✅ BOM UTF-8 para Excel reconhecer acentos corretamente
       final bom = '\uFEFF';
-
       // ✅ Cabeçalho com delimitador ; (padrão Excel PT-BR)
       List<String> csvLines = [
         '${bom}Nome;Tipo;Status;Data de Nascimento;RG;Justificativa'
       ];
-
       for (var convocation in convocationsResponse) {
         final userId = convocation['user_id'];
         if (userId != null) {
@@ -377,7 +376,6 @@ class _AgendaPageState extends State<AgendaPage> {
               .select('full_name, user_type, birth_date, rg')
               .eq('id', userId)
               .maybeSingle();
-
           if (profileResponse != null) {
             // ✅ Sanitiza campos: remove quebras de linha e envolve em aspas se necessário
             String _sanitize(String? value) {
@@ -392,7 +390,6 @@ class _AgendaPageState extends State<AgendaPage> {
             final nome = _sanitize(profileResponse['full_name']);
             final tipo = _sanitize(profileResponse['user_type']);
             final status = _sanitize(convocation['status']);
-
             // ✅ Converte data para formato DD/MM/YYYY (Excel PT-BR)
             String birthDate = '';
             final rawDate = profileResponse['birth_date'];
@@ -405,21 +402,16 @@ class _AgendaPageState extends State<AgendaPage> {
                 birthDate = rawDate.toString();
               }
             }
-
             final rg = _sanitize(profileResponse['rg']);
             final justification = _sanitize(convocation['justification']);
-
             // ✅ Linha com delimitador ;
             csvLines.add('$nome;$tipo;$status;$birthDate;$rg;$justification');
           }
         }
       }
-
       final csvContent = csvLines.join('\n');
-
       // ✅ Copia para clipboard com formato compatível com Excel
       await Clipboard.setData(ClipboardData(text: csvContent));
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -488,7 +480,7 @@ class _AgendaPageState extends State<AgendaPage> {
                     children: [
                       Icon(
                         Icons.people_outline,
-                        color: const Color(0xFFD4AF37),
+                        color: olympusGold,
                         size: 28,
                       ),
                       const SizedBox(width: 12),
@@ -501,7 +493,7 @@ class _AgendaPageState extends State<AgendaPage> {
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF1E3A5F),
+                                color: olympusBlue,
                               ),
                             ),
                             Text(
@@ -645,7 +637,7 @@ class _AgendaPageState extends State<AgendaPage> {
                     child: ElevatedButton(
                       onPressed: () => Navigator.pop(context),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1E3A5F),
+                        backgroundColor: olympusBlue,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
@@ -744,7 +736,7 @@ class _AgendaPageState extends State<AgendaPage> {
                     children: [
                       Icon(
                         Icons.check_circle_outline,
-                        color: const Color(0xFFD4AF37),
+                        color: olympusGold,
                         size: 28,
                       ),
                       const SizedBox(width: 12),
@@ -757,7 +749,7 @@ class _AgendaPageState extends State<AgendaPage> {
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF1E3A5F),
+                                color: olympusBlue,
                               ),
                             ),
                             Text(
@@ -933,7 +925,7 @@ class _AgendaPageState extends State<AgendaPage> {
                     child: ElevatedButton(
                       onPressed: () => Navigator.pop(context),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1E3A5F),
+                        backgroundColor: olympusBlue,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
@@ -996,7 +988,7 @@ class _AgendaPageState extends State<AgendaPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => Dialog(
           elevation: 8,
-          shadowColor: Colors.amber[700]!.withOpacity(0.3),
+          shadowColor: olympusGold.withOpacity(0.3),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
@@ -1007,8 +999,8 @@ class _AgendaPageState extends State<AgendaPage> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  const Color(0xFF1E3A5F),
-                  const Color(0xFF1E3A5F).withOpacity(0.95),
+                  olympusBlue,
+                  olympusBlue.withOpacity(0.95),
                   Colors.white,
                 ],
                 stops: const [0.0, 0.15, 0.15],
@@ -1024,11 +1016,11 @@ class _AgendaPageState extends State<AgendaPage> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFD4AF37),
+                          color: olympusGold,
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFFD4AF37).withOpacity(0.5),
+                              color: olympusGold.withOpacity(0.5),
                               blurRadius: 15,
                               spreadRadius: 2,
                             ),
@@ -1036,7 +1028,7 @@ class _AgendaPageState extends State<AgendaPage> {
                         ),
                         child: Icon(
                           Icons.sports_volleyball,
-                          color: const Color(0xFF1E3A5F),
+                          color: olympusBlue,
                           size: 32,
                         ),
                       ),
@@ -1057,17 +1049,17 @@ class _AgendaPageState extends State<AgendaPage> {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFD4AF37).withOpacity(0.2),
+                          color: olympusGold.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: const Color(0xFFD4AF37).withOpacity(0.5),
+                            color: olympusGold.withOpacity(0.5),
                             width: 1.5,
                           ),
                         ),
                         child: Text(
                           'Formato: $setFormat',
                           style: TextStyle(
-                            color: const Color(0xFFD4AF37),
+                            color: olympusGold,
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
                           ),
@@ -1088,19 +1080,18 @@ class _AgendaPageState extends State<AgendaPage> {
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  const Color(0xFFD4AF37).withOpacity(0.05),
-                                  const Color(0xFFD4AF37).withOpacity(0.1),
+                                  olympusGold.withOpacity(0.05),
+                                  olympusGold.withOpacity(0.1),
                                 ],
                               ),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: const Color(0xFFD4AF37).withOpacity(0.3),
+                                color: olympusGold.withOpacity(0.3),
                                 width: 1.5,
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color:
-                                      const Color(0xFFD4AF37).withOpacity(0.1),
+                                  color: olympusGold.withOpacity(0.1),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -1116,8 +1107,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                           vertical: 4,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFF1E3A5F)
-                                              .withOpacity(0.1),
+                                          color: olympusBlue.withOpacity(0.1),
                                           borderRadius:
                                               BorderRadius.circular(8),
                                         ),
@@ -1126,7 +1116,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
-                                            color: const Color(0xFF1E3A5F),
+                                            color: olympusBlue,
                                             fontSize: 12,
                                           ),
                                         ),
@@ -1140,7 +1130,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                         'VS',
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
-                                          color: const Color(0xFFD4AF37),
+                                          color: olympusGold,
                                           fontSize: 14,
                                         ),
                                       ),
@@ -1173,7 +1163,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                   '${index + 1}° Set',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
-                                    color: const Color(0xFFD4AF37),
+                                    color: olympusGold,
                                     fontSize: 16,
                                     letterSpacing: 0.5,
                                   ),
@@ -1189,36 +1179,36 @@ class _AgendaPageState extends State<AgendaPage> {
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 18,
-                                          color: const Color(0xFF1E3A5F),
+                                          color: olympusBlue,
                                         ),
                                         decoration: InputDecoration(
                                           border: OutlineInputBorder(
                                             borderRadius:
                                                 BorderRadius.circular(12),
                                             borderSide: BorderSide(
-                                              color: const Color(0xFF1E3A5F)
-                                                  .withOpacity(0.3),
+                                              color:
+                                                  olympusBlue.withOpacity(0.3),
                                             ),
                                           ),
                                           enabledBorder: OutlineInputBorder(
                                             borderRadius:
                                                 BorderRadius.circular(12),
                                             borderSide: BorderSide(
-                                              color: const Color(0xFF1E3A5F)
-                                                  .withOpacity(0.3),
+                                              color:
+                                                  olympusBlue.withOpacity(0.3),
                                             ),
                                           ),
                                           focusedBorder: OutlineInputBorder(
                                             borderRadius:
                                                 BorderRadius.circular(12),
                                             borderSide: const BorderSide(
-                                              color: Color(0xFFD4AF37),
+                                              color: olympusGold,
                                               width: 2,
                                             ),
                                           ),
                                           filled: true,
-                                          fillColor: const Color(0xFF1E3A5F)
-                                              .withOpacity(0.05),
+                                          fillColor:
+                                              olympusBlue.withOpacity(0.05),
                                           contentPadding:
                                               const EdgeInsets.symmetric(
                                             vertical: 12,
@@ -1268,7 +1258,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                             borderRadius:
                                                 BorderRadius.circular(12),
                                             borderSide: const BorderSide(
-                                              color: Color(0xFFD4AF37),
+                                              color: olympusGold,
                                               width: 2,
                                             ),
                                           ),
@@ -1464,15 +1454,14 @@ class _AgendaPageState extends State<AgendaPage> {
                             }
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFD4AF37),
-                            foregroundColor: const Color(0xFF1E3A5F),
+                            backgroundColor: olympusGold,
+                            foregroundColor: olympusBlue,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
                             elevation: 4,
-                            shadowColor:
-                                const Color(0xFFD4AF37).withOpacity(0.4),
+                            shadowColor: olympusGold.withOpacity(0.4),
                           ),
                           child: const Text(
                             'Salvar Placar',
@@ -1544,7 +1533,7 @@ class _AgendaPageState extends State<AgendaPage> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        backgroundColor: const Color(0xFF1E3A5F),
+        backgroundColor: olympusBlue,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
@@ -1557,104 +1546,101 @@ class _AgendaPageState extends State<AgendaPage> {
       ),
       body: Column(
         children: [
+          // ✅ FILTROS MODERNOS COM CORES OLYMPUS
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: Colors.grey[50],
-            child: Row(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  olympusBlue,
+                  olympusLightBlue,
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(24),
+                bottomRight: Radius.circular(24),
+              ),
+            ),
+            child: Column(
               children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey[300]!),
-                    ),
-                    child: DropdownButton<String>(
-                      value: _filtroMes,
-                      hint: Text('Mês',
-                          style: TextStyle(color: Colors.grey[600])),
-                      isExpanded: true,
-                      underline: const SizedBox(),
-                      items: _getMesesDisponiveis().map((mes) {
-                        return DropdownMenuItem(
-                          value: mes,
-                          child: Text(
-                            _formatarNomeMes(mes),
-                            style: TextStyle(
-                              fontWeight: _filtroMes == mes
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              color: _filtroMes == mes
-                                  ? const Color(0xFF1E3A5F)
-                                  : Colors.black,
+                // Filtro de Mês e Gênero
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildModernDropdown(
+                        icon: Icons.calendar_month,
+                        value: _filtroMes,
+                        hint: 'Mês',
+                        items: _getMesesDisponiveis().map((mes) {
+                          return DropdownMenuItem(
+                            value: mes,
+                            child: Text(
+                              _formatarNomeMes(mes),
+                              style: TextStyle(
+                                fontWeight: _filtroMes == mes
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: _filtroMes == mes
+                                    ? olympusBlue
+                                    : Colors.black,
+                              ),
                             ),
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (valor) {
-                        if (valor != null) {
+                          );
+                        }).toList(),
+                        onChanged: (valor) {
+                          if (valor != null) {
+                            setState(() {
+                              _filtroMes = valor;
+                              _aplicarFiltros();
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildModernDropdown(
+                        icon: Icons.people_outline,
+                        value: _filtroGenero == 'Todos' ? null : _filtroGenero,
+                        hint: 'Gênero',
+                        items: const [
+                          DropdownMenuItem(
+                              value: 'Todos', child: Text('Todos')),
+                          DropdownMenuItem(
+                              value: 'masculino', child: Text('Masculino')),
+                          DropdownMenuItem(
+                              value: 'feminino', child: Text('Feminino')),
+                        ],
+                        onChanged: (valor) {
                           setState(() {
-                            _filtroMes = valor;
+                            _filtroGenero = valor ?? 'Todos';
                             _aplicarFiltros();
                           });
-                        }
-                      },
+                        },
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey[300]!),
-                    ),
-                    child: DropdownButton<String>(
-                      value: _filtroGenero == 'Todos' ? null : _filtroGenero,
-                      hint: Text('Gênero',
-                          style: TextStyle(color: Colors.grey[600])),
-                      isExpanded: true,
-                      underline: const SizedBox(),
-                      items: const [
-                        DropdownMenuItem(value: 'Todos', child: Text('Todos')),
-                        DropdownMenuItem(
-                            value: 'masculino', child: Text('Masculino')),
-                        DropdownMenuItem(
-                            value: 'feminino', child: Text('Feminino')),
-                      ],
-                      onChanged: (valor) {
-                        setState(() {
-                          _filtroGenero = valor ?? 'Todos';
-                          _aplicarFiltros();
-                        });
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _buildFiltroButton('Todos', Icons.filter_list),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildFiltroButton('Treino', Icons.fitness_center),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildFiltroButton('Amistoso', Icons.sports),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildFiltroButton('Campeonato', Icons.emoji_events),
+                const SizedBox(height: 12),
+                // Filtro de Tipo com Chips Modernos
+                _buildModernChipFilter(
+                  label: 'Tipo de Evento',
+                  icon: Icons.filter_list,
+                  options: const [
+                    {'value': 'Todos', 'label': 'Todos'},
+                    {'value': 'Treino', 'label': 'Treino'},
+                    {'value': 'Amistoso', 'label': 'Amistoso'},
+                    {'value': 'Campeonato', 'label': 'Campeonato'},
+                  ],
+                  selectedValue: _filtroSelecionado,
+                  onSelected: (value) {
+                    setState(() {
+                      _filtroSelecionado = value;
+                      _aplicarFiltros();
+                    });
+                  },
                 ),
               ],
             ),
@@ -1670,7 +1656,8 @@ class _AgendaPageState extends State<AgendaPage> {
                             Icon(Icons.error_outline,
                                 size: 48, color: Colors.red[300]),
                             const SizedBox(height: 16),
-                            Text(_error!, style: TextStyle(color: Colors.red)),
+                            Text(_error!,
+                                style: const TextStyle(color: Colors.red)),
                             const SizedBox(height: 16),
                             ElevatedButton(
                               onPressed: _buscarEventos,
@@ -1871,8 +1858,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                                         Icon(
                                                           Icons.score,
                                                           size: 18,
-                                                          color:
-                                                              Color(0xFFD4AF37),
+                                                          color: olympusGold,
                                                         ),
                                                         SizedBox(width: 8),
                                                         Text(hasPlacar
@@ -1905,8 +1891,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                                           Icons
                                                               .check_circle_outline,
                                                           size: 18,
-                                                          color: const Color(
-                                                              0xFFD4AF37),
+                                                          color: olympusGold,
                                                         ),
                                                         SizedBox(width: 8),
                                                         Text(
@@ -2053,13 +2038,13 @@ class _AgendaPageState extends State<AgendaPage> {
                                             const Icon(
                                               Icons.people_outline,
                                               size: 16,
-                                              color: Color(0xFFD4AF37),
+                                              color: olympusGold,
                                             ),
                                             const SizedBox(width: 8),
                                             Text(
                                               '$totalConvocados convocad${totalConvocados == 1 ? 'o' : 'os'} (${quantidades['athletes']} atletas, ${quantidades['technicians']} técn${quantidades['technicians'] == 1 ? 'ico' : 'icos'})',
                                               style: const TextStyle(
-                                                color: Color(0xFF1E3A5F),
+                                                color: olympusBlue,
                                                 fontWeight: FontWeight.w600,
                                                 fontSize: 14,
                                               ),
@@ -2158,6 +2143,8 @@ class _AgendaPageState extends State<AgendaPage> {
         onPressed: _navegarParaCadastroEvento,
         icon: const Icon(Icons.add),
         label: const Text('Cadastrar Evento'),
+        backgroundColor: olympusGold,
+        foregroundColor: olympusBlue,
       ),
     );
   }
@@ -2244,12 +2231,12 @@ class _AgendaPageState extends State<AgendaPage> {
                       const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                   decoration: BoxDecoration(
                     color: olympusWonSet
-                        ? const Color(0xFF1E3A5F).withOpacity(0.1)
+                        ? olympusBlue.withOpacity(0.1)
                         : Colors.grey[100],
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: olympusWonSet
-                          ? const Color(0xFF1E3A5F).withOpacity(0.3)
+                          ? olympusBlue.withOpacity(0.3)
                           : Colors.grey[300]!,
                     ),
                   ),
@@ -2273,7 +2260,7 @@ class _AgendaPageState extends State<AgendaPage> {
                             ),
                             decoration: BoxDecoration(
                               color: olympusWonSet
-                                  ? const Color(0xFF1E3A5F).withOpacity(0.2)
+                                  ? olympusBlue.withOpacity(0.2)
                                   : Colors.grey[200],
                               borderRadius: BorderRadius.circular(6),
                             ),
@@ -2282,7 +2269,7 @@ class _AgendaPageState extends State<AgendaPage> {
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: olympusWonSet
-                                    ? const Color(0xFF1E3A5F)
+                                    ? olympusBlue
                                     : Colors.grey[700],
                               ),
                             ),
@@ -2334,9 +2321,9 @@ class _AgendaPageState extends State<AgendaPage> {
   Widget _buildFiltroButton(String tipo, IconData icone) {
     final bool selecionado = _filtroSelecionado == tipo;
     final Color corBase = tipo == 'Campeonato'
-        ? const Color(0xFFD4AF37)
+        ? olympusGold
         : tipo == 'Treino'
-            ? const Color(0xFF1E3A5F)
+            ? olympusBlue
             : tipo == 'Amistoso'
                 ? Colors.green
                 : Colors.grey[600]!;
@@ -2422,7 +2409,7 @@ class _AgendaPageState extends State<AgendaPage> {
                       style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E3A5F),
+                        color: olympusBlue,
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -2465,7 +2452,7 @@ class _AgendaPageState extends State<AgendaPage> {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E3A5F),
+                            color: olympusBlue,
                           )),
                       const SizedBox(height: 8),
                       _buildDetailRow(Icons.location_on, 'Endereço',
@@ -2482,7 +2469,7 @@ class _AgendaPageState extends State<AgendaPage> {
                       child: ElevatedButton(
                         onPressed: () => Navigator.pop(context),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E3A5F),
+                          backgroundColor: olympusBlue,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
@@ -2507,7 +2494,7 @@ class _AgendaPageState extends State<AgendaPage> {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: const Color(0xFFD4AF37)),
+          Icon(icon, size: 20, color: olympusGold),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -2525,12 +2512,180 @@ class _AgendaPageState extends State<AgendaPage> {
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
-                    color: Color(0xFF1E3A5F),
+                    color: olympusBlue,
                   ),
                 ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ NOVO: Widget de Dropdown Moderno com cores Olympus
+  Widget _buildModernDropdown({
+    required IconData icon,
+    required dynamic value,
+    required String hint,
+    required List<DropdownMenuItem<dynamic>> items,
+    required ValueChanged<dynamic> onChanged,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 16,
+                  color: olympusGold,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  hint,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: olympusGold.withOpacity(0.8),
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<dynamic>(
+                value: value,
+                hint: Text(
+                  hint,
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+                isExpanded: true,
+                items: items,
+                onChanged: onChanged,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E5A),
+                ),
+                icon: Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: olympusGold,
+                  size: 20,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  // ✅ NOVO: Widget de Filtro com Chips Modernos
+  Widget _buildModernChipFilter({
+    required String label,
+    required IconData icon,
+    required List<Map<String, dynamic>> options,
+    required String selectedValue,
+    required ValueChanged<String> onSelected,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 16,
+                  color: olympusGold,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: olympusGold.withOpacity(0.8),
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: options.map((option) {
+                final value = option['value'] as String;
+                final labelText = option['label'] as String;
+                final selected = selectedValue == value;
+
+                Color chipColor;
+                switch (value) {
+                  case 'Campeonato':
+                    chipColor = olympusGold;
+                    break;
+                  case 'Treino':
+                    chipColor = olympusBlue;
+                    break;
+                  case 'Amistoso':
+                    chipColor = Colors.green;
+                    break;
+                  default:
+                    chipColor = olympusBlue;
+                }
+
+                return ChoiceChip(
+                  label: Text(labelText),
+                  selected: selected,
+                  selectedColor: chipColor.withOpacity(0.2),
+                  labelStyle: TextStyle(
+                    color: selected ? chipColor : Colors.grey[700],
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                    fontSize: 13,
+                  ),
+                  onSelected: (_) => onSelected(value),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 8),
         ],
       ),
     );

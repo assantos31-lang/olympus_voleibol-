@@ -9,7 +9,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import '../services/auth_service.dart';
 import 'athlete_agenda_page.dart';
-import 'athlete_financial_page.dart'; // ← NOVO IMPORT
+import 'athlete_financial_page.dart';
 
 class AthleteDashboardPage extends StatefulWidget {
   const AthleteDashboardPage({super.key});
@@ -23,6 +23,11 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
   final _authService = AuthService();
   Map<String, dynamic>? _profile;
   bool _isLoading = true;
+
+  // ✅ Cores do logo Olympus Voleibol
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
 
   @override
   void initState() {
@@ -63,7 +68,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     ).then((_) => _loadProfile());
   }
 
-  // ← NOVO: Navegar para agenda do atleta
   void _navigateToAgenda() {
     Navigator.push(
       context,
@@ -73,12 +77,132 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     );
   }
 
-  // ← NOVO: Navegar para financeiro do atleta
   void _navigateToFinancial() {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => const AthleteFinancialPage(),
+      ),
+    );
+  }
+
+  // ✅ Card de Informações do Atleta (Stat Card)
+  Widget _buildAthleteInfoCard() {
+    final firstName =
+        _profile?['full_name']?.toString().split(' ').first ?? 'Atleta';
+    final position = _profile?['court_position']?.toString() ?? 'Não definida';
+    final avatarUrl = _profile?['avatar_url']?.toString();
+
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [olympusBlue, olympusLightBlue],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: olympusGold.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            // Foto do Atleta
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: olympusGold, width: 3),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ClipOval(
+                child: avatarUrl != null && avatarUrl.isNotEmpty
+                    ? Image.network(
+                        avatarUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (c, o, s) =>
+                            _buildAvatarPlaceholder(firstName),
+                      )
+                    : _buildAvatarPlaceholder(firstName),
+              ),
+            ),
+            const SizedBox(width: 16),
+            // Informações
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Olá, $firstName!',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: olympusGold,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.sports_volleyball,
+                          size: 16,
+                          color: olympusBlue,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          position,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: olympusBlue,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatarPlaceholder(String firstName) {
+    return Container(
+      color: olympusGold.withOpacity(0.2),
+      child: Center(
+        child: Text(
+          firstName[0].toUpperCase(),
+          style: const TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.bold,
+            color: olympusBlue,
+          ),
+        ),
       ),
     );
   }
@@ -94,7 +218,8 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Área do Atleta'),
-        backgroundColor: Colors.orange,
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.person, color: Colors.white),
@@ -112,10 +237,13 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // ✅ Card de Informações do Atleta
+            _buildAthleteInfoCard(),
+            const SizedBox(height: 20),
             const Icon(
               Icons.construction,
               size: 100,
-              color: Colors.orange,
+              color: olympusGold,
             ),
             const SizedBox(height: 20),
             const Text(
@@ -123,7 +251,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
-                color: Colors.orange,
               ),
             ),
             const SizedBox(height: 10),
@@ -135,7 +262,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
               ),
             ),
             const SizedBox(height: 30),
-            // ← NOVO: Botão para acessar agenda
             ElevatedButton.icon(
               onPressed: _navigateToAgenda,
               icon: const Icon(Icons.calendar_today, size: 24),
@@ -144,8 +270,8 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
                 style: TextStyle(fontSize: 18),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
+                backgroundColor: olympusGold,
+                foregroundColor: olympusBlue,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 32,
                   vertical: 16,
@@ -156,7 +282,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
               ),
             ),
             const SizedBox(height: 16),
-            // ← NOVO: Botão para acessar financeiro
             ElevatedButton.icon(
               onPressed: _navigateToFinancial,
               icon: const Icon(Icons.attach_money, size: 24),
@@ -165,8 +290,8 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
                 style: TextStyle(fontSize: 18),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
+                backgroundColor: olympusGold,
+                foregroundColor: olympusBlue,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 32,
                   vertical: 16,
@@ -197,6 +322,11 @@ class AthleteProfilePage extends StatefulWidget {
 class _AthleteProfilePageState extends State<AthleteProfilePage> {
   final supabase = Supabase.instance.client;
 
+  // ✅ Cores do logo Olympus Voleibol
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+
   void _showChangePasswordDialog() {
     final currentPasswordCtrl = TextEditingController();
     final newPasswordCtrl = TextEditingController();
@@ -207,37 +337,55 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Mudar Senha'),
+          title: Row(
+            children: [
+              Icon(Icons.lock, color: olympusGold),
+              const SizedBox(width: 8),
+              const Text('Mudar Senha'),
+            ],
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: currentPasswordCtrl,
                 obscureText: true,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Senha Atual *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock, color: olympusGold),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: olympusGold, width: 2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: newPasswordCtrl,
                 obscureText: true,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Nova Senha *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock, color: olympusGold),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: olympusGold, width: 2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: confirmCtrl,
                 obscureText: true,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Confirmar Nova Senha *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock, color: olympusGold),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: olympusGold, width: 2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
               ),
             ],
@@ -260,7 +408,6 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                         );
                         return;
                       }
-
                       if (newPasswordCtrl.text.length < 6) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -270,15 +417,12 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                         );
                         return;
                       }
-
                       setDialogState(() => _isLoading = true);
-
                       try {
                         final user = supabase.auth.currentUser;
                         if (user == null || user.email == null) {
                           throw Exception('Usuário não autenticado');
                         }
-
                         try {
                           await supabase.auth.signInWithPassword(
                             email: user.email!,
@@ -287,16 +431,14 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                         } catch (e) {
                           throw Exception('Senha atual incorreta');
                         }
-
                         await supabase.auth.updateUser(
                           UserAttributes(password: newPasswordCtrl.text),
                         );
-
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('✅ Senha alterada com sucesso!'),
-                            backgroundColor: Colors.green,
+                            backgroundColor: olympusBlue,
                           ),
                         );
                         Navigator.pop(context);
@@ -314,11 +456,19 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                         }
                       }
                     },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: olympusGold,
+                foregroundColor: olympusBlue,
+              ),
               child: _isLoading
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(olympusBlue),
+                      ),
+                    )
                   : const Text('Salvar'),
             ),
           ],
@@ -330,15 +480,19 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
   @override
   Widget build(BuildContext context) {
     final profile = widget.profile;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Meu Perfil'),
-        backgroundColor: Colors.orange,
+        backgroundColor: olympusBlue,
         foregroundColor: Colors.white,
+        elevation: 2,
       ),
       body: profile == null
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(olympusGold),
+              ),
+            )
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -349,7 +503,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                       children: [
                         CircleAvatar(
                           radius: 60,
-                          backgroundColor: Colors.orange[100],
+                          backgroundColor: olympusGold.withOpacity(0.2),
                           backgroundImage: profile['avatar_url'] != null &&
                                   profile['avatar_url'].toString().isNotEmpty
                               ? NetworkImage(profile['avatar_url'])
@@ -362,7 +516,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                                   style: const TextStyle(
                                     fontSize: 40,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.orange,
+                                    color: olympusBlue,
                                   ),
                                 )
                               : null,
@@ -373,6 +527,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
+                            color: olympusBlue,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -380,7 +535,8 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                           _getUserTypeLabel(profile['user_type']),
                           style: TextStyle(
                             fontSize: 16,
-                            color: Colors.grey[600],
+                            color: olympusGold,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
@@ -403,9 +559,12 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                           icon: const Icon(Icons.edit),
                           label: const Text('Alterar Dados'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange,
-                            foregroundColor: Colors.white,
+                            backgroundColor: olympusGold,
+                            foregroundColor: olympusBlue,
                             padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         ),
                       ),
@@ -416,9 +575,12 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                           icon: const Icon(Icons.lock),
                           label: const Text('Alterar Senha'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange,
+                            backgroundColor: olympusBlue,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         ),
                       ),
@@ -468,25 +630,51 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
   Widget _buildSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: Colors.orange,
-        ),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 20,
+            decoration: BoxDecoration(
+              color: olympusGold,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: olympusBlue,
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildInfoTile(IconData icon, String label, String? value) {
     return ListTile(
-      leading: Icon(icon, color: Colors.orange),
-      title:
-          Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: olympusGold.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, color: olympusGold, size: 20),
+      ),
+      title: Text(
+        label,
+        style: const TextStyle(fontSize: 12, color: Colors.grey),
+      ),
       subtitle: Text(
         value ?? 'Não informado',
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+          color: olympusBlue,
+        ),
       ),
       contentPadding: EdgeInsets.zero,
     );
@@ -564,7 +752,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   late MaskedTextController _cpfController;
   late TextEditingController _genderController;
   late TextEditingController _positionController;
-  // Campos de endereço
   late MaskedTextController _zipCodeController;
   late TextEditingController _streetController;
   late TextEditingController _streetNumberController;
@@ -577,6 +764,11 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   bool _isUploading = false;
   bool _isFetchingCep = false;
   String _selectedGender = '';
+
+  // ✅ Cores do logo Olympus Voleibol
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
 
   final Map<String, List<Map<String, String>>> _positions = {
     'Masculino': [
@@ -626,7 +818,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
     _stateController =
         TextEditingController(text: widget.profile['state'] ?? '');
     _selectedGender = widget.profile['gender'] ?? '';
-
     _zipCodeController.addListener(_onZipCodeChanged);
   }
 
@@ -639,7 +830,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
 
   Future<void> _fetchAddressByCep(String cep) async {
     setState(() => _isFetchingCep = true);
-
     try {
       final response =
           await http.get(Uri.parse('https://viacep.com.br/ws/$cep/json/'));
@@ -652,12 +842,12 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
             _cityController.text = data['localidade'] ?? '';
             _stateController.text = data['uf'] ?? '';
           });
-
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('✅ Endereço preenchido automaticamente!'),
                 duration: Duration(seconds: 2),
+                backgroundColor: olympusBlue,
               ),
             );
           }
@@ -680,7 +870,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
         maxHeight: 800,
         imageQuality: 85,
       );
-
       if (image != null && mounted) {
         setState(() {
           _selectedImage = image;
@@ -701,19 +890,15 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
 
   Future<String?> _uploadImage() async {
     if (_selectedImage == null) return null;
-
     setState(() => _isUploading = true);
-
     try {
       final user = supabase.auth.currentUser;
       final fileName =
           '${DateTime.now().millisecondsSinceEpoch}_${user?.id}.jpg';
       final Uint8List? fileBytes = await _selectedImage!.readAsBytes();
       if (fileBytes == null) return null;
-
       await supabase.storage.from('avatars').uploadBinary(fileName, fileBytes,
           fileOptions: const FileOptions(upsert: true));
-
       final publicUrl = supabase.storage.from('avatars').getPublicUrl(fileName);
       return publicUrl;
     } catch (e) {
@@ -740,8 +925,18 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
       initialDate: DateTime.now(),
       firstDate: DateTime(1900),
       lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: olympusGold,
+              onPrimary: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
-
     if (picked != null && mounted) {
       setState(() {
         _birthDateController.text = DateFormat('dd/MM/yyyy').format(picked);
@@ -756,18 +951,14 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isLoading = true);
-
     try {
       String? avatarUrl;
       if (_selectedImage != null) {
         avatarUrl = await _uploadImage();
       }
-
       final user = supabase.auth.currentUser;
       if (user == null) throw Exception('Usuário não autenticado');
-
       final data = <String, dynamic>{
         'full_name': _fullNameController.text.trim(),
         'phone': _removeMask(_phoneController.text),
@@ -786,14 +977,12 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
         'updated_at': DateTime.now().toIso8601String(),
         if (avatarUrl != null) 'avatar_url': avatarUrl,
       };
-
       await supabase.from('profiles').update(data).eq('id', user.id);
-
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('✅ Perfil atualizado com sucesso!'),
-          backgroundColor: Colors.green,
+          backgroundColor: olympusBlue,
         ),
       );
       Navigator.pop(context);
@@ -819,8 +1008,9 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Editar Perfil'),
-        backgroundColor: Colors.orange,
+        backgroundColor: olympusBlue,
         foregroundColor: Colors.white,
+        elevation: 2,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -836,9 +1026,9 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                     width: 120,
                     height: 120,
                     decoration: BoxDecoration(
-                      color: Colors.grey[200],
+                      color: olympusGold.withOpacity(0.1),
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.orange, width: 3),
+                      border: Border.all(color: olympusGold, width: 3),
                     ),
                     child: ClipOval(
                       child: _getAvatarImage(),
@@ -850,17 +1040,24 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
               Center(
                 child: TextButton.icon(
                   onPressed: _pickImage,
-                  icon: const Icon(Icons.photo_camera, color: Colors.orange),
-                  label: const Text('Selecionar Foto'),
+                  icon: const Icon(Icons.photo_camera, color: olympusGold),
+                  label: const Text(
+                    'Selecionar Foto',
+                    style: TextStyle(color: olympusBlue),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _fullNameController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Nome Completo *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.person),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.person, color: olympusGold),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: olympusGold, width: 2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
                 validator: (value) =>
                     value?.isEmpty ?? true ? 'Campo obrigatório' : null,
@@ -871,10 +1068,16 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                   Expanded(
                     child: TextFormField(
                       controller: _cpfController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'CPF *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.credit_card),
+                        border: const OutlineInputBorder(),
+                        prefixIcon:
+                            const Icon(Icons.credit_card, color: olympusGold),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide:
+                              const BorderSide(color: olympusGold, width: 2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
                       keyboardType: TextInputType.number,
                       validator: (value) => _removeMask(value).length != 11
@@ -886,10 +1089,16 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                   Expanded(
                     child: TextFormField(
                       controller: _rgController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'RG *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.credit_card),
+                        border: const OutlineInputBorder(),
+                        prefixIcon:
+                            const Icon(Icons.credit_card, color: olympusGold),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide:
+                              const BorderSide(color: olympusGold, width: 2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
                       keyboardType: TextInputType.number,
                       validator: (value) =>
@@ -904,10 +1113,15 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                   Expanded(
                     child: TextFormField(
                       controller: _phoneController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Telefone *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.phone),
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.phone, color: olympusGold),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide:
+                              const BorderSide(color: olympusGold, width: 2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
                       keyboardType: TextInputType.phone,
                       validator: (value) => _removeMask(value).length < 10
@@ -920,10 +1134,16 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                     child: DropdownButtonFormField<String>(
                       value:
                           _selectedGender.isNotEmpty ? _selectedGender : null,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Gênero *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.transgender),
+                        border: const OutlineInputBorder(),
+                        prefixIcon:
+                            const Icon(Icons.transgender, color: olympusGold),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide:
+                              const BorderSide(color: olympusGold, width: 2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
                       items: const [
                         DropdownMenuItem(
@@ -950,10 +1170,15 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                 decoration: InputDecoration(
                   labelText: 'Data de Nascimento',
                   border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.calendar_today),
+                  prefixIcon:
+                      const Icon(Icons.calendar_today, color: olympusGold),
                   suffixIcon: IconButton(
-                    icon: const Icon(Icons.calendar_today),
+                    icon: const Icon(Icons.calendar_today, color: olympusGold),
                     onPressed: _selectDate,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: olympusGold, width: 2),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
                 readOnly: true,
@@ -964,10 +1189,16 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                   value: _positionController.text.isNotEmpty
                       ? _positionController.text
                       : null,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Posição na Quadra',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.sports_volleyball),
+                    border: const OutlineInputBorder(),
+                    prefixIcon:
+                        const Icon(Icons.sports_volleyball, color: olympusGold),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide:
+                          const BorderSide(color: olympusGold, width: 2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                   ),
                   items: (_positions[_selectedGender] ?? [])
                       .map((pos) => DropdownMenuItem(
@@ -979,21 +1210,42 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                       setState(() => _positionController.text = value ?? ''),
                 ),
               const SizedBox(height: 24),
-              const Text('Endereço',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Row(
+                children: [
+                  Icon(Icons.location_on, color: olympusGold, size: 20),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Endereço',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: olympusBlue,
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _zipCodeController,
                 decoration: InputDecoration(
                   labelText: 'CEP *',
                   border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.location_on),
+                  prefixIcon: const Icon(Icons.location_on, color: olympusGold),
                   suffixIcon: _isFetchingCep
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2))
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(olympusGold),
+                          ),
+                        )
                       : null,
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: olympusGold, width: 2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
                 keyboardType: TextInputType.number,
                 maxLength: 9,
@@ -1007,9 +1259,14 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                     flex: 3,
                     child: TextFormField(
                       controller: _streetController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Rua *',
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide:
+                              const BorderSide(color: olympusGold, width: 2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
                       validator: (value) =>
                           value?.isEmpty ?? true ? 'Campo obrigatório' : null,
@@ -1019,9 +1276,14 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                   Expanded(
                     child: TextFormField(
                       controller: _streetNumberController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Número *',
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide:
+                              const BorderSide(color: olympusGold, width: 2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
                       keyboardType: TextInputType.number,
                       validator: (value) =>
@@ -1033,17 +1295,25 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
               const SizedBox(height: 8),
               TextFormField(
                 controller: _complementController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Complemento',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: olympusGold, width: 2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _neighborhoodController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Bairro *',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: olympusGold, width: 2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
                 validator: (value) =>
                     value?.isEmpty ?? true ? 'Campo obrigatório' : null,
@@ -1055,9 +1325,14 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                     flex: 2,
                     child: TextFormField(
                       controller: _cityController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Cidade *',
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide:
+                              const BorderSide(color: olympusGold, width: 2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
                       validator: (value) =>
                           value?.isEmpty ?? true ? 'Campo obrigatório' : null,
@@ -1067,9 +1342,14 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                   Expanded(
                     child: TextFormField(
                       controller: _stateController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Estado *',
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide:
+                              const BorderSide(color: olympusGold, width: 2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
                       maxLength: 2,
                       validator: (value) =>
@@ -1084,20 +1364,30 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                 child: ElevatedButton(
                   onPressed: _isLoading || _isUploading ? null : _saveProfile,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
+                    backgroundColor: olympusGold,
+                    foregroundColor: olympusBlue,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(12),
                     ),
+                    elevation: 2,
+                    shadowColor: olympusGold.withOpacity(0.4),
                   ),
                   child: _isLoading || _isUploading
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2))
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(olympusBlue),
+                          ),
+                        )
                       : const Text(
                           'Salvar Alterações',
-                          style: TextStyle(fontSize: 16),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                 ),
               ),
@@ -1121,7 +1411,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
         },
       );
     }
-
     if (widget.profile['avatar_url'] != null &&
         widget.profile['avatar_url'].toString().isNotEmpty) {
       return Image.network(
@@ -1131,7 +1420,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
             const Icon(Icons.person, size: 60, color: Colors.grey),
       );
     }
-
     return const Icon(Icons.person, size: 60, color: Colors.grey);
   }
 

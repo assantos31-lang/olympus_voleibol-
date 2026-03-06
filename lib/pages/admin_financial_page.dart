@@ -69,12 +69,10 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
 
       debugPrint('📊 Executando query...');
       final response = await query.order('created_at', ascending: false);
-
       debugPrint('✅ RETORNO DO BANCO: ${(response as List).length} registros');
 
       final records =
           (response as List).map((r) => FinancialRecord.fromMap(r)).toList();
-
       debugPrint('📋 Após mapeamento: ${records.length} registros');
 
       // Buscar dados dos atletas
@@ -844,32 +842,149 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     }
   }
 
+  // CORREÇÃO PRINCIPAL: Usar createSignedUrl para bucket privado
   Future<void> _viewReceipt(String receiptUrl) async {
-    final publicUrl =
-        _supabase.storage.from('receipts').getPublicUrl(receiptUrl);
-    if (mounted) {
-      showDialog(
-        context: context,
-        builder: (context) => Dialog(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppBar(
-                title: const Text('Comprovante'),
-                automaticallyImplyLeading: false,
-                actions: [
-                  IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context)),
-                ],
-              ),
-              Padding(
+    try {
+      debugPrint('🔍 Tentando visualizar comprovante: $receiptUrl');
+
+      String imageUrl;
+
+      // Tentar criar URL assinada (para bucket privado)
+      try {
+        final signedUrl = await _supabase.storage
+            .from('receipts')
+            .createSignedUrl(receiptUrl, 300); // 300 segundos = 5 minutos
+
+        debugPrint('✅ URL assinada criada com sucesso');
+        imageUrl = signedUrl;
+      } catch (e) {
+        debugPrint('❌ Erro ao criar URL assinada: $e');
+
+        // Fallback: tentar URL pública
+        try {
+          imageUrl =
+              _supabase.storage.from('receipts').getPublicUrl(receiptUrl);
+          debugPrint('✅ URL pública usada como fallback');
+        } catch (e2) {
+          debugPrint('❌ Erro ao obter URL pública: $e2');
+          throw Exception('Não foi possível acessar o comprovante');
+        }
+      }
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => Dialog(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppBar(
+                  title: const Text('Comprovante'),
+                  automaticallyImplyLeading: false,
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.black),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Image.network(publicUrl)),
+                  child: Image.network(
+                    imageUrl,
+                    errorBuilder: (context, error, stackTrace) {
+                      debugPrint('❌ Erro ao carregar imagem: $error');
+                      debugPrint('Stack trace: $stackTrace');
+
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 64,
+                            color: Colors.red[300],
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Erro ao carregar comprovante',
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Verifique se:\n• O arquivo existe no bucket\n• As políticas de RLS estão corretas\n• O caminho do arquivo está correto',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      );
+                    },
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text('Carregando comprovante...'),
+                        ],
+                      );
+                    },
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Erro ao visualizar comprovante: $e');
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Erro'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  size: 48,
+                  color: Colors.red,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Não foi possível carregar o comprovante',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Erro: $e',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
             ],
           ),
-        ),
-      );
+        );
+      }
     }
   }
 
@@ -2441,9 +2556,10 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-              width: 100,
-              child: Text('$label:',
-                  style: const TextStyle(fontWeight: FontWeight.bold))),
+            width: 100,
+            child: Text('$label:',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
           Expanded(child: Text(value)),
         ],
       ),
