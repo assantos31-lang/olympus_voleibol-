@@ -25,11 +25,18 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
   bool _isLoading = true;
   // ✅ Contador de convocações pendentes
   int _pendingCount = 0;
+  // ✅ Contador de pagamentos em atraso
+  int _overdueFinancialCount = 0;
+  // ✅ Mapa de pagamentos em atraso por mês
+  Map<int, int> _overdueByMonth = {};
+  // ✅ Eventos da semana
+  List<Map<String, dynamic>> _weekEvents = [];
 
   // ✅ Cores do logo Olympus Voleibol
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  static const String _eventsEmbedFk = 'convocations_event_id_fkey';
 
   @override
   void initState() {
@@ -48,6 +55,8 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
         });
         // ✅ NOVO: Carregar contador de pendentes após carregar perfil
         _loadPendingCount();
+        _loadOverdueFinancialCount();
+        _loadWeekEvents();
       }
     }
   }
@@ -71,6 +80,132 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     } catch (e) {
       debugPrint('Erro ao carregar pendentes: $e');
     }
+  }
+
+  // ✅ NOVO: Carregar quantidade de pagamentos em atraso agrupados por mês
+  Future<void> _loadOverdueFinancialCount() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        final response = await supabase
+            .from('financial_records')
+            .select('day, month, year, status')
+            .eq('athlete_id', user.id)
+            .eq('status', 'pending');
+
+        Map<int, int> overdueByMonth = {};
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+
+        for (var record in response) {
+          final day = record['day'] ?? 10;
+          final month = record['month'];
+          final year = record['year'];
+          final dueDate = DateTime(year, month, day);
+
+          if (today.isAfter(dueDate)) {
+            overdueByMonth[month] = (overdueByMonth[month] ?? 0) + 1;
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            _overdueByMonth = overdueByMonth;
+            _overdueFinancialCount =
+                overdueByMonth.values.fold(0, (a, b) => a + b);
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar atrasos financeiros: $e');
+    }
+  }
+
+  Future<void> _loadWeekEvents() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final response = await supabase.from('convocations').select('''
+        status,
+        events!$_eventsEmbedFk (
+          id,
+          event_name,
+          event_date,
+          event_time,
+          event_type
+        )
+      ''').eq('user_id', user.id).neq('status', 'rejected');
+
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final endOfWeek = today.add(const Duration(days: 7));
+
+      final List<Map<String, dynamic>> weekEvents = [];
+
+      for (final item in response) {
+        final event = item['events'];
+        if (event == null) continue;
+
+        final eventMap = Map<String, dynamic>.from(event);
+        final eventDate = _parseEventDateTime(
+          (eventMap['event_date'] ?? '').toString(),
+          (eventMap['event_time'] ?? '').toString(),
+        );
+
+        if (eventDate == null) continue;
+
+        if (!eventDate.isBefore(today) && eventDate.isBefore(endOfWeek)) {
+          weekEvents.add({
+            ...eventMap,
+            'status': item['status'],
+            'event_datetime': eventDate,
+          });
+        }
+      }
+
+      weekEvents.sort(
+        (a, b) => (a['event_datetime'] as DateTime)
+            .compareTo(b['event_datetime'] as DateTime),
+      );
+
+      if (mounted) {
+        setState(() {
+          _weekEvents = weekEvents;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar eventos da semana: $e');
+    }
+  }
+
+  DateTime? _parseEventDateTime(String dateStr, String timeStr) {
+    try {
+      final dp = dateStr.trim().split('/');
+      final tp = timeStr.trim().split(':');
+      if (dp.length != 3 || tp.length < 2) return null;
+      return DateTime(
+        int.parse(dp[2]),
+        int.parse(dp[1]),
+        int.parse(dp[0]),
+        int.parse(tp[0]),
+        int.parse(tp[1]),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _getAgendaSubtitle() {
+    if (_weekEvents.isEmpty) {
+      return 'Veja suas convocações e eventos';
+    }
+    final nextEvent = _weekEvents.first;
+    final eventDate = nextEvent['event_datetime'] as DateTime;
+    final dayLabel = DateFormat('EEE', 'pt_BR').format(eventDate);
+    final dayLabelCapitalized =
+        dayLabel[0].toUpperCase() + dayLabel.substring(1).replaceAll('.', '');
+    return 'Próximo: $dayLabelCapitalized às ${DateFormat('HH:mm').format(eventDate)}';
   }
 
   Future<void> _redirectToLogin() async {
@@ -99,7 +234,10 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
       MaterialPageRoute(
         builder: (context) => const AthleteAgendaPage(),
       ),
-    ).then((_) => _loadPendingCount());
+    ).then((_) {
+      _loadPendingCount();
+      _loadWeekEvents();
+    });
   }
 
   void _navigateToFinancial() {
@@ -108,7 +246,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
       MaterialPageRoute(
         builder: (context) => const AthleteFinancialPage(),
       ),
-    );
+    ).then((_) => _loadOverdueFinancialCount());
   }
 
   // ✅ Card de Informações do Atleta (Stat Card)
@@ -117,6 +255,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
         _profile?['full_name']?.toString().split(' ').first ?? 'Atleta';
     final position = _profile?['court_position']?.toString() ?? 'Não definida';
     final avatarUrl = _profile?['avatar_url']?.toString();
+
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -137,6 +276,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Foto do Atleta
             Container(
@@ -206,12 +346,115 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  _buildWeekEventsMiniCard(),
                 ],
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildWeekEventsMiniCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.18),
+        ),
+      ),
+      child: _weekEvents.isEmpty
+          ? Row(
+              children: const [
+                Icon(
+                  Icons.event_available,
+                  size: 16,
+                  color: Colors.white70,
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Nenhum evento nesta semana',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Eventos da semana',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ..._weekEvents.take(2).map((event) {
+                  final eventDate = event['event_datetime'] as DateTime;
+                  final formattedDay = DateFormat('dd/MM').format(eventDate);
+                  final formattedTime = DateFormat('HH:mm').format(eventDate);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: olympusGold,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '$formattedDay • $formattedTime',
+                            style: const TextStyle(
+                              color: olympusBlue,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            (event['event_name'] ?? 'Evento').toString(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                if (_weekEvents.length > 2)
+                  Text(
+                    '+${_weekEvents.length - 2} evento(s)',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+              ],
+            ),
     );
   }
 
@@ -320,10 +563,8 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
                 right: 12,
                 top: 12,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: Colors.red,
                     borderRadius: BorderRadius.circular(12),
@@ -352,6 +593,119 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     );
   }
 
+  // ✅ NOVO: Card de Alerta Financeiro
+  Widget _buildFinancialAlertCard() {
+    if (_overdueFinancialCount == 0) return const SizedBox.shrink();
+
+    // Construir mensagem com meses
+    String monthMessage = '';
+    final sortedMonths = _overdueByMonth.keys.toList()
+      ..sort((a, b) => b.compareTo(a));
+
+    for (int i = 0; i < sortedMonths.length; i++) {
+      final month = sortedMonths[i];
+      final count = _overdueByMonth[month]!;
+      final monthName = DateFormat.MMMM('pt_BR').format(DateTime(2024, month));
+      final monthNameCapitalized =
+          monthName[0].toUpperCase() + monthName.substring(1);
+
+      if (i > 0) {
+        monthMessage += ' e ';
+      }
+      monthMessage +=
+          '$count ${count == 1 ? "pagamento" : "pagamentos"} em atraso em $monthNameCapitalized';
+    }
+
+    return GestureDetector(
+      onTap: _navigateToFinancial,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Colors.red.shade50,
+              Colors.red.shade100,
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.red.shade300,
+            width: 2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.red.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              // Ícone de alerta
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.red.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.warning_rounded,
+                  color: Colors.red.shade700,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Texto
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Pendência financeira em atraso',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red.shade900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      monthMessage,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.red.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Acesse o financeiro e regularize o quanto antes.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.red.shade600,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios,
+                color: Colors.red.shade400,
+                size: 16,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -359,6 +713,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
         body: Center(child: CircularProgressIndicator()),
       );
     }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Área do Atleta'),
@@ -383,34 +738,14 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
           children: [
             // ✅ Card de Informações do Atleta - MOVIDO PARA O TOPO
             _buildAthleteInfoCard(),
+            // ✅ NOVO: Card de Alerta Financeiro (só aparece se houver atraso)
+            _buildFinancialAlertCard(),
             const SizedBox(height: 12),
-            const Icon(
-              Icons.construction,
-              size: 100,
-              color: olympusGold,
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Em criação',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Esta página estará disponível em breve',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 24),
             // ✅ Cards de Dashboard
             _buildDashboardCard(
               icon: Icons.calendar_today,
               title: 'Minha Agenda',
-              subtitle: 'Veja suas convocações e eventos',
+              subtitle: _getAgendaSubtitle(),
               color: olympusGold,
               onTap: _navigateToAgenda,
               badgeCount: _pendingCount > 0 ? _pendingCount : null,
@@ -421,6 +756,8 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
               subtitle: 'Acompanhe seus pagamentos',
               color: olympusBlue,
               onTap: _navigateToFinancial,
+              badgeCount:
+                  _overdueFinancialCount > 0 ? _overdueFinancialCount : null,
             ),
             const SizedBox(height: 20),
           ],
@@ -435,6 +772,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
 // ============================================================================
 class AthleteProfilePage extends StatefulWidget {
   final Map<String, dynamic>? profile;
+
   const AthleteProfilePage({super.key, this.profile});
 
   @override
@@ -443,6 +781,7 @@ class AthleteProfilePage extends StatefulWidget {
 
 class _AthleteProfilePageState extends State<AthleteProfilePage> {
   final supabase = Supabase.instance.client;
+
   // ✅ Cores do logo Olympus Voleibol
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
@@ -453,6 +792,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
     final newPasswordCtrl = TextEditingController();
     final confirmCtrl = TextEditingController();
     bool _isLoading = false;
+
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -537,12 +877,14 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                         );
                         return;
                       }
+
                       setDialogState(() => _isLoading = true);
                       try {
                         final user = supabase.auth.currentUser;
                         if (user == null || user.email == null) {
                           throw Exception('Usuário não autenticado');
                         }
+
                         try {
                           await supabase.auth.signInWithPassword(
                             email: user.email!,
@@ -551,9 +893,11 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                         } catch (e) {
                           throw Exception('Senha atual incorreta');
                         }
+
                         await supabase.auth.updateUser(
                           UserAttributes(password: newPasswordCtrl.text),
                         );
+
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -600,6 +944,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
   @override
   Widget build(BuildContext context) {
     final profile = widget.profile;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Meu Perfil'),
@@ -854,6 +1199,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
 // ============================================================================
 class _AthleteProfileEditDialog extends StatefulWidget {
   final Map<String, dynamic> profile;
+
   const _AthleteProfileEditDialog({required this.profile});
 
   @override
@@ -865,6 +1211,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
   final supabase = Supabase.instance.client;
+
   late TextEditingController _fullNameController;
   late MaskedTextController _phoneController;
   late TextEditingController _birthDateController;
@@ -879,6 +1226,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   late TextEditingController _neighborhoodController;
   late TextEditingController _cityController;
   late TextEditingController _stateController;
+
   XFile? _selectedImage;
   bool _isLoading = false;
   bool _isUploading = false;
@@ -937,7 +1285,9 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
     _cityController = TextEditingController(text: widget.profile['city'] ?? '');
     _stateController =
         TextEditingController(text: widget.profile['state'] ?? '');
+
     _selectedGender = widget.profile['gender'] ?? '';
+
     _zipCodeController.addListener(_onZipCodeChanged);
   }
 
@@ -1010,6 +1360,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
 
   Future<String?> _uploadImage() async {
     if (_selectedImage == null) return null;
+
     setState(() => _isUploading = true);
     try {
       final user = supabase.auth.currentUser;
@@ -1017,8 +1368,13 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
           '${DateTime.now().millisecondsSinceEpoch}_${user?.id}.jpg';
       final Uint8List? fileBytes = await _selectedImage!.readAsBytes();
       if (fileBytes == null) return null;
-      await supabase.storage.from('avatars').uploadBinary(fileName, fileBytes,
-          fileOptions: const FileOptions(upsert: true));
+
+      await supabase.storage.from('avatars').uploadBinary(
+            fileName,
+            fileBytes,
+            fileOptions: const FileOptions(upsert: true),
+          );
+
       final publicUrl = supabase.storage.from('avatars').getPublicUrl(fileName);
       return publicUrl;
     } catch (e) {
@@ -1071,14 +1427,17 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
+
     setState(() => _isLoading = true);
     try {
       String? avatarUrl;
       if (_selectedImage != null) {
         avatarUrl = await _uploadImage();
       }
+
       final user = supabase.auth.currentUser;
       if (user == null) throw Exception('Usuário não autenticado');
+
       final data = <String, dynamic>{
         'full_name': _fullNameController.text.trim(),
         'phone': _removeMask(_phoneController.text),
@@ -1097,7 +1456,9 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
         'updated_at': DateTime.now().toIso8601String(),
         if (avatarUrl != null) 'avatar_url': avatarUrl,
       };
+
       await supabase.from('profiles').update(data).eq('id', user.id);
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

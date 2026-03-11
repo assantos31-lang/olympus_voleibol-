@@ -22,8 +22,10 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   String? _error;
   String _filtroMes = '';
   String _filtroTipo = 'todos';
+
   // ✅ NOVO: Filtro por status da convocação
   String _filtroStatus = 'todos';
+
   // ✅ NOVO: Contadores de status
   Map<String, int> _statusCounts = {
     'accepted': 0,
@@ -35,7 +37,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
-
   static const String _geocodeAccessKey = 'pk.5a7a05184e41c916429dceb50cf02718';
   static const String _eventsEmbedFk = 'convocations_event_id_fkey';
 
@@ -143,6 +144,30 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     });
   }
 
+  // ✅ NOVO: Verificar se janela de check-in já encerrou (30 min após início)
+  bool _janelaCheckInEncerrada(Map<String, dynamic> evento) {
+    final dataStr = (evento['event_date'] ?? '').toString().trim();
+    final horaStr = (evento['event_time'] ?? '').toString().trim();
+    if (dataStr.isEmpty || horaStr.isEmpty) return false;
+    try {
+      final dp = dataStr.split('/');
+      final tp = horaStr.split(':');
+      if (dp.length != 3 || tp.length < 2) return false;
+      final eventDateTime = DateTime(
+        int.parse(dp[2]),
+        int.parse(dp[1]),
+        int.parse(dp[0]),
+        int.parse(tp[0]),
+        int.parse(tp[1]),
+      );
+      final now = DateTime.now();
+      final fimJanela = eventDateTime.add(const Duration(minutes: 30));
+      return now.isAfter(fimJanela);
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _buscarEventos() async {
     setState(() {
       _loading = true;
@@ -158,28 +183,27 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         });
         return;
       }
-
       final response = await _supabase.from('convocations').select('''
-event_id,
-status,
-events!$_eventsEmbedFk (
-id,
-event_name,
-event_type,
-event_date,
-event_time,
-gender,
-championship_name,
-street,
-street_number,
-neighborhood,
-city,
-state,
-cep,
-latitude,
-longitude
-)
-''').eq('user_id', user.id);
+        event_id,
+        status,
+        events!$_eventsEmbedFk (
+          id,
+          event_name,
+          event_type,
+          event_date,
+          event_time,
+          gender,
+          championship_name,
+          street,
+          street_number,
+          neighborhood,
+          city,
+          state,
+          cep,
+          latitude,
+          longitude
+        )
+      ''').eq('user_id', user.id);
 
       if (response.isEmpty) {
         if (!mounted) return;
@@ -207,8 +231,15 @@ longitude
         }
       }
 
+      final eventIds = eventosList.map((e) => e['id'].toString()).toList();
+      final checkinMap = await _buscarCheckinsDoUsuario(user.id, eventIds);
+      for (final e in eventosList) {
+        final id = e['id'].toString();
+        e['check_in_status'] = checkinMap[id];
+      }
+
       // ✅ AUTO-REJECT: Verifica e atualiza pendentes vencidos
-      final idsParaAtualizar = <String>[];
+      final idsParaAtualizar = <String>{};
       for (final evento in eventosList) {
         final status = (evento['convocation_status'] ?? 'pending')
             .toString()
@@ -223,19 +254,29 @@ longitude
         }
       }
 
+      // ✅ NOVO: AUTO-REJECT: Aceitos sem check-in após janela encerrada (30 min)
+      for (final evento in eventosList) {
+        final status = (evento['convocation_status'] ?? 'pending')
+            .toString()
+            .toLowerCase();
+        final checkinStatus =
+            (evento['check_in_status'] ?? '').toString().trim();
+        if (status == 'accepted' && checkinStatus.isEmpty) {
+          if (_janelaCheckInEncerrada(evento)) {
+            final eid = evento['id'].toString();
+            evento['convocation_status'] = 'rejected';
+            statusMap[eid] = {'status': 'rejected'};
+            idsParaAtualizar.add(eid);
+          }
+        }
+      }
+
       if (idsParaAtualizar.isNotEmpty) {
         await Future.wait(idsParaAtualizar.map((eid) => _supabase
             .from('convocations')
             .update({'status': 'rejected', 'justification': 'Prazo expirado'})
             .eq('event_id', eid)
             .eq('user_id', user.id)));
-      }
-
-      final eventIds = eventosList.map((e) => e['id'].toString()).toList();
-      final checkinMap = await _buscarCheckinsDoUsuario(user.id, eventIds);
-      for (final e in eventosList) {
-        final id = e['id'].toString();
-        e['check_in_status'] = checkinMap[id];
       }
 
       // ✅ CORREÇÃO: Ordenar dos mais recentes aos mais antigos (decrescente)
@@ -256,6 +297,7 @@ longitude
         _aplicarFiltros();
         _loading = false;
       });
+
       // ✅ NOVO: Calcular contadores após carregar eventos
       _calcularStatusCounts();
     } catch (e, stackTrace) {
@@ -271,6 +313,7 @@ longitude
 
   void _aplicarFiltros() {
     var eventosFiltrados = _eventos;
+
     if (_filtroMes.isNotEmpty) {
       eventosFiltrados = eventosFiltrados.where((evento) {
         final dataEvento = (evento['event_date'] ?? '').toString();
@@ -281,6 +324,7 @@ longitude
         return false;
       }).toList();
     }
+
     if (_filtroTipo != 'todos') {
       eventosFiltrados = eventosFiltrados.where((evento) {
         final tipo =
@@ -288,6 +332,7 @@ longitude
         return tipo == _filtroTipo;
       }).toList();
     }
+
     // ✅ NOVO: Filtro por status da convocação
     if (_filtroStatus != 'todos') {
       eventosFiltrados = eventosFiltrados.where((evento) {
@@ -298,6 +343,7 @@ longitude
         return status == _filtroStatus;
       }).toList();
     }
+
     _eventosFiltrados = eventosFiltrados;
   }
 
@@ -314,7 +360,7 @@ longitude
           int.parse(parts[1]),
           int.parse(parts[0]),
         );
-        return DateFormat('dd/MM/yyyy (EEEE)', 'pt_BR').format(date);
+        return DateFormat('dd/MM (EEE)', 'pt_BR').format(date);
       }
       return dataStr;
     } catch (_) {
@@ -390,6 +436,7 @@ longitude
       );
       final now = DateTime.now();
       if (eventDateTime.isBefore(now)) return false;
+
       int horasLimite;
       switch (tipo) {
         case 'treino':
@@ -414,11 +461,11 @@ longitude
     final tipo = (evento['event_type'] ?? '').toString().toLowerCase().trim();
     switch (tipo) {
       case 'treino':
-        return 'Treino: edição permitida até 3h antes do evento.';
+        return 'Edição até 3h antes';
       case 'amistoso':
-        return 'Amistoso: edição permitida até 12h antes do evento.';
+        return 'Edição até 12h antes';
       case 'campeonato':
-        return 'Campeonato: edição permitida até 48h antes do evento.';
+        return 'Edição até 48h antes';
       default:
         return '';
     }
@@ -452,11 +499,12 @@ longitude
       final now = DateTime.now();
       final inicioJanela = eventDateTime.subtract(const Duration(minutes: 10));
       final fimJanela = eventDateTime.add(const Duration(minutes: 30));
+
       if (now.isBefore(inicioJanela)) {
         final minutosRestantes = inicioJanela.difference(now).inMinutes;
         return {
           'disponivel': false,
-          'mensagem': 'Check-in disponível em $minutosRestantes min',
+          'mensagem': 'Check-in em $minutosRestantes min',
           'bloqueado': true,
         };
       }
@@ -515,6 +563,7 @@ longitude
       final user = _supabase.auth.currentUser;
       if (user == null) return;
       final eventId = evento['id'];
+
       if (aceitar) {
         await _supabase
             .from('convocations')
@@ -526,6 +575,7 @@ longitude
         _refreshEventos();
         return;
       }
+
       final controller = TextEditingController();
       final justification = await showDialog<String>(
         context: context,
@@ -556,6 +606,7 @@ longitude
         ),
       );
       if (justification == null) return;
+
       await _supabase
           .from('convocations')
           .update({'status': 'rejected', 'justification': justification})
@@ -573,7 +624,7 @@ longitude
   Future<Map<String, double>> _geocodeCep(String cep) async {
     final cepLimpo = cep.replaceAll(RegExp(r'[^0-9]'), '');
     if (cepLimpo.isEmpty) throw Exception('CEP inválido');
-    final uri = Uri.parse('https://api.positionstack.com/v1/forward'
+    final uri = Uri.parse('https://api.positionstack.com/v1/forward  '
         '?access_key=$_geocodeAccessKey'
         '&query=$cepLimpo'
         '&country=BR'
@@ -602,16 +653,19 @@ longitude
       final eventLat = (evento['latitude'] as num?)?.toDouble();
       final eventLng = (evento['longitude'] as num?)?.toDouble();
       print('📍 Coordenadas do evento: lat=$eventLat, lng=$eventLng');
+
       if (eventLat == null || eventLng == null) {
         _showError('⚠️ Evento sem coordenadas! '
             'O administrador precisa geocodificar o endereço ao criar o evento.');
         return;
       }
+
       final enabled = await Geolocator.isLocationServiceEnabled();
       if (!enabled) {
         _showError('Ative o GPS para fazer check-in.');
         return;
       }
+
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -621,8 +675,10 @@ longitude
         _showError('Permissão de localização negada.');
         return;
       }
+
       if (!mounted) return;
       _showSuccess('📡 Obtendo sua localização...');
+
       // ✅ CORREÇÃO CRÍTICA: Forçar GPS a obter posição FRESCA (ignorar cache)
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -631,6 +687,7 @@ longitude
       );
       print('📍 Sua posição: lat=${pos.latitude}, lng=${pos.longitude}');
       print('📍 Precisão do GPS: ${pos.accuracy}m');
+
       final distancia = _calcularDistanciaMetros(
         pos.latitude,
         pos.longitude,
@@ -638,6 +695,7 @@ longitude
         eventLng,
       );
       print('📍 Distância calculada: ${distancia.toStringAsFixed(0)}m');
+
       const raioMaximo = 200.0;
       if (distancia > raioMaximo) {
         _showError('❌ Você está muito longe do local! '
@@ -646,7 +704,9 @@ longitude
             'Aproxime-se mais do local do evento.');
         return;
       }
+
       print('✅ Dentro do raio de ${raioMaximo}m. Chamando stored procedure...');
+
       // ✅ CORREÇÃO PRINCIPAL: Latitude e longitude na ordem CORRETA
       final res = await _supabase.rpc('do_checkin', params: {
         'p_event_id': evento['id'],
@@ -655,9 +715,11 @@ longitude
         'p_check_lat': pos.latitude, // ✅ latitude correta (não longitude)
         'p_check_lng': pos.longitude, // ✅ longitude correta (não latitude)
       });
+
       final ok = res?['ok'] == true;
       final st = (res?['status'] ?? '').toString();
       print('📍 Resultado do check-in: ok=$ok, status=$st');
+
       if (!mounted) return;
       if (ok) {
         _showSuccess('✅ Check-in confirmado com sucesso!');
@@ -860,7 +922,7 @@ longitude
         children: [
           // ✅ FILTROS MODERNOS COM CORES OLYMPUS
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+            padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 colors: [
@@ -871,8 +933,8 @@ longitude
                 end: Alignment.bottomCenter,
               ),
               borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(24),
-                bottomRight: Radius.circular(24),
+                bottomLeft: Radius.circular(16),
+                bottomRight: Radius.circular(16),
               ),
             ),
             child: Column(
@@ -905,7 +967,7 @@ longitude
                     }
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 // Filtro de Tipo
                 _buildModernChipFilter(
                   label: 'Tipo de Evento',
@@ -924,7 +986,7 @@ longitude
                     });
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 // Filtro de Status
                 _buildModernChipFilter(
                   label: 'Status da Convocação',
@@ -1003,7 +1065,7 @@ longitude
                         : RefreshIndicator(
                             onRefresh: _refreshEventos,
                             child: ListView.builder(
-                              padding: const EdgeInsets.all(16),
+                              padding: const EdgeInsets.all(12),
                               itemCount: _eventosFiltrados.length,
                               itemBuilder: (context, index) {
                                 final evento = _eventosFiltrados[index];
@@ -1026,6 +1088,7 @@ longitude
                                     (evento['championship_name'] ?? '')
                                         .toString()
                                         .trim();
+
                                 String? enderecoCompleto;
                                 final street =
                                     (evento['street'] ?? '').toString().trim();
@@ -1046,6 +1109,7 @@ longitude
                                       '${cidade.isNotEmpty ? ' - $cidade' : ''}'
                                       '${estado.isNotEmpty ? '/$estado' : ''}';
                                 }
+
                                 final checkinStatus =
                                     (evento['check_in_status'] ?? '')
                                         .toString()
@@ -1055,14 +1119,14 @@ longitude
                                     _verificarJanelaCheckIn(evento);
 
                                 return Card(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  elevation: 2,
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  elevation: 1,
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
                                   color: _getCorFundoCard(genero, eventType),
                                   child: Padding(
-                                    padding: const EdgeInsets.all(16),
+                                    padding: const EdgeInsets.all(12),
                                     child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
@@ -1072,13 +1136,13 @@ longitude
                                             Container(
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                horizontal: 12,
-                                                vertical: 6,
+                                                horizontal: 8,
+                                                vertical: 4,
                                               ),
                                               decoration: BoxDecoration(
                                                 color: corTipo.withOpacity(0.1),
                                                 borderRadius:
-                                                    BorderRadius.circular(20),
+                                                    BorderRadius.circular(12),
                                                 border:
                                                     Border.all(color: corTipo),
                                               ),
@@ -1090,7 +1154,7 @@ longitude
                                                 style: TextStyle(
                                                   color: corTipo,
                                                   fontWeight: FontWeight.bold,
-                                                  fontSize: 12,
+                                                  fontSize: 10,
                                                 ),
                                               ),
                                             ),
@@ -1098,14 +1162,14 @@ longitude
                                             Container(
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                horizontal: 12,
-                                                vertical: 6,
+                                                horizontal: 8,
+                                                vertical: 4,
                                               ),
                                               decoration: BoxDecoration(
                                                 color: _getStatusColor(status)
                                                     .withOpacity(0.1),
                                                 borderRadius:
-                                                    BorderRadius.circular(20),
+                                                    BorderRadius.circular(12),
                                                 border: Border.all(
                                                   color:
                                                       _getStatusColor(status),
@@ -1117,36 +1181,36 @@ longitude
                                                   color:
                                                       _getStatusColor(status),
                                                   fontWeight: FontWeight.bold,
-                                                  fontSize: 12,
+                                                  fontSize: 10,
                                                 ),
                                               ),
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: 12),
+                                        const SizedBox(height: 8),
                                         Text(
                                           (evento['event_name'] ?? 'Sem nome')
                                               .toString(),
                                           style: const TextStyle(
-                                            fontSize: 18,
+                                            fontSize: 15,
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
                                         if (eventType.toLowerCase().trim() ==
                                                 'campeonato' &&
                                             championshipName.isNotEmpty) ...[
-                                          const SizedBox(height: 6),
+                                          const SizedBox(height: 4),
                                           Row(
                                             children: [
                                               Icon(Icons.emoji_events,
-                                                  size: 16,
+                                                  size: 14,
                                                   color: Colors.amber[700]),
-                                              const SizedBox(width: 8),
+                                              const SizedBox(width: 6),
                                               Expanded(
                                                 child: Text(
                                                   championshipName,
                                                   style: TextStyle(
-                                                    fontSize: 14,
+                                                    fontSize: 12,
                                                     color: Colors.amber[900],
                                                     fontWeight: FontWeight.w600,
                                                   ),
@@ -1155,55 +1219,60 @@ longitude
                                             ],
                                           ),
                                         ],
-                                        const SizedBox(height: 8),
+                                        const SizedBox(height: 6),
                                         Row(
                                           children: [
                                             Icon(Icons.calendar_today,
-                                                size: 16,
+                                                size: 14,
                                                 color: Colors.grey[600]),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              _formatarData(
-                                                (evento['event_date'] ?? '')
-                                                    .toString(),
+                                            const SizedBox(width: 6),
+                                            Expanded(
+                                              child: Text(
+                                                _formatarData(
+                                                  (evento['event_date'] ?? '')
+                                                      .toString(),
+                                                ),
+                                                style: TextStyle(
+                                                  color: Colors.grey[700],
+                                                  fontSize: 12,
+                                                ),
                                               ),
-                                              style: TextStyle(
-                                                  color: Colors.grey[700]),
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: 4),
                                         Row(
                                           children: [
                                             Icon(Icons.access_time,
-                                                size: 16,
+                                                size: 14,
                                                 color: Colors.grey[600]),
-                                            const SizedBox(width: 8),
+                                            const SizedBox(width: 6),
                                             Text(
                                               (evento['event_time'] ?? '')
                                                   .toString(),
                                               style: TextStyle(
-                                                  color: Colors.grey[700]),
+                                                color: Colors.grey[700],
+                                                fontSize: 12,
+                                              ),
                                             ),
                                           ],
                                         ),
                                         if (enderecoCompleto != null &&
                                             enderecoCompleto.isNotEmpty) ...[
-                                          const SizedBox(height: 4),
+                                          const SizedBox(height: 2),
                                           Row(
                                             children: [
                                               Icon(Icons.location_on,
-                                                  size: 16,
+                                                  size: 14,
                                                   color: Colors.grey[600]),
-                                              const SizedBox(width: 8),
+                                              const SizedBox(width: 6),
                                               Expanded(
                                                 child: Text(
                                                   enderecoCompleto,
                                                   style: TextStyle(
                                                     color: Colors.grey[700],
-                                                    fontSize: 13,
+                                                    fontSize: 11,
                                                   ),
-                                                  maxLines: 2,
+                                                  maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
                                                 ),
@@ -1211,84 +1280,117 @@ longitude
                                             ],
                                           ),
                                         ],
-                                        const SizedBox(height: 12),
+                                        const SizedBox(height: 8),
                                         if (prazoInfo.isNotEmpty) ...[
                                           Text(
                                             prazoInfo,
                                             style: TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.red,
+                                              fontSize: 10,
+                                              color: Colors.red[700],
                                               fontStyle: FontStyle.italic,
                                             ),
                                           ),
-                                          const SizedBox(height: 8),
+                                          const SizedBox(height: 6),
                                         ],
                                         if (status == 'pending')
                                           Row(
                                             children: [
                                               Expanded(
-                                                child: ElevatedButton.icon(
-                                                  onPressed: podeEditar
-                                                      ? () =>
-                                                          _responderConvocacao(
-                                                              evento, false)
-                                                      : null,
-                                                  icon: const Icon(Icons.close),
-                                                  label: const Text('Recusar'),
-                                                  style:
-                                                      ElevatedButton.styleFrom(
-                                                    backgroundColor: podeEditar
-                                                        ? Colors.red
-                                                        : Colors.grey,
-                                                    foregroundColor:
-                                                        Colors.white,
+                                                child: SizedBox(
+                                                  height: 32,
+                                                  child: ElevatedButton.icon(
+                                                    onPressed: podeEditar
+                                                        ? () =>
+                                                            _responderConvocacao(
+                                                                evento, false)
+                                                        : null,
+                                                    icon: const Icon(
+                                                      Icons.close,
+                                                      size: 16,
+                                                    ),
+                                                    label: const Text(
+                                                      'Recusar',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                      ),
+                                                    ),
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                      backgroundColor:
+                                                          podeEditar
+                                                              ? Colors.red
+                                                              : Colors.grey,
+                                                      foregroundColor:
+                                                          Colors.white,
+                                                      padding: EdgeInsets.zero,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
-                                              const SizedBox(width: 12),
+                                              const SizedBox(width: 8),
                                               Expanded(
-                                                child: ElevatedButton.icon(
-                                                  onPressed: podeEditar
-                                                      ? () =>
-                                                          _responderConvocacao(
-                                                              evento, true)
-                                                      : null,
-                                                  icon: const Icon(Icons.check),
-                                                  label: const Text('Aceitar'),
-                                                  style:
-                                                      ElevatedButton.styleFrom(
-                                                    backgroundColor: podeEditar
-                                                        ? Colors.green
-                                                        : Colors.grey,
-                                                    foregroundColor:
-                                                        Colors.white,
+                                                child: SizedBox(
+                                                  height: 32,
+                                                  child: ElevatedButton.icon(
+                                                    onPressed: podeEditar
+                                                        ? () =>
+                                                            _responderConvocacao(
+                                                                evento, true)
+                                                        : null,
+                                                    icon: const Icon(
+                                                      Icons.check,
+                                                      size: 16,
+                                                    ),
+                                                    label: const Text(
+                                                      'Aceitar',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                      ),
+                                                    ),
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                      backgroundColor:
+                                                          podeEditar
+                                                              ? Colors.green
+                                                              : Colors.grey,
+                                                      foregroundColor:
+                                                          Colors.white,
+                                                      padding: EdgeInsets.zero,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
                                             ],
                                           ),
                                         if (status != 'pending') ...[
-                                          const SizedBox(height: 8),
+                                          const SizedBox(height: 6),
                                           SizedBox(
+                                            height: 32,
                                             width: double.infinity,
                                             child: ElevatedButton.icon(
                                               onPressed: podeEditar
                                                   ? () =>
                                                       _editarResposta(evento)
                                                   : null,
-                                              icon: const Icon(Icons.edit),
-                                              label:
-                                                  const Text('Editar resposta'),
+                                              icon: const Icon(
+                                                Icons.edit,
+                                                size: 16,
+                                              ),
+                                              label: const Text(
+                                                'Editar resposta',
+                                                style: TextStyle(fontSize: 11),
+                                              ),
                                               style: ElevatedButton.styleFrom(
                                                 backgroundColor: podeEditar
                                                     ? Colors.deepPurple
                                                     : Colors.grey,
                                                 foregroundColor: Colors.white,
+                                                padding: EdgeInsets.zero,
                                               ),
                                             ),
                                           ),
                                         ],
-                                        const SizedBox(height: 10),
+                                        const SizedBox(height: 8),
                                         if (jaFezCheckin)
                                           Row(
                                             children: [
@@ -1299,13 +1401,14 @@ longitude
                                                 color: checkinStatus == 'ok'
                                                     ? Colors.green
                                                     : Colors.red,
-                                                size: 18,
+                                                size: 16,
                                               ),
-                                              const SizedBox(width: 8),
+                                              const SizedBox(width: 6),
                                               Text(
                                                 'Check-in: $checkinStatus',
                                                 style: TextStyle(
                                                   fontWeight: FontWeight.w600,
+                                                  fontSize: 11,
                                                   color: checkinStatus == 'ok'
                                                       ? Colors.green
                                                       : Colors.red,
@@ -1315,6 +1418,7 @@ longitude
                                           )
                                         else
                                           SizedBox(
+                                            height: 32,
                                             width: double.infinity,
                                             child: ElevatedButton.icon(
                                               onPressed: status == 'accepted' &&
@@ -1323,8 +1427,10 @@ longitude
                                                           true
                                                   ? () => _fazerCheckIn(evento)
                                                   : null,
-                                              icon:
-                                                  const Icon(Icons.my_location),
+                                              icon: const Icon(
+                                                Icons.my_location,
+                                                size: 16,
+                                              ),
                                               label: Text(
                                                 status == 'accepted'
                                                     ? (janelaCheckIn[
@@ -1333,7 +1439,10 @@ longitude
                                                         ? 'Fazer Check-in'
                                                         : janelaCheckIn[
                                                             'mensagem'])
-                                                    : 'Fazer Check-in (aceite a convocação)',
+                                                    : 'Check-in (aceite antes)',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                ),
                                               ),
                                               style: ElevatedButton.styleFrom(
                                                 backgroundColor: status ==
@@ -1344,34 +1453,39 @@ longitude
                                                     ? Colors.green
                                                     : Colors.grey,
                                                 foregroundColor: Colors.white,
+                                                padding: EdgeInsets.zero,
                                               ),
                                             ),
                                           ),
                                         if (status == 'accepted' &&
                                             !jaFezCheckin) ...[
-                                          const SizedBox(height: 8),
+                                          const SizedBox(height: 6),
                                           Container(
-                                            padding: const EdgeInsets.all(8),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
                                             decoration: BoxDecoration(
                                               color: Colors.red[50],
                                               borderRadius:
-                                                  BorderRadius.circular(8),
+                                                  BorderRadius.circular(6),
                                               border: Border.all(
-                                                  color: Colors.red[200]!),
+                                                color: Colors.red[200]!,
+                                              ),
                                             ),
                                             child: Row(
                                               children: [
                                                 Icon(
                                                   Icons.info_outline,
-                                                  size: 16,
+                                                  size: 14,
                                                   color: Colors.red[700],
                                                 ),
-                                                const SizedBox(width: 8),
+                                                const SizedBox(width: 6),
                                                 Expanded(
                                                   child: Text(
-                                                    '📍 Check-in: raio de 200m | Disponível 10 min antes até 30 min após o evento',
+                                                    '📍 Raio 200m | 10min antes até 30min após',
                                                     style: TextStyle(
-                                                      fontSize: 11,
+                                                      fontSize: 10,
                                                       color: Colors.red[900],
                                                       fontWeight:
                                                           FontWeight.w500,
@@ -1406,12 +1520,12 @@ longitude
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.1),
             spreadRadius: 1,
-            blurRadius: 10,
+            blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
@@ -1420,19 +1534,19 @@ longitude
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
             child: Row(
               children: [
                 Icon(
                   icon,
-                  size: 16,
+                  size: 14,
                   color: olympusGold,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 Text(
                   hint,
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 10,
                     color: olympusGold.withOpacity(0.8),
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.5,
@@ -1442,31 +1556,31 @@ longitude
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<dynamic>(
                 value: value,
                 hint: Text(
                   hint,
-                  style: TextStyle(color: Colors.grey[600]),
+                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
                 ),
                 isExpanded: true,
                 items: items,
                 onChanged: onChanged,
                 style: const TextStyle(
-                  fontSize: 15,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF2C3E5A),
                 ),
                 icon: Icon(
                   Icons.keyboard_arrow_down_rounded,
                   color: olympusGold,
-                  size: 20,
+                  size: 18,
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
         ],
       ),
     );
@@ -1484,12 +1598,12 @@ longitude
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.1),
             spreadRadius: 1,
-            blurRadius: 10,
+            blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
@@ -1498,19 +1612,19 @@ longitude
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
             child: Row(
               children: [
                 Icon(
                   icon,
-                  size: 16,
+                  size: 14,
                   color: olympusGold,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 10,
                     color: olympusGold.withOpacity(0.8),
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.5,
@@ -1520,16 +1634,15 @@ longitude
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: 6,
+              runSpacing: 6,
               children: options.map((option) {
                 final value = option['value'] as String;
                 final labelText = option['label'] as String;
                 final count = option['count'] as int?;
                 final selected = selectedValue == value;
-
                 Color chipColor;
                 switch (value) {
                   case 'accepted':
@@ -1544,28 +1657,27 @@ longitude
                   default:
                     chipColor = olympusBlue;
                 }
-
                 return ChoiceChip(
                   label: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(labelText),
+                      Text(labelText, style: const TextStyle(fontSize: 11)),
                       if (showBadges && count != null && count > 0) ...[
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 4),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
+                            horizontal: 5,
+                            vertical: 1,
                           ),
                           decoration: BoxDecoration(
                             color: chipColor,
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             count.toString(),
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 11,
+                              fontSize: 9,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -1578,14 +1690,14 @@ longitude
                   labelStyle: TextStyle(
                     color: selected ? chipColor : Colors.grey[700],
                     fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                    fontSize: 13,
+                    fontSize: 11,
                   ),
                   onSelected: (_) => onSelected(value),
                 );
               }).toList(),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
         ],
       ),
     );
