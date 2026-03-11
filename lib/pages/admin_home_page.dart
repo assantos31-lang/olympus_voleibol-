@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import 'agenda_page.dart';
-import 'admin_financial_page.dart'; // ← NOVO IMPORT
+import 'admin_financial_page.dart';
+import 'chat_rooms_page.dart';
 
 class AdminHomePage extends StatelessWidget {
   const AdminHomePage({super.key});
@@ -130,7 +131,8 @@ class AdminHomePage extends StatelessWidget {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                    builder: (context) => const AgendaPage()),
+                                  builder: (context) => const AgendaPage(),
+                                ),
                               );
                             },
                             icon: const Icon(Icons.calendar_month),
@@ -147,14 +149,15 @@ class AdminHomePage extends StatelessWidget {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 side: BorderSide(
-                                    color: Colors.white.withOpacity(0.3)),
+                                  color: Colors.white.withOpacity(0.3),
+                                ),
                               ),
                               elevation: 0,
                             ),
                           ),
                         ),
                         const SizedBox(height: 16),
-                        // ← NOVO: Botão Financeiro
+                        // Botão Financeiro
                         SizedBox(
                           width: double.infinity,
                           height: 50,
@@ -163,8 +166,9 @@ class AdminHomePage extends StatelessWidget {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                    builder: (context) =>
-                                        const AdminFinancialPage()),
+                                  builder: (context) =>
+                                      const AdminFinancialPage(),
+                                ),
                               );
                             },
                             icon: const Icon(Icons.attach_money),
@@ -181,7 +185,43 @@ class AdminHomePage extends StatelessWidget {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 side: BorderSide(
-                                    color: Colors.white.withOpacity(0.3)),
+                                  color: Colors.white.withOpacity(0.3),
+                                ),
+                              ),
+                              elevation: 0,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        // Botão Chat
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const ChatRoomsPage(),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.chat),
+                            label: const Text(
+                              'Chats',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white.withOpacity(0.1),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(
+                                  color: Colors.white.withOpacity(0.3),
+                                ),
                               ),
                               elevation: 0,
                             ),

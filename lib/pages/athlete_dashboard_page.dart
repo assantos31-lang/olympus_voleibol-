@@ -10,6 +10,7 @@ import 'dart:typed_data';
 import '../services/auth_service.dart';
 import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
+import 'chat_rooms_page.dart';
 
 class AthleteDashboardPage extends StatefulWidget {
   const AthleteDashboardPage({super.key});
@@ -396,6 +397,15 @@ event_time
         builder: (context) => const AthleteFinancialPage(),
       ),
     ).then((_) => _loadOverdueFinancialCount());
+  }
+
+  void _navigateToChat() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ChatRoomsPage(),
+      ),
+    );
   }
 
   Widget _buildAthleteInfoCard() {
@@ -1459,6 +1469,13 @@ event_time
               onTap: _navigateToFinancial,
               badgeCount:
                   _overdueFinancialCount > 0 ? _overdueFinancialCount : null,
+            ),
+            _buildDashboardCard(
+              icon: Icons.chat,
+              title: 'Chat do Time',
+              subtitle: 'Converse com sua equipe',
+              color: olympusLightBlue,
+              onTap: _navigateToChat,
             ),
             const SizedBox(height: 20),
           ],

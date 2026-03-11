@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
+
 import 'services/auth_service.dart';
 import 'pages/login_page.dart';
 import 'pages/register_page.dart';
@@ -12,13 +13,13 @@ import 'pages/member_dashboard_page.dart';
 import 'pages/complete_profile_page.dart';
 import 'pages/dashboard_router_page.dart';
 import 'pages/admin_home_page.dart';
+import 'pages/chat_rooms_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Supabase.initialize(
-    url:
-        'https://wucxbbspybemvkqgqtou.supabase.co', // ← Correção: removidos espaços no final da URL
+    url: 'https://wucxbbspybemvkqgqtou.supabase.co',
     anonKey: 'sb_publishable_jfe15-g7mYFo0mSI9tuDtw_dI6qrnx4',
   );
 
@@ -66,12 +67,12 @@ class MyApp extends StatelessWidget {
         '/complete-profile': (context) => const CompleteProfilePage(),
         '/dashboard': (context) => const DashboardRouterPage(),
         '/admin-home': (context) => const AdminHomePage(),
+        '/chat-rooms': (context) => const ChatRoomsPage(),
       },
     );
   }
 }
 
-// 🔹 Wrapper de Autenticação
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
 
@@ -126,6 +127,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     if (_isLoggedIn) {
       return const DashboardRouterPage();
+      // Para testar o chat direto, troque temporariamente por:
+      // return const ChatRoomsPage();
     }
 
     return const LoginPage();
