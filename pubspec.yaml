@@ -8,7 +8,7 @@ environment:
   sdk: '>=3.4.0 <4.0.0'
 
 dependencies:
-  geolocator: ^10.1.0
+  geolocator: ^13.0.1
   flutter:
     sdk: flutter
   flutter_localizations:      # ← Adicionado: suporte a localização (DatePicker em português)

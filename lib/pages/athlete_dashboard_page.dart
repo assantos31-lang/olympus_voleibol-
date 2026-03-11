@@ -23,16 +23,18 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
   final _authService = AuthService();
   Map<String, dynamic>? _profile;
   bool _isLoading = true;
-  // ✅ Contador de convocações pendentes
   int _pendingCount = 0;
-  // ✅ Contador de pagamentos em atraso
   int _overdueFinancialCount = 0;
-  // ✅ Mapa de pagamentos em atraso por mês
   Map<int, int> _overdueByMonth = {};
-  // ✅ Eventos da semana
   List<Map<String, dynamic>> _weekEvents = [];
 
-  // ✅ Cores do logo Olympus Voleibol
+  int _confirmedPresenceCount = 0;
+  int _rejectedPresenceCount = 0;
+  int _monthlyTrainingTotal = 0;
+  int _monthlyPresenceCount = 0;
+  int _monthlyAbsenceCount = 0;
+  double _monthlyPresencePercent = 0;
+
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
@@ -53,15 +55,14 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
           _profile = profile;
           _isLoading = false;
         });
-        // ✅ NOVO: Carregar contador de pendentes após carregar perfil
         _loadPendingCount();
         _loadOverdueFinancialCount();
         _loadWeekEvents();
+        _loadAttendanceAndPerformance();
       }
     }
   }
 
-  // ✅ NOVO: Carregar quantidade de convocações pendentes
   Future<void> _loadPendingCount() async {
     try {
       final user = supabase.auth.currentUser;
@@ -82,7 +83,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     }
   }
 
-  // ✅ NOVO: Carregar quantidade de pagamentos em atraso agrupados por mês
   Future<void> _loadOverdueFinancialCount() async {
     try {
       final user = supabase.auth.currentUser;
@@ -127,15 +127,15 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
       if (user == null) return;
 
       final response = await supabase.from('convocations').select('''
-        status,
-        events!$_eventsEmbedFk (
-          id,
-          event_name,
-          event_date,
-          event_time,
-          event_type
-        )
-      ''').eq('user_id', user.id).neq('status', 'rejected');
+status,
+events!$_eventsEmbedFk (
+id,
+event_name,
+event_date,
+event_time,
+event_type
+)
+''').eq('user_id', user.id).neq('status', 'rejected');
 
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
@@ -179,6 +179,135 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     }
   }
 
+  Future<void> _loadAttendanceAndPerformance() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final response = await supabase.from('convocations').select('''
+event_id,
+status,
+justification,
+events!$_eventsEmbedFk (
+id,
+event_name,
+event_type,
+event_date,
+event_time
+)
+''').eq('user_id', user.id);
+
+      final now = DateTime.now();
+      final month = now.month;
+      final year = now.year;
+
+      final List<Map<String, dynamic>> trainingEvents = [];
+      final List<String> trainingEventIds = [];
+
+      int confirmedPresence = 0;
+      int rejectedPresence = 0;
+
+      for (final item in response) {
+        final event = item['events'];
+        if (event == null) continue;
+
+        final status = (item['status'] ?? '').toString().toLowerCase().trim();
+        final justification =
+            (item['justification'] ?? '').toString().toLowerCase().trim();
+
+        if (status == 'rejected') {
+          rejectedPresence++;
+        }
+
+        final eventMap = Map<String, dynamic>.from(event);
+        final eventType =
+            (eventMap['event_type'] ?? '').toString().toLowerCase().trim();
+
+        if (eventType != 'treino') continue;
+
+        final eventDate = _parseEventDateTime(
+          (eventMap['event_date'] ?? '').toString(),
+          (eventMap['event_time'] ?? '').toString(),
+        );
+        if (eventDate == null) continue;
+        if (eventDate.month != month || eventDate.year != year) continue;
+
+        final eventId = (eventMap['id'] ?? '').toString();
+        if (eventId.isEmpty) continue;
+
+        trainingEvents.add({
+          ...eventMap,
+          'status': status,
+          'justification': justification,
+          'event_datetime': eventDate,
+        });
+        trainingEventIds.add(eventId);
+      }
+
+      final checkins = trainingEventIds.isEmpty
+          ? <dynamic>[]
+          : await supabase
+              .from('checkins')
+              .select('event_id, check_in_status')
+              .eq('user_id', user.id)
+              .inFilter('event_id', trainingEventIds);
+
+      final Map<String, String> checkinMap = {};
+      for (final row in checkins) {
+        final eventId = (row['event_id'] ?? '').toString();
+        if (eventId.isEmpty) continue;
+        checkinMap[eventId] =
+            (row['check_in_status'] ?? '').toString().toLowerCase().trim();
+      }
+
+      int monthlyPresence = 0;
+      int monthlyAbsence = 0;
+
+      for (final event in trainingEvents) {
+        final eventId = (event['id'] ?? '').toString();
+        final status = (event['status'] ?? '').toString().toLowerCase().trim();
+        final justification =
+            (event['justification'] ?? '').toString().toLowerCase().trim();
+        final checkinStatus = (checkinMap[eventId] ?? '').toLowerCase().trim();
+        final eventDate = event['event_datetime'] as DateTime;
+
+        if (checkinStatus == 'ok') {
+          monthlyPresence++;
+          confirmedPresence++;
+          continue;
+        }
+
+        final checkinExpired =
+            now.isAfter(eventDate.add(const Duration(minutes: 30)));
+
+        final isAbsence = checkinExpired &&
+            ((status == 'accepted' && checkinStatus != 'ok') ||
+                (status == 'rejected' && justification == 'prazo expirado'));
+
+        if (isAbsence) {
+          monthlyAbsence++;
+        }
+      }
+
+      final totalTrainings = trainingEvents.length;
+      final presencePercent =
+          totalTrainings > 0 ? (monthlyPresence / totalTrainings) * 100 : 0.0;
+
+      if (mounted) {
+        setState(() {
+          _confirmedPresenceCount = confirmedPresence;
+          _rejectedPresenceCount = rejectedPresence;
+          _monthlyTrainingTotal = totalTrainings;
+          _monthlyPresenceCount = monthlyPresence;
+          _monthlyAbsenceCount = monthlyAbsence;
+          _monthlyPresencePercent = presencePercent;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar presença/desempenho: $e');
+    }
+  }
+
   DateTime? _parseEventDateTime(String dateStr, String timeStr) {
     try {
       final dp = dateStr.trim().split('/');
@@ -200,12 +329,31 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     if (_weekEvents.isEmpty) {
       return 'Veja suas convocações e eventos';
     }
+
     final nextEvent = _weekEvents.first;
     final eventDate = nextEvent['event_datetime'] as DateTime;
     final dayLabel = DateFormat('EEE', 'pt_BR').format(eventDate);
     final dayLabelCapitalized =
         dayLabel[0].toUpperCase() + dayLabel.substring(1).replaceAll('.', '');
+
     return 'Próximo: $dayLabelCapitalized às ${DateFormat('HH:mm').format(eventDate)}';
+  }
+
+  String _getPerformanceLevel() {
+    if (_monthlyPresencePercent <= 40) {
+      return 'Iniciante';
+    } else if (_monthlyPresencePercent <= 50) {
+      return 'Participante';
+    } else if (_monthlyPresencePercent <= 60) {
+      return 'Regular';
+    } else if (_monthlyPresencePercent <= 70) {
+      return 'Comprometido';
+    } else if (_monthlyPresencePercent <= 80) {
+      return 'Intermediário';
+    } else if (_monthlyPresencePercent <= 90) {
+      return 'Avançado';
+    }
+    return 'Elite';
   }
 
   Future<void> _redirectToLogin() async {
@@ -237,6 +385,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     ).then((_) {
       _loadPendingCount();
       _loadWeekEvents();
+      _loadAttendanceAndPerformance();
     });
   }
 
@@ -249,7 +398,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     ).then((_) => _loadOverdueFinancialCount());
   }
 
-  // ✅ Card de Informações do Atleta (Stat Card)
   Widget _buildAthleteInfoCard() {
     final firstName =
         _profile?['full_name']?.toString().split(' ').first ?? 'Atleta';
@@ -259,95 +407,201 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [olympusBlue, olympusLightBlue],
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFF9FB6C9).withOpacity(0.75),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.25),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: olympusGold.withOpacity(0.12),
+            blurRadius: 24,
+            spreadRadius: 1,
+          ),
+        ],
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF0D223B),
+            Color(0xFF123861),
+            Color(0xFF235E94),
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: olympusGold.withOpacity(0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
           children: [
-            // Foto do Atleta
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: olympusGold, width: 3),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: ClipOval(
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.12,
                 child: avatarUrl != null && avatarUrl.isNotEmpty
                     ? Image.network(
                         avatarUrl,
                         fit: BoxFit.cover,
-                        errorBuilder: (c, o, s) =>
-                            _buildAvatarPlaceholder(firstName),
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                       )
-                    : _buildAvatarPlaceholder(firstName),
+                    : const SizedBox.shrink(),
               ),
             ),
-            const SizedBox(width: 16),
-            // Informações
-            Expanded(
+            Positioned(
+              top: -40,
+              right: -30,
+              child: Container(
+                width: 140,
+                height: 140,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(0.08),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: -50,
+              left: -30,
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: olympusGold.withOpacity(0.08),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Olá, $firstName!',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: olympusGold,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.sports_volleyball,
-                          size: 16,
-                          color: olympusBlue,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 68,
+                        height: 68,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFF0D771), Color(0xFFB48A23)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: olympusGold.withOpacity(0.45),
+                              blurRadius: 12,
+                              spreadRadius: 1,
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          position,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: olympusBlue,
+                        padding: const EdgeInsets.all(2.2),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            color: const Color(0xFF113457),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(15),
+                            child: avatarUrl != null && avatarUrl.isNotEmpty
+                                ? Image.network(
+                                    avatarUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (c, o, s) =>
+                                        _buildAvatarPlaceholder(firstName),
+                                  )
+                                : _buildAvatarPlaceholder(firstName),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Olá, $firstName!',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  height: 1.1,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(22),
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      Color(0xFFD7E3EE),
+                                      Color(0xFFBFCFDD),
+                                    ],
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  ),
+                                  border: Border.all(
+                                    color: const Color(0xFF90A9BF),
+                                    width: 1.2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.white.withOpacity(0.35),
+                                      blurRadius: 2,
+                                      offset: const Offset(0, -1),
+                                    ),
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.18),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.sports_volleyball,
+                                      size: 15,
+                                      color: Color(0xFF42576B),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        position,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF2E4053),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (_weekEvents.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                _buildCompactWeekEventsPreview(),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
-                  _buildWeekEventsMiniCard(),
+                  _buildEmbeddedPerformanceCompactCard(),
                 ],
               ),
             ),
@@ -357,104 +611,472 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     );
   }
 
-  Widget _buildWeekEventsMiniCard() {
+  Widget _buildCompactWeekEventsPreview() {
+    final nextEvent = _weekEvents.first;
+    final eventDate = nextEvent['event_datetime'] as DateTime;
+    final weekday = DateFormat('EEEE', 'pt_BR').format(eventDate).toUpperCase();
+    final cleanWeekday = weekday.replaceAll('-FEIRA', '');
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.12),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.18),
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF0E2440),
+            Color(0xFF122B4A),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
+        border: Border.all(
+          color: const Color(0xFF2D4561),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.22),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
-      child: _weekEvents.isEmpty
-          ? Row(
-              children: const [
-                Icon(
-                  Icons.event_available,
-                  size: 16,
-                  color: Colors.white70,
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Nenhum evento nesta semana',
-                    style: TextStyle(
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: Colors.white.withOpacity(0.06),
+              border: Border.all(color: Colors.white.withOpacity(0.12)),
+            ),
+            child: const Icon(
+              Icons.calendar_today_outlined,
+              size: 15,
+              color: Colors.white70,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: RichText(
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: '$cleanWeekday\n',
+                    style: const TextStyle(
                       color: Colors.white70,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
                     ),
                   ),
-                ),
-              ],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Eventos da semana',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                  TextSpan(
+                    text:
+                        '${DateFormat('dd/MM').format(eventDate)} • ${DateFormat('HH:mm').format(eventDate)} • ${(nextEvent['event_name'] ?? 'Evento').toString()}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmbeddedPerformanceCompactCard() {
+    final progress = _monthlyTrainingTotal > 0
+        ? (_monthlyPresenceCount / _monthlyTrainingTotal).clamp(0.0, 1.0)
+        : 0.0;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF132743), Color(0xFF1B3154)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(
+          color: olympusGold.withOpacity(0.55),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.18),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+          BoxShadow(
+            color: olympusGold.withOpacity(0.08),
+            blurRadius: 12,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.centerLeft,
+            children: [
+              Container(
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.05),
                   ),
                 ),
-                const SizedBox(height: 8),
-                ..._weekEvents.take(2).map((event) {
-                  final eventDate = event['event_datetime'] as DateTime;
-                  final formattedDay = DateFormat('dd/MM').format(eventDate);
-                  final formattedTime = DateFormat('HH:mm').format(eventDate);
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: olympusGold,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '$formattedDay • $formattedTime',
-                            style: const TextStyle(
-                              color: olympusBlue,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            (event['event_name'] ?? 'Evento').toString(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+              ),
+              FractionallySizedBox(
+                widthFactor: progress,
+                child: Container(
+                  height: 8,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF8AF26D), Color(0xFFF3D94F)],
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0xFF9AF07A),
+                        blurRadius: 8,
+                        spreadRadius: 0.2,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (progress > 0)
+                Positioned(
+                  left: ((MediaQuery.of(context).size.width - 56) * progress)
+                      .clamp(0.0, MediaQuery.of(context).size.width - 56),
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFFF27E), Color(0xFFDABF2B)],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFF3D94F).withOpacity(0.75),
+                          blurRadius: 10,
+                          spreadRadius: 1,
                         ),
                       ],
                     ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${_monthlyPresenceCount.toString().padLeft(2, '0')}/${_monthlyTrainingTotal.toString().padLeft(2, '0')} TREINOS',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+              Text(
+                _getPerformanceLevel(),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _buildMiniMetric(
+                  icon: Icons.check_circle_outline,
+                  label: 'Presenças',
+                  helper: 'Taxa de presença',
+                  value: '${_monthlyPresencePercent.toStringAsFixed(0)}%',
+                  valueColor: const Color(0xFFFFF2A8),
+                  accentColor: const Color(0xFFE7CC44),
+                  chartType: _MiniChartType.line,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildMiniMetric(
+                  icon: Icons.warning_amber_rounded,
+                  label: 'Faltas',
+                  helper: 'Faltas no mês',
+                  value: _monthlyAbsenceCount.toString(),
+                  valueColor: Colors.white,
+                  accentColor: const Color(0xFFE15A5A),
+                  chartType: _MiniChartType.barsRed,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildMiniMetric(
+                  icon: Icons.bar_chart_rounded,
+                  label: 'Volume de treino',
+                  helper: 'Treinos do mês',
+                  value: _monthlyTrainingTotal.toString(),
+                  valueColor: const Color(0xFFFFF2A8),
+                  accentColor: const Color(0xFF4FA3FF),
+                  chartType: _MiniChartType.grid,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniMetric({
+    required IconData icon,
+    required String label,
+    required String helper,
+    required String value,
+    required Color valueColor,
+    required Color accentColor,
+    required _MiniChartType chartType,
+  }) {
+    return Container(
+      height: 92,
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF0F2138),
+            accentColor.withOpacity(0.10),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: accentColor.withOpacity(0.85), width: 1.1),
+        boxShadow: [
+          BoxShadow(
+            color: accentColor.withOpacity(0.16),
+            blurRadius: 10,
+            spreadRadius: 0.5,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  color: accentColor.withOpacity(0.16),
+                  border: Border.all(color: accentColor.withOpacity(0.7)),
+                ),
+                child: Icon(icon, size: 10, color: accentColor),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            helper,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 7,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              color: valueColor,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              height: 1,
+            ),
+          ),
+          const Spacer(),
+          _buildMiniChart(chartType, accentColor),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniChart(_MiniChartType type, Color accentColor) {
+    switch (type) {
+      case _MiniChartType.line:
+        return CustomPaint(
+          size: const Size(double.infinity, 18),
+          painter: _MiniLinePainter(color: accentColor),
+        );
+      case _MiniChartType.barsRed:
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: List.generate(8, (index) {
+            final heights = [6.0, 10.0, 14.0, 7.0, 18.0, 12.0, 16.0, 9.0];
+            return Expanded(
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 1),
+                height: heights[index],
+                decoration: BoxDecoration(
+                  color: accentColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            );
+          }),
+        );
+      case _MiniChartType.grid:
+        return Column(
+          children: List.generate(3, (row) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Row(
+                children: List.generate(8, (col) {
+                  final active = (row + col) % 2 == 0 || col > 4;
+                  return Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 1),
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: active
+                            ? const Color(0xFFE1C84B)
+                            : accentColor.withOpacity(0.22),
+                        borderRadius: BorderRadius.circular(1.5),
+                      ),
+                    ),
                   );
-                }).toList(),
-                if (_weekEvents.length > 2)
-                  Text(
-                    '+${_weekEvents.length - 2} evento(s)',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
+                }),
+              ),
+            );
+          }),
+        );
+    }
+  }
+
+  Widget _buildWeekEventsSectionCard() {
+    if (_weekEvents.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: olympusGold.withOpacity(0.25)),
+        boxShadow: [
+          BoxShadow(
+            color: olympusGold.withOpacity(0.12),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.calendar_month,
+                color: olympusGold,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Eventos da semana',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: olympusBlue,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ..._weekEvents.take(3).map((event) {
+            final eventDate = event['event_datetime'] as DateTime;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: olympusGold.withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${DateFormat('dd/MM').format(eventDate)} • ${DateFormat('HH:mm').format(eventDate)}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: olympusBlue,
+                      ),
                     ),
                   ),
-              ],
-            ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      (event['event_name'] ?? 'Evento').toString(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF2C3E5A),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
+      ),
     );
   }
 
@@ -474,7 +1096,94 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     );
   }
 
-  // ✅ NOVO: Widget de Card/Tile de Dashboard
+  Widget _buildPresenceSummaryCard() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: olympusBlue.withOpacity(0.12)),
+        boxShadow: [
+          BoxShadow(
+            color: olympusBlue.withOpacity(0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildPresenceMetric(
+              icon: Icons.check_circle,
+              label: 'Confirmado',
+              value: _confirmedPresenceCount,
+              color: Colors.green,
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 42,
+            color: Colors.grey.withOpacity(0.18),
+          ),
+          Expanded(
+            child: _buildPresenceMetric(
+              icon: Icons.schedule,
+              label: 'Pendente',
+              value: _pendingCount,
+              color: Colors.orange,
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 42,
+            color: Colors.grey.withOpacity(0.18),
+          ),
+          Expanded(
+            child: _buildPresenceMetric(
+              icon: Icons.cancel,
+              label: 'Recusado',
+              value: _rejectedPresenceCount,
+              color: Colors.red,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPresenceMetric({
+    required IconData icon,
+    required String label,
+    required int value,
+    required Color color,
+  }) {
+    return Column(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(height: 6),
+        Text(
+          value.toString(),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey[700],
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildDashboardCard({
     required IconData icon,
     required String title,
@@ -509,7 +1218,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
               padding: const EdgeInsets.all(20),
               child: Row(
                 children: [
-                  // Ícone
                   Container(
                     width: 60,
                     height: 60,
@@ -524,7 +1232,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  // Texto
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -548,7 +1255,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
                       ],
                     ),
                   ),
-                  // Seta
                   Icon(
                     Icons.arrow_forward_ios,
                     color: color.withOpacity(0.5),
@@ -557,14 +1263,15 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
                 ],
               ),
             ),
-            // Badge de pendentes
             if (badgeCount != null && badgeCount > 0)
               Positioned(
                 right: 12,
                 top: 12,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.red,
                     borderRadius: BorderRadius.circular(12),
@@ -593,11 +1300,9 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     );
   }
 
-  // ✅ NOVO: Card de Alerta Financeiro
   Widget _buildFinancialAlertCard() {
     if (_overdueFinancialCount == 0) return const SizedBox.shrink();
 
-    // Construir mensagem com meses
     String monthMessage = '';
     final sortedMonths = _overdueByMonth.keys.toList()
       ..sort((a, b) => b.compareTo(a));
@@ -646,7 +1351,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              // Ícone de alerta
               Container(
                 width: 56,
                 height: 56,
@@ -661,7 +1365,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
                 ),
               ),
               const SizedBox(width: 16),
-              // Texto
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -736,12 +1439,10 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // ✅ Card de Informações do Atleta - MOVIDO PARA O TOPO
             _buildAthleteInfoCard(),
-            // ✅ NOVO: Card de Alerta Financeiro (só aparece se houver atraso)
             _buildFinancialAlertCard(),
-            const SizedBox(height: 12),
-            // ✅ Cards de Dashboard
+            _buildPresenceSummaryCard(),
+            _buildWeekEventsSectionCard(),
             _buildDashboardCard(
               icon: Icons.calendar_today,
               title: 'Minha Agenda',
@@ -767,12 +1468,62 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
   }
 }
 
+enum _MiniChartType {
+  line,
+  barsRed,
+  grid,
+}
+
+class _MiniLinePainter extends CustomPainter {
+  final Color color;
+  _MiniLinePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    final glowPaint = Paint()
+      ..color = color.withOpacity(0.35)
+      ..strokeWidth = 5
+      ..style = PaintingStyle.stroke
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+
+    final dotPaint = Paint()..color = color;
+
+    final path = Path();
+    final points = [
+      Offset(0, size.height - 10),
+      Offset(size.width * 0.20, size.height - 11),
+      Offset(size.width * 0.40, size.height - 8),
+      Offset(size.width * 0.60, size.height - 12),
+      Offset(size.width * 0.80, size.height - 4),
+      Offset(size.width, size.height - 7),
+    ];
+
+    path.moveTo(points.first.dx, points.first.dy);
+    for (final point in points.skip(1)) {
+      path.lineTo(point.dx, point.dy);
+    }
+
+    canvas.drawPath(path, glowPaint);
+    canvas.drawPath(path, linePaint);
+    canvas.drawCircle(points.last, 2.8, dotPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MiniLinePainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
 // ============================================================================
 // TELA DE PERFIL COMPLETA DO ATLETA
 // ============================================================================
 class AthleteProfilePage extends StatefulWidget {
   final Map<String, dynamic>? profile;
-
   const AthleteProfilePage({super.key, this.profile});
 
   @override
@@ -781,8 +1532,6 @@ class AthleteProfilePage extends StatefulWidget {
 
 class _AthleteProfilePageState extends State<AthleteProfilePage> {
   final supabase = Supabase.instance.client;
-
-  // ✅ Cores do logo Olympus Voleibol
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
@@ -877,14 +1626,12 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                         );
                         return;
                       }
-
                       setDialogState(() => _isLoading = true);
                       try {
                         final user = supabase.auth.currentUser;
                         if (user == null || user.email == null) {
                           throw Exception('Usuário não autenticado');
                         }
-
                         try {
                           await supabase.auth.signInWithPassword(
                             email: user.email!,
@@ -893,11 +1640,9 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                         } catch (e) {
                           throw Exception('Senha atual incorreta');
                         }
-
                         await supabase.auth.updateUser(
                           UserAttributes(password: newPasswordCtrl.text),
                         );
-
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -944,7 +1689,6 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
   @override
   Widget build(BuildContext context) {
     final profile = widget.profile;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Meu Perfil'),
@@ -1199,7 +1943,6 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
 // ============================================================================
 class _AthleteProfileEditDialog extends StatefulWidget {
   final Map<String, dynamic> profile;
-
   const _AthleteProfileEditDialog({required this.profile});
 
   @override
@@ -1211,7 +1954,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
   final supabase = Supabase.instance.client;
-
   late TextEditingController _fullNameController;
   late MaskedTextController _phoneController;
   late TextEditingController _birthDateController;
@@ -1226,14 +1968,11 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   late TextEditingController _neighborhoodController;
   late TextEditingController _cityController;
   late TextEditingController _stateController;
-
   XFile? _selectedImage;
   bool _isLoading = false;
   bool _isUploading = false;
   bool _isFetchingCep = false;
   String _selectedGender = '';
-
-  // ✅ Cores do logo Olympus Voleibol
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
@@ -1285,9 +2024,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
     _cityController = TextEditingController(text: widget.profile['city'] ?? '');
     _stateController =
         TextEditingController(text: widget.profile['state'] ?? '');
-
     _selectedGender = widget.profile['gender'] ?? '';
-
     _zipCodeController.addListener(_onZipCodeChanged);
   }
 
@@ -1360,7 +2097,6 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
 
   Future<String?> _uploadImage() async {
     if (_selectedImage == null) return null;
-
     setState(() => _isUploading = true);
     try {
       final user = supabase.auth.currentUser;
@@ -1368,13 +2104,8 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
           '${DateTime.now().millisecondsSinceEpoch}_${user?.id}.jpg';
       final Uint8List? fileBytes = await _selectedImage!.readAsBytes();
       if (fileBytes == null) return null;
-
-      await supabase.storage.from('avatars').uploadBinary(
-            fileName,
-            fileBytes,
-            fileOptions: const FileOptions(upsert: true),
-          );
-
+      await supabase.storage.from('avatars').uploadBinary(fileName, fileBytes,
+          fileOptions: const FileOptions(upsert: true));
       final publicUrl = supabase.storage.from('avatars').getPublicUrl(fileName);
       return publicUrl;
     } catch (e) {
@@ -1427,17 +2158,14 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isLoading = true);
     try {
       String? avatarUrl;
       if (_selectedImage != null) {
         avatarUrl = await _uploadImage();
       }
-
       final user = supabase.auth.currentUser;
       if (user == null) throw Exception('Usuário não autenticado');
-
       final data = <String, dynamic>{
         'full_name': _fullNameController.text.trim(),
         'phone': _removeMask(_phoneController.text),
@@ -1456,9 +2184,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
         'updated_at': DateTime.now().toIso8601String(),
         if (avatarUrl != null) 'avatar_url': avatarUrl,
       };
-
       await supabase.from('profiles').update(data).eq('id', user.id);
-
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
