@@ -76,7 +76,7 @@ class ChatService {
     if (senderIds.isNotEmpty) {
       final profiles = await supabase
           .from('profiles')
-          .select('id, full_name')
+          .select('id, full_name, avatar_url')
           .inFilter('id', senderIds);
 
       for (final profile in profiles) {
@@ -165,7 +165,7 @@ class ChatService {
   Future<List<Map<String, dynamic>>> getSelectableUsers() async {
     final response = await supabase
         .from('profiles')
-        .select('id, full_name, user_type, phone')
+        .select('id, full_name, user_type, phone, avatar_url')
         .order('full_name');
 
     return response.map<Map<String, dynamic>>((e) {
@@ -223,7 +223,7 @@ class ChatService {
 
           final profiles = await supabase
               .from('profiles')
-              .select('id, full_name')
+              .select('id, full_name, avatar_url')
               .inFilter('id', senderIds);
 
           final profileMap = <String, String>{};
@@ -356,7 +356,7 @@ class ChatService {
   Future<List<Map<String, dynamic>>> getRoomParticipants(String roomId) async {
     final membersResponse = await supabase
         .from('chat_room_members')
-        .select('user_id, role')
+        .select('user_id, role, is_muted, is_banned')
         .eq('room_id', roomId)
         .order('joined_at');
 
@@ -373,7 +373,7 @@ class ChatService {
 
     final profilesResponse = await supabase
         .from('profiles')
-        .select('id, full_name, phone, user_type')
+        .select('id, full_name, phone, user_type, avatar_url')
         .inFilter('id', userIds);
 
     final profileMap = <String, Map<String, dynamic>>{};
@@ -392,15 +392,19 @@ class ChatService {
       return {
         'user_id': userId,
         'role': (member['role'] ?? '').toString(),
+        'is_muted': member['is_muted'] as bool? ?? false,
+        'is_banned': member['is_banned'] as bool? ?? false,
         'full_name': (profile['full_name'] ?? 'Sem nome').toString(),
         'phone': (profile['phone'] ?? '').toString(),
         'user_type': (profile['user_type'] ?? '').toString(),
+        'avatar_url': (profile['avatar_url'] ?? '').toString(),
       };
     }).toList();
   }
 
   Future<List<Map<String, dynamic>>> getAvailableUsersForRoom(
-      String roomId) async {
+    String roomId,
+  ) async {
     final allUsers = await getSelectableUsers();
     final participants = await getRoomParticipants(roomId);
 
@@ -421,7 +425,23 @@ class ChatService {
   }) async {
     if (userIds.isEmpty) return;
 
-    final inserts = userIds
+    final existingMembersResponse = await supabase
+        .from('chat_room_members')
+        .select('user_id')
+        .eq('room_id', roomId)
+        .inFilter('user_id', userIds);
+
+    final existingIds = existingMembersResponse
+        .map<String>((e) => (e['user_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    final newUserIds =
+        userIds.where((userId) => !existingIds.contains(userId)).toList();
+
+    if (newUserIds.isEmpty) return;
+
+    final inserts = newUserIds
         .map((userId) => {
               'room_id': roomId,
               'user_id': userId,
@@ -439,6 +459,42 @@ class ChatService {
     await supabase
         .from('chat_room_members')
         .delete()
+        .eq('room_id', roomId)
+        .eq('user_id', userId);
+  }
+
+  Future<void> setParticipantRole({
+    required String roomId,
+    required String userId,
+    required String role,
+  }) async {
+    await supabase
+        .from('chat_room_members')
+        .update({'role': role})
+        .eq('room_id', roomId)
+        .eq('user_id', userId);
+  }
+
+  Future<void> setParticipantMuted({
+    required String roomId,
+    required String userId,
+    required bool muted,
+  }) async {
+    await supabase
+        .from('chat_room_members')
+        .update({'is_muted': muted})
+        .eq('room_id', roomId)
+        .eq('user_id', userId);
+  }
+
+  Future<void> setParticipantBanned({
+    required String roomId,
+    required String userId,
+    required bool banned,
+  }) async {
+    await supabase
+        .from('chat_room_members')
+        .update({'is_banned': banned})
         .eq('room_id', roomId)
         .eq('user_id', userId);
   }

@@ -1,27 +1,50 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'services/auth_service.dart';
-import 'pages/login_page.dart';
-import 'pages/register_page.dart';
-import 'pages/profiles_page.dart';
+import 'firebase_options.dart';
+import 'pages/admin_home_page.dart';
 import 'pages/athlete_dashboard_page.dart';
+import 'pages/chat_rooms_page.dart';
 import 'pages/coach_dashboard_page.dart';
-import 'pages/member_dashboard_page.dart';
 import 'pages/complete_profile_page.dart';
 import 'pages/dashboard_router_page.dart';
-import 'pages/admin_home_page.dart';
-import 'pages/chat_rooms_page.dart';
+import 'pages/login_page.dart';
+import 'pages/member_dashboard_page.dart';
+import 'pages/profiles_page.dart';
+import 'pages/register_page.dart';
+import 'services/auth_service.dart';
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  if (!kIsWeb) {
+    FirebaseMessaging.onBackgroundMessage(
+      _firebaseMessagingBackgroundHandler,
+    );
+  }
 
   await Supabase.initialize(
     url: 'https://wucxbbspybemvkqgqtou.supabase.co',
     anonKey: 'sb_publishable_jfe15-g7mYFo0mSI9tuDtw_dI6qrnx4',
   );
+
+  await _setupPushNotifications();
 
   runApp(
     MultiProvider(
@@ -31,6 +54,27 @@ void main() async {
       child: const MyApp(),
     ),
   );
+}
+
+Future<void> _setupPushNotifications() async {
+  if (kIsWeb) return;
+
+  final messaging = FirebaseMessaging.instance;
+
+  await messaging.requestPermission();
+
+  await messaging.setAutoInitEnabled(true);
+
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    debugPrint('Push em foreground: ${message.notification?.title}');
+  });
+
+  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+    debugPrint('Push aberto pelo usuário: ${message.messageId}');
+  });
+
+  final token = await messaging.getToken();
+  debugPrint('FCM TOKEN: $token');
 }
 
 class MyApp extends StatelessWidget {
@@ -127,8 +171,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     if (_isLoggedIn) {
       return const DashboardRouterPage();
-      // Para testar o chat direto, troque temporariamente por:
-      // return const ChatRoomsPage();
     }
 
     return const LoginPage();

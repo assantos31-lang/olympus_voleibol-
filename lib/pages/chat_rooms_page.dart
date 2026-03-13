@@ -12,14 +12,40 @@ class ChatRoomsPage extends StatefulWidget {
 
 class _ChatRoomsPageState extends State<ChatRoomsPage> {
   final ChatService _chatService = ChatService();
+  final TextEditingController _searchController = TextEditingController();
+
   late Future<List<ChatRoomListItem>> _futureRooms;
   bool _isAdmin = false;
+  String _searchQuery = '';
+
+  static const Color _gold = Color(0xFFD4B06A);
+  static const Color _goldSoft = Color(0xFFE7CD8E);
+  static const Color _navy = Color(0xFF0E2A57);
+  static const Color _navyDark = Color(0xFF0A1730);
+  static const Color _textPrimary = Colors.white;
+  static const Color _textSecondary = Color(0xFFD8DEE8);
 
   @override
   void initState() {
     super.initState();
     _futureRooms = _chatService.getMyRoomListItems();
     _loadIsAdmin();
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    final value = _searchController.text.trim();
+    if (value == _searchQuery) return;
+    setState(() {
+      _searchQuery = value;
+    });
   }
 
   Future<void> _loadIsAdmin() async {
@@ -36,6 +62,350 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     setState(() {
       _futureRooms = _chatService.getMyRoomListItems();
     });
+  }
+
+  String? _extractUserPhoto(Map<String, dynamic> user) {
+    const keys = [
+      'photo_url',
+      'avatar_url',
+      'profile_image_url',
+      'image_url',
+      'avatar',
+      'photo',
+    ];
+
+    for (final key in keys) {
+      final value = user[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  Widget _buildUserAvatar({
+    required String fullName,
+    String? photoUrl,
+    double size = 50,
+  }) {
+    final initial =
+        fullName.trim().isNotEmpty ? fullName.trim()[0].toUpperCase() : 'U';
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: _gold, width: 1.6),
+        color: Colors.white.withValues(alpha: 0.08),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33D4B06A),
+            blurRadius: 10,
+            offset: Offset(0, 0),
+          ),
+        ],
+      ),
+      child: ClipOval(
+        child: photoUrl != null && photoUrl.isNotEmpty
+            ? Image.network(
+                photoUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) {
+                  return Center(
+                    child: Text(
+                      initial,
+                      style: const TextStyle(
+                        color: _gold,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  );
+                },
+              )
+            : Center(
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    color: _gold,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+
+  Future<void> _showCreateConversationDialog() async {
+    List<Map<String, dynamic>> users = [];
+    String? selectedUserId;
+    String? selectedUserName;
+
+    try {
+      users = await _chatService.getSelectableUsers();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao carregar usuários: $e')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        bool isSaving = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFFF2EEF5),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              actionsPadding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
+              title: const Text(
+                'Nova conversa',
+                style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: users.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Text('Nenhum usuário disponível'),
+                      )
+                    : ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 380),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: users.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, index) {
+                            final user = users[index];
+                            final userId = (user['id'] ?? '').toString();
+                            final fullName =
+                                (user['full_name'] ?? 'Sem nome').toString();
+                            final phone =
+                                (user['phone'] ?? '').toString().trim();
+                            final userType =
+                                (user['user_type'] ?? '').toString().trim();
+                            final photoUrl = _extractUserPhoto(user);
+                            final isSelected = selectedUserId == userId;
+
+                            String subtitle = '';
+                            if (phone.isNotEmpty && userType.isNotEmpty) {
+                              subtitle = '$phone • $userType';
+                            } else if (phone.isNotEmpty) {
+                              subtitle = phone;
+                            } else {
+                              subtitle = userType;
+                            }
+
+                            return Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(18),
+                                onTap: isSaving
+                                    ? null
+                                    : () {
+                                        setDialogState(() {
+                                          selectedUserId = userId;
+                                          selectedUserName = fullName;
+                                        });
+                                      },
+                                child: Ink(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(18),
+                                    color: isSelected
+                                        ? _gold.withValues(alpha: 0.16)
+                                        : Colors.white.withValues(alpha: 0.75),
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? _gold
+                                          : Colors.black
+                                              .withValues(alpha: 0.08),
+                                      width: isSelected ? 1.6 : 1,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: isSelected
+                                            ? const Color(0x22D4B06A)
+                                            : const Color(0x10000000),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 12,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        _buildUserAvatar(
+                                          fullName: fullName,
+                                          photoUrl: photoUrl,
+                                          size: 52,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                fullName,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontSize: 17,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Color(0xFF2F2A35),
+                                                ),
+                                              ),
+                                              if (subtitle.isNotEmpty) ...[
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  subtitle,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    color: Colors.black
+                                                        .withValues(
+                                                            alpha: 0.55),
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Container(
+                                          width: 24,
+                                          height: 24,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: isSelected
+                                                  ? _gold
+                                                  : Colors.black
+                                                      .withValues(alpha: 0.35),
+                                              width: 1.6,
+                                            ),
+                                            color: isSelected
+                                                ? _gold
+                                                : Colors.transparent,
+                                          ),
+                                          child: isSelected
+                                              ? const Icon(
+                                                  Icons.check,
+                                                  size: 15,
+                                                  color: Colors.white,
+                                                )
+                                              : null,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed:
+                      isSaving ? null : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: isSaving || selectedUserId == null
+                      ? null
+                      : () async {
+                          setDialogState(() {
+                            isSaving = true;
+                          });
+
+                          try {
+                            final room = await _chatService.createGroupRoom(
+                              name: selectedUserName ?? 'Nova conversa',
+                              participantUserIds: [selectedUserId!],
+                            );
+
+                            if (!mounted) return;
+                            Navigator.of(dialogContext).pop();
+
+                            await _reload();
+
+                            if (!mounted) return;
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ChatPage(room: room),
+                              ),
+                            );
+
+                            if (!mounted) return;
+                            await _reload();
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Erro ao criar conversa: $e'),
+                              ),
+                            );
+                            setDialogState(() {
+                              isSaving = false;
+                            });
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _gold.withValues(alpha: 0.22),
+                    foregroundColor: const Color(0xFF5D4A18),
+                    disabledBackgroundColor:
+                        Colors.black.withValues(alpha: 0.08),
+                    disabledForegroundColor:
+                        Colors.black.withValues(alpha: 0.25),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
+                  ),
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Criar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _showCreateGroupDialog() async {
@@ -257,124 +627,680 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
     if (item.unreadCount > 0) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        constraints: const BoxConstraints(minWidth: 46, minHeight: 30),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: Colors.green,
-          borderRadius: BorderRadius.circular(12),
+          color: _gold,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x55D4B06A),
+              blurRadius: 10,
+              offset: Offset(0, 0),
+            ),
+          ],
         ),
         child: Text(
-          item.unreadCount.toString(),
+          item.unreadCount > 99 ? '99+' : item.unreadCount.toString(),
           style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
+            color: _navyDark,
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
           ),
         ),
       );
     }
 
     if (room.isLocked) {
-      return const Icon(Icons.lock, color: Colors.red);
+      return const Icon(Icons.lock_outline_rounded, color: _gold, size: 22);
     }
 
     if (room.adminOnly) {
-      return const Icon(Icons.campaign, color: Colors.orange);
+      return const Icon(Icons.campaign_outlined, color: _gold, size: 22);
     }
 
     return null;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Chats'),
+  Widget _buildAvatar(ChatRoomListItem item) {
+    final name = (item.room.name ?? 'C').trim();
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : 'C';
+
+    return Container(
+      width: 58,
+      height: 58,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: _gold, width: 2.1),
+        color: const Color(0x1AFFFFFF),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33D4B06A),
+            blurRadius: 10,
+            offset: Offset(0, 0),
+          ),
+        ],
       ),
-      floatingActionButton: _isAdmin
-          ? FloatingActionButton(
-              onPressed: _showCreateGroupDialog,
-              child: const Icon(Icons.add),
-            )
-          : null,
-      body: FutureBuilder<List<ChatRoomListItem>>(
-        future: _futureRooms,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('Erro: ${snapshot.error}'),
-            );
-          }
-
-          final rooms = snapshot.data ?? [];
-
-          if (rooms.isEmpty) {
-            return RefreshIndicator(
-              onRefresh: _reload,
-              child: ListView(
-                children: const [
-                  SizedBox(height: 200),
-                  Center(child: Text('Você não participa de nenhum chat')),
-                ],
-              ),
-            );
-          }
-
-          return RefreshIndicator(
-            onRefresh: _reload,
-            child: ListView.separated(
-              itemCount: rooms.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                final item = rooms[index];
-                final room = item.room;
-
-                return ListTile(
-                  title: Text(room.name ?? 'Chat'),
-                  subtitle: Text(
-                    _buildRoomSubtitle(item),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  leading: CircleAvatar(
-                    child: Text(
-                      (room.name?.isNotEmpty == true ? room.name![0] : 'C')
-                          .toUpperCase(),
-                    ),
-                  ),
-                  trailing: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      if (item.lastMessageAt != null)
-                        Text(
-                          _formatLastMessageTime(item.lastMessageAt),
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      const SizedBox(height: 4),
-                      if (_buildTrailing(item) != null) _buildTrailing(item)!,
-                    ],
-                  ),
-                  onTap: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatPage(room: room),
-                      ),
-                    );
-
-                    if (!mounted) return;
-                    await _reload();
-                  },
-                );
-              },
-            ),
-          );
-        },
+      child: Center(
+        child: Text(
+          initial,
+          style: const TextStyle(
+            color: _gold,
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }
+
+  Widget _buildCenterRoomIcon(ChatRoomListItem item, int index) {
+    if (item.room.adminOnly) {
+      return const Icon(Icons.shield_outlined, color: _gold, size: 36);
+    }
+    if (item.room.isLocked) {
+      return const Icon(Icons.lock_outline_rounded, color: _gold, size: 34);
+    }
+    if (index.isOdd) {
+      return const Icon(
+        Icons.volunteer_activism_outlined,
+        color: _gold,
+        size: 36,
+      );
+    }
+    return const Icon(Icons.sports_volleyball_outlined, color: _gold, size: 40);
+  }
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _gold.withValues(alpha: 0.35), width: 1.1),
+          color: Colors.white.withValues(alpha: 0.06),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x1AD4B06A),
+              blurRadius: 10,
+              offset: Offset(0, 0),
+            ),
+          ],
+        ),
+        child: TextField(
+          controller: _searchController,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Pesquisar conversas',
+            hintStyle: TextStyle(
+              color: Colors.white.withValues(alpha: 0.65),
+            ),
+            prefixIcon: const Icon(Icons.search, color: _gold),
+            suffixIcon: _searchQuery.isNotEmpty
+                ? IconButton(
+                    onPressed: () {
+                      _searchController.clear();
+                    },
+                    icon: const Icon(Icons.close_rounded, color: _gold),
+                  )
+                : null,
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 14,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRoomTile(ChatRoomListItem item, int index) {
+    final room = item.room;
+    final subtitle = _buildRoomSubtitle(item);
+    final trailingWidget = _buildTrailing(item);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ChatPage(room: room),
+              ),
+            );
+
+            if (!mounted) return;
+            await _reload();
+          },
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: _gold.withValues(alpha: 0.78),
+                width: 1.5,
+              ),
+              color: Colors.white.withValues(alpha: 0.06),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x1FD4B06A),
+                  blurRadius: 18,
+                  offset: Offset(0, 0),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 24,
+                  right: 24,
+                  top: 14,
+                  child: Container(
+                    height: 1.1,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.transparent,
+                          _gold.withValues(alpha: 0.8),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: Opacity(
+                        opacity: 0.18,
+                        child: _buildCenterRoomIcon(item, index),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 70,
+                  top: 18,
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(0x44D4B06A),
+                          blurRadius: 22,
+                          offset: Offset(0, 0),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  child: Row(
+                    children: [
+                      _buildAvatar(item),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              room.name ?? 'Chat',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _textPrimary,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _textSecondary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              _formatLastMessageTime(item.lastMessageAt),
+                              style: const TextStyle(
+                                color: _goldSoft,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          if (trailingWidget != null)
+                            trailingWidget
+                          else
+                            Opacity(
+                              opacity: 0.9,
+                              child: _buildCenterRoomIcon(item, index),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<ChatRoomListItem> _filterRooms(List<ChatRoomListItem> rooms) {
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isEmpty) return rooms;
+
+    return rooms.where((item) {
+      final roomName = (item.room.name ?? '').toLowerCase();
+      final subtitle = _buildRoomSubtitle(item).toLowerCase();
+      final sender = (item.lastMessageSenderName ?? '').toLowerCase();
+      return roomName.contains(query) ||
+          subtitle.contains(query) ||
+          sender.contains(query);
+    }).toList();
+  }
+
+  Widget _buildContent(List<ChatRoomListItem> rooms) {
+    final filteredRooms = _filterRooms(rooms);
+
+    return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+      itemCount: filteredRooms.isEmpty ? 2 : filteredRooms.length + 1,
+      separatorBuilder: (_, __) => const SizedBox(height: 2),
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return _buildSearchBar();
+        }
+
+        if (filteredRooms.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 180),
+            child: Center(
+              child: Text(
+                _searchQuery.isEmpty
+                    ? 'Você não participa de nenhum chat'
+                    : 'Nenhuma conversa encontrada',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          );
+        }
+
+        final item = filteredRooms[index - 1];
+        return _buildRoomTile(item, index - 1);
+      },
+    );
+  }
+
+  Widget _buildEdgeGlow({
+    required double top,
+    double? left,
+    double? right,
+    double size = 50,
+  }) {
+    return Positioned(
+      top: top,
+      left: left,
+      right: right,
+      child: IgnorePointer(
+        child: Container(
+          width: size,
+          height: size,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x88FFD77A),
+                blurRadius: 28,
+                spreadRadius: 2,
+                offset: Offset(0, 0),
+              ),
+            ],
+          ),
+          child: Center(
+            child: Container(
+              width: 7,
+              height: 7,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFE4A3),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloatingParticles() {
+    return IgnorePointer(
+      child: CustomPaint(
+        painter: _SparklePainter(),
+        size: Size.infinite,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _navy,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        titleSpacing: 0,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: _gold,
+            size: 28,
+          ),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        title: const Text(
+          'Conversas',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            shadows: [
+              Shadow(
+                color: Colors.black45,
+                blurRadius: 8,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+        ),
+        centerTitle: true,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: Center(
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: _gold, width: 1.4),
+                  color: const Color(0x14FFFFFF),
+                ),
+                child: ClipOval(
+                  child: Image.asset(
+                    'assets/images/olympus_logo.png',
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: Container(
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x66D4B06A),
+              blurRadius: 18,
+              offset: Offset(0, 0),
+            ),
+          ],
+        ),
+        child: FloatingActionButton(
+          onPressed: _showCreateConversationDialog,
+          backgroundColor: _navy,
+          elevation: 8,
+          child: const Icon(
+            Icons.add,
+            color: _gold,
+            size: 30,
+          ),
+        ),
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              _navy,
+              _navyDark,
+            ],
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.17,
+                child: Image.asset(
+                  'assets/images/olympus_logo.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment(0.0, -0.10),
+                    radius: 1.0,
+                    colors: [
+                      Color(0x22D4B06A),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 108,
+              left: 0,
+              right: 0,
+              child: Container(
+                height: 2.2,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.transparent,
+                      _goldSoft.withValues(alpha: 0.9),
+                      Colors.transparent,
+                    ],
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x66FFD77A),
+                      blurRadius: 12,
+                      offset: Offset(0, 0),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              top: 98,
+              left: 24,
+              right: 24,
+              child: IgnorePointer(
+                child: Container(
+                  height: 28,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.transparent,
+                        Colors.white.withValues(alpha: 0.18),
+                        _gold.withValues(alpha: 0.25),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(26),
+                          border: Border.all(
+                            color: _gold.withValues(alpha: 0.45),
+                            width: 1.3,
+                          ),
+                          color: Colors.white.withValues(alpha: 0.03),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x22000000),
+                              blurRadius: 12,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 20,
+                      child: IgnorePointer(
+                        child: Container(
+                          height: 1.1,
+                          margin: const EdgeInsets.symmetric(horizontal: 26),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.transparent,
+                                _gold.withValues(alpha: 0.45),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    _buildEdgeGlow(top: 188, left: -10, size: 48),
+                    _buildEdgeGlow(top: 335, left: -14, size: 46),
+                    _buildEdgeGlow(top: 98, right: -10, size: 46),
+                    _buildFloatingParticles(),
+                    FutureBuilder<List<ChatRoomListItem>>(
+                      future: _futureRooms,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(color: _gold),
+                          );
+                        }
+
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Text(
+                              'Erro: ${snapshot.error}',
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          );
+                        }
+
+                        final rooms = snapshot.data ?? [];
+
+                        return RefreshIndicator(
+                          color: _gold,
+                          backgroundColor: _navy,
+                          onRefresh: _reload,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 14),
+                            child: _buildContent(rooms),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SparklePainter extends CustomPainter {
+  const _SparklePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final soft = Paint()
+      ..color = const Color(0x66D4B06A)
+      ..style = PaintingStyle.fill;
+
+    final strong = Paint()
+      ..color = const Color(0x99FFE29A)
+      ..style = PaintingStyle.fill;
+
+    final points = <Offset>[
+      Offset(size.width * 0.03, size.height * 0.80),
+      Offset(size.width * 0.05, size.height * 0.84),
+      Offset(size.width * 0.07, size.height * 0.88),
+      Offset(size.width * 0.10, size.height * 0.86),
+      Offset(size.width * 0.92, size.height * 0.12),
+      Offset(size.width * 0.95, size.height * 0.10),
+      Offset(size.width * 0.97, size.height * 0.14),
+    ];
+
+    for (final p in points) {
+      canvas.drawCircle(p, 1.4, soft);
+    }
+
+    canvas.drawCircle(
+      Offset(size.width * 0.055, size.height * 0.83),
+      2.0,
+      strong,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.945, size.height * 0.115),
+      1.8,
+      strong,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

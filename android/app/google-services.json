@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "130525975992",
+    "project_id": "olympus-voleibol",
+    "storage_bucket": "olympus-voleibol.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:130525975992:android:0cb660ddb337dd49f36b4d",
+        "android_client_info": {
+          "package_name": "com.example.olympus_voleibol"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB7eQeoamvujNPoi-_K-alcaPYxQL1X5c8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
