@@ -57,12 +57,27 @@ class _ChatPageState extends State<ChatPage> {
       final nameMap = <String, String>{};
 
       for (final participant in participants) {
-        final userId = (participant['user_id'] ?? '').toString();
+        final userId =
+            (participant['user_id'] ?? participant['id'] ?? '').toString();
         if (userId.isEmpty) continue;
 
-        final fullName =
-            (participant['full_name'] ?? participant['name'] ?? 'Sem nome')
-                .toString();
+        final fullName = (participant['full_name'] ??
+                participant['name'] ??
+                participant['username'] ??
+                _extractNestedValue(participant, const [
+                  'profiles',
+                  'full_name',
+                ]) ??
+                _extractNestedValue(participant, const [
+                  'profile',
+                  'full_name',
+                ]) ??
+                _extractNestedValue(participant, const [
+                  'user',
+                  'full_name',
+                ]) ??
+                'Sem nome')
+            .toString();
 
         final photoUrl = _extractParticipantPhoto(participant);
 
@@ -93,6 +108,21 @@ class _ChatPageState extends State<ChatPage> {
     return _chatService.supabase.storage.from('avatars').getPublicUrl(value);
   }
 
+  dynamic _extractNestedValue(
+    Map<String, dynamic> source,
+    List<String> path,
+  ) {
+    dynamic current = source;
+    for (final key in path) {
+      if (current is Map<String, dynamic> && current.containsKey(key)) {
+        current = current[key];
+      } else {
+        return null;
+      }
+    }
+    return current;
+  }
+
   String? _extractParticipantPhoto(Map<String, dynamic> participant) {
     const possibleKeys = [
       'avatar_url',
@@ -105,6 +135,26 @@ class _ChatPageState extends State<ChatPage> {
 
     for (final key in possibleKeys) {
       final value = participant[key]?.toString();
+      final resolved = _resolveAvatarUrl(value);
+      if (resolved != null && resolved.isNotEmpty) {
+        return resolved;
+      }
+    }
+
+    const nestedPaths = [
+      ['profiles', 'avatar_url'],
+      ['profiles', 'photo_url'],
+      ['profiles', 'profile_image_url'],
+      ['profile', 'avatar_url'],
+      ['profile', 'photo_url'],
+      ['profile', 'profile_image_url'],
+      ['user', 'avatar_url'],
+      ['user', 'photo_url'],
+      ['user', 'profile_image_url'],
+    ];
+
+    for (final path in nestedPaths) {
+      final value = _extractNestedValue(participant, path)?.toString();
       final resolved = _resolveAvatarUrl(value);
       if (resolved != null && resolved.isNotEmpty) {
         return resolved;
@@ -247,12 +297,27 @@ class _ChatPageState extends State<ChatPage> {
       final nameMap = <String, String>{};
 
       for (final participant in participants) {
-        final userId = (participant['user_id'] ?? '').toString();
+        final userId =
+            (participant['user_id'] ?? participant['id'] ?? '').toString();
         if (userId.isEmpty) continue;
         photoMap[userId] = _extractParticipantPhoto(participant);
-        nameMap[userId] =
-            (participant['full_name'] ?? participant['name'] ?? 'Sem nome')
-                .toString();
+        nameMap[userId] = (participant['full_name'] ??
+                participant['name'] ??
+                participant['username'] ??
+                _extractNestedValue(participant, const [
+                  'profiles',
+                  'full_name',
+                ]) ??
+                _extractNestedValue(participant, const [
+                  'profile',
+                  'full_name',
+                ]) ??
+                _extractNestedValue(participant, const [
+                  'user',
+                  'full_name',
+                ]) ??
+                'Sem nome')
+            .toString();
       }
 
       if (!mounted) return;
@@ -289,11 +354,27 @@ class _ChatPageState extends State<ChatPage> {
                         separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (context, index) {
                           final participant = _participants[index];
-                          final userId =
-                              (participant['user_id'] ?? '').toString();
-                          final fullName =
-                              (participant['full_name'] ?? 'Sem nome')
-                                  .toString();
+                          final userId = (participant['user_id'] ??
+                                  participant['id'] ??
+                                  '')
+                              .toString();
+                          final fullName = (participant['full_name'] ??
+                                  participant['name'] ??
+                                  participant['username'] ??
+                                  _extractNestedValue(participant, const [
+                                    'profiles',
+                                    'full_name',
+                                  ]) ??
+                                  _extractNestedValue(participant, const [
+                                    'profile',
+                                    'full_name',
+                                  ]) ??
+                                  _extractNestedValue(participant, const [
+                                    'user',
+                                    'full_name',
+                                  ]) ??
+                                  'Sem nome')
+                              .toString();
                           final role =
                               (participant['role'] ?? 'member').toString();
                           final phone = (participant['phone'] ?? '').toString();
@@ -671,6 +752,9 @@ class _ChatPageState extends State<ChatPage> {
         ? _gold.withValues(alpha: 0.55)
         : Colors.white.withValues(alpha: 0.12);
 
+    final senderDisplayName =
+        _participantNames[msg.senderId] ?? msg.senderName?.trim() ?? '';
+
     final bubble = Container(
       margin: const EdgeInsets.symmetric(vertical: 5),
       constraints: BoxConstraints(
@@ -698,13 +782,11 @@ class _ChatPageState extends State<ChatPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (!isMine &&
-                msg.senderName != null &&
-                msg.senderName!.trim().isNotEmpty)
+            if (!isMine && senderDisplayName.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  msg.senderName!,
+                  senderDisplayName,
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,

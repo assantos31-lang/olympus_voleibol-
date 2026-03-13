@@ -8,6 +8,7 @@ class ChatRoomListItem {
   final String? lastMessageSenderName;
   final DateTime? lastMessageAt;
   final int unreadCount;
+  final String? avatarUrl;
 
   ChatRoomListItem({
     required this.room,
@@ -15,6 +16,7 @@ class ChatRoomListItem {
     this.lastMessageSenderName,
     this.lastMessageAt,
     required this.unreadCount,
+    this.avatarUrl,
   });
 }
 
@@ -72,21 +74,57 @@ class ChatService {
         .toSet()
         .toList();
 
-    final profileMap = <String, String>{};
-    if (senderIds.isNotEmpty) {
+    final roomMembersResponse = await supabase
+        .from('chat_room_members')
+        .select('room_id, user_id')
+        .inFilter('room_id', roomIds)
+        .eq('is_banned', false);
+
+    final roomMembers = roomMembersResponse
+        .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+        .toList();
+
+    final participantIds = roomMembers
+        .map((m) => (m['user_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    participantIds.addAll(senderIds);
+
+    final profileNameMap = <String, String>{};
+    final profileAvatarMap = <String, String>{};
+    if (participantIds.isNotEmpty) {
       final profiles = await supabase
           .from('profiles')
           .select('id, full_name, avatar_url')
-          .inFilter('id', senderIds);
+          .inFilter('id', participantIds.toList());
 
       for (final profile in profiles) {
         final map = Map<String, dynamic>.from(profile);
         final id = (map['id'] ?? '').toString();
         final fullName = (map['full_name'] ?? '').toString();
+        final avatarUrl = (map['avatar_url'] ?? '').toString();
+
         if (id.isNotEmpty) {
-          profileMap[id] = fullName;
+          profileNameMap[id] = fullName;
+          profileAvatarMap[id] = avatarUrl;
         }
       }
+    }
+
+    final roomAvatarMap = <String, String?>{};
+    for (final member in roomMembers) {
+      final roomId = (member['room_id'] ?? '').toString();
+      final memberUserId = (member['user_id'] ?? '').toString();
+
+      if (roomId.isEmpty || memberUserId.isEmpty || memberUserId == userId) {
+        continue;
+      }
+
+      roomAvatarMap.putIfAbsent(roomId, () {
+        final avatar = profileAvatarMap[memberUserId];
+        return avatar != null && avatar.trim().isNotEmpty ? avatar : null;
+      });
     }
 
     final messageIds = messages
@@ -139,11 +177,12 @@ class ChatService {
         room: room,
         lastMessageText: lastMessage?['content']?.toString(),
         lastMessageSenderName:
-            senderId.isNotEmpty ? profileMap[senderId] : null,
+            senderId.isNotEmpty ? profileNameMap[senderId] : null,
         lastMessageAt: lastMessage?['created_at'] != null
             ? DateTime.parse(lastMessage!['created_at'] as String)
             : null,
         unreadCount: unreadCountByRoom[room.id] ?? 0,
+        avatarUrl: roomAvatarMap[room.id],
       );
     }).toList();
   }

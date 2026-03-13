@@ -64,10 +64,33 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     });
   }
 
+  String? _resolveAvatarUrl(String? rawValue) {
+    final value = rawValue?.trim();
+    if (value == null || value.isEmpty) return null;
+
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+
+    return _chatService.supabase.storage.from('avatars').getPublicUrl(value);
+  }
+
+  dynamic _extractNestedValue(dynamic source, List<String> path) {
+    dynamic current = source;
+    for (final key in path) {
+      if (current is Map<String, dynamic> && current.containsKey(key)) {
+        current = current[key];
+      } else {
+        return null;
+      }
+    }
+    return current;
+  }
+
   String? _extractUserPhoto(Map<String, dynamic> user) {
     const keys = [
-      'photo_url',
       'avatar_url',
+      'photo_url',
       'profile_image_url',
       'image_url',
       'avatar',
@@ -75,12 +98,41 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     ];
 
     for (final key in keys) {
-      final value = user[key]?.toString().trim();
-      if (value != null && value.isNotEmpty) {
-        return value;
+      final value = user[key]?.toString();
+      final resolved = _resolveAvatarUrl(value);
+      if (resolved != null && resolved.isNotEmpty) {
+        return resolved;
       }
     }
+
+    const nestedPaths = [
+      ['profiles', 'avatar_url'],
+      ['profiles', 'photo_url'],
+      ['profiles', 'profile_image_url'],
+      ['profile', 'avatar_url'],
+      ['profile', 'photo_url'],
+      ['profile', 'profile_image_url'],
+      ['user', 'avatar_url'],
+      ['user', 'photo_url'],
+      ['user', 'profile_image_url'],
+      ['participant', 'avatar_url'],
+      ['participant', 'photo_url'],
+      ['participant', 'profile_image_url'],
+    ];
+
+    for (final path in nestedPaths) {
+      final value = _extractNestedValue(user, path)?.toString();
+      final resolved = _resolveAvatarUrl(value);
+      if (resolved != null && resolved.isNotEmpty) {
+        return resolved;
+      }
+    }
+
     return null;
+  }
+
+  String? _extractRoomPhoto(ChatRoomListItem item) {
+    return _resolveAvatarUrl(item.avatarUrl);
   }
 
   Widget _buildUserAvatar({
@@ -111,6 +163,20 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
             ? Image.network(
                 photoUrl,
                 fit: BoxFit.cover,
+                gaplessPlayback: true,
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) return child;
+                  return Center(
+                    child: Text(
+                      initial,
+                      style: const TextStyle(
+                        color: _gold,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  );
+                },
                 errorBuilder: (_, __, ___) {
                   return Center(
                     child: Text(
@@ -665,33 +731,12 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
   Widget _buildAvatar(ChatRoomListItem item) {
     final name = (item.room.name ?? 'C').trim();
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : 'C';
+    final photoUrl = _extractRoomPhoto(item);
 
-    return Container(
-      width: 58,
-      height: 58,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: _gold, width: 2.1),
-        color: const Color(0x1AFFFFFF),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x33D4B06A),
-            blurRadius: 10,
-            offset: Offset(0, 0),
-          ),
-        ],
-      ),
-      child: Center(
-        child: Text(
-          initial,
-          style: const TextStyle(
-            color: _gold,
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
+    return _buildUserAvatar(
+      fullName: name.isNotEmpty ? name : 'C',
+      photoUrl: photoUrl,
+      size: 58,
     );
   }
 
