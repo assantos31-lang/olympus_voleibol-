@@ -350,11 +350,85 @@ event_time
     } else if (_monthlyPresencePercent <= 70) {
       return 'Comprometido';
     } else if (_monthlyPresencePercent <= 80) {
-      return 'Intermediário';
+      return 'Dedicado';
+    } else if (_monthlyPresencePercent <= 85) {
+      return 'Atleta Bronze';
     } else if (_monthlyPresencePercent <= 90) {
-      return 'Avançado';
+      return 'Atleta Prata';
+    } else if (_monthlyPresencePercent <= 95) {
+      return 'Atleta Ouro';
+    } else if (_monthlyPresencePercent <= 98) {
+      return 'Elite';
     }
-    return 'Elite';
+    return 'Lenda';
+  }
+
+  void _showTrainingPresenceLevelsInfo() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Treinos'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: DataTable(
+              columns: const [
+                DataColumn(label: Text('Nível')),
+                DataColumn(label: Text('Porcentagem')),
+              ],
+              rows: const [
+                DataRow(cells: [
+                  DataCell(Text('1. Iniciante')),
+                  DataCell(Text('0% - 40%')),
+                ]),
+                DataRow(cells: [
+                  DataCell(Text('2. Participante')),
+                  DataCell(Text('41% - 50%')),
+                ]),
+                DataRow(cells: [
+                  DataCell(Text('3. Regular')),
+                  DataCell(Text('51% - 60%')),
+                ]),
+                DataRow(cells: [
+                  DataCell(Text('4. Comprometido')),
+                  DataCell(Text('61% - 70%')),
+                ]),
+                DataRow(cells: [
+                  DataCell(Text('5. Dedicado')),
+                  DataCell(Text('71% - 80%')),
+                ]),
+                DataRow(cells: [
+                  DataCell(Text('6. Atleta Bronze')),
+                  DataCell(Text('81% - 85%')),
+                ]),
+                DataRow(cells: [
+                  DataCell(Text('7. Atleta Prata')),
+                  DataCell(Text('86% - 90%')),
+                ]),
+                DataRow(cells: [
+                  DataCell(Text('8. Atleta Ouro')),
+                  DataCell(Text('91% - 95%')),
+                ]),
+                DataRow(cells: [
+                  DataCell(Text('9. Elite')),
+                  DataCell(Text('96% - 98%')),
+                ]),
+                DataRow(cells: [
+                  DataCell(Text('10. Lenda')),
+                  DataCell(Text('99% - 100%')),
+                ]),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _redirectToLogin() async {
@@ -798,14 +872,47 @@ event_time
           Row(
             children: [
               Expanded(
-                child: Text(
-                  '${_monthlyPresenceCount.toString().padLeft(2, '0')}/${_monthlyTrainingTotal.toString().padLeft(2, '0')} TREINOS',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.3,
-                  ),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '${_monthlyPresenceCount.toString().padLeft(2, '0')}/${_monthlyTrainingTotal.toString().padLeft(2, '0')} TREINOS',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.3,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: _showTrainingPresenceLevelsInfo,
+                      child: Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: olympusGold.withOpacity(0.18),
+                          border: Border.all(
+                            color: olympusGold.withOpacity(0.45),
+                            width: 0.8,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          '!',
+                          style: TextStyle(
+                            color: olympusGold,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            height: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Text(
@@ -1109,7 +1216,7 @@ event_time
   Widget _buildPresenceSummaryCard() {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(14, 18, 14, 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -1122,41 +1229,55 @@ event_time
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: _buildPresenceMetric(
-              icon: Icons.check_circle,
-              label: 'Confirmado',
-              value: _confirmedPresenceCount,
-              color: Colors.green,
+          Text(
+            'Treinos:',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: olympusBlue.withOpacity(0.85),
             ),
           ),
-          Container(
-            width: 1,
-            height: 42,
-            color: Colors.grey.withOpacity(0.18),
-          ),
-          Expanded(
-            child: _buildPresenceMetric(
-              icon: Icons.schedule,
-              label: 'Pendente',
-              value: _pendingCount,
-              color: Colors.orange,
-            ),
-          ),
-          Container(
-            width: 1,
-            height: 42,
-            color: Colors.grey.withOpacity(0.18),
-          ),
-          Expanded(
-            child: _buildPresenceMetric(
-              icon: Icons.cancel,
-              label: 'Recusado',
-              value: _rejectedPresenceCount,
-              color: Colors.red,
-            ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _buildPresenceMetric(
+                  icon: Icons.check_circle,
+                  label: 'Confirmado',
+                  value: _confirmedPresenceCount,
+                  color: Colors.green,
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 42,
+                color: Colors.grey.withOpacity(0.18),
+              ),
+              Expanded(
+                child: _buildPresenceMetric(
+                  icon: Icons.schedule,
+                  label: 'Pendente',
+                  value: _pendingCount,
+                  color: Colors.orange,
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 42,
+                color: Colors.grey.withOpacity(0.18),
+              ),
+              Expanded(
+                child: _buildPresenceMetric(
+                  icon: Icons.cancel,
+                  label: 'Recusado',
+                  value: _rejectedPresenceCount,
+                  color: Colors.red,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1305,6 +1426,55 @@ event_time
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloatingChatButton() {
+    return SafeArea(
+      child: GestureDetector(
+        onTap: _navigateToChat,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF2C5F8D), Color(0xFF1E3A5F)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: olympusLightBlue.withOpacity(0.35),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+            border: Border.all(
+              color: Colors.white.withOpacity(0.22),
+              width: 1.1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(
+                Icons.chat_bubble_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Chat',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1470,17 +1640,12 @@ event_time
               badgeCount:
                   _overdueFinancialCount > 0 ? _overdueFinancialCount : null,
             ),
-            _buildDashboardCard(
-              icon: Icons.chat,
-              title: 'Chat do Time',
-              subtitle: 'Converse com sua equipe',
-              color: olympusLightBlue,
-              onTap: _navigateToChat,
-            ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 100),
           ],
         ),
       ),
+      floatingActionButton: _buildFloatingChatButton(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }

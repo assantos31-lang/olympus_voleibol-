@@ -22,7 +22,6 @@ class _ProfilesPageState extends State<ProfilesPage> {
   List<Map<String, dynamic>> profiles = [];
   bool isLoading = true;
 
-  // ✅ Cores do logo Olympus Voleibol
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
@@ -112,6 +111,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
   Future<void> deleteProfile(String id) async {
     try {
       await supabase.from('profiles').delete().eq('id', id);
+
+      await fetchProfiles();
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -119,7 +121,6 @@ class _ProfilesPageState extends State<ProfilesPage> {
             backgroundColor: Colors.orange,
           ),
         );
-        fetchProfiles();
       }
     } catch (e) {
       debugPrint('❌ Erro ao deletar: $e');
@@ -206,7 +207,6 @@ class _ProfilesPageState extends State<ProfilesPage> {
     }
   }
 
-  // --- FUNÇÕES PARA CADASTRO RÁPIDO COM SENHA ---
   String _generateRandomPassword() {
     const chars =
         'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#\$%^&*';
@@ -444,7 +444,6 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
   }
 
-  // ----------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -747,7 +746,6 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
   bool _isFetchingCep = false;
   bool _isUploading = false;
 
-  // ✅ Cores do logo Olympus Voleibol
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);

@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
@@ -113,6 +116,14 @@ class ChatService {
     }
 
     final roomAvatarMap = <String, String?>{};
+    for (final room in rooms) {
+      if (room.type == 'group' &&
+          room.avatarUrl != null &&
+          room.avatarUrl!.trim().isNotEmpty) {
+        roomAvatarMap[room.id] = room.avatarUrl;
+      }
+    }
+
     for (final member in roomMembers) {
       final roomId = (member['room_id'] ?? '').toString();
       final memberUserId = (member['user_id'] ?? '').toString();
@@ -246,6 +257,43 @@ class ChatService {
     await supabase.from('chat_room_members').insert(members);
 
     return ChatRoom.fromMap(roomResponse);
+  }
+
+  Future<String> uploadRoomAvatar({
+    required String roomId,
+    required File file,
+  }) async {
+    final bytes = await file.readAsBytes();
+    final extension = file.path.split('.').last.toLowerCase();
+    final safeExtension = extension.isEmpty ? 'jpg' : extension;
+    final path =
+        'chat_rooms/$roomId/avatar_${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
+
+    await supabase.storage.from('avatars').uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(upsert: true),
+        );
+
+    return path;
+  }
+
+  Future<void> updateRoomName({
+    required String roomId,
+    required String name,
+  }) async {
+    await supabase.from('chat_rooms').update({
+      'name': name.trim(),
+    }).eq('id', roomId);
+  }
+
+  Future<void> updateRoomAvatar({
+    required String roomId,
+    required String avatarUrl,
+  }) async {
+    await supabase.from('chat_rooms').update({
+      'avatar_url': avatarUrl,
+    }).eq('id', roomId);
   }
 
   Stream<List<ChatMessage>> streamMessages(String roomId) {
@@ -536,5 +584,69 @@ class ChatService {
         .update({'is_banned': banned})
         .eq('room_id', roomId)
         .eq('user_id', userId);
+  }
+
+  Future<void> deleteRoomForCurrentUser(String roomId) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    await supabase
+        .from('chat_room_members')
+        .delete()
+        .eq('room_id', roomId)
+        .eq('user_id', userId);
+  }
+
+  Future<void> setCurrentUserOnline(bool isOnline) async {
+    final userId = currentUserId;
+    if (userId == null) return;
+
+    await supabase.from('user_presence').upsert({
+      'user_id': userId,
+      'is_online': isOnline,
+      'last_seen': DateTime.now().toUtc().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    });
+  }
+
+  Stream<List<Map<String, dynamic>>> streamUsersPresence(
+    List<String> userIds,
+  ) {
+    if (userIds.isEmpty) {
+      return Stream.value(const <Map<String, dynamic>>[]);
+    }
+
+    return supabase
+        .from('user_presence')
+        .stream(primaryKey: ['user_id'])
+        .inFilter('user_id', userIds)
+        .map((rows) => rows
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .toList());
+  }
+
+  Future<void> setTypingStatus({
+    required String roomId,
+    required bool isTyping,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return;
+
+    await supabase.from('chat_typing_status').upsert({
+      'room_id': roomId,
+      'user_id': userId,
+      'is_typing': isTyping,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    });
+  }
+
+  Stream<List<Map<String, dynamic>>> streamTypingStatus(String roomId) {
+    return supabase
+        .from('chat_typing_status')
+        .stream(primaryKey: ['room_id', 'user_id'])
+        .eq('room_id', roomId)
+        .map((rows) => rows
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .toList());
   }
 }

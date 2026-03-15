@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import 'agenda_page.dart';
@@ -9,7 +10,8 @@ class AdminHomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final goldenColor = const Color(0xFFE4C050);
+    const goldenColor = Color(0xFFE4C050);
+    const cyanColor = Color(0xFF8FE8FF);
 
     return Scaffold(
       body: Container(
@@ -17,225 +19,607 @@ class AdminHomePage extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFF1E3A5F), Color(0xFF2E5C8A)],
+            colors: [
+              Color(0xFF0C2340),
+              Color(0xFF123A63),
+              Color(0xFF071A30),
+            ],
           ),
         ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // AppBar personalizada
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                color: const Color(0xFF2E5C8A).withOpacity(0.5),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Painel Administrativo',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.logout, color: Colors.white),
-                      onPressed: () async {
-                        final authService = AuthService();
-                        await authService.signOut();
-                        if (context.mounted) {
-                          Navigator.pushNamedAndRemoveUntil(
-                            context,
-                            '/login',
-                            (route) => false,
-                          );
-                        }
-                      },
-                    ),
-                  ],
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _FuturisticBackgroundPainter(),
                 ),
               ),
-              // Conteúdo
-              Expanded(
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+            ),
+            SafeArea(
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            color: goldenColor.withOpacity(0.2),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.admin_panel_settings,
-                            size: 80,
-                            color: Color(0xFFE4C050),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        const Text(
-                          'Bem-vindo, Admin!',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
                         Text(
-                          'Gerencie o sistema Olympus Voleibol',
+                          'Painel Administrativo',
                           style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.white.withOpacity(0.7),
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 40),
-                        // Botão Gerenciar Usuários
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/profiles');
-                            },
-                            icon: const Icon(Icons.people),
-                            label: const Text(
-                              'Gerenciar Usuários',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFE4C050),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              elevation: 0,
-                            ),
+                            color: Colors.white.withOpacity(0.85),
+                            fontSize: 17,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 0.2,
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        // Botão Agenda
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const AgendaPage(),
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.calendar_month),
-                            label: const Text(
-                              'Agenda',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white.withOpacity(0.1),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(
-                                  color: Colors.white.withOpacity(0.3),
-                                ),
-                              ),
-                              elevation: 0,
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.10),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        // Botão Financeiro
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      const AdminFinancialPage(),
-                                ),
-                              );
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            icon: Icon(
+                              Icons.logout_rounded,
+                              color: Colors.white.withOpacity(0.85),
+                              size: 22,
+                            ),
+                            onPressed: () async {
+                              final authService = AuthService();
+                              await authService.signOut();
+                              if (context.mounted) {
+                                Navigator.pushNamedAndRemoveUntil(
+                                  context,
+                                  '/login',
+                                  (route) => false,
+                                );
+                              }
                             },
-                            icon: const Icon(Icons.attach_money),
-                            label: const Text(
-                              'Financeiro',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white.withOpacity(0.1),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(
-                                  color: Colors.white.withOpacity(0.3),
-                                ),
-                              ),
-                              elevation: 0,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        // Botão Chat
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const ChatRoomsPage(),
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.chat),
-                            label: const Text(
-                              'Chats',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white.withOpacity(0.1),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(
-                                  color: Colors.white.withOpacity(0.3),
-                                ),
-                              ),
-                              elevation: 0,
-                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
+                  Expanded(
+                    child: Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 22, vertical: 12),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Stack(
+                              clipBehavior: Clip.none,
+                              alignment: Alignment.topCenter,
+                              children: [
+                                Container(
+                                  width: double.infinity,
+                                  margin: const EdgeInsets.only(top: 54),
+                                  padding:
+                                      const EdgeInsets.fromLTRB(20, 72, 20, 22),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(0.16),
+                                      width: 1.2,
+                                    ),
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Colors.white.withOpacity(0.18),
+                                        Colors.white.withOpacity(0.08),
+                                      ],
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: cyanColor.withOpacity(0.10),
+                                        blurRadius: 24,
+                                        spreadRadius: 1,
+                                      ),
+                                    ],
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(18),
+                                    child: BackdropFilter(
+                                      filter: ImageFilter.blur(
+                                          sigmaX: 14, sigmaY: 14),
+                                      child: Column(
+                                        children: [
+                                          Text(
+                                            'Bem-vindo, Admin!',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize: 23,
+                                              fontWeight: FontWeight.w500,
+                                              color: Colors.white
+                                                  .withOpacity(0.92),
+                                              height: 1.15,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          Text(
+                                            'Gerencie o sistema Olympus Voleibol',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: Colors.white
+                                                  .withOpacity(0.68),
+                                              fontWeight: FontWeight.w400,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  width: 118,
+                                  height: 118,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        const Color(0xFF42556F)
+                                            .withOpacity(0.95),
+                                        const Color(0xFF31445D)
+                                            .withOpacity(0.88),
+                                      ],
+                                    ),
+                                    border: Border.all(
+                                      color: goldenColor.withOpacity(0.35),
+                                      width: 2,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: goldenColor.withOpacity(0.20),
+                                        blurRadius: 24,
+                                        spreadRadius: 2,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Center(
+                                    child: ClipOval(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(4),
+                                        child: Image.asset(
+                                          'assets/images/olympus_logo.png',
+                                          width: 108,
+                                          height: 108,
+                                          fit: BoxFit.contain,
+                                          errorBuilder:
+                                              (context, error, stackTrace) {
+                                            return const Icon(
+                                              Icons
+                                                  .admin_panel_settings_rounded,
+                                              size: 54,
+                                              color: Color(0xFFE4C050),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 26),
+                            _buildFuturisticButton(
+                              context: context,
+                              label: 'Gerenciar Usuários',
+                              icon: Icons.groups_rounded,
+                              accentColor: goldenColor,
+                              isPrimary: true,
+                              onTap: () {
+                                Navigator.pushNamed(context, '/profiles');
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            _buildFuturisticButton(
+                              context: context,
+                              label: 'Agenda',
+                              icon: Icons.calendar_month_rounded,
+                              accentColor: cyanColor,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const AgendaPage(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            _buildFuturisticButton(
+                              context: context,
+                              label: 'Financeiro',
+                              icon: Icons.attach_money_rounded,
+                              accentColor: cyanColor,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const AdminFinancialPage(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            _buildFuturisticButton(
+                              context: context,
+                              label: 'Chats',
+                              icon: Icons.chat_bubble_outline_rounded,
+                              accentColor: Colors.white,
+                              isMuted: true,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const ChatRoomsPage(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  Widget _buildFuturisticButton({
+    required BuildContext context,
+    required String label,
+    required IconData icon,
+    required Color accentColor,
+    required VoidCallback onTap,
+    bool isPrimary = false,
+    bool isMuted = false,
+  }) {
+    final Color baseTextColor = isMuted
+        ? Colors.white.withOpacity(0.70)
+        : Colors.white.withOpacity(0.88);
+
+    return SizedBox(
+      width: double.infinity,
+      height: 66,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            left: 10,
+            child: Container(
+              width: 10,
+              height: 42,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: accentColor.withOpacity(isPrimary ? 0.85 : 0.55),
+                    blurRadius: 14,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            right: 10,
+            child: Container(
+              width: 10,
+              height: 42,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: accentColor.withOpacity(isPrimary ? 0.85 : 0.45),
+                    blurRadius: 14,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 2,
+            child: Container(
+              width: 84,
+              height: 4,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: accentColor.withOpacity(0.55),
+                    blurRadius: 10,
+                    spreadRadius: 0.5,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: onTap,
+                  child: Ink(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: accentColor.withOpacity(isPrimary ? 0.45 : 0.22),
+                        width: 1.2,
+                      ),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: isPrimary
+                            ? [
+                                accentColor.withOpacity(0.28),
+                                accentColor.withOpacity(0.12),
+                              ]
+                            : isMuted
+                                ? [
+                                    Colors.white.withOpacity(0.24),
+                                    Colors.white.withOpacity(0.14),
+                                  ]
+                                : [
+                                    Colors.white.withOpacity(0.12),
+                                    Colors.white.withOpacity(0.06),
+                                  ],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color:
+                              accentColor.withOpacity(isPrimary ? 0.20 : 0.10),
+                          blurRadius: 18,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: accentColor
+                                  .withOpacity(isPrimary ? 0.16 : 0.10),
+                              border: Border.all(
+                                color: accentColor.withOpacity(0.30),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: accentColor.withOpacity(0.35),
+                                  blurRadius: 14,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              icon,
+                              color: isMuted
+                                  ? Colors.white.withOpacity(0.82)
+                                  : accentColor,
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 18),
+                          Expanded(
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                color: baseTextColor,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w400,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                          if (isPrimary)
+                            Container(
+                              width: 56,
+                              alignment: Alignment.centerRight,
+                              child: CustomPaint(
+                                size: const Size(42, 26),
+                                painter: _NodeLinesPainter(
+                                  color: accentColor.withOpacity(0.55),
+                                ),
+                              ),
+                            )
+                          else
+                            Container(
+                              width: 56,
+                              alignment: Alignment.centerRight,
+                              child: CustomPaint(
+                                size: const Size(42, 26),
+                                painter: _NodeLinesPainter(
+                                  color: Colors.white.withOpacity(0.22),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FuturisticBackgroundPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final wavePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..color = const Color(0xFFB7F1FF).withOpacity(0.08)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+
+    final wavePaint2 = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..color = const Color(0xFFD8FBFF).withOpacity(0.06)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+
+    final path1 = Path();
+    path1.moveTo(0, size.height * 0.18);
+    path1.cubicTo(
+      size.width * 0.20,
+      size.height * 0.10,
+      size.width * 0.35,
+      size.height * 0.28,
+      size.width * 0.52,
+      size.height * 0.18,
+    );
+    path1.cubicTo(
+      size.width * 0.68,
+      size.height * 0.08,
+      size.width * 0.82,
+      size.height * 0.23,
+      size.width,
+      size.height * 0.15,
+    );
+    canvas.drawPath(path1, wavePaint);
+
+    final path2 = Path();
+    path2.moveTo(0, size.height * 0.80);
+    path2.cubicTo(
+      size.width * 0.18,
+      size.height * 0.70,
+      size.width * 0.36,
+      size.height * 0.90,
+      size.width * 0.56,
+      size.height * 0.80,
+    );
+    path2.cubicTo(
+      size.width * 0.74,
+      size.height * 0.72,
+      size.width * 0.86,
+      size.height * 0.86,
+      size.width,
+      size.height * 0.78,
+    );
+    canvas.drawPath(path2, wavePaint2);
+
+    final nodePaint = Paint()
+      ..color = const Color(0xFFE8FCFF).withOpacity(0.12)
+      ..style = PaintingStyle.fill;
+
+    final linePaint = Paint()
+      ..color = const Color(0xFFC7F6FF).withOpacity(0.10)
+      ..strokeWidth = 1;
+
+    final points = <Offset>[
+      Offset(size.width * 0.72, size.height * 0.34),
+      Offset(size.width * 0.82, size.height * 0.38),
+      Offset(size.width * 0.90, size.height * 0.33),
+      Offset(size.width * 0.76, size.height * 0.44),
+      Offset(size.width * 0.88, size.height * 0.47),
+      Offset(size.width * 0.69, size.height * 0.52),
+      Offset(size.width * 0.83, size.height * 0.56),
+      Offset(size.width * 0.93, size.height * 0.52),
+      Offset(size.width * 0.73, size.height * 0.64),
+      Offset(size.width * 0.86, size.height * 0.67),
+    ];
+
+    for (int i = 0; i < points.length - 1; i++) {
+      canvas.drawLine(points[i], points[i + 1], linePaint);
+    }
+    canvas.drawLine(points[0], points[3], linePaint);
+    canvas.drawLine(points[1], points[4], linePaint);
+    canvas.drawLine(points[3], points[5], linePaint);
+    canvas.drawLine(points[4], points[6], linePaint);
+    canvas.drawLine(points[6], points[8], linePaint);
+    canvas.drawLine(points[7], points[9], linePaint);
+
+    for (final point in points) {
+      canvas.drawCircle(point, 1.8, nodePaint);
+    }
+
+    final glowPaint = Paint()
+      ..color = const Color(0xFFA4F0FF).withOpacity(0.07)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 26);
+
+    canvas.drawCircle(
+      Offset(size.width * 0.20, size.height * 0.25),
+      70,
+      glowPaint,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.78, size.height * 0.55),
+      90,
+      glowPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _NodeLinesPainter extends CustomPainter {
+  final Color color;
+
+  _NodeLinesPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+
+    final dotPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final points = <Offset>[
+      Offset(size.width * 0.15, size.height * 0.70),
+      Offset(size.width * 0.38, size.height * 0.30),
+      Offset(size.width * 0.62, size.height * 0.55),
+      Offset(size.width * 0.84, size.height * 0.22),
+      Offset(size.width * 0.90, size.height * 0.78),
+    ];
+
+    canvas.drawLine(points[0], points[1], linePaint);
+    canvas.drawLine(points[1], points[2], linePaint);
+    canvas.drawLine(points[2], points[3], linePaint);
+    canvas.drawLine(points[2], points[4], linePaint);
+
+    for (final point in points) {
+      canvas.drawCircle(point, 1.6, dotPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _NodeLinesPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }

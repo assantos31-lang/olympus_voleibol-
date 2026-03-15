@@ -7,6 +7,7 @@ class ChatRoom {
   final bool allowMessages;
   final bool adminOnly;
   final DateTime createdAt;
+  final String? avatarUrl;
 
   ChatRoom({
     required this.id,
@@ -17,6 +18,7 @@ class ChatRoom {
     required this.allowMessages,
     required this.adminOnly,
     required this.createdAt,
+    this.avatarUrl,
   });
 
   factory ChatRoom.fromMap(Map<String, dynamic> map) {
@@ -29,6 +31,31 @@ class ChatRoom {
       allowMessages: map['allow_messages'] as bool? ?? true,
       adminOnly: map['admin_only'] as bool? ?? false,
       createdAt: DateTime.parse(map['created_at'] as String),
+      avatarUrl: map['avatar_url'] as String?,
+    );
+  }
+
+  ChatRoom copyWith({
+    String? id,
+    String? name,
+    String? type,
+    String? createdBy,
+    bool? isLocked,
+    bool? allowMessages,
+    bool? adminOnly,
+    DateTime? createdAt,
+    String? avatarUrl,
+  }) {
+    return ChatRoom(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      type: type ?? this.type,
+      createdBy: createdBy ?? this.createdBy,
+      isLocked: isLocked ?? this.isLocked,
+      allowMessages: allowMessages ?? this.allowMessages,
+      adminOnly: adminOnly ?? this.adminOnly,
+      createdAt: createdAt ?? this.createdAt,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
     );
   }
 }

@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/chat_room.dart';
 import '../services/chat_service.dart';
 import 'chat_page.dart';
@@ -13,6 +16,7 @@ class ChatRoomsPage extends StatefulWidget {
 class _ChatRoomsPageState extends State<ChatRoomsPage> {
   final ChatService _chatService = ChatService();
   final TextEditingController _searchController = TextEditingController();
+  final ImagePicker _imagePicker = ImagePicker();
 
   late Future<List<ChatRoomListItem>> _futureRooms;
   bool _isAdmin = false;
@@ -64,144 +68,47 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     });
   }
 
-  String? _resolveAvatarUrl(String? rawValue) {
-    final value = rawValue?.trim();
-    if (value == null || value.isEmpty) return null;
-
-    if (value.startsWith('http://') || value.startsWith('https://')) {
-      return value;
-    }
-
-    return _chatService.supabase.storage.from('avatars').getPublicUrl(value);
-  }
-
-  dynamic _extractNestedValue(dynamic source, List<String> path) {
-    dynamic current = source;
-    for (final key in path) {
-      if (current is Map<String, dynamic> && current.containsKey(key)) {
-        current = current[key];
-      } else {
-        return null;
-      }
-    }
-    return current;
-  }
-
-  String? _extractUserPhoto(Map<String, dynamic> user) {
-    const keys = [
-      'avatar_url',
-      'photo_url',
-      'profile_image_url',
-      'image_url',
-      'avatar',
-      'photo',
-    ];
-
-    for (final key in keys) {
-      final value = user[key]?.toString();
-      final resolved = _resolveAvatarUrl(value);
-      if (resolved != null && resolved.isNotEmpty) {
-        return resolved;
-      }
-    }
-
-    const nestedPaths = [
-      ['profiles', 'avatar_url'],
-      ['profiles', 'photo_url'],
-      ['profiles', 'profile_image_url'],
-      ['profile', 'avatar_url'],
-      ['profile', 'photo_url'],
-      ['profile', 'profile_image_url'],
-      ['user', 'avatar_url'],
-      ['user', 'photo_url'],
-      ['user', 'profile_image_url'],
-      ['participant', 'avatar_url'],
-      ['participant', 'photo_url'],
-      ['participant', 'profile_image_url'],
-    ];
-
-    for (final path in nestedPaths) {
-      final value = _extractNestedValue(user, path)?.toString();
-      final resolved = _resolveAvatarUrl(value);
-      if (resolved != null && resolved.isNotEmpty) {
-        return resolved;
-      }
-    }
-
-    return null;
-  }
-
-  String? _extractRoomPhoto(ChatRoomListItem item) {
-    return _resolveAvatarUrl(item.avatarUrl);
-  }
-
-  Widget _buildUserAvatar({
-    required String fullName,
-    String? photoUrl,
-    double size = 50,
-  }) {
-    final initial =
-        fullName.trim().isNotEmpty ? fullName.trim()[0].toUpperCase() : 'U';
-
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: _gold, width: 1.6),
-        color: Colors.white.withValues(alpha: 0.08),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x33D4B06A),
-            blurRadius: 10,
-            offset: Offset(0, 0),
+  Future<void> _deleteRoomForMe(ChatRoomListItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Excluir conversa'),
+          content: const Text(
+            'Esta conversa será removida apenas do seu perfil. Deseja continuar?',
           ),
-        ],
-      ),
-      child: ClipOval(
-        child: photoUrl != null && photoUrl.isNotEmpty
-            ? Image.network(
-                photoUrl,
-                fit: BoxFit.cover,
-                gaplessPlayback: true,
-                loadingBuilder: (context, child, progress) {
-                  if (progress == null) return child;
-                  return Center(
-                    child: Text(
-                      initial,
-                      style: const TextStyle(
-                        color: _gold,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  );
-                },
-                errorBuilder: (_, __, ___) {
-                  return Center(
-                    child: Text(
-                      initial,
-                      style: const TextStyle(
-                        color: _gold,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  );
-                },
-              )
-            : Center(
-                child: Text(
-                  initial,
-                  style: const TextStyle(
-                    color: _gold,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Excluir'),
+            ),
+          ],
+        );
+      },
     );
+
+    if (confirmed != true) return;
+
+    try {
+      await _chatService.deleteRoomForCurrentUser(item.room.id);
+      if (!mounted) return;
+      await _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Conversa removida apenas do seu perfil.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao excluir conversa: $e')),
+      );
+    }
   }
 
   Future<void> _showCreateConversationDialog() async {
@@ -266,7 +173,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                 (user['phone'] ?? '').toString().trim();
                             final userType =
                                 (user['user_type'] ?? '').toString().trim();
-                            final photoUrl = _extractUserPhoto(user);
+                            final photoUrl = _resolveAvatarUrl(
+                              (user['avatar_url'] ?? '').toString(),
+                            );
                             final isSelected = selectedUserId == userId;
 
                             String subtitle = '';
@@ -303,15 +212,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                               .withValues(alpha: 0.08),
                                       width: isSelected ? 1.6 : 1,
                                     ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: isSelected
-                                            ? const Color(0x22D4B06A)
-                                            : const Color(0x10000000),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
                                   ),
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(
@@ -359,31 +259,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                               ],
                                             ],
                                           ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Container(
-                                          width: 24,
-                                          height: 24,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: isSelected
-                                                  ? _gold
-                                                  : Colors.black
-                                                      .withValues(alpha: 0.35),
-                                              width: 1.6,
-                                            ),
-                                            color: isSelected
-                                                ? _gold
-                                                : Colors.transparent,
-                                          ),
-                                          child: isSelected
-                                              ? const Icon(
-                                                  Icons.check,
-                                                  size: 15,
-                                                  color: Colors.white,
-                                                )
-                                              : null,
                                         ),
                                       ],
                                     ),
@@ -442,22 +317,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                             });
                           }
                         },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _gold.withValues(alpha: 0.22),
-                    foregroundColor: const Color(0xFF5D4A18),
-                    disabledBackgroundColor:
-                        Colors.black.withValues(alpha: 0.08),
-                    disabledForegroundColor:
-                        Colors.black.withValues(alpha: 0.25),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 12,
-                    ),
-                  ),
                   child: isSaving
                       ? const SizedBox(
                           width: 18,
@@ -478,6 +337,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     final nameController = TextEditingController();
     List<Map<String, dynamic>> users = [];
     final Set<String> selectedUserIds = {};
+    File? selectedImage;
 
     try {
       users = await _chatService.getSelectableUsers();
@@ -496,6 +356,15 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
       builder: (dialogContext) {
         bool isSaving = false;
 
+        Future<void> pickImage(StateSetter setDialogState) async {
+          final picked =
+              await _imagePicker.pickImage(source: ImageSource.gallery);
+          if (picked == null) return;
+          setDialogState(() {
+            selectedImage = File(picked.path);
+          });
+        }
+
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
@@ -506,6 +375,21 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      GestureDetector(
+                        onTap:
+                            isSaving ? null : () => pickImage(setDialogState),
+                        child: CircleAvatar(
+                          radius: 34,
+                          backgroundColor: _gold.withValues(alpha: 0.18),
+                          backgroundImage: selectedImage != null
+                              ? FileImage(selectedImage!)
+                              : null,
+                          child: selectedImage == null
+                              ? const Icon(Icons.camera_alt, color: _gold)
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       TextField(
                         controller: nameController,
                         decoration: const InputDecoration(
@@ -518,9 +402,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                         alignment: Alignment.centerLeft,
                         child: Text(
                           'Selecionar participantes',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -556,15 +438,17 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
                               return CheckboxListTile(
                                 value: selectedUserIds.contains(userId),
-                                onChanged: (checked) {
-                                  setDialogState(() {
-                                    if (checked == true) {
-                                      selectedUserIds.add(userId);
-                                    } else {
-                                      selectedUserIds.remove(userId);
-                                    }
-                                  });
-                                },
+                                onChanged: isSaving
+                                    ? null
+                                    : (checked) {
+                                        setDialogState(() {
+                                          if (checked == true) {
+                                            selectedUserIds.add(userId);
+                                          } else {
+                                            selectedUserIds.remove(userId);
+                                          }
+                                        });
+                                      },
                                 title: Text(fullName),
                                 subtitle: Text(subtitle),
                                 controlAffinity:
@@ -615,10 +499,27 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                           });
 
                           try {
-                            final room = await _chatService.createGroupRoom(
+                            var room = await _chatService.createGroupRoom(
                               name: groupName,
                               participantUserIds: selectedUserIds.toList(),
                             );
+
+                            if (selectedImage != null) {
+                              final avatarPath =
+                                  await _chatService.uploadRoomAvatar(
+                                roomId: room.id,
+                                file: selectedImage!,
+                              );
+                              await _chatService.updateRoomAvatar(
+                                roomId: room.id,
+                                avatarUrl: avatarPath,
+                              );
+                              final updatedRoom =
+                                  await _chatService.getRoomById(room.id);
+                              if (updatedRoom != null) {
+                                room = updatedRoom;
+                              }
+                            }
 
                             if (!mounted) return;
                             Navigator.of(dialogContext).pop();
@@ -663,6 +564,68 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     );
   }
 
+  String? _resolveAvatarUrl(String? rawValue) {
+    final value = rawValue?.trim();
+    if (value == null || value.isEmpty) return null;
+
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+
+    return _chatService.supabase.storage.from('avatars').getPublicUrl(value);
+  }
+
+  Widget _buildUserAvatar({
+    required String fullName,
+    String? photoUrl,
+    double size = 50,
+  }) {
+    final initial =
+        fullName.trim().isNotEmpty ? fullName.trim()[0].toUpperCase() : 'U';
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: _gold, width: 1.6),
+        color: Colors.white.withValues(alpha: 0.08),
+      ),
+      child: ClipOval(
+        child: photoUrl != null && photoUrl.isNotEmpty
+            ? Image.network(
+                photoUrl,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => Center(
+                  child: Text(
+                    initial,
+                    style: const TextStyle(
+                      color: _gold,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              )
+            : Center(
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    color: _gold,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+
+  String? _extractRoomPhoto(ChatRoomListItem item) {
+    return _resolveAvatarUrl(item.avatarUrl);
+  }
+
   String _buildRoomSubtitle(ChatRoomListItem item) {
     final room = item.room;
 
@@ -699,13 +662,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
         decoration: BoxDecoration(
           color: _gold,
           borderRadius: BorderRadius.circular(10),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x55D4B06A),
-              blurRadius: 10,
-              offset: Offset(0, 0),
-            ),
-          ],
         ),
         child: Text(
           item.unreadCount > 99 ? '99+' : item.unreadCount.toString(),
@@ -765,13 +721,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: _gold.withValues(alpha: 0.35), width: 1.1),
           color: Colors.white.withValues(alpha: 0.06),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x1AD4B06A),
-              blurRadius: 10,
-              offset: Offset(0, 0),
-            ),
-          ],
         ),
         child: TextField(
           controller: _searchController,
@@ -831,33 +780,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                 width: 1.5,
               ),
               color: Colors.white.withValues(alpha: 0.06),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x1FD4B06A),
-                  blurRadius: 18,
-                  offset: Offset(0, 0),
-                ),
-              ],
             ),
             child: Stack(
               children: [
-                Positioned(
-                  left: 24,
-                  right: 24,
-                  top: 14,
-                  child: Container(
-                    height: 1.1,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          _gold.withValues(alpha: 0.8),
-                          Colors.transparent,
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
                 Positioned.fill(
                   child: IgnorePointer(
                     child: Align(
@@ -866,24 +791,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                         opacity: 0.18,
                         child: _buildCenterRoomIcon(item, index),
                       ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  right: 70,
-                  top: 18,
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Color(0x44D4B06A),
-                          blurRadius: 22,
-                          offset: Offset(0, 0),
-                        ),
-                      ],
                     ),
                   ),
                 ),
@@ -947,6 +854,23 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                             ),
                         ],
                       ),
+                      PopupMenuButton<String>(
+                        onSelected: (value) async {
+                          if (value == 'delete') {
+                            await _deleteRoomForMe(item);
+                          }
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem<String>(
+                            value: 'delete',
+                            child: Text('Excluir'),
+                          ),
+                        ],
+                        icon: const Icon(
+                          Icons.more_vert,
+                          color: _gold,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -977,7 +901,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
     return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 120),
       itemCount: filteredRooms.isEmpty ? 2 : filteredRooms.length + 1,
       separatorBuilder: (_, __) => const SizedBox(height: 2),
       itemBuilder: (context, index) {
@@ -1033,16 +957,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
               ),
             ],
           ),
-          child: Center(
-            child: Container(
-              width: 7,
-              height: 7,
-              decoration: const BoxDecoration(
-                color: Color(0xFFFFE4A3),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -1081,60 +995,33 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
             color: Colors.white,
             fontSize: 22,
             fontWeight: FontWeight.w800,
-            shadows: [
-              Shadow(
-                color: Colors.black45,
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ],
           ),
         ),
         centerTitle: true,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 14),
-            child: Center(
-              child: Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: _gold, width: 1.4),
-                  color: const Color(0x14FFFFFF),
-                ),
-                child: ClipOval(
-                  child: Image.asset(
-                    'assets/images/olympus_logo.png',
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ),
+      ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton(
+            heroTag: 'create_group',
+            onPressed: _showCreateGroupDialog,
+            backgroundColor: _navy,
+            child: const Icon(
+              Icons.groups_rounded,
+              color: _gold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton(
+            heroTag: 'create_chat',
+            onPressed: _showCreateConversationDialog,
+            backgroundColor: _navy,
+            child: const Icon(
+              Icons.add,
+              color: _gold,
             ),
           ),
         ],
-      ),
-      floatingActionButton: Container(
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x66D4B06A),
-              blurRadius: 18,
-              offset: Offset(0, 0),
-            ),
-          ],
-        ),
-        child: FloatingActionButton(
-          onPressed: _showCreateConversationDialog,
-          backgroundColor: _navy,
-          elevation: 8,
-          child: const Icon(
-            Icons.add,
-            color: _gold,
-            size: 30,
-          ),
-        ),
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -1158,64 +1045,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                 ),
               ),
             ),
-            Positioned.fill(
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: RadialGradient(
-                    center: Alignment(0.0, -0.10),
-                    radius: 1.0,
-                    colors: [
-                      Color(0x22D4B06A),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 108,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: 2.2,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.transparent,
-                      _goldSoft.withValues(alpha: 0.9),
-                      Colors.transparent,
-                    ],
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x66FFD77A),
-                      blurRadius: 12,
-                      offset: Offset(0, 0),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              top: 98,
-              left: 24,
-              right: 24,
-              child: IgnorePointer(
-                child: Container(
-                  height: 28,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.transparent,
-                        Colors.white.withValues(alpha: 0.18),
-                        _gold.withValues(alpha: 0.25),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
@@ -1230,33 +1059,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                             width: 1.3,
                           ),
                           color: Colors.white.withValues(alpha: 0.03),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x22000000),
-                              blurRadius: 12,
-                              offset: Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 20,
-                      child: IgnorePointer(
-                        child: Container(
-                          height: 1.1,
-                          margin: const EdgeInsets.symmetric(horizontal: 26),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.transparent,
-                                _gold.withValues(alpha: 0.45),
-                                Colors.transparent,
-                              ],
-                            ),
-                          ),
                         ),
                       ),
                     ),

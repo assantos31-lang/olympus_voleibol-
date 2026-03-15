@@ -55,14 +55,12 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       debugPrint(
           '🔍 BUSCANDO: mês=$_selectedMonth, ano=$_selectedYear, tipo=$_selectedType');
 
-      // CORREÇÃO: Sempre busca TODOS os registros do mês/ano (sem filtro de status)
       var query = _supabase
           .from('financial_records')
           .select()
           .eq('month', _selectedMonth)
           .eq('year', _selectedYear);
 
-      // Filtra apenas por tipo, não por status
       if (_selectedType != 'all') {
         query = query.eq('type', _selectedType);
       }
@@ -75,7 +73,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
           (response as List).map((r) => FinancialRecord.fromMap(r)).toList();
       debugPrint('📋 Após mapeamento: ${records.length} registros');
 
-      // Buscar dados dos atletas
       final athleteIds = records.map((r) => r.athleteId).toSet().toList();
       if (athleteIds.isNotEmpty) {
         final athletesResponse = await _supabase
@@ -199,10 +196,12 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                     ),
                     keyboardType: TextInputType.number,
                     validator: (value) {
-                      if (value == null || value.isEmpty)
+                      if (value == null || value.isEmpty) {
                         return 'Campo obrigatório';
-                      if (double.tryParse(value) == null)
+                      }
+                      if (double.tryParse(value) == null) {
                         return 'Valor inválido';
+                      }
                       return null;
                     },
                   ),
@@ -395,7 +394,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Card - Atleta
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     decoration: BoxDecoration(
@@ -426,22 +424,26 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                       items: [
                         const DropdownMenuItem<String>(
                           value: 'all',
-                          child: Text('Todos',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF424242),
-                                fontWeight: FontWeight.w500,
-                              )),
+                          child: Text(
+                            'Todos',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF424242),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
                         ..._athletes.map((athlete) {
                           return DropdownMenuItem<String>(
                             value: athlete['id'] as String,
-                            child: Text(athlete['full_name'] ?? 'Sem nome',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF424242),
-                                  fontWeight: FontWeight.w500,
-                                )),
+                            child: Text(
+                              athlete['full_name'] ?? 'Sem nome',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF424242),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                           );
                         }),
                       ],
@@ -453,7 +455,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // Card - Tipo
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     decoration: BoxDecoration(
@@ -482,39 +483,47 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                       items: const [
                         DropdownMenuItem(
                           value: 'monthly',
-                          child: Text('Mensalidade',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF424242),
-                                fontWeight: FontWeight.w500,
-                              )),
+                          child: Text(
+                            'Mensalidade',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF424242),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: 'games',
-                          child: Text('Jogos',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF424242),
-                                fontWeight: FontWeight.w500,
-                              )),
+                          child: Text(
+                            'Jogos',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF424242),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: 'maintenance',
-                          child: Text('Manutenção',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF424242),
-                                fontWeight: FontWeight.w500,
-                              )),
+                          child: Text(
+                            'Manutenção',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF424242),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: 'other',
-                          child: Text('Outros',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF424242),
-                                fontWeight: FontWeight.w500,
-                              )),
+                          child: Text(
+                            'Outros',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF424242),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
                       ],
                       onChanged: (value) {
@@ -526,7 +535,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // Card - Valor
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     decoration: BoxDecoration(
@@ -557,18 +565,19 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                         CurrencyInputFormatter(),
                       ],
                       validator: (value) {
-                        if (value == null || value.isEmpty)
+                        if (value == null || value.isEmpty) {
                           return 'Campo obrigatório';
+                        }
                         final numericValue = value
                             .replaceAll(RegExp(r'[^\d,]'), '')
                             .replaceAll(',', '.');
-                        if (double.tryParse(numericValue) == null)
+                        if (double.tryParse(numericValue) == null) {
                           return 'Valor inválido';
+                        }
                         return null;
                       },
                     ),
                   ),
-                  // Card - Descrição (apenas para Outros)
                   if (showOtherDescription) ...[
                     const SizedBox(height: 8),
                     Container(
@@ -606,7 +615,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                     ),
                   ],
                   const SizedBox(height: 8),
-                  // Cards - Dia, Mês, Ano
                   Row(
                     children: [
                       Expanded(
@@ -638,12 +646,14 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                             items: List.generate(31, (i) => i + 1).map((d) {
                               return DropdownMenuItem(
                                 value: d,
-                                child: Text(d.toString(),
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF424242),
-                                      fontWeight: FontWeight.w500,
-                                    )),
+                                child: Text(
+                                  d.toString(),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF424242),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
                               );
                             }).toList(),
                             onChanged: (value) {
@@ -683,13 +693,14 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                               return DropdownMenuItem(
                                 value: m,
                                 child: Text(
-                                    DateFormat.MMMM('pt_BR')
-                                        .format(DateTime(2024, m)),
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF424242),
-                                      fontWeight: FontWeight.w500,
-                                    )),
+                                  DateFormat.MMMM('pt_BR')
+                                      .format(DateTime(2024, m)),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF424242),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
                               );
                             }).toList(),
                             onChanged: (value) {
@@ -728,12 +739,14 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                             items: [2026, 2027, 2028, 2029, 2030].map((y) {
                               return DropdownMenuItem(
                                 value: y,
-                                child: Text(y.toString(),
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF424242),
-                                      fontWeight: FontWeight.w500,
-                                    )),
+                                child: Text(
+                                  y.toString(),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF424242),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
                               );
                             }).toList(),
                             onChanged: (value) {
@@ -842,25 +855,22 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     }
   }
 
-  // CORREÇÃO PRINCIPAL: Usar createSignedUrl para bucket privado
   Future<void> _viewReceipt(String receiptUrl) async {
     try {
       debugPrint('🔍 Tentando visualizar comprovante: $receiptUrl');
 
       String imageUrl;
 
-      // Tentar criar URL assinada (para bucket privado)
       try {
         final signedUrl = await _supabase.storage
             .from('receipts')
-            .createSignedUrl(receiptUrl, 300); // 300 segundos = 5 minutos
+            .createSignedUrl(receiptUrl, 300);
 
         debugPrint('✅ URL assinada criada com sucesso');
         imageUrl = signedUrl;
       } catch (e) {
         debugPrint('❌ Erro ao criar URL assinada: $e');
 
-        // Fallback: tentar URL pública
         try {
           imageUrl =
               _supabase.storage.from('receipts').getPublicUrl(receiptUrl);
@@ -1000,8 +1010,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       return;
     }
 
-    // Navegar para o perfil do atleta
-    // Substitua pela rota correta do seu app
     Navigator.pushNamed(
       context,
       '/athlete-profile',
@@ -1019,7 +1027,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     return athlete?['full_name'] ?? 'Atleta não encontrado';
   }
 
-  // Verifica se o registro está atrasado
   bool _isOverdue(FinancialRecord record) {
     if (record.status != 'pending') return false;
     final dueDate = DateTime(record.year, record.month, record.day);
@@ -1092,7 +1099,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
 
   @override
   Widget build(BuildContext context) {
-    // CORREÇÃO: Cards de resumo SEMPRE mostram dados completos (independente do filtro)
     final totalRecords = _records.length;
     final approvedRecords =
         _records.where((r) => r.status == 'approved').length;
@@ -1109,7 +1115,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       return dueDate.isBefore(DateTime(today.year, today.month, today.day));
     }).length;
 
-    // Cálculo dos valores
     final totalValue = _records.fold<double>(0, (sum, r) => sum + r.value);
     final approvedValue = _records
         .where((r) => r.status == 'approved')
@@ -1126,20 +1131,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       final today = DateTime.now();
       return dueDate.isBefore(DateTime(today.year, today.month, today.day));
     }).fold<double>(0, (sum, r) => sum + r.value);
-
-    // Valores por tipo
-    final monthlyValue = _records
-        .where((r) => r.type == 'monthly')
-        .fold<double>(0, (sum, r) => sum + r.value);
-    final gamesValue = _records
-        .where((r) => r.type == 'games')
-        .fold<double>(0, (sum, r) => sum + r.value);
-    final maintenanceValue = _records
-        .where((r) => r.type == 'maintenance')
-        .fold<double>(0, (sum, r) => sum + r.value);
-    final otherValue = _records
-        .where((r) => r.type == 'other')
-        .fold<double>(0, (sum, r) => sum + r.value);
 
     return Scaffold(
       appBar: AppBar(
@@ -1169,11 +1160,10 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       body: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             color: const Color(0xFFF5F5F5),
             child: Column(
               children: [
-                // Card TOTAL grande em cima
                 Row(
                   children: [
                     Expanded(
@@ -1191,16 +1181,10 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                           const Color(0xFF2C3E5A),
                           totalValue,
                           _selectedStatus == 'all',
-                          large: true,
                         ),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                // Cards Pagos, Pendentes e Atrasados abaixo
-                Row(
-                  children: [
+                    const SizedBox(width: 4),
                     Expanded(
                       child: GestureDetector(
                         onTap: () {
@@ -1259,108 +1243,7 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                // Cards de Tipo com valores
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.08),
-                        spreadRadius: 1,
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildTypeValueCard(
-                              'Mensalidade',
-                              Icons.account_balance_wallet,
-                              const Color(0xFF667eea),
-                              monthlyValue,
-                              _selectedType == 'monthly',
-                              () {
-                                setState(() {
-                                  _selectedType = _selectedType == 'monthly'
-                                      ? 'all'
-                                      : 'monthly';
-                                  _loadRecords();
-                                });
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: _buildTypeValueCard(
-                              'Jogos',
-                              Icons.sports_soccer,
-                              const Color(0xFFf093fb),
-                              gamesValue,
-                              _selectedType == 'games',
-                              () {
-                                setState(() {
-                                  _selectedType = _selectedType == 'games'
-                                      ? 'all'
-                                      : 'games';
-                                  _loadRecords();
-                                });
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildTypeValueCard(
-                              'Manutenção',
-                              Icons.build,
-                              const Color(0xFF4facfe),
-                              maintenanceValue,
-                              _selectedType == 'maintenance',
-                              () {
-                                setState(() {
-                                  _selectedType = _selectedType == 'maintenance'
-                                      ? 'all'
-                                      : 'maintenance';
-                                  _loadRecords();
-                                });
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: _buildTypeValueCard(
-                              'Outros',
-                              Icons.receipt_long,
-                              const Color(0xFFfa709a),
-                              otherValue,
-                              _selectedType == 'other',
-                              () {
-                                setState(() {
-                                  _selectedType = _selectedType == 'other'
-                                      ? 'all'
-                                      : 'other';
-                                  _loadRecords();
-                                });
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Filtros - REDUZIDOS
+                const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
@@ -1719,28 +1602,23 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     );
   }
 
-  // CORREÇÃO: Filtra os registros baseado no status selecionado (apenas para a lista)
   List<FinancialRecord> _getFilteredRecords() {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
 
     return _records.where((record) {
-      // Se status for all, mostra todos
       if (_selectedStatus == 'all') return true;
 
-      // Se status for approved ou rejected, filtra normalmente
       if (_selectedStatus == 'approved' || _selectedStatus == 'rejected') {
         return record.status == _selectedStatus;
       }
 
-      // Se status for pending, mostra apenas pendentes que ainda não venceram
       if (_selectedStatus == 'pending') {
         if (record.status != 'pending') return false;
         final dueDate = DateTime(record.year, record.month, record.day);
         return !dueDate.isBefore(todayDate);
       }
 
-      // Se status for overdue, mostra apenas pendentes que já venceram
       if (_selectedStatus == 'overdue') {
         if (record.status != 'pending') return false;
         final dueDate = DateTime(record.year, record.month, record.day);
@@ -1751,13 +1629,11 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     }).toList();
   }
 
-  // Card compacto para status - REDUZIDO
   Widget _buildCompactCard(String label, int value, IconData icon,
       Color baseColor, double amount, bool isSelected,
       {bool large = false}) {
     return Container(
-      padding: EdgeInsets.symmetric(
-          vertical: large ? 10 : 8, horizontal: large ? 10 : 6),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: isSelected
@@ -1785,14 +1661,12 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon,
-              color: isSelected ? Colors.white : baseColor,
-              size: large ? 20 : 16),
+          Icon(icon, color: isSelected ? Colors.white : baseColor, size: 16),
           const SizedBox(height: 4),
           Text(
             value.toString(),
             style: TextStyle(
-              fontSize: large ? 24 : 16,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
               color: isSelected ? Colors.white : baseColor,
             ),
@@ -1801,7 +1675,7 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
           Text(
             label,
             style: TextStyle(
-              fontSize: large ? 11 : 9,
+              fontSize: 9,
               fontWeight: FontWeight.w600,
               color: isSelected ? Colors.white : baseColor.withOpacity(0.8),
             ),
@@ -1813,7 +1687,7 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
           Text(
             'R\$ ${amount.toStringAsFixed(0)}',
             style: TextStyle(
-              fontSize: large ? 13 : 10,
+              fontSize: 10,
               fontWeight: FontWeight.w700,
               color: isSelected ? Colors.white : baseColor,
             ),
@@ -1823,7 +1697,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     );
   }
 
-  // Card para tipos com valor - REDUZIDO
   Widget _buildTypeValueCard(
     String label,
     IconData icon,
@@ -2143,7 +2016,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  // Botões de ação - Aprovar e Rejeitar PRIMEIRO (apenas para pendentes)
                   if (record.status == 'pending') ...[
                     Row(
                       children: [
@@ -2314,18 +2186,14 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                     ),
                   ],
                   const SizedBox(height: 12),
-                  // Botões de ação - Enviar mensagem (Perfil) e Fechar AGORA VÊM DEPOIS
                   Row(
                     children: [
                       Expanded(
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                const Color(0xFF25D366),
-                                const Color(0xFF128C7E)
-                              ],
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF25D366), Color(0xFF128C7E)],
                               begin: Alignment.centerLeft,
                               end: Alignment.centerRight,
                             ),
@@ -2372,11 +2240,8 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                const Color(0xFF2C3E5A),
-                                const Color(0xFF4A6FA5)
-                              ],
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF2C3E5A), Color(0xFF4A6FA5)],
                               begin: Alignment.centerLeft,
                               end: Alignment.centerRight,
                             ),
@@ -2423,11 +2288,8 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            const Color(0xFFE3F2FD),
-                            const Color(0xFFBBDEFB)
-                          ],
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFE3F2FD), Color(0xFFBBDEFB)],
                           begin: Alignment.centerLeft,
                           end: Alignment.centerRight,
                         ),
@@ -2567,7 +2429,6 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
   }
 }
 
-// Formatter para moeda brasileira
 class CurrencyInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
@@ -2578,22 +2439,17 @@ class CurrencyInputFormatter extends TextInputFormatter {
       return newValue;
     }
 
-    // Remove tudo que não é dígito
     String text = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
 
-    // Converte para centavos
     int value = int.tryParse(text) ?? 0;
 
-    // Formata como moeda brasileira
     String formatted = (value / 100).toStringAsFixed(2);
     formatted = formatted.replaceAll('.', ',');
 
-    // Adiciona separador de milhar
     final parts = formatted.split(',');
     String integerPart = parts[0];
     String decimalPart = parts.length > 1 ? parts[1] : '00';
 
-    // Adiciona pontos para milhar
     integerPart = integerPart.replaceAllMapped(
       RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
       (Match m) => '${m[1]}.',
