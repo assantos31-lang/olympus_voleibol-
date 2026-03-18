@@ -1,17 +1,14 @@
 import 'dart:async';
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../services/chat_service.dart';
 
 class ChatPage extends StatefulWidget {
   final ChatRoom room;
-
   const ChatPage({super.key, required this.room});
 
   @override
@@ -23,7 +20,6 @@ class _ChatPageState extends State<ChatPage> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _imagePicker = ImagePicker();
-
   bool _sending = false;
   bool _updatingRoom = false;
   late ChatRoom _room;
@@ -33,7 +29,6 @@ class _ChatPageState extends State<ChatPage> {
   final Map<String, String?> _participantPhotoUrls = {};
   final Map<String, String> _participantNames = {};
   Timer? _typingTimer;
-
   static const Color _gold = Color(0xFFD4B06A);
   static const Color _goldSoft = Color(0xFFE8D19A);
   static const Color _navy = Color(0xFF0E2A57);
@@ -64,7 +59,6 @@ class _ChatPageState extends State<ChatPage> {
   void _handleTypingChanged() {
     final hasText = _controller.text.trim().isNotEmpty;
     _chatService.setTypingStatus(roomId: _room.id, isTyping: hasText);
-
     _typingTimer?.cancel();
     if (hasText) {
       _typingTimer = Timer(const Duration(seconds: 2), () {
@@ -93,15 +87,12 @@ class _ChatPageState extends State<ChatPage> {
     try {
       final participants = await _chatService.getRoomParticipants(_room.id);
       if (!mounted) return;
-
       final photoMap = <String, String?>{};
       final nameMap = <String, String>{};
-
       for (final participant in participants) {
         final userId =
             (participant['user_id'] ?? participant['id'] ?? '').toString();
         if (userId.isEmpty) continue;
-
         final fullName = (participant['full_name'] ??
                 participant['name'] ??
                 participant['username'] ??
@@ -119,13 +110,10 @@ class _ChatPageState extends State<ChatPage> {
                 ]) ??
                 'Sem nome')
             .toString();
-
         final photoUrl = _extractParticipantPhoto(participant);
-
         photoMap[userId] = photoUrl;
         nameMap[userId] = fullName;
       }
-
       setState(() {
         _participants = participants;
         _participantPhotoUrls
@@ -141,11 +129,9 @@ class _ChatPageState extends State<ChatPage> {
   String? _resolveAvatarUrl(String? rawValue) {
     final value = rawValue?.trim();
     if (value == null || value.isEmpty) return null;
-
     if (value.startsWith('http://') || value.startsWith('https://')) {
       return value;
     }
-
     return _chatService.supabase.storage.from('avatars').getPublicUrl(value);
   }
 
@@ -173,7 +159,6 @@ class _ChatPageState extends State<ChatPage> {
       'avatar',
       'photo',
     ];
-
     for (final key in possibleKeys) {
       final value = participant[key]?.toString();
       final resolved = _resolveAvatarUrl(value);
@@ -181,7 +166,6 @@ class _ChatPageState extends State<ChatPage> {
         return resolved;
       }
     }
-
     const nestedPaths = [
       ['profiles', 'avatar_url'],
       ['profiles', 'photo_url'],
@@ -193,7 +177,6 @@ class _ChatPageState extends State<ChatPage> {
       ['user', 'photo_url'],
       ['user', 'profile_image_url'],
     ];
-
     for (final path in nestedPaths) {
       final value = _extractNestedValue(participant, path)?.toString();
       final resolved = _resolveAvatarUrl(value);
@@ -201,8 +184,59 @@ class _ChatPageState extends State<ChatPage> {
         return resolved;
       }
     }
+    return null;
+  }
+
+  // ✅ NOVO: Método para obter a URL do avatar correto para exibição no header
+  String? _getHeaderAvatarUrl() {
+    // Para grupos, usa o avatar da sala
+    if (_room.type == 'group') {
+      return _resolveAvatarUrl(_room.avatarUrl);
+    }
+
+    // Para conversas individuais, usa o avatar do outro participante
+    final currentUserId = _chatService.currentUserId;
+    for (final entry in _participantPhotoUrls.entries) {
+      if (entry.key != currentUserId && entry.value != null) {
+        return entry.value;
+      }
+    }
+
+    // Fallback: tenta pegar do primeiro participante que não é eu
+    for (final participant in _participants) {
+      final userId = (participant['user_id'] ?? '').toString();
+      if (userId.isNotEmpty && userId != currentUserId) {
+        final photoUrl = _extractParticipantPhoto(participant);
+        if (photoUrl != null) {
+          return photoUrl;
+        }
+      }
+    }
 
     return null;
+  }
+
+  // ✅ NOVO: Método para obter o nome correto para exibição no header
+  String _getHeaderDisplayName() {
+    // Para grupos, usa o nome da sala
+    if (_room.type == 'group') {
+      return _room.name?.trim().isNotEmpty == true ? _room.name! : 'Grupo';
+    }
+
+    // Para conversas individuais, usa o nome do outro participante
+    final currentUserId = _chatService.currentUserId;
+    for (final entry in _participantNames.entries) {
+      if (entry.key != currentUserId && entry.value.isNotEmpty) {
+        return entry.value;
+      }
+    }
+
+    // Fallback: nome da sala
+    if (_room.name?.trim().isNotEmpty == true) {
+      return _room.name!;
+    }
+
+    return 'Conversa';
   }
 
   Future<void> _markAsRead() async {
@@ -214,19 +248,14 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _send() async {
     final text = _controller.text;
     if (text.trim().isEmpty) return;
-
     setState(() => _sending = true);
-
     try {
       await _chatService.setTypingStatus(roomId: _room.id, isTyping: false);
-
       await _chatService.sendMessage(
         roomId: _room.id,
         text: text,
       );
-
       _controller.clear();
-
       await Future.delayed(const Duration(milliseconds: 100));
       if (_scrollController.hasClients) {
         _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
@@ -245,19 +274,14 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _toggleRoomLock() async {
     setState(() => _updatingRoom = true);
-
     try {
       final nextLocked = !_room.isLocked;
-
       await _chatService.setRoomLocked(
         roomId: _room.id,
         locked: nextLocked,
       );
-
       await _loadMyRoom();
-
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -281,19 +305,14 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _toggleAdminOnly() async {
     setState(() => _updatingRoom = true);
-
     try {
       final nextAdminOnly = !_room.adminOnly;
-
       await _chatService.setRoomAdminOnly(
         roomId: _room.id,
         adminOnly: nextAdminOnly,
       );
-
       await _loadMyRoom();
-
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -317,15 +336,12 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _showEditGroupDialog() async {
     if (_myRole != 'admin') return;
-
     final nameController = TextEditingController(text: _room.name ?? '');
     File? selectedImage;
-
     await showDialog(
       context: context,
       builder: (dialogContext) {
         bool saving = false;
-
         Future<void> pickImage(StateSetter setDialogState) async {
           final picked =
               await _imagePicker.pickImage(source: ImageSource.gallery);
@@ -338,7 +354,6 @@ class _ChatPageState extends State<ChatPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             final currentAvatar = _resolveAvatarUrl(_room.avatarUrl);
-
             return AlertDialog(
               title: const Text('Editar grupo'),
               content: Column(
@@ -388,11 +403,9 @@ class _ChatPageState extends State<ChatPage> {
                             );
                             return;
                           }
-
                           setDialogState(() {
                             saving = true;
                           });
-
                           try {
                             if (nextName != (_room.name ?? '').trim()) {
                               await _chatService.updateRoomName(
@@ -400,7 +413,6 @@ class _ChatPageState extends State<ChatPage> {
                                 name: nextName,
                               );
                             }
-
                             if (selectedImage != null) {
                               final avatarPath =
                                   await _chatService.uploadRoomAvatar(
@@ -412,9 +424,7 @@ class _ChatPageState extends State<ChatPage> {
                                 avatarUrl: avatarPath,
                               );
                             }
-
                             await _loadMyRoom();
-
                             if (!mounted) return;
                             Navigator.of(dialogContext).pop();
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -452,16 +462,13 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _showParticipantsDialog() async {
     final canManageRoom = _chatService.currentUserId == _room.createdBy;
-
     Future<void> refreshDialog(StateSetter setDialogState) async {
       final participants = await _chatService.getRoomParticipants(_room.id);
       setDialogState(() {
         _participants = participants;
       });
-
       final photoMap = <String, String?>{};
       final nameMap = <String, String>{};
-
       for (final participant in participants) {
         final userId =
             (participant['user_id'] ?? participant['id'] ?? '').toString();
@@ -485,7 +492,6 @@ class _ChatPageState extends State<ChatPage> {
                 'Sem nome')
             .toString();
       }
-
       if (!mounted) return;
       setState(() {
         _participantPhotoUrls
@@ -498,14 +504,11 @@ class _ChatPageState extends State<ChatPage> {
     }
 
     _participants = await _chatService.getRoomParticipants(_room.id);
-
     if (!mounted) return;
-
     await showDialog(
       context: context,
       builder: (dialogContext) {
         bool loading = false;
-
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
@@ -548,15 +551,12 @@ class _ChatPageState extends State<ChatPage> {
                               participant['is_muted'] as bool? ?? false;
                           final isBanned =
                               participant['is_banned'] as bool? ?? false;
-
                           final isCreator = userId == _room.createdBy;
                           final isSelf = userId == _chatService.currentUserId;
-
                           String subtitle =
                               phone.isNotEmpty ? '$phone • $role' : role;
                           if (isMuted) subtitle += ' • silenciado';
                           if (isBanned) subtitle += ' • banido';
-
                           return ListTile(
                             contentPadding: EdgeInsets.zero,
                             title: Text(fullName),
@@ -569,7 +569,6 @@ class _ChatPageState extends State<ChatPage> {
                                             setDialogState(() {
                                               loading = true;
                                             });
-
                                             try {
                                               if (value == 'promote_admin') {
                                                 await _chatService
@@ -621,7 +620,6 @@ class _ChatPageState extends State<ChatPage> {
                                                   userId: userId,
                                                 );
                                               }
-
                                               await refreshDialog(
                                                 setDialogState,
                                               );
@@ -715,15 +713,12 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _showAddParticipantsDialog() async {
     final users = await _chatService.getAvailableUsersForRoom(_room.id);
     final selectedUserIds = <String>{};
-
     if (!mounted) return;
-
     await showDialog(
       context: context,
       barrierDismissible: true,
       builder: (dialogContext) {
         bool saving = false;
-
         return StatefulBuilder(
           builder: (context, setDialogState) {
             final media = MediaQuery.of(context);
@@ -731,7 +726,6 @@ class _ChatPageState extends State<ChatPage> {
             final isMobile = size.width < 600;
             final maxDialogWidth = isMobile ? size.width : 420.0;
             final maxDialogHeight = size.height * (isMobile ? 0.88 : 0.76);
-
             return Dialog(
               insetPadding: EdgeInsets.symmetric(
                 horizontal: isMobile ? 12 : 24,
@@ -797,7 +791,6 @@ class _ChatPageState extends State<ChatPage> {
                                         .trim();
                                     final isSelected =
                                         selectedUserIds.contains(userId);
-
                                     String subtitle = '';
                                     if (phone.isNotEmpty &&
                                         userType.isNotEmpty) {
@@ -807,11 +800,9 @@ class _ChatPageState extends State<ChatPage> {
                                     } else {
                                       subtitle = userType;
                                     }
-
                                     final initial = fullName.trim().isNotEmpty
                                         ? fullName.trim()[0].toUpperCase()
                                         : 'U';
-
                                     return Material(
                                       color: Colors.transparent,
                                       child: InkWell(
@@ -971,18 +962,15 @@ class _ChatPageState extends State<ChatPage> {
                                     : () async {
                                         final messenger =
                                             ScaffoldMessenger.of(context);
-
                                         setDialogState(() {
                                           saving = true;
                                         });
-
                                         try {
                                           await _chatService
                                               .addParticipantsToRoom(
                                             roomId: _room.id,
                                             userIds: selectedUserIds.toList(),
                                           );
-
                                           if (!mounted) return;
                                           Navigator.of(dialogContext).pop();
                                           await _loadParticipantsForAvatars();
@@ -1056,71 +1044,54 @@ class _ChatPageState extends State<ChatPage> {
     List<Map<String, dynamic>> typingRows,
   ) {
     final currentUserId = _chatService.currentUserId;
-
     final activeTyping = typingRows.where((row) {
       final userId = (row['user_id'] ?? '').toString();
       final isTyping = row['is_typing'] as bool? ?? false;
       return userId.isNotEmpty && userId != currentUserId && isTyping;
     }).toList();
-
     if (activeTyping.isNotEmpty) {
       final typingNames = activeTyping.map((row) {
         final userId = (row['user_id'] ?? '').toString();
         return _participantNames[userId] ?? 'Alguém';
       }).toList();
-
       if (_room.type == 'group') {
         return typingNames.length == 1
             ? '${typingNames.first} está digitando...'
             : 'Alguém está digitando...';
       }
-
       return '${typingNames.first} está digitando...';
     }
-
     final otherParticipantIds = _participants
         .map((e) => (e['user_id'] ?? '').toString())
         .where((id) => id.isNotEmpty && id != currentUserId)
         .toList();
-
     if (_room.type == 'group') {
       if (otherParticipantIds.isEmpty) return 'offline';
-
       final presenceMap = <String, Map<String, dynamic>>{
         for (final row in presenceRows) (row['user_id'] ?? '').toString(): row,
       };
-
       final onlineCount = otherParticipantIds.where((id) {
         final row = presenceMap[id];
         return row != null && (row['is_online'] as bool? ?? false);
       }).length;
-
       if (onlineCount > 0) {
         return onlineCount == 1 ? '1 online' : '$onlineCount online';
       }
-
       return 'offline';
     }
-
     if (otherParticipantIds.isEmpty) return 'offline';
-
     final presenceMap = <String, Map<String, dynamic>>{
       for (final row in presenceRows) (row['user_id'] ?? '').toString(): row,
     };
-
     final otherId = otherParticipantIds.first;
     final otherPresence = presenceMap[otherId];
-
     if (otherPresence == null) return 'offline';
-
     final isOnline = otherPresence['is_online'] as bool? ?? false;
     if (isOnline) return 'online';
-
     final lastSeenRaw = otherPresence['last_seen']?.toString();
     final lastSeen = lastSeenRaw != null && lastSeenRaw.isNotEmpty
         ? DateTime.tryParse(lastSeenRaw)
         : null;
-
     return _lastSeenText(lastSeen);
   }
 
@@ -1149,7 +1120,6 @@ class _ChatPageState extends State<ChatPage> {
     final displayName =
         _participantNames[msg.senderId] ?? msg.senderName?.trim() ?? 'U';
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
-
     return Container(
       width: 34,
       height: 34,
@@ -1208,14 +1178,11 @@ class _ChatPageState extends State<ChatPage> {
   }) {
     final bubbleColor =
         isMine ? const Color(0x26D4B06A) : Colors.white.withValues(alpha: 0.08);
-
     final bubbleBorderColor = isMine
         ? _gold.withValues(alpha: 0.55)
         : Colors.white.withValues(alpha: 0.12);
-
     final senderDisplayName =
         _participantNames[msg.senderId] ?? msg.senderName?.trim() ?? '';
-
     final bubble = Container(
       margin: const EdgeInsets.symmetric(vertical: 5),
       constraints: BoxConstraints(
@@ -1279,14 +1246,12 @@ class _ChatPageState extends State<ChatPage> {
         ),
       ),
     );
-
     if (isMine) {
       return Align(
         alignment: Alignment.centerRight,
         child: bubble,
       );
     }
-
     return Align(
       alignment: Alignment.centerLeft,
       child: Row(
@@ -1302,7 +1267,6 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _buildComposer(bool canSend) {
     if (!canSend) return const SizedBox.shrink();
-
     return SafeArea(
       top: false,
       child: Container(
@@ -1389,12 +1353,15 @@ class _ChatPageState extends State<ChatPage> {
     final canSend = !_room.isLocked &&
         _room.allowMessages &&
         (!_room.adminOnly || isRoomAdmin);
-    final groupPhotoUrl = _resolveAvatarUrl(_room.avatarUrl);
+
+    // ✅ CORREÇÃO: Usa os novos métodos para obter avatar e nome corretos
+    final headerPhotoUrl = _getHeaderAvatarUrl();
+    final headerDisplayName = _getHeaderDisplayName();
+
     final otherParticipantIds = _participants
         .map((e) => (e['user_id'] ?? '').toString())
         .where((id) => id.isNotEmpty && id != currentUserId)
         .toList();
-
     return Scaffold(
       backgroundColor: _navy,
       appBar: AppBar(
@@ -1411,20 +1378,19 @@ class _ChatPageState extends State<ChatPage> {
                   presenceSnapshot.data ?? const [],
                   typingSnapshot.data ?? const [],
                 );
-
                 return Row(
                   children: [
                     CircleAvatar(
                       radius: 16,
                       backgroundColor: Colors.white.withValues(alpha: 0.08),
-                      backgroundImage: groupPhotoUrl != null
-                          ? NetworkImage(groupPhotoUrl)
+                      backgroundImage: headerPhotoUrl != null
+                          ? NetworkImage(headerPhotoUrl)
                           : null,
-                      child: groupPhotoUrl == null
+                      child: headerPhotoUrl == null
                           ? Text(
-                              ((_room.name ?? 'G').trim().isNotEmpty
-                                      ? (_room.name ?? 'G').trim()[0]
-                                      : 'G')
+                              (headerDisplayName.trim().isNotEmpty
+                                      ? headerDisplayName.trim()[0]
+                                      : 'C')
                                   .toUpperCase(),
                               style: const TextStyle(
                                 color: _goldSoft,
@@ -1439,7 +1405,7 @@ class _ChatPageState extends State<ChatPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _room.name ?? 'Chat',
+                            headerDisplayName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -1572,10 +1538,8 @@ class _ChatPageState extends State<ChatPage> {
                         child: CircularProgressIndicator(color: _gold),
                       );
                     }
-
                     final messages = [...snapshot.data!]
                       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-
                     if (messages.isNotEmpty) {
                       final lastMessageId = messages.last.id;
                       if (_lastMarkedMessageId != lastMessageId) {
@@ -1590,7 +1554,6 @@ class _ChatPageState extends State<ChatPage> {
                         });
                       }
                     }
-
                     if (messages.isEmpty) {
                       return const Center(
                         child: Text(
@@ -1599,7 +1562,6 @@ class _ChatPageState extends State<ChatPage> {
                         ),
                       );
                     }
-
                     return ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -1607,7 +1569,6 @@ class _ChatPageState extends State<ChatPage> {
                       itemBuilder: (context, index) {
                         final msg = messages[index];
                         final isMine = msg.senderId == currentUserId;
-
                         return _buildMessageBubble(
                           msg: msg,
                           isMine: isMine,
@@ -1628,7 +1589,6 @@ class _ChatPageState extends State<ChatPage> {
 
 class _ChatLensPainter extends CustomPainter {
   final Color gold;
-
   const _ChatLensPainter({required this.gold});
 
   @override
@@ -1641,7 +1601,6 @@ class _ChatLensPainter extends CustomPainter {
     final Rect pillRect = Rect.fromLTWH(14, 86, 18, size.height * 0.55);
     final RRect pill =
         RRect.fromRectAndRadius(pillRect, const Radius.circular(12));
-
     final Paint pillPaint = Paint()
       ..shader = const LinearGradient(
         begin: Alignment.topCenter,
@@ -1652,9 +1611,7 @@ class _ChatLensPainter extends CustomPainter {
           Color(0xFF16325F),
         ],
       ).createShader(pillRect);
-
     canvas.drawRRect(pill, pillPaint);
-
     final Rect innerGlowRect = Rect.fromLTWH(20, 110, 10, size.height * 0.46);
     final Paint innerGlow = Paint()
       ..shader = const LinearGradient(
@@ -1670,16 +1627,13 @@ class _ChatLensPainter extends CustomPainter {
         stops: [0.0, 0.32, 0.5, 0.68, 1.0],
       ).createShader(innerGlowRect)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
-
     canvas.drawRRect(
       RRect.fromRectAndRadius(innerGlowRect, const Radius.circular(10)),
       innerGlow,
     );
-
     final Offset flareCenter = Offset(19, size.height * 0.40);
     final Rect flareRect =
         Rect.fromCenter(center: flareCenter, width: 70, height: 110);
-
     final Paint flareGlow = Paint()
       ..shader = RadialGradient(
         colors: [
@@ -1690,9 +1644,7 @@ class _ChatLensPainter extends CustomPainter {
         ],
       ).createShader(flareRect)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
-
     canvas.drawOval(flareRect, flareGlow);
-
     final Paint flareLine = Paint()
       ..shader = const LinearGradient(
         colors: [
@@ -1706,7 +1658,6 @@ class _ChatLensPainter extends CustomPainter {
         Rect.fromCenter(center: flareCenter, width: 90, height: 4),
       )
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
-
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(center: flareCenter, width: 90, height: 3.5),
@@ -1714,7 +1665,6 @@ class _ChatLensPainter extends CustomPainter {
       ),
       flareLine,
     );
-
     final Paint core = Paint()..color = const Color(0xFFFFE6A6);
     canvas.drawCircle(flareCenter, 2.8, core);
   }
@@ -1730,19 +1680,15 @@ class _ChatLensPainter extends CustomPainter {
           Colors.transparent,
         ],
       ).createShader(topBand);
-
     canvas.drawRect(topBand, topPaint);
-
     final Paint smallParticles = Paint()
       ..color = const Color(0x66FFE29A)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-
     final particles = <Offset>[
       Offset(size.width * 0.07, 26),
       Offset(size.width * 0.11, 18),
       Offset(size.width * 0.15, 30),
     ];
-
     for (final p in particles) {
       canvas.drawCircle(p, 1.4, smallParticles);
     }

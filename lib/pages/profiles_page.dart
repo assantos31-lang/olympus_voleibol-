@@ -587,239 +587,263 @@ class _ProfilesPageState extends State<ProfilesPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Perfis - Olympus Voleibol',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            FutureBuilder<String?>(
-              future: _getCurrentUserType(),
-              builder: (context, snapshot) {
-                if (snapshot.hasData) {
-                  return Text(
-                    '👤 ${_getUserTypeLabel(snapshot.data)}',
-                    style: TextStyle(
-                        fontSize: 12, color: olympusGold.withOpacity(0.9)),
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-            ),
-          ],
-        ),
-        centerTitle: false,
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
-        elevation: 2,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person_add_alt_1),
-            tooltip: 'Cadastrar Usuário (Login)',
-            onPressed: _showQuickRegisterDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sair',
-            onPressed: () async {
-              final authService = AuthService();
-              await authService.signOut();
-              if (mounted) {
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/login',
-                  (route) => false,
-                );
-              }
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: fetchProfiles,
-          ),
-        ],
-      ),
-      body: isLoading
-          ? Center(
+    return FutureBuilder<String?>(
+      future: _getCurrentUserType(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return Scaffold(
+            body: Center(
               child: CircularProgressIndicator(
                 valueColor: AlwaysStoppedAnimation<Color>(olympusGold),
               ),
-            )
-          : profiles.isEmpty
+            ),
+          );
+        }
+
+        final userType = snapshot.data;
+
+        if (userType != 'admin') {
+          return const Scaffold(
+            body: Center(
+              child: Text(
+                'Acesso restrito.',
+                style: TextStyle(fontSize: 18),
+              ),
+            ),
+          );
+        }
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Perfis - Olympus Voleibol',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  '👤 ${_getUserTypeLabel(userType)}',
+                  style: TextStyle(
+                      fontSize: 12, color: olympusGold.withOpacity(0.9)),
+                ),
+              ],
+            ),
+            centerTitle: false,
+            backgroundColor: olympusBlue,
+            foregroundColor: Colors.white,
+            elevation: 2,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.person_add_alt_1),
+                tooltip: 'Cadastrar Usuário (Login)',
+                onPressed: _showQuickRegisterDialog,
+              ),
+              IconButton(
+                icon: const Icon(Icons.logout),
+                tooltip: 'Sair',
+                onPressed: () async {
+                  final authService = AuthService();
+                  await authService.signOut();
+                  if (mounted) {
+                    Navigator.pushNamedAndRemoveUntil(
+                      context,
+                      '/login',
+                      (route) => false,
+                    );
+                  }
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: fetchProfiles,
+              ),
+            ],
+          ),
+          body: isLoading
               ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.people_outline,
-                          size: 80, color: Colors.grey[400]),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Nenhum perfil cadastrado',
-                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                      ),
-                    ],
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(olympusGold),
                   ),
                 )
-              : ListView.builder(
-                  itemCount: profiles.length,
-                  padding: const EdgeInsets.all(8),
-                  itemBuilder: (context, index) {
-                    final profile = profiles[index];
-                    final avatarUrl = profile['avatar_url'];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                          vertical: 4, horizontal: 8),
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        leading: CircleAvatar(
-                          radius: 28,
-                          backgroundColor:
-                              _getColorForType(profile['user_type'])
-                                  .withOpacity(0.2),
-                          backgroundImage: avatarUrl != null &&
-                                  avatarUrl.toString().isNotEmpty
-                              ? NetworkImage(avatarUrl)
-                              : null,
-                          child: avatarUrl == null ||
-                                  avatarUrl.toString().isEmpty
-                              ? Text(
-                                  profile['full_name']?[0]?.toUpperCase() ??
-                                      '?',
-                                  style: TextStyle(
-                                    color:
-                                        _getColorForType(profile['user_type']),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 20,
-                                  ),
-                                )
-                              : null,
-                        ),
-                        title: Text(
-                          profile['full_name'] ?? 'Sem nome',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: olympusBlue,
-                            fontSize: 16,
+              : profiles.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.people_outline,
+                              size: 80, color: Colors.grey[400]),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Nenhum perfil cadastrado',
+                            style: TextStyle(
+                                fontSize: 16, color: Colors.grey[600]),
                           ),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 4),
-                            if (profile['user_type'] != null)
-                              Row(
-                                children: [
-                                  Icon(Icons.badge_outlined,
-                                      size: 14, color: olympusGold),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    _getTypeLabel(profile['user_type']),
-                                    style: TextStyle(
-                                        fontSize: 13, color: Colors.grey[700]),
-                                  ),
-                                ],
-                              ),
-                            const SizedBox(height: 2),
-                            if (profile['phone'] != null)
-                              Row(
-                                children: [
-                                  Icon(Icons.phone,
-                                      size: 14, color: olympusGold),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    _formatPhone(profile['phone']),
-                                    style: TextStyle(
-                                        fontSize: 13, color: Colors.grey[700]),
-                                  ),
-                                ],
-                              ),
-                            const SizedBox(height: 2),
-                            if (profile['cpf'] != null)
-                              Row(
-                                children: [
-                                  Icon(Icons.credit_card,
-                                      size: 14, color: olympusGold),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'CPF: ${_formatCpf(profile['cpf'])}',
-                                    style: TextStyle(
-                                        fontSize: 13, color: Colors.grey[700]),
-                                  ),
-                                ],
-                              ),
-                          ],
-                        ),
-                        trailing: PopupMenuButton<String>(
-                          icon: Icon(Icons.more_vert, color: olympusGold),
-                          onSelected: (value) {
-                            if (value == 'edit') {
-                              showProfileDialog(profile: profile);
-                            } else if (value == 'delete') {
-                              _confirmDelete(profile['id']);
-                            } else if (value == 'reset_password') {
-                              _confirmResetPassword(
-                                profile['id'],
-                                profile['email'] ?? '',
-                                profile['full_name'] ?? 'Usuário',
-                              );
-                            }
-                          },
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(
-                              value: 'edit',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.edit,
-                                      size: 18, color: olympusBlue),
-                                  SizedBox(width: 8),
-                                  Text('✏️ Editar'),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'reset_password',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.lock_reset,
-                                      size: 18, color: olympusGold),
-                                  SizedBox(width: 8),
-                                  Text('🔑 Resetar Senha'),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'delete',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.delete_outline,
-                                      size: 18, color: Colors.red),
-                                  SizedBox(width: 8),
-                                  Text('🗑️ Excluir'),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                        ],
                       ),
-                    );
-                  },
-                ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => showProfileDialog(),
-        icon: const Icon(Icons.person_add),
-        label: const Text('Novo Perfil'),
-        backgroundColor: olympusGold,
-        foregroundColor: olympusBlue,
-        elevation: 4,
-      ),
+                    )
+                  : ListView.builder(
+                      itemCount: profiles.length,
+                      padding: const EdgeInsets.all(8),
+                      itemBuilder: (context, index) {
+                        final profile = profiles[index];
+                        final avatarUrl = profile['avatar_url'];
+                        return Card(
+                          margin: const EdgeInsets.symmetric(
+                              vertical: 4, horizontal: 8),
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                            leading: CircleAvatar(
+                              radius: 28,
+                              backgroundColor:
+                                  _getColorForType(profile['user_type'])
+                                      .withOpacity(0.2),
+                              backgroundImage: avatarUrl != null &&
+                                      avatarUrl.toString().isNotEmpty
+                                  ? NetworkImage(avatarUrl)
+                                  : null,
+                              child: avatarUrl == null ||
+                                      avatarUrl.toString().isEmpty
+                                  ? Text(
+                                      profile['full_name']?[0]?.toUpperCase() ??
+                                          '?',
+                                      style: TextStyle(
+                                        color: _getColorForType(
+                                            profile['user_type']),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 20,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            title: Text(
+                              profile['full_name'] ?? 'Sem nome',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: olympusBlue,
+                                fontSize: 16,
+                              ),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 4),
+                                if (profile['user_type'] != null)
+                                  Row(
+                                    children: [
+                                      Icon(Icons.badge_outlined,
+                                          size: 14, color: olympusGold),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _getTypeLabel(profile['user_type']),
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.grey[700]),
+                                      ),
+                                    ],
+                                  ),
+                                const SizedBox(height: 2),
+                                if (profile['phone'] != null)
+                                  Row(
+                                    children: [
+                                      Icon(Icons.phone,
+                                          size: 14, color: olympusGold),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _formatPhone(profile['phone']),
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.grey[700]),
+                                      ),
+                                    ],
+                                  ),
+                                const SizedBox(height: 2),
+                                if (profile['cpf'] != null)
+                                  Row(
+                                    children: [
+                                      Icon(Icons.credit_card,
+                                          size: 14, color: olympusGold),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'CPF: ${_formatCpf(profile['cpf'])}',
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.grey[700]),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                            trailing: PopupMenuButton<String>(
+                              icon: Icon(Icons.more_vert, color: olympusGold),
+                              onSelected: (value) {
+                                if (value == 'edit') {
+                                  showProfileDialog(profile: profile);
+                                } else if (value == 'delete') {
+                                  _confirmDelete(profile['id']);
+                                } else if (value == 'reset_password') {
+                                  _confirmResetPassword(
+                                    profile['id'],
+                                    profile['email'] ?? '',
+                                    profile['full_name'] ?? 'Usuário',
+                                  );
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                  value: 'edit',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.edit,
+                                          size: 18, color: olympusBlue),
+                                      SizedBox(width: 8),
+                                      Text('✏️ Editar'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'reset_password',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.lock_reset,
+                                          size: 18, color: olympusGold),
+                                      SizedBox(width: 8),
+                                      Text('🔑 Resetar Senha'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete_outline,
+                                          size: 18, color: Colors.red),
+                                      SizedBox(width: 8),
+                                      Text('🗑️ Excluir'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: () => showProfileDialog(),
+            icon: const Icon(Icons.person_add),
+            label: const Text('Novo Perfil'),
+            backgroundColor: olympusGold,
+            foregroundColor: olympusBlue,
+            elevation: 4,
+          ),
+        );
+      },
     );
   }
 

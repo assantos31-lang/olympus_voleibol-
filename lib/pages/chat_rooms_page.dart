@@ -1,5 +1,4 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/chat_room.dart';
@@ -17,11 +16,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
   final ChatService _chatService = ChatService();
   final TextEditingController _searchController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
-
   late Future<List<ChatRoomListItem>> _futureRooms;
   bool _isAdmin = false;
   String _searchQuery = '';
-
   static const Color _gold = Color(0xFFD4B06A);
   static const Color _goldSoft = Color(0xFFE7CD8E);
   static const Color _navy = Color(0xFF0E2A57);
@@ -90,9 +87,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
         );
       },
     );
-
     if (confirmed != true) return;
-
     try {
       await _chatService.deleteRoomForCurrentUser(item.room.id);
       if (!mounted) return;
@@ -132,7 +127,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
       context: context,
       builder: (dialogContext) {
         bool isSaving = false;
-
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
@@ -283,18 +277,14 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                           setDialogState(() {
                             isSaving = true;
                           });
-
                           try {
                             final room = await _chatService.createGroupRoom(
                               name: selectedUserName ?? 'Nova conversa',
                               participantUserIds: [selectedUserId!],
                             );
-
                             if (!mounted) return;
                             Navigator.of(dialogContext).pop();
-
                             await _reload();
-
                             if (!mounted) return;
                             await Navigator.push(
                               context,
@@ -302,7 +292,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                 builder: (_) => ChatPage(room: room),
                               ),
                             );
-
                             if (!mounted) return;
                             await _reload();
                           } catch (e) {
@@ -473,7 +462,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                       ? null
                       : () async {
                           final groupName = nameController.text.trim();
-
                           if (groupName.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
@@ -482,7 +470,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                             );
                             return;
                           }
-
                           if (selectedUserIds.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
@@ -523,9 +510,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
                             if (!mounted) return;
                             Navigator.of(dialogContext).pop();
-
                             await _reload();
-
                             if (!mounted) return;
                             await Navigator.push(
                               context,
@@ -533,7 +518,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                 builder: (_) => ChatPage(room: room),
                               ),
                             );
-
                             if (!mounted) return;
                             await _reload();
                           } catch (e) {
@@ -567,11 +551,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
   String? _resolveAvatarUrl(String? rawValue) {
     final value = rawValue?.trim();
     if (value == null || value.isEmpty) return null;
-
     if (value.startsWith('http://') || value.startsWith('https://')) {
       return value;
     }
-
     return _chatService.supabase.storage.from('avatars').getPublicUrl(value);
   }
 
@@ -582,7 +564,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
   }) {
     final initial =
         fullName.trim().isNotEmpty ? fullName.trim()[0].toUpperCase() : 'U';
-
     return Container(
       width: size,
       height: size,
@@ -623,12 +604,35 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
   }
 
   String? _extractRoomPhoto(ChatRoomListItem item) {
+    // ✅ CORREÇÃO: Usa o avatarUrl do item (que já é do outro participante ou do grupo)
     return _resolveAvatarUrl(item.avatarUrl);
+  }
+
+  // ✅ NOVO: Método para obter o nome correto para exibição
+  String _getDisplayName(ChatRoomListItem item) {
+    // Para grupos, usa o nome da sala
+    if (item.room.type == 'group') {
+      return item.room.name?.trim().isNotEmpty == true
+          ? item.room.name!
+          : 'Grupo';
+    }
+
+    // Para conversas individuais, usa o nome do remetente da última mensagem
+    // ou fallback para o nome da sala
+    if (item.lastMessageSenderName != null &&
+        item.lastMessageSenderName!.trim().isNotEmpty) {
+      return item.lastMessageSenderName!;
+    }
+
+    if (item.room.name?.trim().isNotEmpty == true) {
+      return item.room.name!;
+    }
+
+    return 'Conversa';
   }
 
   String _buildRoomSubtitle(ChatRoomListItem item) {
     final room = item.room;
-
     if (item.lastMessageText != null &&
         item.lastMessageText!.trim().isNotEmpty) {
       final senderName = item.lastMessageSenderName?.trim();
@@ -637,7 +641,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
       }
       return item.lastMessageText!;
     }
-
     if (room.isLocked) return 'Bloqueado';
     if (room.adminOnly) return 'Somente admin envia';
     return room.type;
@@ -653,7 +656,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
   Widget? _buildTrailing(ChatRoomListItem item) {
     final room = item.room;
-
     if (item.unreadCount > 0) {
       return Container(
         constraints: const BoxConstraints(minWidth: 46, minHeight: 30),
@@ -673,24 +675,21 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
         ),
       );
     }
-
     if (room.isLocked) {
       return const Icon(Icons.lock_outline_rounded, color: _gold, size: 22);
     }
-
     if (room.adminOnly) {
       return const Icon(Icons.campaign_outlined, color: _gold, size: 22);
     }
-
     return null;
   }
 
   Widget _buildAvatar(ChatRoomListItem item) {
-    final name = (item.room.name ?? 'C').trim();
+    // ✅ CORREÇÃO: Usa o nome correto do participante/grupo
+    final displayName = _getDisplayName(item);
     final photoUrl = _extractRoomPhoto(item);
-
     return _buildUserAvatar(
-      fullName: name.isNotEmpty ? name : 'C',
+      fullName: displayName,
       photoUrl: photoUrl,
       size: 58,
     );
@@ -768,7 +767,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                 builder: (_) => ChatPage(room: room),
               ),
             );
-
             if (!mounted) return;
             await _reload();
           },
@@ -806,7 +804,8 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              room.name ?? 'Chat',
+                              // ✅ CORREÇÃO: Usa o nome correto do participante/grupo
+                              _getDisplayName(item),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -885,12 +884,11 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
   List<ChatRoomListItem> _filterRooms(List<ChatRoomListItem> rooms) {
     final query = _searchQuery.trim().toLowerCase();
     if (query.isEmpty) return rooms;
-
     return rooms.where((item) {
-      final roomName = (item.room.name ?? '').toLowerCase();
+      final displayName = _getDisplayName(item).toLowerCase();
       final subtitle = _buildRoomSubtitle(item).toLowerCase();
       final sender = (item.lastMessageSenderName ?? '').toLowerCase();
-      return roomName.contains(query) ||
+      return displayName.contains(query) ||
           subtitle.contains(query) ||
           sender.contains(query);
     }).toList();
@@ -908,7 +906,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
         if (index == 0) {
           return _buildSearchBar();
         }
-
         if (filteredRooms.isEmpty) {
           return Padding(
             padding: const EdgeInsets.only(top: 180),
@@ -925,7 +922,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
             ),
           );
         }
-
         final item = filteredRooms[index - 1];
         return _buildRoomTile(item, index - 1);
       },
@@ -1075,7 +1071,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                             child: CircularProgressIndicator(color: _gold),
                           );
                         }
-
                         if (snapshot.hasError) {
                           return Center(
                             child: Text(
@@ -1084,9 +1079,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                             ),
                           );
                         }
-
                         final rooms = snapshot.data ?? [];
-
                         return RefreshIndicator(
                           color: _gold,
                           backgroundColor: _navy,
@@ -1141,6 +1134,7 @@ class _SparklePainter extends CustomPainter {
       2.0,
       strong,
     );
+
     canvas.drawCircle(
       Offset(size.width * 0.945, size.height * 0.115),
       1.8,
