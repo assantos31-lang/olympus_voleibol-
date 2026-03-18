@@ -6,7 +6,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_masked_text2/flutter_masked_text2.dart';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:math';
 import '../services/auth_service.dart';
 
@@ -21,7 +20,6 @@ class _ProfilesPageState extends State<ProfilesPage> {
   final supabase = Supabase.instance.client;
   List<Map<String, dynamic>> profiles = [];
   bool isLoading = true;
-
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
@@ -37,7 +35,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
       setState(() => isLoading = true);
       final response = await supabase
           .from('profiles')
-          .select()
+          .select('*')
           .order('created_at', ascending: false);
       setState(() {
         profiles = List<Map<String, dynamic>>.from(response);
@@ -67,7 +65,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
             backgroundColor: Colors.green,
           ),
         );
-        fetchProfiles();
+        await fetchProfiles();
       }
     } catch (e) {
       debugPrint('❌ Erro ao inserir: $e');
@@ -93,7 +91,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
             backgroundColor: Colors.green,
           ),
         );
-        fetchProfiles();
+        await fetchProfiles();
       }
     } catch (e) {
       debugPrint('❌ Erro ao atualizar: $e');
@@ -111,9 +109,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
   Future<void> deleteProfile(String id) async {
     try {
       await supabase.from('profiles').delete().eq('id', id);
-
       await fetchProfiles();
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -178,13 +174,155 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
   }
 
+  Future<void> _resetPassword(String userId, String email) async {
+    try {
+      final response = await supabase.functions.invoke(
+        'reset-user-password',
+        body: {
+          'user_id': userId,
+        },
+      );
+
+      final data = response.data;
+      if (data is! Map || data['password'] == null) {
+        throw Exception('Resposta inválida ao resetar senha.');
+      }
+
+      final newPassword = data['password'].toString();
+
+      if (mounted) {
+        _showNewPasswordDialog(newPassword, email);
+      }
+    } catch (e) {
+      debugPrint('❌ Erro ao resetar senha: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao resetar senha: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showNewPasswordDialog(String password, String email) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.lock_reset, color: olympusGold, size: 28),
+            const SizedBox(width: 12),
+            const Text('🔑 Senha Resetada!'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('E-mail:'),
+            Text(
+              email,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: olympusBlue,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text('Nova senha gerada:'),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: olympusGold.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: olympusGold),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      password,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'monospace',
+                        color: olympusBlue,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.copy, color: olympusGold),
+                    tooltip: 'Copiar senha',
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: password));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Senha copiada!'),
+                          duration: Duration(seconds: 2),
+                          backgroundColor: olympusBlue,
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Envie esta nova senha para o usuário.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmResetPassword(String userId, String email, String name) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Resetar Senha'),
+        content: Text(
+          'Uma nova senha será gerada para:\n\n$email\n\nO ADMIN deverá copiar e enviar ao usuário.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _resetPassword(userId, email);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: olympusGold,
+              foregroundColor: olympusBlue,
+            ),
+            child: const Text('Gerar Nova Senha'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<String?> _getCurrentUserType() async {
     try {
       final user = supabase.auth.currentUser;
       if (user == null) return null;
       final response = await supabase
           .from('profiles')
-          .select('user_type')
+          .select('*')
           .eq('id', user.id)
           .maybeSingle();
       return response?['user_type'];
@@ -230,9 +368,11 @@ class _ProfilesPageState extends State<ProfilesPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('E-mail:'),
-            Text(email,
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, color: olympusBlue)),
+            Text(
+              email,
+              style: const TextStyle(
+                  fontWeight: FontWeight.bold, color: olympusBlue),
+            ),
             const SizedBox(height: 10),
             const Text('Senha gerada automaticamente:'),
             const SizedBox(height: 10),
@@ -297,7 +437,6 @@ class _ProfilesPageState extends State<ProfilesPage> {
     final emailCtrl = TextEditingController();
     final phoneCtrl = MaskedTextController(mask: '(00) 00000-0000');
     String selectedType = 'member';
-
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -388,8 +527,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
               if (nameCtrl.text.isEmpty || emailCtrl.text.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                      content: Text('Preencha nome e e-mail'),
-                      backgroundColor: Colors.orange),
+                    content: Text('Preencha nome e e-mail'),
+                    backgroundColor: Colors.orange,
+                  ),
                 );
                 return;
               }
@@ -402,17 +542,18 @@ class _ProfilesPageState extends State<ProfilesPage> {
                 );
                 if (response.user != null) {
                   final userId = response.user!.id;
-                  await Future.delayed(const Duration(milliseconds: 1000));
-                  await supabase.from('profiles').update({
+                  await supabase.from('profiles').upsert({
+                    'id': userId,
+                    'email': email,
                     'full_name': nameCtrl.text.trim(),
                     'phone': phoneCtrl.text.replaceAll(RegExp(r'\D'), ''),
                     'user_type': selectedType,
                     'updated_at': DateTime.now().toIso8601String(),
-                  }).eq('id', userId);
+                  }, onConflict: 'id');
                   if (!mounted) return;
+                  await fetchProfiles();
                   Navigator.pop(context);
                   _showPasswordResultDialog(password, email);
-                  fetchProfiles();
                 }
               } catch (e) {
                 debugPrint('❌ Erro ao cadastrar: $e');
@@ -547,25 +688,27 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                   avatarUrl.toString().isNotEmpty
                               ? NetworkImage(avatarUrl)
                               : null,
-                          child:
-                              avatarUrl == null || avatarUrl.toString().isEmpty
-                                  ? Text(
-                                      profile['full_name']?[0]?.toUpperCase() ??
-                                          '?',
-                                      style: TextStyle(
-                                          color: _getColorForType(
-                                              profile['user_type']),
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 20),
-                                    )
-                                  : null,
+                          child: avatarUrl == null ||
+                                  avatarUrl.toString().isEmpty
+                              ? Text(
+                                  profile['full_name']?[0]?.toUpperCase() ??
+                                      '?',
+                                  style: TextStyle(
+                                    color:
+                                        _getColorForType(profile['user_type']),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 20,
+                                  ),
+                                )
+                              : null,
                         ),
                         title: Text(
                           profile['full_name'] ?? 'Sem nome',
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: olympusBlue,
-                              fontSize: 16),
+                            fontWeight: FontWeight.bold,
+                            color: olympusBlue,
+                            fontSize: 16,
+                          ),
                         ),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -621,6 +764,12 @@ class _ProfilesPageState extends State<ProfilesPage> {
                               showProfileDialog(profile: profile);
                             } else if (value == 'delete') {
                               _confirmDelete(profile['id']);
+                            } else if (value == 'reset_password') {
+                              _confirmResetPassword(
+                                profile['id'],
+                                profile['email'] ?? '',
+                                profile['full_name'] ?? 'Usuário',
+                              );
                             }
                           },
                           itemBuilder: (context) => [
@@ -632,6 +781,17 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                       size: 18, color: olympusBlue),
                                   SizedBox(width: 8),
                                   Text('✏️ Editar'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'reset_password',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.lock_reset,
+                                      size: 18, color: olympusGold),
+                                  SizedBox(width: 8),
+                                  Text('🔑 Resetar Senha'),
                                 ],
                               ),
                             ),
@@ -745,11 +905,9 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
   bool _isLoading = false;
   bool _isFetchingCep = false;
   bool _isUploading = false;
-
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
-
   final Map<String, List<Map<String, String>>> _positions = {
     'Masculino': [
       {'value': 'Ponteiro', 'label': 'Ponteiro'},
@@ -876,8 +1034,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
       final fileName =
           '${DateTime.now().millisecondsSinceEpoch}_${_fullNameController.text.replaceAll(RegExp(r'\D'), '')}.jpg';
       final supabase = Supabase.instance.client;
-      final Uint8List? fileBytes = await _selectedImage!.readAsBytes();
-      if (fileBytes == null) return null;
+      final fileBytes = await _selectedImage!.readAsBytes();
       await supabase.storage.from('avatars').uploadBinary(fileName, fileBytes,
           fileOptions: const FileOptions(upsert: true));
       final publicUrl = supabase.storage.from('avatars').getPublicUrl(fileName);
@@ -1213,7 +1370,9 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                       ),
                       items: _positions[_selectedGender]!
                           .map((pos) => DropdownMenuItem(
-                              value: pos['value'], child: Text(pos['label']!)))
+                                value: pos['value'],
+                                child: Text(pos['label']!),
+                              ))
                           .toList(),
                       onChanged: (value) =>
                           setState(() => _selectedPosition = value ?? ''),
@@ -1223,12 +1382,14 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                     children: [
                       Icon(Icons.location_on, color: olympusGold, size: 20),
                       const SizedBox(width: 8),
-                      const Text('Endereço',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: olympusBlue,
-                          )),
+                      const Text(
+                        'Endereço',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: olympusBlue,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -1435,10 +1596,10 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
 
   Widget _getAvatarImage() {
     if (_selectedImage != null) {
-      return FutureBuilder<Uint8List?>(
+      return FutureBuilder<Uint8List>(
         future: _selectedImage!.readAsBytes(),
         builder: (context, snapshot) {
-          if (snapshot.hasData && snapshot.data != null) {
+          if (snapshot.hasData) {
             return Image.memory(snapshot.data!, fit: BoxFit.cover);
           }
           return const Icon(Icons.person, size: 60, color: Colors.grey);
@@ -1450,8 +1611,9 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
       return Image.network(
         widget.profile!['avatar_url'],
         fit: BoxFit.cover,
-        errorBuilder: (c, o, s) =>
-            const Icon(Icons.person, size: 60, color: Colors.grey),
+        errorBuilder: (context, error, stackTrace) {
+          return const Icon(Icons.person, size: 60, color: Colors.grey);
+        },
       );
     }
     return const Icon(Icons.person, size: 60, color: Colors.grey);
