@@ -187,7 +187,7 @@ class _ChatPageState extends State<ChatPage> {
     return null;
   }
 
-  // ✅ NOVO: Método para obter a URL do avatar correto para exibição no header
+  // ✅ CORREÇÃO: Método para obter a URL do avatar correto para exibição no header
   String? _getHeaderAvatarUrl() {
     // Para grupos, usa o avatar da sala
     if (_room.type == 'group') {
@@ -202,21 +202,10 @@ class _ChatPageState extends State<ChatPage> {
       }
     }
 
-    // Fallback: tenta pegar do primeiro participante que não é eu
-    for (final participant in _participants) {
-      final userId = (participant['user_id'] ?? '').toString();
-      if (userId.isNotEmpty && userId != currentUserId) {
-        final photoUrl = _extractParticipantPhoto(participant);
-        if (photoUrl != null) {
-          return photoUrl;
-        }
-      }
-    }
-
     return null;
   }
 
-  // ✅ NOVO: Método para obter o nome correto para exibição no header
+  // ✅ CORREÇÃO: Método para obter o nome correto para exibição no header
   String _getHeaderDisplayName() {
     // Para grupos, usa o nome da sala
     if (_room.type == 'group') {
@@ -1354,7 +1343,7 @@ class _ChatPageState extends State<ChatPage> {
         _room.allowMessages &&
         (!_room.adminOnly || isRoomAdmin);
 
-    // ✅ CORREÇÃO: Usa os novos métodos para obter avatar e nome corretos
+    // ✅ CORREÇÃO: Usa os métodos corretos para obter avatar e nome
     final headerPhotoUrl = _getHeaderAvatarUrl();
     final headerDisplayName = _getHeaderDisplayName();
 

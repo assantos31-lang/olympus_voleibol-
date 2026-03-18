@@ -1,7 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../models/birthday_person.dart';
 import '../services/auth_service.dart';
+import '../services/birthday_service.dart';
 import 'agenda_page.dart';
+import 'admin_birthdays_page.dart';
 import 'admin_financial_page.dart';
 import 'chat_rooms_page.dart';
 
@@ -40,7 +43,9 @@ class AdminHomePage extends StatelessWidget {
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 14),
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -90,7 +95,9 @@ class AdminHomePage extends StatelessWidget {
                     child: Center(
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 22, vertical: 12),
+                          horizontal: 22,
+                          vertical: 12,
+                        ),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -101,8 +108,12 @@ class AdminHomePage extends StatelessWidget {
                                 Container(
                                   width: double.infinity,
                                   margin: const EdgeInsets.only(top: 54),
-                                  padding:
-                                      const EdgeInsets.fromLTRB(20, 72, 20, 22),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    20,
+                                    72,
+                                    20,
+                                    22,
+                                  ),
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(18),
                                     border: Border.all(
@@ -129,7 +140,9 @@ class AdminHomePage extends StatelessWidget {
                                     borderRadius: BorderRadius.circular(18),
                                     child: BackdropFilter(
                                       filter: ImageFilter.blur(
-                                          sigmaX: 14, sigmaY: 14),
+                                        sigmaX: 14,
+                                        sigmaY: 14,
+                                      ),
                                       child: Column(
                                         children: [
                                           Text(
@@ -138,8 +151,9 @@ class AdminHomePage extends StatelessWidget {
                                             style: TextStyle(
                                               fontSize: 23,
                                               fontWeight: FontWeight.w500,
-                                              color: Colors.white
-                                                  .withOpacity(0.92),
+                                              color: Colors.white.withOpacity(
+                                                0.92,
+                                              ),
                                               height: 1.15,
                                             ),
                                           ),
@@ -149,8 +163,9 @@ class AdminHomePage extends StatelessWidget {
                                             textAlign: TextAlign.center,
                                             style: TextStyle(
                                               fontSize: 14,
-                                              color: Colors.white
-                                                  .withOpacity(0.68),
+                                              color: Colors.white.withOpacity(
+                                                0.68,
+                                              ),
                                               fontWeight: FontWeight.w400,
                                             ),
                                           ),
@@ -168,10 +183,12 @@ class AdminHomePage extends StatelessWidget {
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
                                       colors: [
-                                        const Color(0xFF42556F)
-                                            .withOpacity(0.95),
-                                        const Color(0xFF31445D)
-                                            .withOpacity(0.88),
+                                        const Color(0xFF42556F).withOpacity(
+                                          0.95,
+                                        ),
+                                        const Color(0xFF31445D).withOpacity(
+                                          0.88,
+                                        ),
                                       ],
                                     ),
                                     border: Border.all(
@@ -212,6 +229,8 @@ class AdminHomePage extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 26),
+                            const _BirthdaysMonthCard(),
+                            const SizedBox(height: 22),
                             _buildFuturisticButton(
                               context: context,
                               label: 'Gerenciar Usuários',
@@ -406,8 +425,9 @@ class AdminHomePage extends StatelessWidget {
                             height: 42,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: accentColor
-                                  .withOpacity(isPrimary ? 0.16 : 0.10),
+                              color: accentColor.withOpacity(
+                                isPrimary ? 0.16 : 0.10,
+                              ),
                               border: Border.all(
                                 color: accentColor.withOpacity(0.30),
                               ),
@@ -470,6 +490,188 @@ class AdminHomePage extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _BirthdaysMonthCard extends StatelessWidget {
+  const _BirthdaysMonthCard();
+
+  @override
+  Widget build(BuildContext context) {
+    const goldenColor = Color(0xFFE4C050);
+    const cyanColor = Color(0xFF8FE8FF);
+
+    return FutureBuilder<List<BirthdayPerson>>(
+      future: BirthdayService().getBirthdaysOfMonth(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildContainer(
+            child: const Padding(
+              padding: EdgeInsets.all(20),
+              child: Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return _buildContainer(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                'Erro ao carregar aniversariantes.',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+          );
+        }
+
+        final birthdays = snapshot.data ?? [];
+
+        return _buildContainer(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: goldenColor.withOpacity(0.16),
+                        border: Border.all(
+                          color: goldenColor.withOpacity(0.35),
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.cake_rounded,
+                        color: Color(0xFFE4C050),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Aniversariantes do mês',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.92),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AdminBirthdaysPage(),
+                          ),
+                        );
+                      },
+                      style: TextButton.styleFrom(
+                        foregroundColor: goldenColor,
+                      ),
+                      child: const Text('Ver todos'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (birthdays.isEmpty)
+                  Text(
+                    'Nenhum aniversariante neste mês.',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.72),
+                      fontSize: 14,
+                    ),
+                  )
+                else
+                  ...birthdays.take(4).map(
+                        (person) => Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            color: Colors.white.withOpacity(0.05),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.08),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.celebration_rounded,
+                                color: cyanColor.withOpacity(0.95),
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  person.fullName,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.90),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                person.formattedBirthday,
+                                style: const TextStyle(
+                                  color: Color(0xFFE4C050),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildContainer({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.16),
+              width: 1.2,
+            ),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withOpacity(0.16),
+                Colors.white.withOpacity(0.07),
+              ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF8FE8FF).withOpacity(0.08),
+                blurRadius: 18,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: child,
+        ),
       ),
     );
   }
