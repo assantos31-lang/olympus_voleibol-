@@ -47,6 +47,21 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
     _loadProfile();
   }
 
+  bool _isVisibleFlag(dynamic value, {bool defaultValue = true}) {
+    if (value == null) return defaultValue;
+    if (value is bool) return value;
+    if (value is int) return value == 1;
+    if (value is String) {
+      final normalized = value.toLowerCase().trim();
+      return normalized == 'true' || normalized == '1' || normalized == 'sim';
+    }
+    return defaultValue;
+  }
+
+  bool _canShow(String key, {bool defaultValue = true}) {
+    return _isVisibleFlag(_profile?[key], defaultValue: defaultValue);
+  }
+
   Future<void> _loadProfile() async {
     final user = supabase.auth.currentUser;
     if (user != null) {
@@ -1619,32 +1634,35 @@ event_time
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _buildAthleteInfoCard(),
-            _buildFinancialAlertCard(),
-            _buildPresenceSummaryCard(),
-            _buildWeekEventsSectionCard(),
-            _buildDashboardCard(
-              icon: Icons.calendar_today,
-              title: 'Minha Agenda',
-              subtitle: _getAgendaSubtitle(),
-              color: olympusGold,
-              onTap: _navigateToAgenda,
-              badgeCount: _pendingCount > 0 ? _pendingCount : null,
-            ),
-            _buildDashboardCard(
-              icon: Icons.attach_money,
-              title: 'Financeiro',
-              subtitle: 'Acompanhe seus pagamentos',
-              color: olympusBlue,
-              onTap: _navigateToFinancial,
-              badgeCount:
-                  _overdueFinancialCount > 0 ? _overdueFinancialCount : null,
-            ),
+            if (_canShow('show_athlete_info')) _buildAthleteInfoCard(),
+            if (_canShow('show_financial_alert')) _buildFinancialAlertCard(),
+            if (_canShow('show_presence_summary')) _buildPresenceSummaryCard(),
+            if (_canShow('show_week_events')) _buildWeekEventsSectionCard(),
+            if (_canShow('show_agenda'))
+              _buildDashboardCard(
+                icon: Icons.calendar_today,
+                title: 'Minha Agenda',
+                subtitle: _getAgendaSubtitle(),
+                color: olympusGold,
+                onTap: _navigateToAgenda,
+                badgeCount: _pendingCount > 0 ? _pendingCount : null,
+              ),
+            if (_canShow('show_financial'))
+              _buildDashboardCard(
+                icon: Icons.attach_money,
+                title: 'Financeiro',
+                subtitle: 'Acompanhe seus pagamentos',
+                color: olympusBlue,
+                onTap: _navigateToFinancial,
+                badgeCount:
+                    _overdueFinancialCount > 0 ? _overdueFinancialCount : null,
+              ),
             const SizedBox(height: 100),
           ],
         ),
       ),
-      floatingActionButton: _buildFloatingChatButton(),
+      floatingActionButton:
+          _canShow('show_chat') ? _buildFloatingChatButton() : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }

@@ -14,16 +14,30 @@ class AthleteFinancialPage extends StatefulWidget {
 class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   final _supabase = Supabase.instance.client;
   final _picker = ImagePicker();
+
   List<FinancialRecord> _records = [];
   bool _isLoading = true;
+  String? _errorMessage;
+  bool _permissionsLoaded = false;
+
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
   String _selectedType = 'all';
-  // ✅ Contadores
+
   int _overdueCount = 0;
   int _newBillsCount = 0;
 
-  // Cores do logo Olympus Voleibol
+  bool _canAccessFinancial = false;
+  bool _showMonthFilter = false;
+  bool _showYearFilter = false;
+  bool _showTypeFilter = false;
+  bool _showCounters = false;
+  bool _showStatusBadge = false;
+  bool _showDueDate = false;
+  bool _showDescription = false;
+  bool _allowReceiptUpload = false;
+  bool _showReceiptStatus = false;
+
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
@@ -31,35 +45,158 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   @override
   void initState() {
     super.initState();
-    _loadRecords();
+    _initializePage();
+  }
+
+  Future<void> _initializePage() async {
+    await _loadPermissions();
+    await _loadRecords();
+  }
+
+  Future<void> _loadPermissions() async {
+    try {
+      final currentUser = _supabase.auth.currentUser;
+      if (currentUser == null) {
+        if (!mounted) return;
+        setState(() {
+          _permissionsLoaded = true;
+        });
+        return;
+      }
+
+      final response = await _supabase
+          .from('profiles')
+          .select('permissions')
+          .eq('id', currentUser.id)
+          .maybeSingle();
+
+      if (response == null) {
+        if (!mounted) return;
+        setState(() {
+          _permissionsLoaded = true;
+        });
+        return;
+      }
+
+      final rawPermissions = response['permissions'];
+      if (rawPermissions is! Map) {
+        if (!mounted) return;
+        setState(() {
+          _permissionsLoaded = true;
+        });
+        return;
+      }
+
+      final permissions = Map<String, dynamic>.from(rawPermissions);
+      final pagesRaw = permissions['pages'];
+      final actionsRaw = permissions['actions'];
+
+      final pages = pagesRaw is List ? List<String>.from(pagesRaw) : <String>[];
+      final actions = actionsRaw is Map
+          ? Map<String, dynamic>.from(actionsRaw)
+          : <String, dynamic>{};
+
+      final athleteFinancialActions = actions['athlete_financial'] is Map
+          ? Map<String, dynamic>.from(actions['athlete_financial'])
+          : <String, dynamic>{};
+
+      final hasPagesConfig = pagesRaw is List;
+
+      if (!mounted) return;
+
+      setState(() {
+        _canAccessFinancial =
+            hasPagesConfig ? pages.contains('financial') : true;
+
+        _showMonthFilter = athleteFinancialActions['view_month_filter'] ?? true;
+        _showYearFilter = athleteFinancialActions['view_year_filter'] ?? true;
+        _showTypeFilter = athleteFinancialActions['view_type_filter'] ?? true;
+        _showCounters = athleteFinancialActions['view_counters'] ?? true;
+        _showStatusBadge = athleteFinancialActions['view_status_badge'] ?? true;
+        _showDueDate = athleteFinancialActions['view_due_date'] ?? true;
+        _showDescription = athleteFinancialActions['view_description'] ?? true;
+        _allowReceiptUpload = athleteFinancialActions['upload_receipt'] ?? true;
+        _showReceiptStatus =
+            athleteFinancialActions['view_receipt_status'] ?? true;
+        _permissionsLoaded = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _permissionsLoaded = true;
+      });
+    }
   }
 
   Future<void> _loadRecords() async {
-    setState(() => _isLoading = true);
-    final currentUserId = _supabase.auth.currentUser!.id;
-
-    var query = _supabase
-        .from('financial_records')
-        .select()
-        .eq('athlete_id', currentUserId)
-        .eq('month', _selectedMonth)
-        .eq('year', _selectedYear);
-
-    if (_selectedType != 'all') {
-      query = query.eq('type', _selectedType);
-    }
-
-    final response = await query.order('created_at', ascending: false);
+    if (!mounted) return;
 
     setState(() {
-      _records =
-          (response as List).map((r) => FinancialRecord.fromMap(r)).toList();
-      _isLoading = false;
+      _isLoading = true;
+      _errorMessage = null;
     });
-    _calculateCounters();
+
+    try {
+      final currentUser = _supabase.auth.currentUser;
+
+      if (currentUser == null) {
+        throw Exception('Usuário não autenticado.');
+      }
+
+      if (!_canAccessFinancial) {
+        if (!mounted) return;
+        setState(() {
+          _records = [];
+          _isLoading = false;
+          _errorMessage = 'Você não tem permissão para acessar o financeiro.';
+        });
+        return;
+      }
+
+      final currentUserId = currentUser.id;
+
+      var query = _supabase
+          .from('financial_records')
+          .select()
+          .eq('athlete_id', currentUserId)
+          .eq('is_visible_to_athlete', true);
+
+      if (_showMonthFilter) {
+        query = query.eq('month', _selectedMonth);
+      }
+
+      if (_showYearFilter) {
+        query = query.eq('year', _selectedYear);
+      }
+
+      if (_showTypeFilter && _selectedType != 'all') {
+        query = query.eq('type', _selectedType);
+      }
+
+      final response = await query.order('created_at', ascending: false);
+
+      final loadedRecords =
+          (response as List).map((r) => FinancialRecord.fromMap(r)).toList();
+
+      if (!mounted) return;
+
+      setState(() {
+        _records = loadedRecords;
+        _isLoading = false;
+      });
+
+      _calculateCounters();
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _records = [];
+        _isLoading = false;
+        _errorMessage = 'Erro ao carregar registros: $e';
+      });
+    }
   }
 
-  // ✅ NOVO: Calcular contadores de atrasos e novos boletos
   void _calculateCounters() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -68,7 +205,6 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
 
     for (var record in _records) {
       if (record.status == 'approved') {
-        // Não conta pagos
         continue;
       }
 
@@ -82,6 +218,8 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
         newBills++;
       }
     }
+
+    if (!mounted) return;
 
     setState(() {
       _overdueCount = overdue;
@@ -106,8 +244,11 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       final filePath = '${record.athleteId}/$fileName';
       final bytes = await image.readAsBytes();
 
-      await _supabase.storage.from('receipts').uploadBinary(filePath, bytes,
-          fileOptions: const FileOptions(upsert: true));
+      await _supabase.storage.from('receipts').uploadBinary(
+            filePath,
+            bytes,
+            fileOptions: const FileOptions(upsert: true),
+          );
 
       await _supabase.from('financial_records').update({
         'receipt_url': filePath,
@@ -151,7 +292,6 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   }
 
   Color _getTypeColor(String type) {
-    // Cores baseadas no logo Olympus (azul e dourado)
     switch (type) {
       case 'monthly':
         return olympusBlue;
@@ -166,29 +306,21 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
     }
   }
 
-  // 1 - Get due date from database (day, month, year)
   DateTime _getDueDate(FinancialRecord record) {
-    // Access day field directly from the record
-    int day = 10; // default fallback
+    int day = 10;
 
-    // Try to access day dynamically from the map
     try {
-      // Access the day field if it exists
       day = (record as dynamic).day ?? 10;
-    } catch (e) {
-      // Use default day if field doesn't exist
-    }
+    } catch (_) {}
 
     return DateTime(record.year, record.month, day);
   }
 
-  // 2 - Get status text based on approval and due date
   String _getStatusText(String status, DateTime dueDate) {
     if (status == 'approved') {
       return 'Pago';
     } else if (status == 'pending') {
       final now = DateTime.now();
-      // Compare only date parts (ignore time)
       final dueDateOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
       final todayOnly = DateTime(now.year, now.month, now.day);
 
@@ -204,7 +336,6 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
     return status;
   }
 
-  // Get status color based on status and due date
   Color _getStatusColor(String status, DateTime dueDate) {
     if (status == 'approved') {
       return Colors.green;
@@ -241,6 +372,14 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_permissionsLoaded) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -256,475 +395,542 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadRecords,
+            onPressed: _initializePage,
           ),
         ],
       ),
       body: Column(
         children: [
-          // Modern Filter Section with Olympus Colors
-          Container(
-            padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFF1E3A5F),
-                  Color(0xFF2C5F8D),
-                ],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(16),
-                bottomRight: Radius.circular(16),
-              ),
-            ),
-            child: Column(
-              children: [
-                // ✅ Contadores de Atrasos e Novos Boletos
-                if (_overdueCount > 0 || _newBillsCount > 0)
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    margin: const EdgeInsets.only(bottom: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.95),
-                      borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        if (_overdueCount > 0)
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.red.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                    color: Colors.red.withOpacity(0.3)),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.warning,
-                                      color: Colors.red, size: 16),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Em Atraso',
-                                          style: TextStyle(
-                                            fontSize: 9,
-                                            color: Colors.grey,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                        Text(
-                                          '$_overdueCount ${_overdueCount == 1 ? "conta" : "contas"}',
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.red,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        if (_overdueCount > 0 && _newBillsCount > 0)
-                          const SizedBox(width: 6),
-                        if (_newBillsCount > 0)
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: olympusGold.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                    color: olympusGold.withOpacity(0.3)),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.add_circle_outline,
-                                      color: olympusGold, size: 16),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Novos Boletos',
-                                          style: TextStyle(
-                                            fontSize: 9,
-                                            color: Colors.grey,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                        Text(
-                                          '$_newBillsCount ${_newBillsCount == 1 ? "boleto" : "boletos"}',
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                            color: olympusBlue,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                // Month and Year Row
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildModernDropdown(
-                        icon: Icons.calendar_month,
-                        value: _selectedMonth,
-                        items: List.generate(12, (i) => i + 1)
-                            .map((m) => DropdownMenuItem(
-                                  value: m,
-                                  child: Text(
-                                    DateFormat.MMMM('pt_BR')
-                                        .format(DateTime(2024, m)),
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ))
-                            .toList(),
-                        onChanged: (v) => setState(() {
-                          _selectedMonth = v!;
-                          _loadRecords();
-                        }),
-                        label: 'Mês',
-                        iconColor: olympusGold,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildModernDropdown(
-                        icon: Icons.date_range,
-                        value: _selectedYear,
-                        items: List.generate(5, (i) => 2026 + i)
-                            .map((y) => DropdownMenuItem(
-                                  value: y,
-                                  child: Text(
-                                    y.toString(),
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ))
-                            .toList(),
-                        onChanged: (v) => setState(() {
-                          _selectedYear = v!;
-                          _loadRecords();
-                        }),
-                        label: 'Ano',
-                        iconColor: olympusGold,
-                      ),
-                    ),
+          if (_showMonthFilter ||
+              _showYearFilter ||
+              _showTypeFilter ||
+              _showCounters)
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color(0xFF1E3A5F),
+                    Color(0xFF2C5F8D),
                   ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
                 ),
-                const SizedBox(height: 10),
-                // Type Filter
-                _buildModernDropdown(
-                  icon: Icons.category_outlined,
-                  value: _selectedType,
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'all',
-                      child: Text(
-                        'Todos os Tipos',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'monthly',
-                      child: Text(
-                        'Mensalidade',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'games',
-                      child: Text(
-                        'Jogos',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'maintenance',
-                      child: Text(
-                        'Manutenção',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'other',
-                      child: Text(
-                        'Outros',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                  ],
-                  onChanged: (v) => setState(() {
-                    _selectedType = v!;
-                    _loadRecords();
-                  }),
-                  label: 'Tipo',
-                  iconColor: olympusGold,
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(16),
+                  bottomRight: Radius.circular(16),
                 ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _records.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.receipt_long_outlined,
-                              size: 64,
-                              color: const Color(0xFFBDBDBD),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Nenhum registro encontrado',
-                              style: TextStyle(
-                                color: const Color(0xFF757575),
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : LayoutBuilder(
-                        builder: (context, constraints) {
-                          return GridView.builder(
-                            padding: const EdgeInsets.all(14),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount:
-                                  _getCrossAxisCount(constraints.maxWidth),
-                              childAspectRatio:
-                                  _getChildAspectRatio(constraints.maxWidth),
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                            ),
-                            itemCount: _records.length,
-                            itemBuilder: (context, index) {
-                              final record = _records[index];
-                              final typeColor = _getTypeColor(record.type);
-                              final dueDate = _getDueDate(record);
-                              final statusText =
-                                  _getStatusText(record.status, dueDate);
-                              final statusColor =
-                                  _getStatusColor(record.status, dueDate);
-                              final formattedDueDate =
-                                  DateFormat('dd/MM/yyyy').format(dueDate);
-                              final isOverdue = statusText == 'Atrasado';
-
-                              return Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Colors.white,
-                                      typeColor.withOpacity(0.05),
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: typeColor.withOpacity(0.3),
-                                    width: 1.5,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: typeColor.withOpacity(0.1),
-                                      spreadRadius: 1,
-                                      blurRadius: 6,
-                                      offset: const Offset(0, 3),
-                                    ),
-                                  ],
+              ),
+              child: Column(
+                children: [
+                  if (_showCounters &&
+                      (_overdueCount > 0 || _newBillsCount > 0))
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.95),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          if (_overdueCount > 0)
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
                                 ),
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    onTap: () => _showRecordDetails(record),
-                                    borderRadius: BorderRadius.circular(14),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: Colors.red.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.warning,
+                                        color: Colors.red, size: 16),
+                                    const SizedBox(width: 6),
+                                    Expanded(
                                       child: Column(
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          Row(
-                                            children: [
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.all(7),
-                                                decoration: BoxDecoration(
-                                                  gradient: LinearGradient(
-                                                    colors: [
-                                                      typeColor
-                                                          .withOpacity(0.2),
-                                                      typeColor
-                                                          .withOpacity(0.1),
-                                                    ],
-                                                  ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(7),
-                                                ),
-                                                child: Icon(
-                                                  _getTypeIcon(record.type),
-                                                  color: typeColor,
-                                                  size: 18,
-                                                ),
-                                              ),
-                                              const Spacer(),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 7,
-                                                  vertical: 3,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: statusColor
-                                                      .withOpacity(0.15),
-                                                  borderRadius:
-                                                      BorderRadius.circular(5),
-                                                  border: Border.all(
-                                                    color: statusColor,
-                                                    width: 1.2,
-                                                  ),
-                                                ),
-                                                child: Text(
-                                                  statusText,
-                                                  style: TextStyle(
-                                                    color: statusColor,
-                                                    fontSize: 9,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'R\$ ${record.value.toStringAsFixed(2)}',
+                                          const Text(
+                                            'Em Atraso',
                                             style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 20,
-                                              color: typeColor,
+                                              fontSize: 9,
+                                              color: Colors.grey,
+                                              fontWeight: FontWeight.w500,
                                             ),
                                           ),
-                                          const SizedBox(height: 2),
                                           Text(
-                                            record.typeLabel,
+                                            '$_overdueCount ${_overdueCount == 1 ? "conta" : "contas"}',
                                             style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
                                               fontSize: 13,
-                                              color: Color(0xFF2C3E5A),
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.red,
                                             ),
                                           ),
-                                          const SizedBox(height: 8),
-                                          Container(
-                                            width: double.infinity,
-                                            padding: const EdgeInsets.all(7),
-                                            decoration: BoxDecoration(
-                                              color: isOverdue
-                                                  ? Colors.red.withOpacity(0.1)
-                                                  : typeColor.withOpacity(0.08),
-                                              borderRadius:
-                                                  BorderRadius.circular(7),
-                                              border: Border.all(
-                                                color: isOverdue
-                                                    ? Colors.red
-                                                        .withOpacity(0.3)
-                                                    : typeColor
-                                                        .withOpacity(0.2),
-                                                width: 1.2,
-                                              ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          if (_overdueCount > 0 && _newBillsCount > 0)
+                            const SizedBox(width: 6),
+                          if (_newBillsCount > 0)
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: olympusGold.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: olympusGold.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.add_circle_outline,
+                                      color: olympusGold,
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'Novos Boletos',
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              color: Colors.grey,
+                                              fontWeight: FontWeight.w500,
                                             ),
-                                            child: Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.calendar_today,
-                                                  size: 14,
-                                                  color: isOverdue
-                                                      ? Colors.red
-                                                      : typeColor,
-                                                ),
-                                                const SizedBox(width: 5),
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                        'Vencimento',
-                                                        style: TextStyle(
-                                                          fontSize: 11,
-                                                          color:
-                                                              Colors.grey[600],
-                                                          fontWeight:
-                                                              FontWeight.w600,
+                                          ),
+                                          Text(
+                                            '$_newBillsCount ${_newBillsCount == 1 ? "boleto" : "boletos"}',
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                              color: olympusBlue,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  if (_showMonthFilter || _showYearFilter)
+                    Row(
+                      children: [
+                        if (_showMonthFilter)
+                          Expanded(
+                            child: _buildModernDropdown(
+                              icon: Icons.calendar_month,
+                              value: _selectedMonth,
+                              items: List.generate(12, (i) => i + 1)
+                                  .map(
+                                    (m) => DropdownMenuItem(
+                                      value: m,
+                                      child: Text(
+                                        DateFormat.MMMM('pt_BR')
+                                            .format(DateTime(2024, m)),
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (v) {
+                                setState(() => _selectedMonth = v!);
+                                _loadRecords();
+                              },
+                              label: 'Mês',
+                              iconColor: olympusGold,
+                            ),
+                          ),
+                        if (_showMonthFilter && _showYearFilter)
+                          const SizedBox(width: 10),
+                        if (_showYearFilter)
+                          Expanded(
+                            child: _buildModernDropdown(
+                              icon: Icons.date_range,
+                              value: _selectedYear,
+                              items: List.generate(5, (i) => 2026 + i)
+                                  .map(
+                                    (y) => DropdownMenuItem(
+                                      value: y,
+                                      child: Text(
+                                        y.toString(),
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (v) {
+                                setState(() => _selectedYear = v!);
+                                _loadRecords();
+                              },
+                              label: 'Ano',
+                              iconColor: olympusGold,
+                            ),
+                          ),
+                      ],
+                    ),
+                  if ((_showMonthFilter || _showYearFilter) && _showTypeFilter)
+                    const SizedBox(height: 10),
+                  if (_showTypeFilter)
+                    _buildModernDropdown(
+                      icon: Icons.category_outlined,
+                      value: _selectedType,
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'all',
+                          child: Text(
+                            'Todos os Tipos',
+                            style: TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'monthly',
+                          child: Text(
+                            'Mensalidade',
+                            style: TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'games',
+                          child: Text(
+                            'Jogos',
+                            style: TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'maintenance',
+                          child: Text(
+                            'Manutenção',
+                            style: TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'other',
+                          child: Text(
+                            'Outros',
+                            style: TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        setState(() => _selectedType = v!);
+                        _loadRecords();
+                      },
+                      label: 'Tipo',
+                      iconColor: olympusGold,
+                    ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _errorMessage != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                size: 64,
+                                color: Colors.redAccent,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _errorMessage!,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Color(0xFF616161),
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton(
+                                onPressed: _initializePage,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: olympusBlue,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: const Text('Tentar novamente'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : _records.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.receipt_long_outlined,
+                                  size: 64,
+                                  color: const Color(0xFFBDBDBD),
+                                ),
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'Nenhum registro encontrado',
+                                  style: TextStyle(
+                                    color: Color(0xFF757575),
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : LayoutBuilder(
+                            builder: (context, constraints) {
+                              return GridView.builder(
+                                padding: const EdgeInsets.all(14),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount:
+                                      _getCrossAxisCount(constraints.maxWidth),
+                                  childAspectRatio: _getChildAspectRatio(
+                                      constraints.maxWidth),
+                                  crossAxisSpacing: 10,
+                                  mainAxisSpacing: 10,
+                                ),
+                                itemCount: _records.length,
+                                itemBuilder: (context, index) {
+                                  final record = _records[index];
+                                  final typeColor = _getTypeColor(record.type);
+                                  final dueDate = _getDueDate(record);
+                                  final statusText =
+                                      _getStatusText(record.status, dueDate);
+                                  final statusColor =
+                                      _getStatusColor(record.status, dueDate);
+                                  final formattedDueDate =
+                                      DateFormat('dd/MM/yyyy').format(dueDate);
+                                  final isOverdue = statusText == 'Atrasado';
+
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          Colors.white,
+                                          typeColor.withOpacity(0.05),
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: typeColor.withOpacity(0.3),
+                                        width: 1.5,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: typeColor.withOpacity(0.1),
+                                          spreadRadius: 1,
+                                          blurRadius: 6,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: () => _showRecordDetails(record),
+                                        borderRadius: BorderRadius.circular(14),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(10),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.all(7),
+                                                    decoration: BoxDecoration(
+                                                      gradient: LinearGradient(
+                                                        colors: [
+                                                          typeColor
+                                                              .withOpacity(0.2),
+                                                          typeColor
+                                                              .withOpacity(0.1),
+                                                        ],
+                                                      ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              7),
+                                                    ),
+                                                    child: Icon(
+                                                      _getTypeIcon(record.type),
+                                                      color: typeColor,
+                                                      size: 18,
+                                                    ),
+                                                  ),
+                                                  const Spacer(),
+                                                  if (_showStatusBadge)
+                                                    Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                        horizontal: 7,
+                                                        vertical: 3,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        color: statusColor
+                                                            .withOpacity(0.15),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(5),
+                                                        border: Border.all(
+                                                          color: statusColor,
+                                                          width: 1.2,
                                                         ),
                                                       ),
-                                                      Text(
-                                                        formattedDueDate,
+                                                      child: Text(
+                                                        statusText,
                                                         style: TextStyle(
-                                                          fontSize: 12,
-                                                          color: isOverdue
-                                                              ? Colors.red[700]
-                                                              : typeColor,
+                                                          color: statusColor,
+                                                          fontSize: 9,
                                                           fontWeight:
-                                                              FontWeight.bold,
+                                                              FontWeight.w700,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                'R\$ ${record.value.toStringAsFixed(2)}',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 20,
+                                                  color: typeColor,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                record.typeLabel,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 13,
+                                                  color: Color(0xFF2C3E5A),
+                                                ),
+                                              ),
+                                              if (_showDueDate) ...[
+                                                const SizedBox(height: 8),
+                                                Container(
+                                                  width: double.infinity,
+                                                  padding:
+                                                      const EdgeInsets.all(7),
+                                                  decoration: BoxDecoration(
+                                                    color: isOverdue
+                                                        ? Colors.red
+                                                            .withOpacity(0.1)
+                                                        : typeColor
+                                                            .withOpacity(0.08),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            7),
+                                                    border: Border.all(
+                                                      color: isOverdue
+                                                          ? Colors.red
+                                                              .withOpacity(0.3)
+                                                          : typeColor
+                                                              .withOpacity(0.2),
+                                                      width: 1.2,
+                                                    ),
+                                                  ),
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(
+                                                        Icons.calendar_today,
+                                                        size: 14,
+                                                        color: isOverdue
+                                                            ? Colors.red
+                                                            : typeColor,
+                                                      ),
+                                                      const SizedBox(width: 5),
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          children: [
+                                                            Text(
+                                                              'Vencimento',
+                                                              style: TextStyle(
+                                                                fontSize: 11,
+                                                                color: Colors
+                                                                    .grey[600],
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                              ),
+                                                            ),
+                                                            Text(
+                                                              formattedDueDate,
+                                                              style: TextStyle(
+                                                                fontSize: 12,
+                                                                color: isOverdue
+                                                                    ? Colors
+                                                                        .red[700]
+                                                                    : typeColor,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                              ),
+                                                            ),
+                                                          ],
                                                         ),
                                                       ),
                                                     ],
                                                   ),
                                                 ),
                                               ],
-                                            ),
+                                            ],
                                           ),
-                                        ],
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
+                                  );
+                                },
                               );
                             },
-                          );
-                        },
-                      ),
+                          ),
           ),
         ],
       ),
@@ -920,7 +1126,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
               width: 35,
               height: 3,
               decoration: BoxDecoration(
-                color: Color(0xFFE0E0E0),
+                color: const Color(0xFFE0E0E0),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -929,10 +1135,8 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
               padding: const EdgeInsets.symmetric(horizontal: 18),
               child: Column(
                 children: [
-                  // Header melhorado - INVERTIDO: Descrição à esquerda, X à direita
                   Row(
                     children: [
-                      // Ícone do tipo e descrição à ESQUERDA
                       Container(
                         width: 48,
                         height: 48,
@@ -964,28 +1168,29 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                 color: Color(0xFF2C3E5A),
                               ),
                             ),
-                            const SizedBox(height: 2),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.calendar_today,
-                                  size: 12,
-                                  color: Colors.grey[600],
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  formattedDueDate,
-                                  style: TextStyle(
-                                    fontSize: 12,
+                            if (_showDueDate) ...[
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.calendar_today,
+                                    size: 12,
                                     color: Colors.grey[600],
                                   ),
-                                ),
-                              ],
-                            ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    formattedDueDate,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
                       ),
-                      // Botão X à DIREITA
                       Container(
                         decoration: BoxDecoration(
                           color: Colors.grey[100],
@@ -1002,7 +1207,6 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                     ],
                   ),
                   const SizedBox(height: 18),
-                  // Card de detalhes
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -1025,29 +1229,33 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                           valueColor: const Color(0xFF2C3E5A),
                           valueWeight: FontWeight.bold,
                         ),
-                        const Divider(height: 24),
-                        _buildDetailRow(
-                          icon: record.status == 'approved'
-                              ? Icons.check_circle
-                              : record.status == 'pending'
-                                  ? (DateTime.now().isAfter(dueDate)
-                                      ? Icons.warning
-                                      : Icons.schedule)
-                                  : Icons.cancel,
-                          label: 'Status',
-                          value: statusText,
-                          valueColor: statusColor,
-                          valueWeight: FontWeight.w600,
-                          iconColor: statusColor,
-                        ),
-                        const Divider(height: 24),
-                        _buildDetailRow(
-                          icon: Icons.event,
-                          label: 'Data de Vencimento',
-                          value: formattedDueDate,
-                          valueColor: const Color(0xFF616161),
-                        ),
-                        if (record.description != null) ...[
+                        if (_showReceiptStatus) ...[
+                          const Divider(height: 24),
+                          _buildDetailRow(
+                            icon: record.status == 'approved'
+                                ? Icons.check_circle
+                                : record.status == 'pending'
+                                    ? (DateTime.now().isAfter(dueDate)
+                                        ? Icons.warning
+                                        : Icons.schedule)
+                                    : Icons.cancel,
+                            label: 'Status',
+                            value: statusText,
+                            valueColor: statusColor,
+                            valueWeight: FontWeight.w600,
+                            iconColor: statusColor,
+                          ),
+                        ],
+                        if (_showDueDate) ...[
+                          const Divider(height: 24),
+                          _buildDetailRow(
+                            icon: Icons.event,
+                            label: 'Data de Vencimento',
+                            value: formattedDueDate,
+                            valueColor: const Color(0xFF616161),
+                          ),
+                        ],
+                        if (_showDescription && record.description != null) ...[
                           const Divider(height: 24),
                           _buildDetailRow(
                             icon: Icons.description,
@@ -1060,13 +1268,17 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (record.status == 'pending' && record.receiptUrl == null)
+                  if (_allowReceiptUpload &&
+                      record.status == 'pending' &&
+                      record.receiptUrl == null)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
+                        gradient: const LinearGradient(
                           colors: [
                             olympusBlue,
                             olympusLightBlue,
@@ -1121,15 +1333,15 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                         ),
                       ),
                     )
-                  else if (record.receiptUrl != null)
+                  else if (_showReceiptStatus && record.receiptUrl != null)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
+                        gradient: const LinearGradient(
                           colors: [
-                            const Color(0xFFE8F5E9),
-                            const Color(0xFFC8E6C9)
+                            Color(0xFFE8F5E9),
+                            Color(0xFFC8E6C9),
                           ],
                           begin: Alignment.centerLeft,
                           end: Alignment.centerRight,
@@ -1174,20 +1386,23 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                               ],
                             ),
                           ),
-                          Icon(Icons.chevron_right,
-                              color: const Color(0xFF388E3C), size: 16),
+                          const Icon(
+                            Icons.chevron_right,
+                            color: Color(0xFF388E3C),
+                            size: 16,
+                          ),
                         ],
                       ),
                     )
-                  else if (record.status == 'approved')
+                  else if (_showReceiptStatus && record.status == 'approved')
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
+                        gradient: const LinearGradient(
                           colors: [
-                            const Color(0xFFE8F5E9),
-                            const Color(0xFFC8E6C9)
+                            Color(0xFFE8F5E9),
+                            Color(0xFFC8E6C9),
                           ],
                           begin: Alignment.centerLeft,
                           end: Alignment.centerRight,
@@ -1232,8 +1447,11 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                               ],
                             ),
                           ),
-                          Icon(Icons.chevron_right,
-                              color: const Color(0xFF388E3C), size: 16),
+                          const Icon(
+                            Icons.chevron_right,
+                            color: Color(0xFF388E3C),
+                            size: 16,
+                          ),
                         ],
                       ),
                     ),

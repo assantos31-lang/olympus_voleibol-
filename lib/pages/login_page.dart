@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
-import 'profiles_page.dart';
+import 'dashboard_router_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -36,22 +36,24 @@ class _LoginPageState extends State<LoginPage> {
       _passwordController.text,
     );
 
+    if (!mounted) return;
+
     setState(() => _isLoading = false);
 
-    if (mounted) {
-      if (result['success'] == true) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const ProfilesPage()),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['error'] ?? 'Erro ao fazer login'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+    if (result['success'] == true) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const DashboardRouterPage(),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['error'] ?? 'Erro ao fazer login'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -79,14 +81,13 @@ class _LoginPageState extends State<LoginPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Logo
                   Image.asset(
                     'assets/images/olympus_logo.png',
                     width: logoSize,
                     height: logoSize,
                     fit: BoxFit.contain,
                     errorBuilder: (context, error, stackTrace) {
-                      print('Erro ao carregar logo: $error');
+                      debugPrint('Erro ao carregar logo: $error');
                       return Container(
                         width: logoSize,
                         height: logoSize,
@@ -103,8 +104,6 @@ class _LoginPageState extends State<LoginPage> {
                     },
                   ),
                   SizedBox(height: isSmallScreen ? 16 : 24),
-
-                  // Título
                   Text(
                     'OLYMPUS',
                     style: TextStyle(
@@ -121,7 +120,7 @@ class _LoginPageState extends State<LoginPage> {
                     style: TextStyle(
                       fontSize: isSmallScreen ? 16 : 20,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFFE4C050),
+                      color: const Color(0xFFE4C050),
                       letterSpacing: 3,
                     ),
                     textAlign: TextAlign.center,
@@ -136,8 +135,6 @@ class _LoginPageState extends State<LoginPage> {
                     textAlign: TextAlign.center,
                   ),
                   SizedBox(height: isSmallScreen ? 24 : 32),
-
-                  // Card do formulário
                   Container(
                     padding: EdgeInsets.all(isSmallScreen ? 16 : 24),
                     decoration: BoxDecoration(
@@ -152,28 +149,31 @@ class _LoginPageState extends State<LoginPage> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Email
                           TextFormField(
                             controller: _emailController,
                             style: const TextStyle(color: Colors.white),
                             decoration: InputDecoration(
                               labelText: 'Email',
                               labelStyle: TextStyle(
-                                  color: Colors.white.withOpacity(0.7)),
+                                color: Colors.white.withOpacity(0.7),
+                              ),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide(
-                                    color: Colors.white.withOpacity(0.3)),
+                                  color: Colors.white.withOpacity(0.3),
+                                ),
                               ),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide(
-                                    color: Colors.white.withOpacity(0.3)),
+                                  color: Colors.white.withOpacity(0.3),
+                                ),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                    const BorderSide(color: Color(0xFFE4C050)),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFE4C050),
+                                ),
                               ),
                               prefixIcon: Icon(Icons.email, color: goldenColor),
                               filled: true,
@@ -191,29 +191,31 @@ class _LoginPageState extends State<LoginPage> {
                             },
                           ),
                           const SizedBox(height: 16),
-
-                          // Senha
                           TextFormField(
                             controller: _passwordController,
                             style: const TextStyle(color: Colors.white),
                             decoration: InputDecoration(
                               labelText: 'Senha',
                               labelStyle: TextStyle(
-                                  color: Colors.white.withOpacity(0.7)),
+                                color: Colors.white.withOpacity(0.7),
+                              ),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide(
-                                    color: Colors.white.withOpacity(0.3)),
+                                  color: Colors.white.withOpacity(0.3),
+                                ),
                               ),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide(
-                                    color: Colors.white.withOpacity(0.3)),
+                                  color: Colors.white.withOpacity(0.3),
+                                ),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                    const BorderSide(color: Color(0xFFE4C050)),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFE4C050),
+                                ),
                               ),
                               prefixIcon: Icon(Icons.lock, color: goldenColor),
                               suffixIcon: IconButton(
@@ -244,8 +246,6 @@ class _LoginPageState extends State<LoginPage> {
                             },
                           ),
                           const SizedBox(height: 24),
-
-                          // Botão Login
                           SizedBox(
                             width: double.infinity,
                             height: 50,
@@ -266,7 +266,8 @@ class _LoginPageState extends State<LoginPage> {
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
                                         valueColor: AlwaysStoppedAnimation(
-                                            Colors.white),
+                                          Colors.white,
+                                        ),
                                       ),
                                     )
                                   : const Row(
@@ -288,8 +289,6 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                           SizedBox(height: isSmallScreen ? 12 : 16),
-
-                          // Link para registro
                           TextButton(
                             onPressed: () {
                               Navigator.pushNamed(context, '/register');
@@ -297,7 +296,7 @@ class _LoginPageState extends State<LoginPage> {
                             child: Text(
                               'Seja um sócio torcedor! Cadastre-se!',
                               style: TextStyle(
-                                color: Color(0xFFE4C050),
+                                color: const Color(0xFFE4C050),
                                 fontWeight: FontWeight.w600,
                                 fontSize: isSmallScreen ? 12 : 14,
                               ),
@@ -308,10 +307,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                   ),
-
                   SizedBox(height: isSmallScreen ? 16 : 24),
-
-                  // Footer
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [

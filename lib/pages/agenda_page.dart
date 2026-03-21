@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // ✅ NOVO: para Clipboard na exportação Excel
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import '../pages/add_event_page.dart';
@@ -15,21 +15,18 @@ class _AgendaPageState extends State<AgendaPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
   List<Map<String, dynamic>> _eventos = [];
   List<Map<String, dynamic>> _eventosFiltrados = [];
-  Map<String, Map<String, int>> _quantidadeConvocados =
-      {}; // {eventId: {'athletes': n, 'technicians': n}}
-  Map<String, Map<String, int>> _checkinInfo =
-      {}; // {eventId: {'checked_in': n, 'pending': n}}
-  // ✅ NOVO (cirúrgico): cache da view event_convocation_stats
-  // {eventId: {'total_convocados': n, 'total_aceitos': n, 'total_pendentes': n, 'total_recusados': n}}
+  Map<String, Map<String, int>> _quantidadeConvocados = {};
+  Map<String, Map<String, int>> _checkinInfo = {};
   Map<String, Map<String, int>> _convocationStats = {};
   bool _loading = true;
   String? _error;
-  String _filtroSelecionado = 'Todos';
   String _filtroMes = '';
+  String _filtroSelecionado = 'Todos';
   String _filtroGenero = 'Todos';
-  Set<String> _placaresExpandidos = {}; // IDs dos placares expandidos
+  List<String> _placaresExpandidos = [];
+  Map<String, dynamic>? _permissions;
+  bool _hasAgendaAccess = false;
 
-  // ✅ Cores do logo Olympus Voleibol
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
@@ -37,8 +34,7 @@ class _AgendaPageState extends State<AgendaPage> {
   @override
   void initState() {
     super.initState();
-    _setMesAtual();
-    _buscarEventos();
+    _init();
   }
 
   void _setMesAtual() {
@@ -46,14 +42,70 @@ class _AgendaPageState extends State<AgendaPage> {
     _filtroMes = '${now.month.toString().padLeft(2, '0')}/${now.year}';
   }
 
-  Future<void> _buscarEventos() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _init() async {
+    _setMesAtual();
+    await _loadPermissions();
+    if (_hasAgendaAccess) {
+      await _buscarEventos();
+    } else {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Você não tem acesso à agenda';
+        _eventos = [];
+        _eventosFiltrados = [];
+      });
+    }
+  }
+
+  Future<void> _loadPermissions() async {
     try {
       final user = _supabase.auth.currentUser;
       if (user == null) {
+        _permissions = {};
+        _hasAgendaAccess = false;
+        return;
+      }
+      final response = await _supabase
+          .from('profiles')
+          .select('permissions')
+          .eq('id', user.id)
+          .maybeSingle();
+      final permissions = response?['permissions'];
+      if (permissions != null && permissions['pages'] != null) {
+        final pages = List<String>.from(permissions['pages']);
+        _hasAgendaAccess = pages.contains('agenda');
+        _permissions = Map<String, dynamic>.from(permissions);
+      } else {
+        _permissions = {};
+        _hasAgendaAccess = false;
+      }
+    } catch (_) {
+      _permissions = {};
+      _hasAgendaAccess = false;
+    }
+  }
+
+  bool _can(String action) {
+    if (_permissions == null) return false;
+    final actions = _permissions!['actions'];
+    if (actions == null || actions is! Map) return false;
+    final agenda = actions['agenda'];
+    if (agenda == null || agenda is! Map) return false;
+    return agenda[action] == true;
+  }
+
+  Future<void> _buscarEventos() async {
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) {
+        if (!mounted) return;
         setState(() {
           _error = 'Usuário não autenticado';
           _loading = false;
@@ -66,17 +118,17 @@ class _AgendaPageState extends State<AgendaPage> {
           .eq('user_id', user.id)
           .order('event_date', ascending: true)
           .order('event_time', ascending: true);
-      setState(() {
-        _eventos = List<Map<String, dynamic>>.from(response);
-        _aplicarFiltros();
-        _loading = false;
-      });
-      // ✅ NOVO: pega stats em lote (evita zero por RLS e evita loops)
+      _eventos = List<Map<String, dynamic>>.from(response);
+      _aplicarFiltros();
       await _buscarConvocationStats();
-      // Mantemos suas funções, mas com correções internas
       await _buscarQuantidadeConvocados();
       await _buscarCheckinInfo();
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+      });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = 'Erro ao buscar eventos: $e';
         _loading = false;
@@ -84,140 +136,158 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
-  // ✅ NOVO (cirúrgico): busca a view uma vez e guarda em mapa
   Future<void> _buscarConvocationStats() async {
     try {
-      final ids =
-          _eventos.map((e) => e['id']?.toString()).whereType<String>().toList();
+      final ids = _eventos
+          .map((e) => e['id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toList();
       if (ids.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _convocationStats = {};
-          });
-        }
+        if (!mounted) return;
+        setState(() {
+          _convocationStats = {};
+        });
         return;
       }
       final resp = await _supabase
           .from('event_convocation_stats')
           .select(
-              'event_id,total_convocados,total_aceitos,total_pendentes,total_recusados')
+            'event_id,total_convocados,total_aceitos,total_pendentes,total_recusados',
+          )
           .inFilter('event_id', ids);
       final map = <String, Map<String, int>>{};
       for (final row in resp) {
-        final eventId = row['event_id']?.toString();
-        if (eventId == null) continue;
+        final rowMap = Map<String, dynamic>.from(row);
+        final eventId = rowMap['event_id']?.toString();
+        if (eventId == null || eventId.isEmpty) continue;
+        int asInt(dynamic value) {
+          if (value is int) return value;
+          return int.tryParse(value?.toString() ?? '0') ?? 0;
+        }
+
         map[eventId] = {
-          'total_convocados': (row['total_convocados'] ?? 0) as int,
-          'total_aceitos': (row['total_aceitos'] ?? 0) as int,
-          'total_pendentes': (row['total_pendentes'] ?? 0) as int,
-          'total_recusados': (row['total_recusados'] ?? 0) as int,
+          'total_convocados': asInt(rowMap['total_convocados']),
+          'total_aceitos': asInt(rowMap['total_aceitos']),
+          'total_pendentes': asInt(rowMap['total_pendentes']),
+          'total_recusados': asInt(rowMap['total_recusados']),
         };
       }
-      if (mounted) {
-        setState(() {
-          _convocationStats = map;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _convocationStats = map;
+      });
     } catch (e) {
-      // Não quebra a tela; apenas mantém vazio e segue
-      print('Erro ao buscar event_convocation_stats: $e');
+      debugPrint('Erro ao buscar event_convocation_stats: $e');
     }
   }
 
-  // ✅ CORREÇÃO: total NÃO depende de profiles (RLS). Tentamos split via join se der.
   Future<void> _buscarQuantidadeConvocados() async {
     try {
       final quantidades = <String, Map<String, int>>{};
-      for (var evento in _eventos) {
+      for (final evento in _eventos) {
         final eventId = evento['id']?.toString();
-        if (eventId == null) continue;
-        // ✅ Busca convocations + tenta join do profiles(user_type)
+        if (eventId == null || eventId.isEmpty) continue;
         final convocationsResponse = await _supabase
             .from('convocations')
             .select('user_id, profiles(user_type)')
             .eq('event_id', eventId);
-        // ✅ Total sempre correto (independe de profiles)
         int atletas = 0;
         int tecnicos = 0;
-        for (var convocation in convocationsResponse) {
-          final profile = convocation['profiles'];
-          final userType = profile != null ? profile['user_type'] : null;
+        for (final item in convocationsResponse) {
+          final convocation = Map<String, dynamic>.from(item);
+          dynamic profile = convocation['profiles'];
+          String? userType;
+          if (profile is Map<String, dynamic>) {
+            userType = profile['user_type']?.toString();
+          } else if (profile is List && profile.isNotEmpty) {
+            final first = profile.first;
+            if (first is Map<String, dynamic>) {
+              userType = first['user_type']?.toString();
+            }
+          }
           if (userType == 'athlete') {
             atletas++;
           } else if (userType == 'coach') {
             tecnicos++;
           }
         }
-        quantidades[eventId] = {'athletes': atletas, 'technicians': tecnicos};
+        quantidades[eventId] = {
+          'athletes': atletas,
+          'technicians': tecnicos,
+        };
       }
-      if (mounted) {
-        setState(() {
-          _quantidadeConvocados = quantidades;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _quantidadeConvocados = quantidades;
+      });
     } catch (e) {
-      print('Erro ao buscar quantidade de convocados: $e');
+      debugPrint('Erro ao buscar quantidade de convocados: $e');
     }
   }
 
-  // ✅ CORREÇÃO: usa a VIEW (evita loops e evita "zerado")
   Future<void> _buscarCheckinInfo() async {
     try {
       final checkinData = <String, Map<String, int>>{};
-      for (var evento in _eventos) {
+      for (final evento in _eventos) {
         final eventId = evento['id']?.toString();
-        if (eventId == null) continue;
-        final allowCheckin = evento['allow_checkin'] ?? false;
+        if (eventId == null || eventId.isEmpty) continue;
+        final allowCheckin = evento['allow_checkin'] == true;
         if (!allowCheckin) continue;
-        // ✅ Busca na tabela checkins quem realmente fez check-in
         final checkinsResponse = await _supabase
             .from('checkins')
             .select('user_id')
             .eq('event_id', eventId);
         final checkedIn = checkinsResponse.length;
-        // Total de convocados que aceitaram (para calcular pendentes)
         final stats = _convocationStats[eventId];
         final totalAceitos = stats?['total_aceitos'] ?? 0;
-        final pending = totalAceitos - checkedIn;
-        checkinData[eventId] = {'checked_in': checkedIn, 'pending': pending};
+        final pending = (totalAceitos - checkedIn).clamp(0, 999999);
+        checkinData[eventId] = {
+          'checked_in': checkedIn,
+          'pending': pending,
+        };
       }
-      if (mounted) {
-        setState(() {
-          _checkinInfo = checkinData;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _checkinInfo = checkinData;
+      });
     } catch (e) {
-      print('Erro ao buscar info de check-in: $e');
+      debugPrint('Erro ao buscar info de check-in: $e');
     }
   }
 
   void _aplicarFiltros() {
-    List<Map<String, dynamic>> eventosFiltrados = _eventos;
+    List<Map<String, dynamic>> eventosFiltrados = List.from(_eventos);
     if (_filtroSelecionado != 'Todos') {
-      eventosFiltrados = eventosFiltrados
-          .where((evento) =>
-              (evento['event_type'] ?? '').toLowerCase() ==
-              _filtroSelecionado.toLowerCase())
-          .toList();
+      eventosFiltrados = eventosFiltrados.where((evento) {
+        return (evento['event_type'] ?? '').toString().toLowerCase() ==
+            _filtroSelecionado.toLowerCase();
+      }).toList();
     }
     if (_filtroMes.isNotEmpty) {
       eventosFiltrados = eventosFiltrados.where((evento) {
-        final dataEvento = evento['event_date'] ?? '';
-        if (dataEvento.toString().length >= 7) {
-          final mesAnoEvento = dataEvento.toString().substring(3);
-          return mesAnoEvento == _filtroMes;
+        final dataEvento = (evento['event_date'] ?? '').toString();
+        if (dataEvento.length >= 10 && dataEvento.contains('/')) {
+          final parts = dataEvento.split('/');
+          if (parts.length == 3) {
+            final mesAnoEvento = '${parts[1]}/${parts[2]}';
+            return mesAnoEvento == _filtroMes;
+          }
         }
         return false;
       }).toList();
     }
     if (_filtroGenero != 'Todos') {
-      eventosFiltrados = eventosFiltrados
-          .where((evento) =>
-              (evento['gender'] ?? evento['category'] ?? '')
-                  .toString()
-                  .toLowerCase() ==
-              _filtroGenero.toLowerCase())
-          .toList();
+      eventosFiltrados = eventosFiltrados.where((evento) {
+        return (evento['gender'] ?? evento['category'] ?? '')
+                .toString()
+                .toLowerCase() ==
+            _filtroGenero.toLowerCase();
+      }).toList();
+    }
+    if (!mounted) {
+      _eventosFiltrados = eventosFiltrados;
+      return;
     }
     setState(() {
       _eventosFiltrados = eventosFiltrados;
@@ -225,6 +295,7 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 
   Future<void> _refreshEventos() async {
+    if (!_hasAgendaAccess) return;
     await _buscarEventos();
   }
 
@@ -233,11 +304,14 @@ class _AgendaPageState extends State<AgendaPage> {
       final parts = dataStr.split('/');
       if (parts.length == 3) {
         final date = DateTime(
-            int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
+          int.parse(parts[2]),
+          int.parse(parts[1]),
+          int.parse(parts[0]),
+        );
         return DateFormat('dd/MM/yyyy (EEEE)', 'pt_BR').format(date);
       }
       return dataStr;
-    } catch (e) {
+    } catch (_) {
       return dataStr;
     }
   }
@@ -251,7 +325,7 @@ class _AgendaPageState extends State<AgendaPage> {
       case 'amistoso':
         return Colors.green;
       case 'campeonato':
-        return Colors.amber[700]!;
+        return Colors.amber.shade700;
       case 'reuniao':
         return Colors.orange;
       default:
@@ -270,12 +344,22 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 
   void _navegarParaCadastroEvento() async {
+    if (!_can('create')) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Você não tem permissão para cadastrar evento'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     final result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const AddEventPage()),
     );
     if (result == true) {
-      _refreshEventos();
+      await _refreshEventos();
     }
   }
 
@@ -287,18 +371,18 @@ class _AgendaPageState extends State<AgendaPage> {
       ),
     );
     if (result == true) {
-      _refreshEventos();
+      await _refreshEventos();
     }
   }
 
-  // ✅ NOVO: Método para excluir evento
   Future<void> _excluirEvento(Map<String, dynamic> evento) async {
     final confirmado = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Excluir evento'),
         content: const Text(
-            'Tem certeza que deseja excluir este evento? Esta ação não pode ser desfeita.'),
+          'Tem certeza que deseja excluir este evento? Esta ação não pode ser desfeita.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -319,35 +403,30 @@ class _AgendaPageState extends State<AgendaPage> {
     try {
       final eventId = evento['id'];
       if (eventId == null) return;
-      // ✅ Excluir convocações relacionadas primeiro (evita erro de foreign key)
       await _supabase.from('convocations').delete().eq('event_id', eventId);
-      // ✅ Excluir o evento
       await _supabase.from('events').delete().eq('id', eventId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Evento excluído com sucesso!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _refreshEventos();
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Evento excluído com sucesso!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      await _refreshEventos();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Erro ao excluir evento: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Erro ao excluir evento: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
-  // ✅ NOVO: Exportar dados dos convocados para Excel (CSV com delimitador ; e BOM)
   Future<void> _exportarConvocados(Map<String, dynamic> evento) async {
     final eventId = evento['id']?.toString();
-    if (eventId == null) return;
+    if (eventId == null || eventId.isEmpty) return;
     try {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -362,456 +441,208 @@ class _AgendaPageState extends State<AgendaPage> {
           .from('convocations')
           .select('user_id, status, justification')
           .eq('event_id', eventId);
-      // ✅ BOM UTF-8 para Excel reconhecer acentos corretamente
-      final bom = '\uFEFF';
-      // ✅ Cabeçalho com delimitador ; (padrão Excel PT-BR)
-      List<String> csvLines = [
+      const bom = '\uFEFF';
+      final csvLines = <String>[
         '${bom}Nome;Tipo;Status;Data de Nascimento;RG;Justificativa'
       ];
-      for (var convocation in convocationsResponse) {
-        final userId = convocation['user_id'];
-        if (userId != null) {
-          final profileResponse = await _supabase
-              .from('profiles')
-              .select('full_name, user_type, birth_date, rg')
-              .eq('id', userId)
-              .maybeSingle();
-          if (profileResponse != null) {
-            // ✅ Sanitiza campos: remove quebras de linha e envolve em aspas se necessário
-            String _sanitize(String? value) {
-              if (value == null || value.isEmpty) return '""';
-              final cleaned = value
-                  .replaceAll('\n', ' ')
-                  .replaceAll('\r', ' ')
-                  .replaceAll('"', '""');
-              return '"$cleaned"';
-            }
+      String sanitize(String? value) {
+        if (value == null || value.isEmpty) return '""';
+        final cleaned = value
+            .replaceAll('\n', ' ')
+            .replaceAll('\r', ' ')
+            .replaceAll('"', '""');
+        return '"$cleaned"';
+      }
 
-            final nome = _sanitize(profileResponse['full_name']);
-            final tipo = _sanitize(profileResponse['user_type']);
-            final status = _sanitize(convocation['status']);
-            // ✅ Converte data para formato DD/MM/YYYY (Excel PT-BR)
-            String birthDate = '';
-            final rawDate = profileResponse['birth_date'];
-            if (rawDate != null && rawDate.toString().length >= 10) {
-              try {
-                final date = DateTime.parse(rawDate.toString());
-                birthDate =
-                    '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
-              } catch (_) {
-                birthDate = rawDate.toString();
-              }
-            }
-            final rg = _sanitize(profileResponse['rg']);
-            final justification = _sanitize(convocation['justification']);
-            // ✅ Linha com delimitador ;
-            csvLines.add('$nome;$tipo;$status;$birthDate;$rg;$justification');
+      for (final item in convocationsResponse) {
+        final convocation = Map<String, dynamic>.from(item);
+        final userId = convocation['user_id'];
+        if (userId == null) continue;
+        final profileResponse = await _supabase
+            .from('profiles')
+            .select('full_name, user_type, birth_date, rg')
+            .eq('id', userId)
+            .maybeSingle();
+        if (profileResponse == null) continue;
+        final profile = Map<String, dynamic>.from(profileResponse);
+        final nome = sanitize(profile['full_name']?.toString());
+        final tipo = sanitize(profile['user_type']?.toString());
+        final status = sanitize(convocation['status']?.toString());
+        String birthDate = '';
+        final rawDate = profile['birth_date'];
+        if (rawDate != null && rawDate.toString().length >= 10) {
+          try {
+            final date = DateTime.parse(rawDate.toString());
+            birthDate =
+                '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+          } catch (_) {
+            birthDate = rawDate.toString();
           }
         }
+        final rg = sanitize(profile['rg']?.toString());
+        final justification =
+            sanitize(convocation['justification']?.toString());
+        csvLines.add('$nome;$tipo;$status;$birthDate;$rg;$justification');
       }
       final csvContent = csvLines.join('\n');
-      // ✅ Copia para clipboard com formato compatível com Excel
       await Clipboard.setData(ClipboardData(text: csvContent));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Dados copiados! Cole no Excel com Ctrl+V'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Dados copiados! Cole no Excel com Ctrl+V'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Erro ao exportar: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Erro ao exportar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
   Future<void> _mostrarCheckinDetalhes(Map<String, dynamic> evento) async {
     final eventId = evento['id']?.toString();
-    if (eventId == null) return;
+    if (eventId == null || eventId.isEmpty) return;
     try {
       final convocationsResponse = await _supabase
           .from('convocations')
           .select('user_id, status, justification')
           .eq('event_id', eventId);
-      List<Map<String, dynamic>> participantes = [];
-      for (var convocation in convocationsResponse) {
+      final participantes = <Map<String, dynamic>>[];
+      for (final item in convocationsResponse) {
+        final convocation = Map<String, dynamic>.from(item);
         final userId = convocation['user_id'];
-        if (userId != null) {
-          final profileResponse = await _supabase
-              .from('profiles')
-              .select('full_name, user_type')
-              .eq('id', userId)
-              .single();
-          if (profileResponse != null) {
-            participantes.add({
-              'nome': profileResponse['full_name'] ?? 'Sem nome',
-              'tipo': profileResponse['user_type'] ?? 'unknown',
-              'status': convocation['status'] ?? 'pending',
-              'justification': convocation['justification'],
-            });
-          }
-        }
+        if (userId == null) continue;
+        final profileResponse = await _supabase
+            .from('profiles')
+            .select('full_name, user_type')
+            .eq('id', userId)
+            .maybeSingle();
+        if (profileResponse == null) continue;
+        final profile = Map<String, dynamic>.from(profileResponse);
+        participantes.add({
+          'nome': profile['full_name'] ?? 'Sem nome',
+          'tipo': profile['user_type'] ?? 'unknown',
+          'status': convocation['status'] ?? 'pending',
+          'justification': convocation['justification'],
+        });
       }
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.7,
             ),
-            child: Container(
-              padding: const EdgeInsets.all(24),
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.7,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.people_outline,
-                        color: olympusGold,
-                        size: 28,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Convocados: ${evento['event_name']}',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: olympusBlue,
-                              ),
-                            ),
-                            Text(
-                              '${participantes.where((p) => p['status'] == 'accepted').length} aceitaram de ${participantes.length}',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 32),
-                  if (participantes.isEmpty)
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32),
-                        child: Text(
-                          'Nenhum participante convocado',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      ),
-                    )
-                  else
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.people_outline,
+                      color: olympusGold,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          children: [
-                            ...participantes.map((participante) {
-                              final status =
-                                  (participante['status'] ?? 'pending')
-                                      .toString();
-                              final isAceitou = status == 'accepted';
-                              final isRecusou = status == 'rejected';
-                              final isAtleta =
-                                  participante['tipo'] == 'athlete';
-                              final labelStatus = isAceitou
-                                  ? 'Aceitou'
-                                  : (isRecusou ? 'Recusou' : 'Pendente');
-                              final colorStatus = isAceitou
-                                  ? Colors.green[700]
-                                  : (isRecusou
-                                      ? Colors.red[700]
-                                      : Colors.grey[600]);
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: isAceitou
-                                      ? Colors.green[50]
-                                      : (isRecusou
-                                          ? Colors.red[50]
-                                          : Colors.grey[100]),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: isAceitou
-                                        ? Colors.green[300]!
-                                        : (isRecusou
-                                            ? Colors.red[300]!
-                                            : Colors.grey[300]!),
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          isAceitou
-                                              ? Icons.check_circle
-                                              : (isRecusou
-                                                  ? Icons.cancel
-                                                  : Icons.hourglass_empty),
-                                          color: colorStatus,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                participante['nome'],
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                              Text(
-                                                isAtleta ? 'Atleta' : 'Técnico',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey[600],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        Text(
-                                          labelStatus,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: colorStatus,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    if (isRecusou &&
-                                        (participante['justification'] ?? '')
-                                            .toString()
-                                            .trim()
-                                            .isNotEmpty) ...[
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Justificativa: ${participante['justification']}',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.red[700],
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                          ],
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: olympusBlue,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text('Fechar'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao carregar convocações: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  // ✅ CORREÇÃO: Consulta a tabela checkins para ver quem realmente fez check-in
-  Future<void> _mostrarStatusCheckin(Map<String, dynamic> evento) async {
-    final eventId = evento['id']?.toString();
-    if (eventId == null) return;
-    try {
-      // ✅ 1. Buscar TODOS os convocados que aceitaram
-      final convocationsResponse = await _supabase
-          .from('convocations')
-          .select('user_id, status')
-          .eq('event_id', eventId);
-      // ✅ 2. Buscar quem REALMENTE fez check-in (tabela checkins)
-      final checkinsResponse = await _supabase
-          .from('checkins')
-          .select('user_id')
-          .eq('event_id', eventId);
-      // ✅ 3. Criar set de user_ids que fizeram check-in
-      final Set<String> userIdsComCheckin = {};
-      for (var checkin in checkinsResponse) {
-        final userId = checkin['user_id']?.toString();
-        if (userId != null) {
-          userIdsComCheckin.add(userId);
-        }
-      }
-      List<Map<String, dynamic>> quemFezCheckin = [];
-      List<Map<String, dynamic>> quemNaoFezCheckin = [];
-      // ✅ 4. Separar quem fez e quem não fez check-in
-      for (var convocation in convocationsResponse) {
-        final userId = convocation['user_id']?.toString();
-        final status = convocation['status'] ?? 'pending';
-        // Só considera quem ACEITOU a convocação
-        if (userId != null && status == 'accepted') {
-          final profileResponse = await _supabase
-              .from('profiles')
-              .select('full_name, user_type')
-              .eq('id', userId)
-              .single();
-          if (profileResponse != null) {
-            final participante = {
-              'nome': profileResponse['full_name'] ?? 'Sem nome',
-              'tipo': profileResponse['user_type'] ?? 'unknown',
-              'user_id': userId,
-            };
-            // ✅ Verifica se está na tabela checkins
-            if (userIdsComCheckin.contains(userId)) {
-              quemFezCheckin.add(participante);
-            } else {
-              quemNaoFezCheckin.add(participante);
-            }
-          }
-        }
-      }
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Container(
-              padding: const EdgeInsets.all(24),
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.7,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.check_circle_outline,
-                        color: olympusGold,
-                        size: 28,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Check-in: ${evento['event_name']}',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: olympusBlue,
-                              ),
-                            ),
-                            Text(
-                              '${quemFezCheckin.length} fizeram check-in de ${quemFezCheckin.length + quemNaoFezCheckin.length} que aceitaram',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 32),
-                  Expanded(
-                    child: SingleChildScrollView(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // ✅ QUEM FEZ CHECK-IN (está na tabela checkins)
                           Text(
-                            '✅ Fizeram Check-in (${quemFezCheckin.length})',
+                            'Convocados: ${evento['event_name']}',
                             style: const TextStyle(
-                              fontSize: 16,
+                              fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: Colors.green,
+                              color: olympusBlue,
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          if (quemFezCheckin.isEmpty)
-                            Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Text(
-                                'Ninguém fez check-in ainda',
-                                style: TextStyle(color: Colors.grey[600]),
+                          Text(
+                            '${participantes.where((p) => p['status'] == 'accepted').length} aceitaram de ${participantes.length}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const Divider(height: 32),
+                if (participantes.isEmpty)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Text(
+                        'Nenhum participante convocado',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  )
+                else
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: participantes.map((participante) {
+                          final status =
+                              (participante['status'] ?? 'pending').toString();
+                          final isAceitou = status == 'accepted';
+                          final isRecusou = status == 'rejected';
+                          final isAtleta = participante['tipo'] == 'athlete';
+                          final labelStatus = isAceitou
+                              ? 'Aceitou'
+                              : (isRecusou ? 'Recusou' : 'Pendente');
+                          final colorStatus = isAceitou
+                              ? Colors.green[700]
+                              : (isRecusou
+                                  ? Colors.red[700]
+                                  : Colors.grey[600]);
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isAceitou
+                                  ? Colors.green[50]
+                                  : (isRecusou
+                                      ? Colors.red[50]
+                                      : Colors.grey[100]),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isAceitou
+                                    ? Colors.green[300]!
+                                    : (isRecusou
+                                        ? Colors.red[300]!
+                                        : Colors.grey[300]!),
                               ),
-                            )
-                          else
-                            ...quemFezCheckin.map((participante) {
-                              final isAtleta =
-                                  participante['tipo'] == 'athlete';
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.green[50],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: Colors.green[300]!,
-                                  ),
-                                ),
-                                child: Row(
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
                                   children: [
-                                    const Icon(
-                                      Icons.check_circle,
-                                      color: Colors.green,
-                                      size: 20,
+                                    Icon(
+                                      isAceitou
+                                          ? Icons.check_circle
+                                          : (isRecusou
+                                              ? Icons.cancel
+                                              : Icons.hourglass_empty),
+                                      color: colorStatus,
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
@@ -820,74 +651,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            participante['nome'],
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                          Text(
-                                            isAtleta ? 'Atleta' : 'Técnico',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey[600],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                          const SizedBox(height: 16),
-                          // ✅ QUEM NÃO FEZ CHECK-IN (aceitou mas não está na tabela checkins)
-                          Text(
-                            '⏳ Não Fizeram Check-in (${quemNaoFezCheckin.length})',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.orange,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          if (quemNaoFezCheckin.isEmpty)
-                            Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Text(
-                                'Todos que aceitaram já fizeram check-in!',
-                                style: TextStyle(color: Colors.grey[600]),
-                              ),
-                            )
-                          else
-                            ...quemNaoFezCheckin.map((participante) {
-                              final isAtleta =
-                                  participante['tipo'] == 'athlete';
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange[50],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: Colors.orange[300]!,
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.hourglass_empty,
-                                      color: Colors.orange,
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            participante['nome'],
+                                            participante['nome'].toString(),
                                             style: const TextStyle(
                                               fontWeight: FontWeight.w600,
                                               fontSize: 14,
@@ -904,57 +668,347 @@ class _AgendaPageState extends State<AgendaPage> {
                                       ),
                                     ),
                                     Text(
-                                      'Aceitou',
+                                      labelStatus,
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: Colors.green[700],
+                                        color: colorStatus,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ],
                                 ),
-                              );
-                            }).toList(),
+                                if (isRecusou &&
+                                    (participante['justification'] ?? '')
+                                        .toString()
+                                        .trim()
+                                        .isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Justificativa: ${participante['justification']}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.red[700],
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: olympusBlue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Fechar'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao carregar convocações: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _mostrarStatusCheckin(Map<String, dynamic> evento) async {
+    final eventId = evento['id']?.toString();
+    if (eventId == null || eventId.isEmpty) return;
+    try {
+      final convocationsResponse = await _supabase
+          .from('convocations')
+          .select('user_id, status')
+          .eq('event_id', eventId);
+      final checkinsResponse = await _supabase
+          .from('checkins')
+          .select('user_id')
+          .eq('event_id', eventId);
+      final userIdsComCheckin = <String>{};
+      for (final item in checkinsResponse) {
+        final checkin = Map<String, dynamic>.from(item);
+        final userId = checkin['user_id']?.toString();
+        if (userId != null && userId.isNotEmpty) {
+          userIdsComCheckin.add(userId);
+        }
+      }
+      final quemFezCheckin = <Map<String, dynamic>>[];
+      final quemNaoFezCheckin = <Map<String, dynamic>>[];
+      for (final item in convocationsResponse) {
+        final convocation = Map<String, dynamic>.from(item);
+        final userId = convocation['user_id']?.toString();
+        final status = convocation['status']?.toString() ?? 'pending';
+        if (userId == null || userId.isEmpty || status != 'accepted') continue;
+        final profileResponse = await _supabase
+            .from('profiles')
+            .select('full_name, user_type')
+            .eq('id', userId)
+            .maybeSingle();
+        if (profileResponse == null) continue;
+        final profile = Map<String, dynamic>.from(profileResponse);
+        final participante = {
+          'nome': profile['full_name'] ?? 'Sem nome',
+          'tipo': profile['user_type'] ?? 'unknown',
+          'user_id': userId,
+        };
+        if (userIdsComCheckin.contains(userId)) {
+          quemFezCheckin.add(participante);
+        } else {
+          quemNaoFezCheckin.add(participante);
+        }
+      }
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.7,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline,
+                      color: olympusGold,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Check-in: ${evento['event_name']}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: olympusBlue,
+                            ),
+                          ),
+                          Text(
+                            '${quemFezCheckin.length} fizeram check-in de ${quemFezCheckin.length + quemNaoFezCheckin.length} que aceitaram',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
+                    IconButton(
+                      icon: const Icon(Icons.close),
                       onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: olympusBlue,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    ),
+                  ],
+                ),
+                const Divider(height: 32),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '✅ Fizeram Check-in (${quemFezCheckin.length})',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green,
+                          ),
                         ),
-                      ),
-                      child: const Text('Fechar'),
+                        const SizedBox(height: 8),
+                        if (quemFezCheckin.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              'Ninguém fez check-in ainda',
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+                          )
+                        else
+                          ...quemFezCheckin.map((participante) {
+                            final isAtleta = participante['tipo'] == 'athlete';
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.green[50],
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.green[300]!,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle,
+                                    color: Colors.green,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          participante['nome'].toString(),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        Text(
+                                          isAtleta ? 'Atleta' : 'Técnico',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        const SizedBox(height: 16),
+                        Text(
+                          '⏳ Não Fizeram Check-in (${quemNaoFezCheckin.length})',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (quemNaoFezCheckin.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              'Todos que aceitaram já fizeram check-in!',
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+                          )
+                        else
+                          ...quemNaoFezCheckin.map((participante) {
+                            final isAtleta = participante['tipo'] == 'athlete';
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.orange[50],
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.orange[300]!,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.hourglass_empty,
+                                    color: Colors.orange,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          participante['nome'].toString(),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        Text(
+                                          isAtleta ? 'Atleta' : 'Técnico',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Text(
+                                    'Aceitou',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green[700],
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: olympusBlue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Fechar'),
+                  ),
+                ),
+              ],
             ),
           ),
-        );
-      }
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao carregar status de check-in: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao carregar status de check-in: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
   Future<void> _inserirPlacar(Map<String, dynamic> evento) async {
-    final setFormat = evento['set_format'] ?? '1 Set';
+    final setFormat = (evento['set_format'] ?? '1 Set').toString();
     int totalSets = 1;
     int setsNeededToWin = 1;
     if (setFormat.contains('3')) {
@@ -965,13 +1019,18 @@ class _AgendaPageState extends State<AgendaPage> {
       setsNeededToWin = 3;
     }
     final olympusControllers = List<TextEditingController>.generate(
-        totalSets, (i) => TextEditingController());
+      totalSets,
+      (_) => TextEditingController(),
+    );
     final opponentControllers = List<TextEditingController>.generate(
-        totalSets, (i) => TextEditingController());
-    final existingScore = evento['score'] as Map<String, dynamic>?;
-    if (existingScore != null) {
-      final olympusSets = existingScore['olympus'] as List<dynamic>? ?? [];
-      final opponentSets = existingScore['opponent'] as List<dynamic>? ?? [];
+      totalSets,
+      (_) => TextEditingController(),
+    );
+    final existingScore = evento['score'];
+    if (existingScore is Map) {
+      final score = Map<String, dynamic>.from(existingScore);
+      final olympusSets = (score['olympus'] as List?) ?? [];
+      final opponentSets = (score['opponent'] as List?) ?? [];
       for (int i = 0; i < olympusControllers.length; i++) {
         if (i < olympusSets.length) {
           olympusControllers[i].text = olympusSets[i].toString();
@@ -988,7 +1047,6 @@ class _AgendaPageState extends State<AgendaPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => Dialog(
           elevation: 8,
-          shadowColor: olympusGold.withOpacity(0.3),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
@@ -1072,255 +1130,153 @@ class _AgendaPageState extends State<AgendaPage> {
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(16),
                     child: Column(
-                      children: [
-                        ...List.generate(totalSets, (index) {
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  olympusGold.withOpacity(0.05),
-                                  olympusGold.withOpacity(0.1),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: olympusGold.withOpacity(0.3),
-                                width: 1.5,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: olympusGold.withOpacity(0.1),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
+                      children: List.generate(totalSets, (index) {
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                olympusGold.withOpacity(0.05),
+                                olympusGold.withOpacity(0.1),
                               ],
                             ),
-                            child: Column(
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: olympusBlue.withOpacity(0.1),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          'Olympus',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: olympusBlue,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    Padding(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: olympusGold.withOpacity(0.3),
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Container(
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: olympusBlue.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Text(
-                                        'VS',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: olympusGold,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey[200],
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          'Adversário',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.grey[700],
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  '${index + 1}° Set',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: olympusGold,
-                                    fontSize: 16,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextField(
-                                        controller: olympusControllers[index],
-                                        keyboardType: TextInputType.number,
+                                        'Olympus',
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
-                                          fontSize: 18,
                                           color: olympusBlue,
+                                          fontSize: 12,
                                         ),
-                                        decoration: InputDecoration(
-                                          border: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            borderSide: BorderSide(
-                                              color:
-                                                  olympusBlue.withOpacity(0.3),
-                                            ),
-                                          ),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            borderSide: BorderSide(
-                                              color:
-                                                  olympusBlue.withOpacity(0.3),
-                                            ),
-                                          ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            borderSide: const BorderSide(
-                                              color: olympusGold,
-                                              width: 2,
-                                            ),
-                                          ),
-                                          filled: true,
-                                          fillColor:
-                                              olympusBlue.withOpacity(0.05),
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                            vertical: 12,
-                                            horizontal: 16,
-                                          ),
-                                        ),
-                                        onChanged: (value) {
-                                          setDialogState(() {});
-                                        },
                                       ),
                                     ),
-                                    Padding(
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    child: Text(
+                                      'VS',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: olympusGold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Container(
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
+                                        vertical: 4,
                                       ),
-                                      child: Icon(
-                                        Icons.remove,
-                                        color: Colors.grey[400],
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[200],
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
-                                    ),
-                                    Expanded(
-                                      child: TextField(
-                                        controller: opponentControllers[index],
-                                        keyboardType: TextInputType.number,
+                                      child: Text(
+                                        'Adversário',
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
-                                          fontSize: 18,
                                           color: Colors.grey[700],
+                                          fontSize: 12,
                                         ),
-                                        decoration: InputDecoration(
-                                          border: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            borderSide: BorderSide(
-                                              color: Colors.grey[300]!,
-                                            ),
-                                          ),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            borderSide: BorderSide(
-                                              color: Colors.grey[300]!,
-                                            ),
-                                          ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            borderSide: const BorderSide(
-                                              color: olympusGold,
-                                              width: 2,
-                                            ),
-                                          ),
-                                          filled: true,
-                                          fillColor: Colors.grey[50],
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                            vertical: 12,
-                                            horizontal: 16,
-                                          ),
-                                        ),
-                                        onChanged: (value) {
-                                          setDialogState(() {});
-                                        },
                                       ),
                                     ),
-                                  ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                '${index + 1}° Set',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: olympusGold,
+                                  fontSize: 16,
                                 ),
-                              ],
-                            ),
-                          );
-                        }),
-                      ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: olympusControllers[index],
+                                      keyboardType: TextInputType.number,
+                                      textAlign: TextAlign.center,
+                                      decoration: InputDecoration(
+                                        border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        filled: true,
+                                        fillColor:
+                                            olympusBlue.withOpacity(0.05),
+                                      ),
+                                      onChanged: (_) => setDialogState(() {}),
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    child: Icon(
+                                      Icons.remove,
+                                      color: Colors.grey[400],
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: opponentControllers[index],
+                                      keyboardType: TextInputType.number,
+                                      textAlign: TextAlign.center,
+                                      decoration: InputDecoration(
+                                        border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        filled: true,
+                                        fillColor: Colors.grey[50],
+                                      ),
+                                      onChanged: (_) => setDialogState(() {}),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
                     ),
                   ),
                 ),
                 Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: const BorderRadius.only(
-                      bottomLeft: Radius.circular(20),
-                      bottomRight: Radius.circular(20),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, -2),
-                      ),
-                    ],
-                  ),
                   child: Row(
                     children: [
                       Expanded(
                         child: TextButton(
                           onPressed: () => Navigator.pop(context),
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: BorderSide(color: Colors.grey[300]!),
-                            ),
-                          ),
-                          child: Text(
-                            'Cancelar',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
+                          child: const Text('Cancelar'),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -1330,12 +1286,12 @@ class _AgendaPageState extends State<AgendaPage> {
                           onPressed: () async {
                             final olympusSets = olympusControllers
                                 .map((c) => c.text.isNotEmpty
-                                    ? int.tryParse(c.text) ?? 0
+                                    ? int.tryParse(c.text)
                                     : null)
                                 .toList();
                             final opponentSets = opponentControllers
                                 .map((c) => c.text.isNotEmpty
-                                    ? int.tryParse(c.text) ?? 0
+                                    ? int.tryParse(c.text)
                                     : null)
                                 .toList();
                             int setsFilled = 0;
@@ -1380,8 +1336,9 @@ class _AgendaPageState extends State<AgendaPage> {
                               if (!allSetsFilled) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Preencha todos os sets! '
-                                        'Melhor de $totalSets: vence quem ganhar $setsNeededToWin sets primeiro.'),
+                                    content: Text(
+                                      'Preencha todos os sets! Melhor de $totalSets: vence quem ganhar $setsNeededToWin sets primeiro.',
+                                    ),
                                     backgroundColor: Colors.red,
                                   ),
                                 );
@@ -1399,26 +1356,22 @@ class _AgendaPageState extends State<AgendaPage> {
                               } else if (opponentWins > olympusWins) {
                                 winner = 'Adversário';
                               } else {
-                                int olympusTotalPoints = olympusSets
-                                    .where((s) => s != null)
-                                    .fold(0, (sum, s) => sum + s!);
-                                int opponentTotalPoints = opponentSets
-                                    .where((s) => s != null)
-                                    .fold(0, (sum, s) => sum + s!);
+                                final olympusTotalPoints = olympusSets
+                                    .whereType<int>()
+                                    .fold<int>(0, (sum, s) => sum + s);
+                                final opponentTotalPoints = opponentSets
+                                    .whereType<int>()
+                                    .fold<int>(0, (sum, s) => sum + s);
                                 winner =
                                     olympusTotalPoints > opponentTotalPoints
                                         ? 'Olympus'
                                         : 'Adversário';
                               }
                             }
-                            final finalOlympusSets = olympusSets
-                                .where((s) => s != null)
-                                .map((s) => s!)
-                                .toList();
-                            final finalOpponentSets = opponentSets
-                                .where((s) => s != null)
-                                .map((s) => s!)
-                                .toList();
+                            final finalOlympusSets =
+                                olympusSets.whereType<int>().toList();
+                            final finalOpponentSets =
+                                opponentSets.whereType<int>().toList();
                             try {
                               await _supabase.from('events').update({
                                 'score': {
@@ -1429,48 +1382,34 @@ class _AgendaPageState extends State<AgendaPage> {
                                   'opponent_sets_won': opponentWins,
                                 },
                               }).eq('id', evento['id']);
-                              if (mounted) {
-                                Navigator.pop(context);
-                                _refreshEventos();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                        'Placar inserido! Vitória: $winner ($olympusWins x $opponentWins)'),
-                                    backgroundColor: winner == 'Olympus'
-                                        ? Colors.green
-                                        : Colors.orange,
+                              if (!mounted) return;
+                              Navigator.pop(context);
+                              await _refreshEventos();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Placar inserido! Vitória: $winner ($olympusWins x $opponentWins)',
                                   ),
-                                );
-                              }
+                                  backgroundColor: winner == 'Olympus'
+                                      ? Colors.green
+                                      : Colors.orange,
+                                ),
+                              );
                             } catch (e) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Erro ao salvar placar: $e'),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Erro ao salvar placar: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
                             }
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: olympusGold,
                             foregroundColor: olympusBlue,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            elevation: 4,
-                            shadowColor: olympusGold.withOpacity(0.4),
                           ),
-                          child: const Text(
-                            'Salvar Placar',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
+                          child: const Text('Salvar Placar'),
                         ),
                       ),
                     ],
@@ -1482,18 +1421,21 @@ class _AgendaPageState extends State<AgendaPage> {
         ),
       ),
     );
-    for (var c in olympusControllers) c.dispose();
-    for (var c in opponentControllers) c.dispose();
+    for (final c in olympusControllers) {
+      c.dispose();
+    }
+    for (final c in opponentControllers) {
+      c.dispose();
+    }
   }
 
   List<String> _getMesesDisponiveis() {
     final now = DateTime.now();
     final anoAtual = now.year;
-    final meses = <String>[];
-    for (int i = 1; i <= 12; i++) {
-      meses.add('${i.toString().padLeft(2, '0')}/$anoAtual');
-    }
-    return meses;
+    return List.generate(
+      12,
+      (i) => '${(i + 1).toString().padLeft(2, '0')}/$anoAtual',
+    );
   }
 
   String _formatarNomeMes(String mesAno) {
@@ -1501,13 +1443,12 @@ class _AgendaPageState extends State<AgendaPage> {
       final parts = mesAno.split('/');
       if (parts.length == 2) {
         final mes = int.parse(parts[0]);
-        final ano = parts[1];
-        final mesNome =
-            DateFormat('MMMM', 'pt_BR').format(DateTime(int.parse(ano), mes));
+        final ano = int.parse(parts[1]);
+        final mesNome = DateFormat('MMMM', 'pt_BR').format(DateTime(ano, mes));
         return '${mesNome[0].toUpperCase()}${mesNome.substring(1)} $ano';
       }
       return mesAno;
-    } catch (e) {
+    } catch (_) {
       return mesAno;
     }
   }
@@ -1522,641 +1463,23 @@ class _AgendaPageState extends State<AgendaPage> {
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Minha Agenda',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        backgroundColor: olympusBlue,
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refreshEventos,
-            color: Colors.white,
-          ),
-        ],
-        elevation: 2,
-      ),
-      body: Column(
-        children: [
-          // ✅ FILTROS MODERNOS COM CORES OLYMPUS
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  olympusBlue,
-                  olympusLightBlue,
-                ],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(24),
-                bottomRight: Radius.circular(24),
-              ),
-            ),
-            child: Column(
-              children: [
-                // Filtro de Mês e Gênero
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildModernDropdown(
-                        icon: Icons.calendar_month,
-                        value: _filtroMes,
-                        hint: 'Mês',
-                        items: _getMesesDisponiveis().map((mes) {
-                          return DropdownMenuItem(
-                            value: mes,
-                            child: Text(
-                              _formatarNomeMes(mes),
-                              style: TextStyle(
-                                fontWeight: _filtroMes == mes
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                                color: _filtroMes == mes
-                                    ? olympusBlue
-                                    : Colors.black,
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (valor) {
-                          if (valor != null) {
-                            setState(() {
-                              _filtroMes = valor;
-                              _aplicarFiltros();
-                            });
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildModernDropdown(
-                        icon: Icons.people_outline,
-                        value: _filtroGenero == 'Todos' ? null : _filtroGenero,
-                        hint: 'Gênero',
-                        items: const [
-                          DropdownMenuItem(
-                              value: 'Todos', child: Text('Todos')),
-                          DropdownMenuItem(
-                              value: 'masculino', child: Text('Masculino')),
-                          DropdownMenuItem(
-                              value: 'feminino', child: Text('Feminino')),
-                        ],
-                        onChanged: (valor) {
-                          setState(() {
-                            _filtroGenero = valor ?? 'Todos';
-                            _aplicarFiltros();
-                          });
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // Filtro de Tipo com Chips Modernos
-                _buildModernChipFilter(
-                  label: 'Tipo de Evento',
-                  icon: Icons.filter_list,
-                  options: const [
-                    {'value': 'Todos', 'label': 'Todos'},
-                    {'value': 'Treino', 'label': 'Treino'},
-                    {'value': 'Amistoso', 'label': 'Amistoso'},
-                    {'value': 'Campeonato', 'label': 'Campeonato'},
-                  ],
-                  selectedValue: _filtroSelecionado,
-                  onSelected: (value) {
-                    setState(() {
-                      _filtroSelecionado = value;
-                      _aplicarFiltros();
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.error_outline,
-                                size: 48, color: Colors.red[300]),
-                            const SizedBox(height: 16),
-                            Text(_error!,
-                                style: const TextStyle(color: Colors.red)),
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: _buscarEventos,
-                              child: const Text('Tentar Novamente'),
-                            ),
-                          ],
-                        ),
-                      )
-                    : _eventosFiltrados.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.event_busy,
-                                    size: 64, color: Colors.grey[400]),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Nenhum evento encontrado',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Clique no + para adicionar um evento',
-                                  style: TextStyle(color: Colors.grey[500]),
-                                ),
-                              ],
-                            ),
-                          )
-                        : RefreshIndicator(
-                            onRefresh: _refreshEventos,
-                            child: ListView.builder(
-                              padding: const EdgeInsets.all(16),
-                              itemCount: _eventosFiltrados.length,
-                              itemBuilder: (context, index) {
-                                final evento = _eventosFiltrados[index];
-                                final eventId = evento['id']?.toString() ?? '';
-                                final quantidades =
-                                    _quantidadeConvocados[eventId] ??
-                                        {'athletes': 0, 'technicians': 0};
-                                // ✅ CORREÇÃO PRINCIPAL: total vem da view (se existir), senão fallback
-                                final stats = _convocationStats[eventId];
-                                final totalConvocados = stats != null
-                                    ? (stats['total_convocados'] ?? 0)
-                                    : (quantidades['athletes']! +
-                                        quantidades['technicians']!);
-                                // ✅ NOVO: dados de convocações para exibição no card
-                                final aceitos = stats?['total_aceitos'] ?? 0;
-                                final pendentes =
-                                    stats?['total_pendentes'] ?? 0;
-                                final recusados =
-                                    stats?['total_recusados'] ?? 0;
-                                final checkinData = _checkinInfo[eventId];
-                                final allowCheckin =
-                                    evento['allow_checkin'] ?? false;
-                                final corTipo = _getCorTipoEvento(
-                                    evento['event_type'] ?? '');
-                                final eventType = evento['event_type'] ?? '';
-                                final hasPlacar = evento['score'] != null;
-                                final genero = evento['gender'] ?? '';
-                                // ✅ NOVO: Nome do campeonato
-                                final championshipName =
-                                    evento['championship_name'] ?? '';
-                                // ✅ NOVO: montar endereço completo
-                                String? enderecoCompleto;
-                                if (evento['street'] != null &&
-                                    evento['street'].toString().isNotEmpty) {
-                                  final rua = evento['street'] ?? '';
-                                  final numero = evento['street_number'] ?? '';
-                                  final bairro = evento['neighborhood'] ?? '';
-                                  final cidade = evento['city'] ?? '';
-                                  final estado = evento['state'] ?? '';
-                                  enderecoCompleto = '$rua, $numero'
-                                      '${bairro.isNotEmpty ? ' - $bairro' : ''}'
-                                      '${cidade.isNotEmpty ? ' - $cidade' : ''}'
-                                      '${estado.isNotEmpty ? '/$estado' : ''}';
-                                }
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  elevation: 2,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  color: _getCorFundoCard(genero),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                horizontal: 12,
-                                                vertical: 6,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: corTipo.withOpacity(0.1),
-                                                borderRadius:
-                                                    BorderRadius.circular(20),
-                                                border:
-                                                    Border.all(color: corTipo),
-                                              ),
-                                              child: Text(
-                                                (eventType ?? 'Geral')
-                                                    .toUpperCase(),
-                                                style: TextStyle(
-                                                  color: corTipo,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ),
-                                            const Spacer(),
-                                            if (genero.isNotEmpty)
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 8,
-                                                  vertical: 4,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: genero.toLowerCase() ==
-                                                          'masculino'
-                                                      ? Colors.blue[100]
-                                                      : Colors.purple[100],
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                ),
-                                                child: Text(
-                                                  genero[0].toUpperCase() +
-                                                      genero.substring(1),
-                                                  style: TextStyle(
-                                                    color:
-                                                        genero.toLowerCase() ==
-                                                                'masculino'
-                                                            ? Colors.blue[900]
-                                                            : Colors
-                                                                .purple[900],
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                            const SizedBox(width: 8),
-                                            PopupMenuButton<String>(
-                                              icon: Icon(
-                                                Icons.more_vert,
-                                                color: Colors.grey[600],
-                                              ),
-                                              onSelected: (value) {
-                                                if (value == 'editar') {
-                                                  _editarEvento(evento);
-                                                } else if (value == 'placar') {
-                                                  _inserirPlacar(evento);
-                                                } else if (value == 'checkin') {
-                                                  _mostrarCheckinDetalhes(
-                                                      evento);
-                                                } else if (value ==
-                                                    'status_checkin') {
-                                                  _mostrarStatusCheckin(evento);
-                                                } else if (value ==
-                                                    'exportar') {
-                                                  // ✅ NOVO: Exportar convocados para Excel
-                                                  _exportarConvocados(evento);
-                                                } else if (value == 'excluir') {
-                                                  // ✅ NOVO: Opção excluir
-                                                  _excluirEvento(evento);
-                                                }
-                                              },
-                                              itemBuilder: (context) {
-                                                final items =
-                                                    <PopupMenuItem<String>>[];
-                                                items.add(const PopupMenuItem(
-                                                  value: 'editar',
-                                                  child: Row(
-                                                    children: [
-                                                      Icon(
-                                                        Icons.edit,
-                                                        size: 18,
-                                                        color: Colors.blue,
-                                                      ),
-                                                      SizedBox(width: 8),
-                                                      Text('Editar evento'),
-                                                    ],
-                                                  ),
-                                                ));
-                                                if (eventType == 'amistoso' ||
-                                                    eventType == 'campeonato') {
-                                                  items.add(PopupMenuItem(
-                                                    value: 'placar',
-                                                    child: Row(
-                                                      children: [
-                                                        Icon(
-                                                          Icons.score,
-                                                          size: 18,
-                                                          color: olympusGold,
-                                                        ),
-                                                        SizedBox(width: 8),
-                                                        Text(hasPlacar
-                                                            ? 'Editar placar'
-                                                            : 'Inserir placar'),
-                                                      ],
-                                                    ),
-                                                  ));
-                                                }
-                                                if (allowCheckin) {
-                                                  items.add(PopupMenuItem(
-                                                    value: 'checkin',
-                                                    child: Row(
-                                                      children: [
-                                                        Icon(
-                                                          Icons.people_outline,
-                                                          size: 18,
-                                                          color: Colors.green,
-                                                        ),
-                                                        SizedBox(width: 8),
-                                                        Text('Ver convocados'),
-                                                      ],
-                                                    ),
-                                                  ));
-                                                  items.add(PopupMenuItem(
-                                                    value: 'status_checkin',
-                                                    child: Row(
-                                                      children: [
-                                                        Icon(
-                                                          Icons
-                                                              .check_circle_outline,
-                                                          size: 18,
-                                                          color: olympusGold,
-                                                        ),
-                                                        SizedBox(width: 8),
-                                                        Text(
-                                                            'Ver status check-in'),
-                                                      ],
-                                                    ),
-                                                  ));
-                                                }
-                                                // ✅ NOVO: Opção exportar para Excel
-                                                items.add(PopupMenuItem(
-                                                  value: 'exportar',
-                                                  child: Row(
-                                                    children: [
-                                                      Icon(
-                                                        Icons.file_download,
-                                                        size: 18,
-                                                        color: Colors.green,
-                                                      ),
-                                                      SizedBox(width: 8),
-                                                      Text(
-                                                          '📤 Exportar para Excel'),
-                                                    ],
-                                                  ),
-                                                ));
-                                                // ✅ NOVO: Opção excluir no menu
-                                                items.add(PopupMenuItem(
-                                                  value: 'excluir',
-                                                  child: Row(
-                                                    children: [
-                                                      Icon(
-                                                        Icons.delete_outline,
-                                                        size: 18,
-                                                        color: Colors.red,
-                                                      ),
-                                                      SizedBox(width: 8),
-                                                      Text(
-                                                        'Excluir evento',
-                                                        style: TextStyle(
-                                                            color: Colors.red),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ));
-                                                return items;
-                                              },
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 12),
-                                        Text(
-                                          evento['event_name'] ?? 'Sem nome',
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        // ✅ NOVO: Exibir nome do campeonato se existir
-                                        if (eventType == 'campeonato' &&
-                                            championshipName != null &&
-                                            championshipName.isNotEmpty) ...[
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.emoji_events,
-                                                size: 16,
-                                                color: Colors.amber[700],
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  championshipName,
-                                                  style: TextStyle(
-                                                    fontSize: 14,
-                                                    color: Colors.amber[900],
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                        const SizedBox(height: 8),
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.calendar_today,
-                                              size: 16,
-                                              color: Colors.grey[600],
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              _formatarData(
-                                                  evento['event_date'] ?? ''),
-                                              style: TextStyle(
-                                                  color: Colors.grey[700]),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.access_time,
-                                              size: 16,
-                                              color: Colors.grey[600],
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              evento['event_time'] ?? '',
-                                              style: TextStyle(
-                                                  color: Colors.grey[700]),
-                                            ),
-                                          ],
-                                        ),
-                                        // ✅ ENDEREÇO MOVIDO PARA ABAIXO DO RELÓGIO
-                                        if (enderecoCompleto != null) ...[
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.location_on,
-                                                size: 16,
-                                                color: Colors.grey[600],
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  enderecoCompleto,
-                                                  style: TextStyle(
-                                                    color: Colors.grey[700],
-                                                    fontSize: 13,
-                                                  ),
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.people_outline,
-                                              size: 16,
-                                              color: olympusGold,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              '$totalConvocados convocad${totalConvocados == 1 ? 'o' : 'os'} (${quantidades['athletes']} atletas, ${quantidades['technicians']} técn${quantidades['technicians'] == 1 ? 'ico' : 'icos'})',
-                                              style: const TextStyle(
-                                                color: olympusBlue,
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        // ✅ NOVO: Status das convocações (aceitos, pendentes, recusados)
-                                        if (stats != null) ...[
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.check_circle_outline,
-                                                size: 16,
-                                                color: Colors.green[600],
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                '$aceitos aceitou',
-                                                style: TextStyle(
-                                                  color: Colors.green[700],
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 13,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Icon(
-                                                Icons.hourglass_empty,
-                                                size: 16,
-                                                color: Colors.orange[600],
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                '$pendentes pendente${pendentes == 1 ? '' : 's'}',
-                                                style: TextStyle(
-                                                  color: Colors.orange[700],
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 13,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Icon(
-                                                Icons.cancel_outlined,
-                                                size: 16,
-                                                color: Colors.red[600],
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                '$recusados recusou',
-                                                style: TextStyle(
-                                                  color: Colors.red[700],
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 13,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                        if (allowCheckin &&
-                                            checkinData != null) ...[
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.check_circle,
-                                                size: 16,
-                                                color: Colors.green[600],
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                'Check-in: ${checkinData['checked_in']} fizeram check-in',
-                                                style: TextStyle(
-                                                  color: Colors.green[700],
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 13,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                        if (hasPlacar) ...[
-                                          const SizedBox(height: 12),
-                                          _buildPlacarCard(evento, eventId),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _navegarParaCadastroEvento,
-        icon: const Icon(Icons.add),
-        label: const Text('Cadastrar Evento'),
-        backgroundColor: olympusGold,
-        foregroundColor: olympusBlue,
-      ),
-    );
-  }
-
   Widget _buildPlacarCard(Map<String, dynamic> evento, String eventId) {
-    final score = evento['score'] as Map<String, dynamic>?;
-    if (score == null) return const SizedBox.shrink();
-    final olympusSets = score['olympus'] as List<dynamic>? ?? [];
-    final opponentSets = score['opponent'] as List<dynamic>? ?? [];
-    final winner = score['winner'] as String?;
-    final olympusSetsWon = score['olympus_sets_won'] as int? ?? 0;
-    final opponentSetsWon = score['opponent_sets_won'] as int? ?? 0;
+    final rawScore = evento['score'];
+    if (rawScore == null || rawScore is! Map) {
+      return const SizedBox.shrink();
+    }
+    final score = Map<String, dynamic>.from(rawScore);
+    final olympusSets = (score['olympus'] as List?) ?? [];
+    final opponentSets = (score['opponent'] as List?) ?? [];
+    final winner = score['winner']?.toString();
+    final olympusSetsWon = int.tryParse(
+          score['olympus_sets_won']?.toString() ?? '0',
+        ) ??
+        0;
+    final opponentSetsWon = int.tryParse(
+          score['opponent_sets_won']?.toString() ?? '0',
+        ) ??
+        0;
     final isVictory = winner == 'Olympus';
     final isExpandido = _placaresExpandidos.contains(eventId);
     return GestureDetector(
@@ -2221,14 +1544,18 @@ class _AgendaPageState extends State<AgendaPage> {
             if (isExpandido) ...[
               const SizedBox(height: 12),
               ...List.generate(olympusSets.length, (index) {
-                final olympusScore = olympusSets[index];
-                final opponentScore =
-                    opponentSets.length > index ? opponentSets[index] : 0;
+                final olympusScore =
+                    int.tryParse(olympusSets[index].toString()) ?? 0;
+                final opponentScore = opponentSets.length > index
+                    ? int.tryParse(opponentSets[index].toString()) ?? 0
+                    : 0;
                 final olympusWonSet = olympusScore > opponentScore;
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: olympusWonSet
                         ? olympusBlue.withOpacity(0.1)
@@ -2319,7 +1646,7 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 
   Widget _buildFiltroButton(String tipo, IconData icone) {
-    final bool selecionado = _filtroSelecionado == tipo;
+    final selecionado = _filtroSelecionado == tipo;
     final Color corBase = tipo == 'Campeonato'
         ? olympusGold
         : tipo == 'Treino'
@@ -2331,8 +1658,8 @@ class _AgendaPageState extends State<AgendaPage> {
       onTap: () {
         setState(() {
           _filtroSelecionado = tipo;
-          _aplicarFiltros();
         });
+        _aplicarFiltros();
       },
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -2351,8 +1678,11 @@ class _AgendaPageState extends State<AgendaPage> {
           children: [
             if (selecionado) Icon(Icons.check, size: 14, color: corBase),
             if (selecionado) const SizedBox(width: 2),
-            Icon(icone,
-                size: 14, color: selecionado ? corBase : Colors.grey[600]),
+            Icon(
+              icone,
+              size: 14,
+              color: selecionado ? corBase : Colors.grey[600],
+            ),
             const SizedBox(width: 4),
             Flexible(
               child: Text(
@@ -2405,7 +1735,7 @@ class _AgendaPageState extends State<AgendaPage> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      evento['event_name'] ?? 'Detalhes do Evento',
+                      (evento['event_name'] ?? 'Detalhes do Evento').toString(),
                       style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
@@ -2416,52 +1746,68 @@ class _AgendaPageState extends State<AgendaPage> {
                     _buildDetailRow(
                       Icons.calendar_today,
                       'Data',
-                      _formatarData(evento['event_date'] ?? ''),
+                      _formatarData((evento['event_date'] ?? '').toString()),
                     ),
                     _buildDetailRow(
                       Icons.access_time,
                       'Horário',
-                      evento['event_time'] ?? '',
+                      (evento['event_time'] ?? '').toString(),
                     ),
                     _buildDetailRow(
                       Icons.category,
                       'Tipo',
-                      evento['event_type'] ?? '',
+                      (evento['event_type'] ?? '').toString(),
                     ),
-                    if (evento['gender'] != null &&
-                        evento['gender'].toString().isNotEmpty)
+                    if ((evento['gender'] ?? '').toString().isNotEmpty)
                       _buildDetailRow(
                         Icons.people,
                         'Gênero',
-                        evento['gender'],
+                        evento['gender'].toString(),
                       ),
-                    if (evento['set_format'] != null &&
-                        evento['set_format'].toString().isNotEmpty)
+                    if ((evento['set_format'] ?? '').toString().isNotEmpty)
                       _buildDetailRow(
                         Icons.sports_volleyball,
                         'Formato',
-                        evento['set_format'],
+                        evento['set_format'].toString(),
                       ),
                     if (evento['score'] != null) ...[
                       const SizedBox(height: 8),
-                      _buildPlacarCard(evento, evento['id'].toString()),
+                      _buildPlacarCard(
+                        evento,
+                        evento['id']?.toString() ?? '',
+                      ),
                     ],
-                    if (evento['street'] != null) ...[
+                    if ((evento['street'] ?? '').toString().isNotEmpty) ...[
                       const Divider(),
-                      const Text('Localização',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: olympusBlue,
-                          )),
+                      const Text(
+                        'Localização',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: olympusBlue,
+                        ),
+                      ),
                       const SizedBox(height: 8),
-                      _buildDetailRow(Icons.location_on, 'Endereço',
-                          '${evento['street']}, ${evento['street_number']}'),
                       _buildDetailRow(
-                          Icons.map, 'Bairro', evento['neighborhood'] ?? ''),
-                      _buildDetailRow(Icons.home, 'Cidade',
-                          '${evento['city']}, ${evento['state']}'),
-                      _buildDetailRow(Icons.pin, 'CEP', evento['cep'] ?? ''),
+                        Icons.location_on,
+                        'Endereço',
+                        '${evento['street'] ?? ''}, ${evento['street_number'] ?? ''}',
+                      ),
+                      _buildDetailRow(
+                        Icons.map,
+                        'Bairro',
+                        (evento['neighborhood'] ?? '').toString(),
+                      ),
+                      _buildDetailRow(
+                        Icons.home,
+                        'Cidade',
+                        '${evento['city'] ?? ''}, ${evento['state'] ?? ''}',
+                      ),
+                      _buildDetailRow(
+                        Icons.pin,
+                        'CEP',
+                        (evento['cep'] ?? '').toString(),
+                      ),
                     ],
                     const SizedBox(height: 24),
                     SizedBox(
@@ -2523,7 +1869,6 @@ class _AgendaPageState extends State<AgendaPage> {
     );
   }
 
-  // ✅ NOVO: Widget de Dropdown Moderno com cores Olympus
   Widget _buildModernDropdown({
     required IconData icon,
     required dynamic value,
@@ -2600,7 +1945,6 @@ class _AgendaPageState extends State<AgendaPage> {
     );
   }
 
-  // ✅ NOVO: Widget de Filtro com Chips Modernos
   Widget _buildModernChipFilter({
     required String label,
     required IconData icon,
@@ -2655,7 +1999,6 @@ class _AgendaPageState extends State<AgendaPage> {
                 final value = option['value'] as String;
                 final labelText = option['label'] as String;
                 final selected = selectedValue == value;
-
                 Color chipColor;
                 switch (value) {
                   case 'Campeonato':
@@ -2670,7 +2013,6 @@ class _AgendaPageState extends State<AgendaPage> {
                   default:
                     chipColor = olympusBlue;
                 }
-
                 return ChoiceChip(
                   label: Text(labelText),
                   selected: selected,
@@ -2688,6 +2030,720 @@ class _AgendaPageState extends State<AgendaPage> {
           const SizedBox(height: 8),
         ],
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Minha Agenda',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: olympusBlue,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshEventos,
+            color: Colors.white,
+          ),
+        ],
+        elevation: 2,
+      ),
+      body: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [olympusBlue, olympusLightBlue],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(24),
+                bottomRight: Radius.circular(24),
+              ),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildModernDropdown(
+                        icon: Icons.calendar_month,
+                        value: _filtroMes,
+                        hint: 'Mês',
+                        items: _getMesesDisponiveis().map((mes) {
+                          return DropdownMenuItem(
+                            value: mes,
+                            child: Text(
+                              _formatarNomeMes(mes),
+                              style: TextStyle(
+                                fontWeight: _filtroMes == mes
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: _filtroMes == mes
+                                    ? olympusBlue
+                                    : Colors.black,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (valor) {
+                          if (valor != null) {
+                            setState(() {
+                              _filtroMes = valor.toString();
+                            });
+                            _aplicarFiltros();
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildModernDropdown(
+                        icon: Icons.people_outline,
+                        value: _filtroGenero == 'Todos' ? null : _filtroGenero,
+                        hint: 'Gênero',
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'Todos',
+                            child: Text('Todos'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'masculino',
+                            child: Text('Masculino'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'feminino',
+                            child: Text('Feminino'),
+                          ),
+                        ],
+                        onChanged: (valor) {
+                          setState(() {
+                            _filtroGenero = (valor ?? 'Todos').toString();
+                          });
+                          _aplicarFiltros();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _buildModernChipFilter(
+                  label: 'Tipo de Evento',
+                  icon: Icons.filter_list,
+                  options: const [
+                    {'value': 'Todos', 'label': 'Todos'},
+                    {'value': 'Treino', 'label': 'Treino'},
+                    {'value': 'Amistoso', 'label': 'Amistoso'},
+                    {'value': 'Campeonato', 'label': 'Campeonato'},
+                  ],
+                  selectedValue: _filtroSelecionado,
+                  onSelected: (value) {
+                    setState(() {
+                      _filtroSelecionado = value;
+                    });
+                    _aplicarFiltros();
+                  },
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              size: 48,
+                              color: Colors.red[300],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _error!,
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: _buscarEventos,
+                              child: const Text('Tentar Novamente'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : _eventosFiltrados.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.event_busy,
+                                  size: 64,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Nenhum evento encontrado',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Clique no + para adicionar um evento',
+                                  style: TextStyle(color: Colors.grey[500]),
+                                ),
+                              ],
+                            ),
+                          )
+                        : RefreshIndicator(
+                            onRefresh: _refreshEventos,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: _eventosFiltrados.length,
+                              itemBuilder: (context, index) {
+                                final evento = _eventosFiltrados[index];
+                                final eventId = evento['id']?.toString() ?? '';
+                                final quantidades =
+                                    _quantidadeConvocados[eventId] ??
+                                        {
+                                          'athletes': 0,
+                                          'technicians': 0,
+                                        };
+                                final stats = _convocationStats[eventId];
+                                final totalConvocados = stats != null
+                                    ? (stats['total_convocados'] ?? 0)
+                                    : ((quantidades['athletes'] ?? 0) +
+                                        (quantidades['technicians'] ?? 0));
+                                final aceitos = stats?['total_aceitos'] ?? 0;
+                                final pendentes =
+                                    stats?['total_pendentes'] ?? 0;
+                                final recusados =
+                                    stats?['total_recusados'] ?? 0;
+                                final checkinData = _checkinInfo[eventId];
+                                final allowCheckin =
+                                    evento['allow_checkin'] == true;
+                                final corTipo = _getCorTipoEvento(
+                                  (evento['event_type'] ?? '').toString(),
+                                );
+                                final eventType =
+                                    (evento['event_type'] ?? '').toString();
+                                final hasPlacar = evento['score'] != null;
+                                final genero =
+                                    (evento['gender'] ?? '').toString();
+                                final championshipName =
+                                    (evento['championship_name'] ?? '')
+                                        .toString();
+                                String? enderecoCompleto;
+                                if ((evento['street'] ?? '')
+                                    .toString()
+                                    .isNotEmpty) {
+                                  final rua =
+                                      (evento['street'] ?? '').toString();
+                                  final numero = (evento['street_number'] ?? '')
+                                      .toString();
+                                  final bairro =
+                                      (evento['neighborhood'] ?? '').toString();
+                                  final cidade =
+                                      (evento['city'] ?? '').toString();
+                                  final estado =
+                                      (evento['state'] ?? '').toString();
+                                  enderecoCompleto = '$rua, $numero'
+                                      '${bairro.isNotEmpty ? ' - $bairro' : ''}'
+                                      '${cidade.isNotEmpty ? ' - $cidade' : ''}'
+                                      '${estado.isNotEmpty ? '/$estado' : ''}';
+                                }
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  elevation: 2,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  color: _getCorFundoCard(genero),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(12),
+                                    onTap: () => _mostrarDetalhesEvento(evento),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 6,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color:
+                                                      corTipo.withOpacity(0.1),
+                                                  borderRadius:
+                                                      BorderRadius.circular(20),
+                                                  border: Border.all(
+                                                    color: corTipo,
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  eventType.toUpperCase(),
+                                                  style: TextStyle(
+                                                    color: corTipo,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ),
+                                              const Spacer(),
+                                              if (genero.isNotEmpty)
+                                                Container(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 4,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color:
+                                                        genero.toLowerCase() ==
+                                                                'masculino'
+                                                            ? Colors.blue[100]
+                                                            : Colors
+                                                                .purple[100],
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                      12,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    genero[0].toUpperCase() +
+                                                        genero.substring(1),
+                                                    style: TextStyle(
+                                                      color:
+                                                          genero.toLowerCase() ==
+                                                                  'masculino'
+                                                              ? Colors.blue[900]
+                                                              : Colors
+                                                                  .purple[900],
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              const SizedBox(width: 8),
+                                              PopupMenuButton<String>(
+                                                icon: Icon(
+                                                  Icons.more_vert,
+                                                  color: Colors.grey[600],
+                                                ),
+                                                onSelected: (value) {
+                                                  if (value == 'editar') {
+                                                    _editarEvento(evento);
+                                                  } else if (value ==
+                                                      'placar') {
+                                                    _inserirPlacar(evento);
+                                                  } else if (value ==
+                                                      'checkin') {
+                                                    _mostrarCheckinDetalhes(
+                                                      evento,
+                                                    );
+                                                  } else if (value ==
+                                                      'status_checkin') {
+                                                    _mostrarStatusCheckin(
+                                                      evento,
+                                                    );
+                                                  } else if (value ==
+                                                      'exportar') {
+                                                    _exportarConvocados(evento);
+                                                  } else if (value ==
+                                                      'excluir') {
+                                                    _excluirEvento(evento);
+                                                  }
+                                                },
+                                                itemBuilder: (context) {
+                                                  final items =
+                                                      <PopupMenuItem<String>>[];
+                                                  items.add(
+                                                    const PopupMenuItem(
+                                                      value: 'editar',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons.edit,
+                                                            size: 18,
+                                                            color: Colors.blue,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Text('Editar evento'),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  );
+                                                  if (eventType == 'amistoso' ||
+                                                      eventType ==
+                                                          'campeonato') {
+                                                    items.add(
+                                                      PopupMenuItem(
+                                                        value: 'placar',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons.score,
+                                                              size: 18,
+                                                              color:
+                                                                  olympusGold,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Text(
+                                                              hasPlacar
+                                                                  ? 'Editar placar'
+                                                                  : 'Inserir placar',
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+                                                  if (allowCheckin) {
+                                                    items.add(
+                                                      const PopupMenuItem(
+                                                        value: 'checkin',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .people_outline,
+                                                              size: 18,
+                                                              color:
+                                                                  Colors.green,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Text(
+                                                              'Ver convocados',
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    );
+                                                    items.add(
+                                                      PopupMenuItem(
+                                                        value: 'status_checkin',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .check_circle_outline,
+                                                              size: 18,
+                                                              color:
+                                                                  olympusGold,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Text(
+                                                              'Ver status check-in',
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+                                                  items.add(
+                                                    const PopupMenuItem(
+                                                      value: 'exportar',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons.file_download,
+                                                            size: 18,
+                                                            color: Colors.green,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Text(
+                                                            '📤 Exportar para Excel',
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  );
+                                                  items.add(
+                                                    const PopupMenuItem(
+                                                      value: 'excluir',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons
+                                                                .delete_outline,
+                                                            size: 18,
+                                                            color: Colors.red,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Text(
+                                                            'Excluir evento',
+                                                            style: TextStyle(
+                                                              color: Colors.red,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  );
+                                                  return items;
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 12),
+                                          Text(
+                                            (evento['event_name'] ?? 'Sem nome')
+                                                .toString(),
+                                            style: const TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          if (eventType == 'campeonato' &&
+                                              championshipName.isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.emoji_events,
+                                                  size: 16,
+                                                  color: Colors.amber[700],
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    championshipName,
+                                                    style: TextStyle(
+                                                      fontSize: 14,
+                                                      color: Colors.amber[900],
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.calendar_today,
+                                                size: 16,
+                                                color: Colors.grey[600],
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                _formatarData(
+                                                  (evento['event_date'] ?? '')
+                                                      .toString(),
+                                                ),
+                                                style: TextStyle(
+                                                  color: Colors.grey[700],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.access_time,
+                                                size: 16,
+                                                color: Colors.grey[600],
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                (evento['event_time'] ?? '')
+                                                    .toString(),
+                                                style: TextStyle(
+                                                  color: Colors.grey[700],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          if (enderecoCompleto != null) ...[
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.location_on,
+                                                  size: 16,
+                                                  color: Colors.grey[600],
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    enderecoCompleto,
+                                                    style: TextStyle(
+                                                      color: Colors.grey[700],
+                                                      fontSize: 13,
+                                                    ),
+                                                    maxLines: 2,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.people_outline,
+                                                size: 16,
+                                                color: olympusGold,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  '$totalConvocados convocad${totalConvocados == 1 ? 'o' : 'os'} '
+                                                  '(${quantidades['athletes']} atletas, ${quantidades['technicians']} técn${(quantidades['technicians'] ?? 0) == 1 ? 'ico' : 'icos'})',
+                                                  style: const TextStyle(
+                                                    color: olympusBlue,
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          if (stats != null) ...[
+                                            const SizedBox(height: 4),
+                                            Wrap(
+                                              spacing: 12,
+                                              runSpacing: 4,
+                                              children: [
+                                                Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Icon(
+                                                      Icons
+                                                          .check_circle_outline,
+                                                      size: 16,
+                                                      color: Colors.green[600],
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      '$aceitos aceitou',
+                                                      style: TextStyle(
+                                                        color:
+                                                            Colors.green[700],
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        fontSize: 13,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Icon(
+                                                      Icons.hourglass_empty,
+                                                      size: 16,
+                                                      color: Colors.orange[600],
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      '$pendentes pendente${pendentes == 1 ? '' : 's'}',
+                                                      style: TextStyle(
+                                                        color:
+                                                            Colors.orange[700],
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        fontSize: 13,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Icon(
+                                                      Icons.cancel_outlined,
+                                                      size: 16,
+                                                      color: Colors.red[600],
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      '$recusados recusou',
+                                                      style: TextStyle(
+                                                        color: Colors.red[700],
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        fontSize: 13,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                          if (allowCheckin &&
+                                              checkinData != null) ...[
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.check_circle,
+                                                  size: 16,
+                                                  color: Colors.green[600],
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  'Check-in: ${checkinData['checked_in']} fizeram check-in',
+                                                  style: TextStyle(
+                                                    color: Colors.green[700],
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                          if (hasPlacar) ...[
+                                            const SizedBox(height: 12),
+                                            _buildPlacarCard(evento, eventId),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+          ),
+        ],
+      ),
+      floatingActionButton: (_hasAgendaAccess && _can('create'))
+          ? FloatingActionButton.extended(
+              onPressed: _navegarParaCadastroEvento,
+              icon: const Icon(Icons.add),
+              label: const Text('Cadastrar Evento'),
+              backgroundColor: olympusGold,
+              foregroundColor: olympusBlue,
+            )
+          : null,
     );
   }
 }
