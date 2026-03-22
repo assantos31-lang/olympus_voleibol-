@@ -1,31 +1,37 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/birthday_person.dart';
 import '../services/auth_service.dart';
 import '../services/birthday_service.dart';
 import 'agenda_page.dart';
 import 'admin_birthdays_page.dart';
 import 'admin_financial_page.dart';
+import 'championships_page.dart';
 import 'chat_rooms_page.dart';
 
 class AdminHomePage extends StatelessWidget {
   const AdminHomePage({super.key});
 
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  static const Color futuristicDark = Color(0xFF0B1420);
+  static const Color futuristicCard = Color(0xFF122235);
+
   @override
   Widget build(BuildContext context) {
-    const goldenColor = Color(0xFFE4C050);
-    const cyanColor = Color(0xFF8FE8FF);
-
     return Scaffold(
+      backgroundColor: futuristicDark,
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [
-              Color(0xFF0C2340),
-              Color(0xFF123A63),
-              Color(0xFF071A30),
+              Color(0xFF09111B),
+              Color(0xFF11253A),
+              Color(0xFF1E3A5F),
             ],
           ),
         ),
@@ -42,37 +48,77 @@ class AdminHomePage extends StatelessWidget {
               child: Column(
                 children: [
                   Container(
+                    margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 14,
                     ),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [
+                          Color(0xFF122235),
+                          Color(0xFF18324D),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: olympusGold.withOpacity(0.30)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: olympusGold.withOpacity(0.08),
+                          blurRadius: 18,
+                          spreadRadius: 1,
+                        ),
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.35),
+                          blurRadius: 22,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Painel Administrativo',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.85),
-                            fontSize: 17,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 0.2,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Painel Administrativo',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Olympus Voleibol',
+                                style: TextStyle(
+                                  color: olympusGold.withOpacity(0.95),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         Container(
-                          width: 40,
-                          height: 40,
+                          width: 44,
+                          height: 44,
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.06),
-                            borderRadius: BorderRadius.circular(12),
+                            color: olympusGold.withOpacity(0.14),
+                            borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                              color: Colors.white.withOpacity(0.10),
+                              color: olympusGold.withOpacity(0.25),
                             ),
                           ),
                           child: IconButton(
                             padding: EdgeInsets.zero,
-                            icon: Icon(
+                            icon: const Icon(
                               Icons.logout_rounded,
-                              color: Colors.white.withOpacity(0.85),
+                              color: Colors.white,
                               size: 22,
                             ),
                             onPressed: () async {
@@ -95,7 +141,7 @@ class AdminHomePage extends StatelessWidget {
                     child: Center(
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 22,
+                          horizontal: 16,
                           vertical: 12,
                         ),
                         child: Column(
@@ -115,63 +161,55 @@ class AdminHomePage extends StatelessWidget {
                                     22,
                                   ),
                                   decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(18),
-                                    border: Border.all(
-                                      color: Colors.white.withOpacity(0.16),
-                                      width: 1.2,
-                                    ),
-                                    gradient: LinearGradient(
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFF122235),
+                                        Color(0xFF18324D),
+                                      ],
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
-                                      colors: [
-                                        Colors.white.withOpacity(0.18),
-                                        Colors.white.withOpacity(0.08),
-                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(22),
+                                    border: Border.all(
+                                      color: olympusGold.withOpacity(0.35),
+                                      width: 1.2,
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: cyanColor.withOpacity(0.10),
-                                        blurRadius: 24,
+                                        color: olympusGold.withOpacity(0.08),
+                                        blurRadius: 18,
                                         spreadRadius: 1,
+                                      ),
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.35),
+                                        blurRadius: 22,
+                                        offset: const Offset(0, 8),
                                       ),
                                     ],
                                   ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(18),
-                                    child: BackdropFilter(
-                                      filter: ImageFilter.blur(
-                                        sigmaX: 14,
-                                        sigmaY: 14,
+                                  child: Column(
+                                    children: [
+                                      const Text(
+                                        'Bem-vindo, Admin!',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.white,
+                                          height: 1.15,
+                                        ),
                                       ),
-                                      child: Column(
-                                        children: [
-                                          Text(
-                                            'Bem-vindo, Admin!',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              fontSize: 23,
-                                              fontWeight: FontWeight.w500,
-                                              color: Colors.white.withOpacity(
-                                                0.92,
-                                              ),
-                                              height: 1.15,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 10),
-                                          Text(
-                                            'Gerencie o sistema Olympus Voleibol',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.white.withOpacity(
-                                                0.68,
-                                              ),
-                                              fontWeight: FontWeight.w400,
-                                            ),
-                                          ),
-                                        ],
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        'Gerencie o sistema Olympus Voleibol',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.white.withOpacity(0.72),
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
-                                    ),
+                                    ],
                                   ),
                                 ),
                                 Container(
@@ -180,47 +218,49 @@ class AdminHomePage extends StatelessWidget {
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     gradient: LinearGradient(
+                                      colors: [
+                                        olympusGold.withOpacity(0.95),
+                                        const Color(0xFFFFE08A),
+                                      ],
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
-                                      colors: [
-                                        const Color(0xFF42556F).withOpacity(
-                                          0.95,
-                                        ),
-                                        const Color(0xFF31445D).withOpacity(
-                                          0.88,
-                                        ),
-                                      ],
-                                    ),
-                                    border: Border.all(
-                                      color: goldenColor.withOpacity(0.35),
-                                      width: 2,
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: goldenColor.withOpacity(0.20),
+                                        color: olympusGold.withOpacity(0.20),
                                         blurRadius: 24,
                                         spreadRadius: 2,
                                       ),
                                     ],
                                   ),
-                                  child: Center(
-                                    child: ClipOval(
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(4),
-                                        child: Image.asset(
-                                          'assets/images/olympus_logo.png',
-                                          width: 108,
-                                          height: 108,
-                                          fit: BoxFit.contain,
-                                          errorBuilder:
-                                              (context, error, stackTrace) {
-                                            return const Icon(
-                                              Icons
-                                                  .admin_panel_settings_rounded,
-                                              size: 54,
-                                              color: Color(0xFFE4C050),
-                                            );
-                                          },
+                                  padding: const EdgeInsets.all(3),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: futuristicCard,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.10),
+                                      ),
+                                    ),
+                                    child: Center(
+                                      child: ClipOval(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(4),
+                                          child: Image.asset(
+                                            'assets/images/olympus_logo.png',
+                                            width: 108,
+                                            height: 108,
+                                            fit: BoxFit.contain,
+                                            errorBuilder:
+                                                (context, error, stackTrace) {
+                                              return const Icon(
+                                                Icons
+                                                    .admin_panel_settings_rounded,
+                                                size: 54,
+                                                color: olympusGold,
+                                              );
+                                            },
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -228,25 +268,25 @@ class AdminHomePage extends StatelessWidget {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 26),
+                            const SizedBox(height: 24),
                             const _BirthdaysMonthCard(),
-                            const SizedBox(height: 22),
-                            _buildFuturisticButton(
+                            const SizedBox(height: 20),
+                            _buildOlympusButton(
                               context: context,
                               label: 'Gerenciar Usuários',
                               icon: Icons.groups_rounded,
-                              accentColor: goldenColor,
+                              accentColor: olympusGold,
                               isPrimary: true,
                               onTap: () {
                                 Navigator.pushNamed(context, '/profiles');
                               },
                             ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
+                            const SizedBox(height: 16),
+                            _buildOlympusButton(
                               context: context,
                               label: 'Agenda',
                               icon: Icons.calendar_month_rounded,
-                              accentColor: cyanColor,
+                              accentColor: olympusGold,
                               onTap: () {
                                 Navigator.push(
                                   context,
@@ -256,12 +296,14 @@ class AdminHomePage extends StatelessWidget {
                                 );
                               },
                             ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
+                            const SizedBox(height: 16),
+                            const _ChampionshipsCard(),
+                            const SizedBox(height: 16),
+                            _buildOlympusButton(
                               context: context,
                               label: 'Financeiro',
                               icon: Icons.attach_money_rounded,
-                              accentColor: cyanColor,
+                              accentColor: olympusLightBlue,
                               onTap: () {
                                 Navigator.push(
                                   context,
@@ -272,8 +314,8 @@ class AdminHomePage extends StatelessWidget {
                                 );
                               },
                             ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
+                            const SizedBox(height: 16),
+                            _buildOlympusButton(
                               context: context,
                               label: 'Chats',
                               icon: Icons.chat_bubble_outline_rounded,
@@ -303,7 +345,7 @@ class AdminHomePage extends StatelessWidget {
     );
   }
 
-  Widget _buildFuturisticButton({
+  Widget _buildOlympusButton({
     required BuildContext context,
     required String label,
     required IconData icon,
@@ -313,184 +355,295 @@ class AdminHomePage extends StatelessWidget {
     bool isMuted = false,
   }) {
     final Color baseTextColor = isMuted
-        ? Colors.white.withOpacity(0.70)
-        : Colors.white.withOpacity(0.88);
+        ? Colors.white.withOpacity(0.76)
+        : Colors.white.withOpacity(0.92);
 
-    return SizedBox(
+    return Container(
       width: double.infinity,
-      height: 66,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned(
-            left: 10,
-            child: Container(
-              width: 10,
-              height: 42,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: accentColor.withOpacity(isPrimary ? 0.85 : 0.55),
-                    blurRadius: 14,
-                    spreadRadius: 1,
-                  ),
-                ],
-              ),
-            ),
+      height: 74,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF132235),
+            Color(0xFF0E1B2A),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: accentColor.withOpacity(isPrimary ? 0.35 : 0.22),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.28),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
-          Positioned(
-            right: 10,
-            child: Container(
-              width: 10,
-              height: 42,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: accentColor.withOpacity(isPrimary ? 0.85 : 0.45),
-                    blurRadius: 14,
-                    spreadRadius: 1,
-                  ),
-                ],
-              ),
-            ),
+          BoxShadow(
+            color: accentColor.withOpacity(isPrimary ? 0.10 : 0.05),
+            blurRadius: 16,
+            spreadRadius: 1,
           ),
-          Positioned(
-            top: 2,
-            child: Container(
-              width: 84,
-              height: 4,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: accentColor.withOpacity(0.55),
-                    blurRadius: 10,
-                    spreadRadius: 0.5,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: onTap,
-                  child: Ink(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: accentColor.withOpacity(isPrimary ? 0.45 : 0.22),
-                        width: 1.2,
-                      ),
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: isPrimary
-                            ? [
-                                accentColor.withOpacity(0.28),
-                                accentColor.withOpacity(0.12),
-                              ]
-                            : isMuted
-                                ? [
-                                    Colors.white.withOpacity(0.24),
-                                    Colors.white.withOpacity(0.14),
-                                  ]
-                                : [
-                                    Colors.white.withOpacity(0.12),
-                                    Colors.white.withOpacity(0.06),
-                                  ],
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color:
-                              accentColor.withOpacity(isPrimary ? 0.20 : 0.10),
-                          blurRadius: 18,
-                          spreadRadius: 1,
-                        ),
-                      ],
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: accentColor.withOpacity(isPrimary ? 0.16 : 0.10),
+                    border: Border.all(
+                      color: accentColor.withOpacity(0.30),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18),
-                      child: Row(
+                    boxShadow: [
+                      BoxShadow(
+                        color: accentColor.withOpacity(0.18),
+                        blurRadius: 14,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    icon,
+                    color:
+                        isMuted ? Colors.white.withOpacity(0.85) : accentColor,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: baseTextColor,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ),
+                Container(
+                  width: 56,
+                  alignment: Alignment.centerRight,
+                  child: CustomPaint(
+                    size: const Size(42, 26),
+                    painter: _NodeLinesPainter(
+                      color: isPrimary
+                          ? accentColor.withOpacity(0.55)
+                          : Colors.white.withOpacity(0.22),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChampionshipsCard extends StatelessWidget {
+  const _ChampionshipsCard();
+
+  static const Color olympusGold = Color(0xFFD4AF37);
+
+  Future<int> _loadChampionshipsCount() async {
+    final supabase = Supabase.instance.client;
+
+    final response = await supabase
+        .from('events')
+        .select('championship_name')
+        .not('championship_name', 'is', null);
+
+    final championships = response
+        .map((item) => (item['championship_name'] ?? '').toString().trim())
+        .where((name) => name.isNotEmpty)
+        .toSet();
+
+    return championships.length;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<int>(
+      future: _loadChampionshipsCount(),
+      builder: (context, snapshot) {
+        final count = snapshot.data ?? 0;
+
+        return Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 88),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [
+                Color(0xFF1A2235),
+                Color(0xFF132235),
+                Color(0xFF0E1B2A),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: olympusGold.withOpacity(0.35),
+              width: 1.2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.28),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+              BoxShadow(
+                color: olympusGold.withOpacity(0.10),
+                blurRadius: 16,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(22),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ChampionshipsPage(),
+                  ),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 14,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [
+                            olympusGold.withOpacity(0.22),
+                            olympusGold.withOpacity(0.10),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        border: Border.all(
+                          color: olympusGold.withOpacity(0.38),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: olympusGold.withOpacity(0.18),
+                            blurRadius: 16,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.emoji_events_rounded,
+                        color: olympusGold,
+                        size: 25,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: accentColor.withOpacity(
-                                isPrimary ? 0.16 : 0.10,
-                              ),
-                              border: Border.all(
-                                color: accentColor.withOpacity(0.30),
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: accentColor.withOpacity(0.35),
-                                  blurRadius: 14,
-                                  spreadRadius: 1,
-                                ),
-                              ],
-                            ),
-                            child: Icon(
-                              icon,
-                              color: isMuted
-                                  ? Colors.white.withOpacity(0.82)
-                                  : accentColor,
-                              size: 22,
+                          const Text(
+                            'Campeonatos',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.2,
                             ),
                           ),
-                          const SizedBox(width: 18),
-                          Expanded(
-                            child: Text(
-                              label,
-                              style: TextStyle(
-                                color: baseTextColor,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w400,
-                                letterSpacing: 0.2,
-                              ),
+                          const SizedBox(height: 4),
+                          Text(
+                            snapshot.connectionState == ConnectionState.waiting
+                                ? 'Carregando ligas e campeonatos...'
+                                : count == 0
+                                    ? 'Nenhuma liga cadastrada ainda'
+                                    : '$count campeonato${count > 1 ? 's' : ''} disponível${count > 1 ? 'is' : ''}',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.68),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
-                          if (isPrimary)
-                            Container(
-                              width: 56,
-                              alignment: Alignment.centerRight,
-                              child: CustomPaint(
-                                size: const Size(42, 26),
-                                painter: _NodeLinesPainter(
-                                  color: accentColor.withOpacity(0.55),
-                                ),
-                              ),
-                            )
-                          else
-                            Container(
-                              width: 56,
-                              alignment: Alignment.centerRight,
-                              child: CustomPaint(
-                                size: const Size(42, 26),
-                                painter: _NodeLinesPainter(
-                                  color: Colors.white.withOpacity(0.22),
-                                ),
-                              ),
-                            ),
                         ],
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: olympusGold.withOpacity(0.16),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: olympusGold.withOpacity(0.30),
+                            ),
+                          ),
+                          child: snapshot.connectionState ==
+                                  ConnectionState.waiting
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      olympusGold,
+                                    ),
+                                  ),
+                                )
+                              : Text(
+                                  '$count',
+                                  style: const TextStyle(
+                                    color: olympusGold,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(height: 8),
+                        Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          color: Colors.white.withOpacity(0.70),
+                          size: 16,
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -498,20 +651,21 @@ class AdminHomePage extends StatelessWidget {
 class _BirthdaysMonthCard extends StatelessWidget {
   const _BirthdaysMonthCard();
 
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+
   @override
   Widget build(BuildContext context) {
-    const goldenColor = Color(0xFFE4C050);
-    const cyanColor = Color(0xFF8FE8FF);
-
     return FutureBuilder<List<BirthdayPerson>>(
       future: BirthdayService().getBirthdaysOfMonth(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return _buildContainer(
             child: const Padding(
-              padding: EdgeInsets.all(20),
+              padding: EdgeInsets.all(24),
               child: Center(
-                child: CircularProgressIndicator(color: Colors.white),
+                child: CircularProgressIndicator(color: olympusGold),
               ),
             ),
           );
@@ -544,14 +698,14 @@ class _BirthdaysMonthCard extends StatelessWidget {
                       height: 42,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: goldenColor.withOpacity(0.16),
+                        color: olympusGold.withOpacity(0.16),
                         border: Border.all(
-                          color: goldenColor.withOpacity(0.35),
+                          color: olympusGold.withOpacity(0.35),
                         ),
                       ),
                       child: const Icon(
                         Icons.cake_rounded,
-                        color: Color(0xFFE4C050),
+                        color: olympusGold,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -561,7 +715,7 @@ class _BirthdaysMonthCard extends StatelessWidget {
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.92),
                           fontSize: 18,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
@@ -575,7 +729,7 @@ class _BirthdaysMonthCard extends StatelessWidget {
                         );
                       },
                       style: TextButton.styleFrom(
-                        foregroundColor: goldenColor,
+                        foregroundColor: olympusGold,
                       ),
                       child: const Text('Ver todos'),
                     ),
@@ -599,7 +753,7 @@ class _BirthdaysMonthCard extends StatelessWidget {
                             vertical: 12,
                           ),
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(16),
                             color: Colors.white.withOpacity(0.05),
                             border: Border.all(
                               color: Colors.white.withOpacity(0.08),
@@ -609,7 +763,7 @@ class _BirthdaysMonthCard extends StatelessWidget {
                             children: [
                               Icon(
                                 Icons.celebration_rounded,
-                                color: cyanColor.withOpacity(0.95),
+                                color: olympusLightBlue.withOpacity(0.95),
                                 size: 20,
                               ),
                               const SizedBox(width: 10),
@@ -618,14 +772,14 @@ class _BirthdaysMonthCard extends StatelessWidget {
                                   person.fullName,
                                   style: TextStyle(
                                     color: Colors.white.withOpacity(0.90),
-                                    fontWeight: FontWeight.w500,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ),
                               Text(
                                 person.formattedBirthday,
                                 style: const TextStyle(
-                                  color: Color(0xFFE4C050),
+                                  color: olympusGold,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -642,37 +796,36 @@ class _BirthdaysMonthCard extends StatelessWidget {
   }
 
   Widget _buildContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.16),
-              width: 1.2,
-            ),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withOpacity(0.16),
-                Colors.white.withOpacity(0.07),
-              ],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF8FE8FF).withOpacity(0.08),
-                blurRadius: 18,
-                spreadRadius: 1,
-              ),
-            ],
-          ),
-          child: child,
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF122235),
+            Color(0xFF18324D),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: olympusGold.withOpacity(0.35),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: olympusGold.withOpacity(0.08),
+            blurRadius: 18,
+            spreadRadius: 1,
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.35),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
+      child: child,
     );
   }
 }
@@ -683,13 +836,13 @@ class _FuturisticBackgroundPainter extends CustomPainter {
     final wavePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.2
-      ..color = const Color(0xFFB7F1FF).withOpacity(0.08)
+      ..color = const Color(0xFFD4AF37).withOpacity(0.07)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
 
     final wavePaint2 = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.6
-      ..color = const Color(0xFFD8FBFF).withOpacity(0.06)
+      ..color = const Color(0xFF8FE8FF).withOpacity(0.06)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
 
     final path1 = Path();
@@ -768,7 +921,7 @@ class _FuturisticBackgroundPainter extends CustomPainter {
     }
 
     final glowPaint = Paint()
-      ..color = const Color(0xFFA4F0FF).withOpacity(0.07)
+      ..color = const Color(0xFFD4AF37).withOpacity(0.05)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 26);
 
     canvas.drawCircle(

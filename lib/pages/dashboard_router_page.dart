@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'athlete_dashboard_page.dart';
@@ -18,6 +19,75 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
   final supabase = Supabase.instance.client;
   bool _isLoading = true;
   Widget? _dashboardWidget;
+
+  Widget _buildOlympusBackground() {
+    return IgnorePointer(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Opacity(
+              opacity: 0.78,
+              child: Image.asset(
+                'assets/images/monte_olimpo.png',
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 0.8, sigmaY: 0.8),
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              color: const Color(0xFF0B1420).withOpacity(0.46),
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color.fromRGBO(9, 17, 27, 0.26),
+                    Color.fromRGBO(17, 37, 58, 0.14),
+                    Color.fromRGBO(30, 58, 95, 0.28),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingScaffold() {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0B1420),
+      body: Stack(
+        children: [
+          _buildOlympusBackground(),
+          const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text(
+                  'Carregando dashboard...',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -136,20 +206,9 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Carregando dashboard...'),
-            ],
-          ),
-        ),
-      );
+      return _buildLoadingScaffold();
     }
 
-    return _dashboardWidget ?? const ProfilesPage();
+    return _dashboardWidget ?? _buildLoadingScaffold();
   }
 }

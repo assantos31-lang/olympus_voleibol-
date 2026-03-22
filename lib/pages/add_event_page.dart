@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 
 class AddEventPage extends StatefulWidget {
   final List<Map<String, String>>? registeredAthletes;
@@ -59,6 +61,10 @@ class _AddEventPageState extends State<AddEventPage> {
   List<Map<String, String>> _techniciansFromSupabase = [];
   bool _isLoadingProfiles = true;
 
+  Uint8List? _selectedImageBytes;
+  String? _selectedImageName;
+  String? _existingImageUrl;
+
   @override
   void initState() {
     super.initState();
@@ -99,6 +105,7 @@ class _AddEventPageState extends State<AddEventPage> {
         _generoEvento = widget.evento!['gender'] ?? 'masculino';
         _championshipName = widget.evento!['championship_name'] ?? '';
         _championshipNameController.text = _championshipName;
+        _existingImageUrl = widget.evento!['image_url'];
       });
 
       await Future.delayed(const Duration(milliseconds: 500));
@@ -125,28 +132,26 @@ class _AddEventPageState extends State<AddEventPage> {
               .eq('id', userId)
               .single();
 
-          if (profileResponse != null) {
-            final fullName = profileResponse['full_name'] ?? '';
-            final userType = profileResponse['user_type'] ?? '';
+          final fullName = profileResponse['full_name'] ?? '';
+          final userType = profileResponse['user_type'] ?? '';
 
-            if (userType == 'athlete') {
-              if (!_selectedAthletes.contains(fullName)) {
-                setState(() {
-                  _selectedAthletes.add(fullName);
-                });
-              }
-            } else if (userType == 'coach') {
-              if (!_selectedTechnicians.contains(fullName)) {
-                setState(() {
-                  _selectedTechnicians.add(fullName);
-                });
-              }
+          if (userType == 'athlete') {
+            if (!_selectedAthletes.contains(fullName)) {
+              setState(() {
+                _selectedAthletes.add(fullName);
+              });
+            }
+          } else if (userType == 'coach') {
+            if (!_selectedTechnicians.contains(fullName)) {
+              setState(() {
+                _selectedTechnicians.add(fullName);
+              });
             }
           }
         }
       }
     } catch (e) {
-      print('Erro ao carregar convocados: $e');
+      debugPrint('Erro ao carregar convocados: $e');
     }
   }
 
@@ -239,6 +244,59 @@ class _AddEventPageState extends State<AddEventPage> {
     super.dispose();
   }
 
+  Future<void> _pickImage() async {
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+      );
+
+      if (pickedFile == null) return;
+
+      final bytes = await pickedFile.readAsBytes();
+
+      if (!mounted) return;
+      setState(() {
+        _selectedImageBytes = bytes;
+        _selectedImageName = pickedFile.name;
+      });
+    } catch (e) {
+      _showError('Erro ao selecionar imagem: $e');
+    }
+  }
+
+  Future<String?> _uploadImage(String eventId) async {
+    if (_selectedImageBytes == null) return _existingImageUrl;
+
+    try {
+      final supabase = Supabase.instance.client;
+
+      final originalName = _selectedImageName ?? 'imagem.jpg';
+      final extension = originalName.contains('.')
+          ? originalName.split('.').last.toLowerCase()
+          : 'jpg';
+
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}.$extension';
+      final filePath = 'events/$eventId/$fileName';
+
+      await supabase.storage.from('event-images').uploadBinary(
+            filePath,
+            _selectedImageBytes!,
+            fileOptions: const FileOptions(upsert: true),
+          );
+
+      final imageUrl =
+          supabase.storage.from('event-images').getPublicUrl(filePath);
+
+      return imageUrl;
+    } catch (e) {
+      debugPrint('Erro ao fazer upload da imagem: $e');
+      _showError('Erro ao enviar imagem do jogo');
+      return _existingImageUrl;
+    }
+  }
+
   Future<void> _buscarCep(String cep) async {
     if (cep.length != 8) {
       _showError('CEP deve conter 8 dígitos');
@@ -290,7 +348,6 @@ class _AddEventPageState extends State<AddEventPage> {
     }
   }
 
-  // ✅ CORREÇÃO: Geocodificação com tratamento de erro robusto
   Future<Map<String, double>?> _geocodeAddress() async {
     try {
       final address = [
@@ -303,53 +360,40 @@ class _AddEventPageState extends State<AddEventPage> {
       ].where((e) => e.isNotEmpty).join(' ');
 
       if (address.trim().isEmpty) {
-        print('⚠️ Endereço vazio para geocodificação');
+        debugPrint('Endereço vazio para geocodificação');
         return null;
       }
 
-      print('📍 Geocodificando: $address');
-
       final url = Uri.parse(
-          'https://us1.locationiq.com/v1/search?key=pk.5a7a05184e41c916429dceb50cf02718&q=${Uri.encodeComponent(address)}&format=json&limit=1');
-
-      final response = await http.get(url).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () {
-          print('❌ Timeout na geocodificação');
-          throw Exception('Timeout na API de geocodificação');
-        },
+        'https://us1.locationiq.com/v1/search?key=pk.5a7a05184e41c916429dceb50cf02718&q=${Uri.encodeComponent(address)}&format=json&limit=1',
       );
 
-      print('📡 Status code: ${response.statusCode}');
+      final response = await http.get(url).timeout(
+            const Duration(seconds: 15),
+            onTimeout: () =>
+                throw Exception('Timeout na API de geocodificação'),
+          );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as List;
 
-        if (data.isEmpty) {
-          print('❌ Endereço não encontrado na API');
-          return null;
-        }
+        if (data.isEmpty) return null;
 
         final lat = double.tryParse(data[0]['lat']);
         final lng = double.tryParse(data[0]['lon']);
 
-        if (lat == null || lng == null) {
-          print(
-              '❌ Coordenadas inválidas: lat=${data[0]['lat']}, lng=${data[0]['lon']}');
-          return null;
-        }
+        if (lat == null || lng == null) return null;
 
-        print('✅ Coordenadas obtidas: lat=$lat, lng=$lng');
         return {
           'latitude': lat,
           'longitude': lng,
         };
       } else {
-        print('❌ Erro HTTP ${response.statusCode}: ${response.body}');
+        debugPrint('Erro HTTP ${response.statusCode}: ${response.body}');
         return null;
       }
     } catch (e) {
-      print('❌ Erro na geocodificação: $e');
+      debugPrint('Erro na geocodificação: $e');
       return null;
     }
   }
@@ -412,13 +456,11 @@ class _AddEventPageState extends State<AddEventPage> {
       },
     );
 
-    if (picked != null) {
-      if (mounted) {
-        setState(() {
-          _dateController.text =
-              '${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}';
-        });
-      }
+    if (picked != null && mounted) {
+      setState(() {
+        _dateController.text =
+            '${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}';
+      });
     }
   }
 
@@ -446,12 +488,10 @@ class _AddEventPageState extends State<AddEventPage> {
       },
     );
 
-    if (picked != null) {
-      if (mounted) {
-        setState(() {
-          _timeController.text = picked.format(context);
-        });
-      }
+    if (picked != null && mounted) {
+      setState(() {
+        _timeController.text = picked.format(context);
+      });
     }
   }
 
@@ -486,7 +526,6 @@ class _AddEventPageState extends State<AddEventPage> {
     }
   }
 
-  // ✅ CORREÇÃO: Validação e salvamento com geocodificação obrigatória
   Future<void> _salvarEvento() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -496,7 +535,6 @@ class _AddEventPageState extends State<AddEventPage> {
       return;
     }
 
-    // ✅ VALIDAR SE ENDEREÇO ESTÁ PREENCHIDO
     if (_ruaController.text.isEmpty ||
         _numeroController.text.isEmpty ||
         _bairroController.text.isEmpty ||
@@ -509,38 +547,28 @@ class _AddEventPageState extends State<AddEventPage> {
     setState(() => _isSaving = true);
 
     try {
-      // ✅ 1. Geocodificar endereço (OBRIGATÓRIO)
-      _showSuccess('📡 Geocodificando endereço...');
+      _showSuccess('Geocodificando endereço...');
       final coords = await _geocodeAddress();
 
       if (coords == null) {
         setState(() => _isSaving = false);
         _showError(
-          '❌ Não foi possível obter as coordenadas do endereço.\n\n'
-          'Verifique se:\n'
-          '• O endereço está correto e completo\n'
-          '• Você tem conexão com internet\n'
-          '• O CEP é válido\n\n'
-          'Tente buscar o CEP novamente ou corrija o endereço.',
+          'Não foi possível obter as coordenadas do endereço.\n\n'
+          'Verifique se o endereço está correto e completo.',
         );
         return;
       }
-
-      print(
-          '✅ Geocodificação concluída: ${coords['latitude']}, ${coords['longitude']}');
 
       final supabase = Supabase.instance.client;
       final user = supabase.auth.currentUser;
 
       if (user == null) {
-        if (mounted) {
-          setState(() => _isSaving = false);
-        }
+        if (mounted) setState(() => _isSaving = false);
         _showError('Usuário não autenticado');
         return;
       }
 
-      final eventData = {
+      final Map<String, dynamic> eventData = {
         'user_id': user.id,
         'event_name': _opponentController.text.isNotEmpty
             ? 'Olympus VS ${_opponentController.text}'
@@ -560,7 +588,6 @@ class _AddEventPageState extends State<AddEventPage> {
         'championship_name': _selectedType == EventType.campeonato
             ? _championshipNameController.text.trim()
             : null,
-        // ✅ 2. Incluir coordenadas OBRIGATORIAMENTE
         'latitude': coords['latitude'],
         'longitude': coords['longitude'],
       };
@@ -580,10 +607,18 @@ class _AddEventPageState extends State<AddEventPage> {
 
       if (response.isEmpty) {
         throw Exception(
-            'Falha ao ${_isEditing ? 'atualizar' : 'criar'} evento');
+          'Falha ao ${_isEditing ? 'atualizar' : 'criar'} evento',
+        );
       }
 
       final eventId = response[0]['id'];
+
+      final imageUrl = await _uploadImage(eventId);
+      if (imageUrl != null) {
+        await supabase
+            .from('events')
+            .update({'image_url': imageUrl}).eq('id', eventId);
+      }
 
       if (_isEditing) {
         await supabase.from('convocations').delete().eq('event_id', eventId);
@@ -644,10 +679,9 @@ class _AddEventPageState extends State<AddEventPage> {
       final totalConvocados =
           _selectedAthletes.length + _selectedTechnicians.length;
       _showSuccess(
-        '✅ Evento ${_isEditing ? 'atualizado' : 'salvo'} com sucesso!\n'
+        'Evento ${_isEditing ? 'atualizado' : 'salvo'} com sucesso!\n'
         '$totalConvocados convocados registrados'
-        '${_enableCheckIn ? ' • Check-in habilitado' : ''}\n'
-        '📍 Coordenadas: ${coords['latitude']!.toStringAsFixed(6)}, ${coords['longitude']!.toStringAsFixed(6)}',
+        '${_enableCheckIn ? ' • Check-in habilitado' : ''}',
       );
 
       await Future.delayed(const Duration(milliseconds: 500));
@@ -660,7 +694,8 @@ class _AddEventPageState extends State<AddEventPage> {
         setState(() => _isSaving = false);
       }
       _showError(
-          'Erro ao ${_isEditing ? 'atualizar' : 'salvar'} evento: ${e.toString()}');
+        'Erro ao ${_isEditing ? 'atualizar' : 'salvar'} evento: ${e.toString()}',
+      );
     }
   }
 
@@ -716,6 +751,8 @@ class _AddEventPageState extends State<AddEventPage> {
                   const SizedBox(height: 24),
                   _buildConvocationSection(),
                   const SizedBox(height: 24),
+                  _buildImagePicker(),
+                  const SizedBox(height: 24),
                   _buildAddressSection(),
                   const SizedBox(height: 16),
                   _buildCheckInOption(),
@@ -756,7 +793,8 @@ class _AddEventPageState extends State<AddEventPage> {
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               valueColor: AlwaysStoppedAnimation<Color>(
-                                  Color(0xFF0A2463)),
+                                Color(0xFF0A2463),
+                              ),
                             ),
                           )
                         : Text(
@@ -823,8 +861,7 @@ class _AddEventPageState extends State<AddEventPage> {
           label,
           textAlign: TextAlign.center,
           style: TextStyle(
-            color:
-                isSelected ? const Color(0xFF0A2463) : const Color(0xFF0A2463),
+            color: const Color(0xFF0A2463),
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
         ),
@@ -866,6 +903,85 @@ class _AddEventPageState extends State<AddEventPage> {
                 _championshipName = value;
               });
             },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImagePicker() {
+    final hasLocalImage = _selectedImageBytes != null;
+    final hasNetworkImage =
+        _existingImageUrl != null && _existingImageUrl!.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Foto do Jogo',
+          style: TextStyle(
+            color: Color(0xFF0A2463),
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: _pickImage,
+          child: Container(
+            height: 180,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFF0A2463).withOpacity(0.3),
+              ),
+            ),
+            child: hasLocalImage
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.memory(
+                      _selectedImageBytes!,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                    ),
+                  )
+                : hasNetworkImage
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          _existingImageUrl!,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(
+                              Icons.broken_image,
+                              size: 40,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(
+                            Icons.add_a_photo,
+                            size: 40,
+                            color: Color(0xFFD4AF37),
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Toque para selecionar uma foto',
+                            style: TextStyle(
+                              color: Color(0xFF0A2463),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
           ),
         ),
       ],
@@ -971,7 +1087,7 @@ class _AddEventPageState extends State<AddEventPage> {
       label: Text(
         label,
         style: TextStyle(
-          color: isSelected ? const Color(0xFF0A2463) : const Color(0xFF0A2463),
+          color: const Color(0xFF0A2463),
           fontSize: 13,
         ),
       ),
@@ -1092,9 +1208,7 @@ class _AddEventPageState extends State<AddEventPage> {
               label,
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: isSelected
-                    ? const Color(0xFF0A2463)
-                    : const Color(0xFF0A2463),
+                color: const Color(0xFF0A2463),
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
               ),
@@ -1141,12 +1255,16 @@ class _AddEventPageState extends State<AddEventPage> {
                     color: Colors.grey[100],
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                        color: const Color(0xFF0A2463).withOpacity(0.3)),
+                      color: const Color(0xFF0A2463).withOpacity(0.3),
+                    ),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.calendar_today,
-                          color: Color(0xFFD4AF37), size: 18),
+                      const Icon(
+                        Icons.calendar_today,
+                        color: Color(0xFFD4AF37),
+                        size: 18,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
@@ -1190,12 +1308,16 @@ class _AddEventPageState extends State<AddEventPage> {
                     color: Colors.grey[100],
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                        color: const Color(0xFF0A2463).withOpacity(0.3)),
+                      color: const Color(0xFF0A2463).withOpacity(0.3),
+                    ),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.access_time,
-                          color: Color(0xFFD4AF37), size: 18),
+                      const Icon(
+                        Icons.access_time,
+                        color: Color(0xFFD4AF37),
+                        size: 18,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
@@ -1243,8 +1365,10 @@ class _AddEventPageState extends State<AddEventPage> {
         if (_filtroPessoa == 'Atleta') ...[
           Row(
             children: [
-              Text('Gênero: ',
-                  style: TextStyle(color: Colors.grey[600], fontSize: 14)),
+              Text(
+                'Gênero: ',
+                style: TextStyle(color: Colors.grey[600], fontSize: 14),
+              ),
               const SizedBox(width: 8),
               _buildGenderFilterChip('Todos'),
               const SizedBox(width: 8),
@@ -1305,9 +1429,13 @@ class _AddEventPageState extends State<AddEventPage> {
             runSpacing: 8,
             children: _selectedAthletes.map((name) {
               return Chip(
-                label: Text(name,
-                    style: const TextStyle(
-                        fontSize: 12, color: Color(0xFF0A2463))),
+                label: Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF0A2463),
+                  ),
+                ),
                 backgroundColor: goldenColor.withOpacity(0.3),
                 side: const BorderSide(color: Color(0xFFD4AF37), width: 1),
                 deleteIcon:
@@ -1324,8 +1452,10 @@ class _AddEventPageState extends State<AddEventPage> {
             runSpacing: 8,
             children: _selectedTechnicians.map((name) {
               return Chip(
-                label: Text(name,
-                    style: const TextStyle(fontSize: 12, color: Colors.white)),
+                label: Text(
+                  name,
+                  style: const TextStyle(fontSize: 12, color: Colors.white),
+                ),
                 backgroundColor: techColor.withOpacity(0.3),
                 side: const BorderSide(color: Color(0xFF1E3A8A), width: 1),
                 deleteIcon:
@@ -1358,9 +1488,8 @@ class _AddEventPageState extends State<AddEventPage> {
         ),
         child: Text(
           label,
-          style: TextStyle(
-            color:
-                isSelected ? const Color(0xFF0A2463) : const Color(0xFF0A2463),
+          style: const TextStyle(
+            color: Color(0xFF0A2463),
             fontWeight: FontWeight.w600,
             fontSize: 14,
           ),
@@ -1374,8 +1503,8 @@ class _AddEventPageState extends State<AddEventPage> {
     return FilterChip(
       label: Text(
         label,
-        style: TextStyle(
-          color: isSelected ? const Color(0xFF0A2463) : const Color(0xFF0A2463),
+        style: const TextStyle(
+          color: Color(0xFF0A2463),
           fontSize: 12,
         ),
       ),
@@ -1418,11 +1547,15 @@ class _AddEventPageState extends State<AddEventPage> {
             ? Icon(Icons.person, color: goldenColor, size: 20)
             : null,
       ),
-      title: Text(name,
-          style: const TextStyle(color: Color(0xFF0A2463), fontSize: 14)),
+      title: Text(
+        name,
+        style: const TextStyle(color: Color(0xFF0A2463), fontSize: 14),
+      ),
       subtitle: subtitle != null
-          ? Text(subtitle,
-              style: TextStyle(color: Colors.grey[600], fontSize: 12))
+          ? Text(
+              subtitle,
+              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            )
           : null,
       trailing: Checkbox(
         value: isSelected,
@@ -1548,12 +1681,14 @@ class _AddEventPageState extends State<AddEventPage> {
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                        color: const Color(0xFF0A2463).withOpacity(0.3)),
+                      color: const Color(0xFF0A2463).withOpacity(0.3),
+                    ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                        color: const Color(0xFF0A2463).withOpacity(0.3)),
+                      color: const Color(0xFF0A2463).withOpacity(0.3),
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -1580,12 +1715,14 @@ class _AddEventPageState extends State<AddEventPage> {
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                        color: const Color(0xFF0A2463).withOpacity(0.3)),
+                      color: const Color(0xFF0A2463).withOpacity(0.3),
+                    ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                        color: const Color(0xFF0A2463).withOpacity(0.3)),
+                      color: const Color(0xFF0A2463).withOpacity(0.3),
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -1616,12 +1753,14 @@ class _AddEventPageState extends State<AddEventPage> {
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                        color: const Color(0xFF0A2463).withOpacity(0.3)),
+                      color: const Color(0xFF0A2463).withOpacity(0.3),
+                    ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                        color: const Color(0xFF0A2463).withOpacity(0.3)),
+                      color: const Color(0xFF0A2463).withOpacity(0.3),
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -1650,12 +1789,14 @@ class _AddEventPageState extends State<AddEventPage> {
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                        color: const Color(0xFF0A2463).withOpacity(0.3)),
+                      color: const Color(0xFF0A2463).withOpacity(0.3),
+                    ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                        color: const Color(0xFF0A2463).withOpacity(0.3)),
+                      color: const Color(0xFF0A2463).withOpacity(0.3),
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),

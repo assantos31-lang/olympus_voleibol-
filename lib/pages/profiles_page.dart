@@ -8,6 +8,7 @@ import 'package:flutter_masked_text2/flutter_masked_text2.dart';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
+import 'dart:ui';
 import '../services/auth_service.dart';
 
 class ProfilesPage extends StatefulWidget {
@@ -22,11 +23,58 @@ class _ProfilesPageState extends State<ProfilesPage> {
   List<Map<String, dynamic>> profiles = [];
   bool isLoading = true;
 
+  String _selectedUserTypeFilter = 'all';
+
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color futuristicDark = Color(0xFF0B1420);
   static const Color futuristicCard = Color(0xFF122235);
+
+  Widget _buildOlympusBackground() {
+    return IgnorePointer(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Opacity(
+              opacity: 0.78,
+              child: Image.asset(
+                'assets/images/monte_olimpo.png',
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 0.8, sigmaY: 0.8),
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              color: const Color(0xFF0B1420).withOpacity(0.46),
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color.fromRGBO(9, 17, 27, 0.26),
+                    Color.fromRGBO(17, 37, 58, 0.14),
+                    Color.fromRGBO(30, 58, 95, 0.28),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -38,13 +86,17 @@ class _ProfilesPageState extends State<ProfilesPage> {
     try {
       setState(() => isLoading = true);
 
-      final response = await supabase
-          .from('profiles')
-          .select('*')
-          .order('created_at', ascending: false);
+      final response = await supabase.from('profiles').select('*');
+
+      final loadedProfiles = List<Map<String, dynamic>>.from(response);
+      loadedProfiles.sort((a, b) {
+        final nameA = (a['full_name'] ?? '').toString().trim().toLowerCase();
+        final nameB = (b['full_name'] ?? '').toString().trim().toLowerCase();
+        return nameA.compareTo(nameB);
+      });
 
       setState(() {
-        profiles = List<Map<String, dynamic>>.from(response);
+        profiles = loadedProfiles;
         isLoading = false;
       });
     } catch (e) {
@@ -60,6 +112,21 @@ class _ProfilesPageState extends State<ProfilesPage> {
         );
       }
     }
+  }
+
+  List<Map<String, dynamic>> get _filteredProfiles {
+    final filtered = profiles.where((profile) {
+      if (_selectedUserTypeFilter == 'all') return true;
+      return (profile['user_type'] ?? '').toString() == _selectedUserTypeFilter;
+    }).toList();
+
+    filtered.sort((a, b) {
+      final nameA = (a['full_name'] ?? '').toString().trim().toLowerCase();
+      final nameB = (b['full_name'] ?? '').toString().trim().toLowerCase();
+      return nameA.compareTo(nameB);
+    });
+
+    return filtered;
   }
 
   Future<void> insertProfile(Map<String, dynamic> data) async {
@@ -679,18 +746,132 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
   }
 
+  Widget _buildFilterBar() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF122235),
+            Color(0xFF18324D),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: olympusGold.withOpacity(0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: olympusGold.withOpacity(0.08),
+            blurRadius: 18,
+            spreadRadius: 1,
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.35),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: olympusGold.withOpacity(0.16),
+              border: Border.all(color: olympusGold.withOpacity(0.35)),
+            ),
+            child: const Icon(Icons.filter_alt_rounded, color: olympusGold),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              value: _selectedUserTypeFilter,
+              dropdownColor: futuristicCard,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+              iconEnabledColor: olympusGold,
+              decoration: InputDecoration(
+                labelText: 'Filtrar por tipo de usuário',
+                labelStyle: TextStyle(color: Colors.white.withOpacity(0.78)),
+                prefixIcon: const Icon(Icons.badge, color: olympusGold),
+                filled: true,
+                fillColor: const Color(0xFF0E1B2A),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(
+                    color: olympusGold.withOpacity(0.25),
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(
+                    color: olympusGold.withOpacity(0.25),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(
+                    color: olympusGold,
+                    width: 1.8,
+                  ),
+                ),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'all', child: Text('Todos')),
+                DropdownMenuItem(
+                  value: 'admin',
+                  child: Text('Administrador'),
+                ),
+                DropdownMenuItem(
+                  value: 'athlete',
+                  child: Text('Atleta'),
+                ),
+                DropdownMenuItem(
+                  value: 'coach',
+                  child: Text('Técnico'),
+                ),
+                DropdownMenuItem(
+                  value: 'member',
+                  child: Text('Membro'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _selectedUserTypeFilter = value);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final filteredProfiles = _filteredProfiles;
+
     return FutureBuilder<String?>(
       future: _getCurrentUserType(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return Scaffold(
             backgroundColor: futuristicDark,
-            body: Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(olympusGold),
-              ),
+            body: Stack(
+              children: [
+                _buildOlympusBackground(),
+                Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(olympusGold),
+                  ),
+                ),
+              ],
             ),
           );
         }
@@ -698,12 +879,18 @@ class _ProfilesPageState extends State<ProfilesPage> {
         final userType = snapshot.data;
 
         if (userType != 'admin') {
-          return const Scaffold(
-            body: Center(
-              child: Text(
-                'Acesso restrito.',
-                style: TextStyle(fontSize: 18),
-              ),
+          return Scaffold(
+            backgroundColor: futuristicDark,
+            body: Stack(
+              children: [
+                _buildOlympusBackground(),
+                const Center(
+                  child: Text(
+                    'Acesso restrito.',
+                    style: TextStyle(fontSize: 18, color: Colors.white),
+                  ),
+                ),
+              ],
             ),
           );
         }
@@ -776,414 +963,469 @@ class _ProfilesPageState extends State<ProfilesPage> {
               const SizedBox(width: 6),
             ],
           ),
-          body: Column(
+          body: Stack(
             children: [
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [
-                      Color(0xFF122235),
-                      Color(0xFF18324D),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: olympusGold.withOpacity(0.35)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: olympusGold.withOpacity(0.08),
-                      blurRadius: 18,
-                      spreadRadius: 1,
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.35),
-                      blurRadius: 22,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 54,
-                      height: 54,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [
-                            olympusGold.withOpacity(0.95),
-                            const Color(0xFFFFE08A),
-                          ],
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.manage_accounts_rounded,
-                        color: olympusBlue,
-                        size: 30,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Gestão de perfis',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${profiles.length} usuário(s) cadastrados',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.72),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+              _buildOlympusBackground(),
+              Column(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [
+                          Color(0xFF122235),
+                          Color(0xFF18324D),
                         ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: isLoading
-                    ? Center(
-                        child: CircularProgressIndicator(
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(olympusGold),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: olympusGold.withOpacity(0.35)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: olympusGold.withOpacity(0.08),
+                          blurRadius: 18,
+                          spreadRadius: 1,
                         ),
-                      )
-                    : profiles.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.people_outline,
-                                  size: 80,
-                                  color: Colors.grey[400],
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Nenhum perfil cadastrado',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.grey[400],
-                                  ),
-                                ),
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.35),
+                          blurRadius: 22,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 54,
+                          height: 54,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: [
+                                olympusGold.withOpacity(0.95),
+                                const Color(0xFFFFE08A),
                               ],
                             ),
+                          ),
+                          child: const Icon(
+                            Icons.manage_accounts_rounded,
+                            color: olympusBlue,
+                            size: 30,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Gestão de perfis',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${filteredProfiles.length} usuário(s) encontrado(s)',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.72),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _buildFilterBar(),
+                  Expanded(
+                    child: isLoading
+                        ? Center(
+                            child: CircularProgressIndicator(
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(olympusGold),
+                            ),
                           )
-                        : ListView.builder(
-                            itemCount: profiles.length,
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                            itemBuilder: (context, index) {
-                              final profile = profiles[index];
-                              final avatarUrl = profile['avatar_url'];
-
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 14),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [
-                                      Color(0xFF132235),
-                                      Color(0xFF0E1B2A),
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  borderRadius: BorderRadius.circular(22),
-                                  border: Border.all(
-                                    color:
-                                        _getColorForType(profile['user_type'])
-                                            .withOpacity(0.30),
-                                    width: 1.2,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.28),
-                                      blurRadius: 18,
-                                      offset: const Offset(0, 8),
+                        : filteredProfiles.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.people_outline,
+                                      size: 80,
+                                      color: Colors.grey[400],
                                     ),
-                                    BoxShadow(
-                                      color:
-                                          _getColorForType(profile['user_type'])
-                                              .withOpacity(0.08),
-                                      blurRadius: 16,
-                                      spreadRadius: 1,
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'Nenhum perfil encontrado',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: Colors.grey[400],
+                                      ),
                                     ),
                                   ],
                                 ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Container(
-                                        width: 62,
-                                        height: 62,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          gradient: LinearGradient(
-                                            colors: [
-                                              _getColorForType(
-                                                profile['user_type'],
-                                              ).withOpacity(0.95),
-                                              Colors.white,
-                                            ],
-                                            begin: Alignment.topLeft,
-                                            end: Alignment.bottomRight,
-                                          ),
-                                        ),
-                                        padding: const EdgeInsets.all(2.5),
-                                        child: CircleAvatar(
-                                          radius: 28,
-                                          backgroundColor: futuristicCard,
-                                          backgroundImage: avatarUrl != null &&
-                                                  avatarUrl
-                                                      .toString()
-                                                      .isNotEmpty
-                                              ? NetworkImage(avatarUrl)
-                                              : null,
-                                          child: avatarUrl == null ||
-                                                  avatarUrl.toString().isEmpty
-                                              ? Text(
-                                                  profile['full_name']?[0]
-                                                          ?.toUpperCase() ??
-                                                      '?',
-                                                  style: TextStyle(
-                                                    color: _getColorForType(
-                                                      profile['user_type'],
-                                                    ),
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 22,
-                                                  ),
-                                                )
-                                              : null,
-                                        ),
+                              )
+                            : ListView.builder(
+                                itemCount: filteredProfiles.length,
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                                itemBuilder: (context, index) {
+                                  final profile = filteredProfiles[index];
+                                  final avatarUrl = profile['avatar_url'];
+
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 14),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          Color(0xFF132235),
+                                          Color(0xFF0E1B2A),
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
                                       ),
-                                      const SizedBox(width: 14),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
+                                      borderRadius: BorderRadius.circular(22),
+                                      border: Border.all(
+                                        color: _getColorForType(
+                                                profile['user_type'])
+                                            .withOpacity(0.30),
+                                        width: 1.2,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.28),
+                                          blurRadius: 18,
+                                          offset: const Offset(0, 8),
+                                        ),
+                                        BoxShadow(
+                                          color: _getColorForType(
+                                                  profile['user_type'])
+                                              .withOpacity(0.08),
+                                          blurRadius: 16,
+                                          spreadRadius: 1,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Container(
+                                            width: 62,
+                                            height: 62,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              gradient: LinearGradient(
+                                                colors: [
+                                                  _getColorForType(
+                                                    profile['user_type'],
+                                                  ).withOpacity(0.95),
+                                                  Colors.white,
+                                                ],
+                                                begin: Alignment.topLeft,
+                                                end: Alignment.bottomRight,
+                                              ),
+                                            ),
+                                            padding: const EdgeInsets.all(2.5),
+                                            child: CircleAvatar(
+                                              radius: 28,
+                                              backgroundColor: futuristicCard,
+                                              backgroundImage:
+                                                  avatarUrl != null &&
+                                                          avatarUrl
+                                                              .toString()
+                                                              .isNotEmpty
+                                                      ? NetworkImage(avatarUrl)
+                                                      : null,
+                                              child: avatarUrl == null ||
+                                                      avatarUrl
+                                                          .toString()
+                                                          .isEmpty
+                                                  ? Text(
+                                                      profile['full_name']?[0]
+                                                              ?.toUpperCase() ??
+                                                          '?',
+                                                      style: TextStyle(
+                                                        color: _getColorForType(
+                                                          profile['user_type'],
+                                                        ),
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 22,
+                                                      ),
+                                                    )
+                                                  : null,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 14),
+                                          Expanded(
+                                            child: Column(
                                               crossAxisAlignment:
                                                   CrossAxisAlignment.start,
                                               children: [
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                        profile['full_name'] ??
-                                                            'Sem nome',
-                                                        style: const TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                          color: Colors.white,
-                                                          fontSize: 17,
-                                                        ),
+                                                Row(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Expanded(
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        children: [
+                                                          Text(
+                                                            profile['full_name'] ??
+                                                                'Sem nome',
+                                                            style:
+                                                                const TextStyle(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                              color:
+                                                                  Colors.white,
+                                                              fontSize: 17,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(
+                                                              height: 4),
+                                                          if ((profile[
+                                                                      'email'] ??
+                                                                  '')
+                                                              .toString()
+                                                              .isNotEmpty)
+                                                            Text(
+                                                              profile['email'],
+                                                              style: TextStyle(
+                                                                fontSize: 13,
+                                                                color: Colors
+                                                                    .white
+                                                                    .withOpacity(
+                                                                  0.72,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                        ],
                                                       ),
-                                                      const SizedBox(height: 4),
-                                                      if ((profile['email'] ??
-                                                              '')
-                                                          .toString()
-                                                          .isNotEmpty)
-                                                        Text(
-                                                          profile['email'],
-                                                          style: TextStyle(
-                                                            fontSize: 13,
-                                                            color: Colors.white
-                                                                .withOpacity(
-                                                                    0.72),
+                                                    ),
+                                                    PopupMenuButton<String>(
+                                                      icon: Icon(
+                                                        Icons.more_vert,
+                                                        color: olympusGold,
+                                                      ),
+                                                      color: const Color(
+                                                          0xFF162638),
+                                                      onSelected: (value) {
+                                                        if (value == 'edit') {
+                                                          showProfileDialog(
+                                                            profile: profile,
+                                                          );
+                                                        } else if (value ==
+                                                            'permissions') {
+                                                          showPermissionsDialog(
+                                                            profile,
+                                                          );
+                                                        } else if (value ==
+                                                            'delete') {
+                                                          _confirmDelete(
+                                                            profile['id'],
+                                                          );
+                                                        } else if (value ==
+                                                            'reset_password') {
+                                                          _confirmResetPassword(
+                                                            profile['id'],
+                                                            profile['email'] ??
+                                                                '',
+                                                            profile['full_name'] ??
+                                                                'Usuário',
+                                                          );
+                                                        }
+                                                      },
+                                                      itemBuilder: (context) =>
+                                                          [
+                                                        const PopupMenuItem(
+                                                          value: 'edit',
+                                                          child: Row(
+                                                            children: [
+                                                              Icon(
+                                                                Icons.edit,
+                                                                size: 18,
+                                                                color:
+                                                                    olympusBlue,
+                                                              ),
+                                                              SizedBox(
+                                                                  width: 8),
+                                                              Text(
+                                                                'Editar dados',
+                                                                style:
+                                                                    TextStyle(
+                                                                  color: Colors
+                                                                      .white,
+                                                                ),
+                                                              ),
+                                                            ],
                                                           ),
                                                         ),
-                                                    ],
+                                                        const PopupMenuItem(
+                                                          value: 'permissions',
+                                                          child: Row(
+                                                            children: [
+                                                              Icon(
+                                                                Icons
+                                                                    .admin_panel_settings,
+                                                                size: 18,
+                                                                color:
+                                                                    olympusGold,
+                                                              ),
+                                                              SizedBox(
+                                                                  width: 8),
+                                                              Text(
+                                                                'Editar permissões',
+                                                                style:
+                                                                    TextStyle(
+                                                                  color: Colors
+                                                                      .white,
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                        const PopupMenuItem(
+                                                          value:
+                                                              'reset_password',
+                                                          child: Row(
+                                                            children: [
+                                                              Icon(
+                                                                Icons
+                                                                    .lock_reset,
+                                                                size: 18,
+                                                                color:
+                                                                    olympusGold,
+                                                              ),
+                                                              SizedBox(
+                                                                  width: 8),
+                                                              Text(
+                                                                'Resetar senha',
+                                                                style:
+                                                                    TextStyle(
+                                                                  color: Colors
+                                                                      .white,
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                        const PopupMenuItem(
+                                                          value: 'delete',
+                                                          child: Row(
+                                                            children: [
+                                                              Icon(
+                                                                Icons
+                                                                    .delete_outline,
+                                                                size: 18,
+                                                                color:
+                                                                    Colors.red,
+                                                              ),
+                                                              SizedBox(
+                                                                  width: 8),
+                                                              Text(
+                                                                'Excluir',
+                                                                style:
+                                                                    TextStyle(
+                                                                  color: Colors
+                                                                      .white,
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 10),
+                                                Wrap(
+                                                  children:
+                                                      _buildQuickStatusChips(
+                                                    profile,
                                                   ),
                                                 ),
-                                                PopupMenuButton<String>(
-                                                  icon: Icon(
-                                                    Icons.more_vert,
-                                                    color: olympusGold,
-                                                  ),
-                                                  color: const Color(
-                                                    0xFF162638,
-                                                  ),
-                                                  onSelected: (value) {
-                                                    if (value == 'edit') {
-                                                      showProfileDialog(
-                                                        profile: profile,
-                                                      );
-                                                    } else if (value ==
-                                                        'permissions') {
-                                                      showPermissionsDialog(
-                                                        profile,
-                                                      );
-                                                    } else if (value ==
-                                                        'delete') {
-                                                      _confirmDelete(
-                                                        profile['id'],
-                                                      );
-                                                    } else if (value ==
-                                                        'reset_password') {
-                                                      _confirmResetPassword(
-                                                        profile['id'],
-                                                        profile['email'] ?? '',
-                                                        profile['full_name'] ??
-                                                            'Usuário',
-                                                      );
-                                                    }
-                                                  },
-                                                  itemBuilder: (context) => [
-                                                    const PopupMenuItem(
-                                                      value: 'edit',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons.edit,
-                                                            size: 18,
-                                                            color: olympusBlue,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text(
-                                                            'Editar dados',
-                                                          ),
-                                                        ],
+                                                const SizedBox(height: 12),
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.phone,
+                                                      size: 15,
+                                                      color: olympusGold,
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    Expanded(
+                                                      child: Text(
+                                                        _formatPhone(
+                                                          profile['phone'],
+                                                        ).isEmpty
+                                                            ? 'Telefone não informado'
+                                                            : _formatPhone(
+                                                                profile[
+                                                                    'phone'],
+                                                              ),
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          color: Colors.white
+                                                              .withOpacity(
+                                                                  0.78),
+                                                        ),
                                                       ),
                                                     ),
-                                                    const PopupMenuItem(
-                                                      value: 'permissions',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons
-                                                                .admin_panel_settings,
-                                                            size: 18,
-                                                            color: olympusGold,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text(
-                                                            'Editar permissões',
-                                                          ),
-                                                        ],
-                                                      ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 6),
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.credit_card,
+                                                      size: 15,
+                                                      color: olympusGold,
                                                     ),
-                                                    const PopupMenuItem(
-                                                      value: 'reset_password',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons.lock_reset,
-                                                            size: 18,
-                                                            color: olympusGold,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text(
-                                                            'Resetar senha',
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                    const PopupMenuItem(
-                                                      value: 'delete',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons
-                                                                .delete_outline,
-                                                            size: 18,
-                                                            color: Colors.red,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text('Excluir'),
-                                                        ],
+                                                    const SizedBox(width: 6),
+                                                    Expanded(
+                                                      child: Text(
+                                                        _formatCpf(
+                                                          profile['cpf'],
+                                                        ).isEmpty
+                                                            ? 'CPF não informado'
+                                                            : 'CPF: ${_formatCpf(profile['cpf'])}',
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          color: Colors.white
+                                                              .withOpacity(
+                                                                  0.78),
+                                                        ),
                                                       ),
                                                     ),
                                                   ],
                                                 ),
                                               ],
                                             ),
-                                            const SizedBox(height: 10),
-                                            Wrap(
-                                              children: _buildQuickStatusChips(
-                                                profile,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 12),
-                                            Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.phone,
-                                                  size: 15,
-                                                  color: olympusGold,
-                                                ),
-                                                const SizedBox(width: 6),
-                                                Expanded(
-                                                  child: Text(
-                                                    _formatPhone(
-                                                      profile['phone'],
-                                                    ).isEmpty
-                                                        ? 'Telefone não informado'
-                                                        : _formatPhone(
-                                                            profile['phone'],
-                                                          ),
-                                                    style: TextStyle(
-                                                      fontSize: 13,
-                                                      color: Colors.white
-                                                          .withOpacity(0.78),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 6),
-                                            Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.credit_card,
-                                                  size: 15,
-                                                  color: olympusGold,
-                                                ),
-                                                const SizedBox(width: 6),
-                                                Expanded(
-                                                  child: Text(
-                                                    _formatCpf(
-                                                      profile['cpf'],
-                                                    ).isEmpty
-                                                        ? 'CPF não informado'
-                                                        : 'CPF: ${_formatCpf(profile['cpf'])}',
-                                                    style: TextStyle(
-                                                      fontSize: 13,
-                                                      color: Colors.white
-                                                          .withOpacity(0.78),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
+                                          ),
+                                        ],
                                       ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                                    ),
+                                  );
+                                },
+                              ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -2089,14 +2331,66 @@ class _PermissionsFormDialogState extends State<PermissionsFormDialog> {
   bool _showFinancial = true;
   bool _showChat = true;
 
+  String _agendaPermissionLevel = 'none';
+  String _financialPermissionLevel = 'none';
+
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color futuristicCard = Color(0xFF122235);
+
+  Widget _buildOlympusBackground() {
+    return IgnorePointer(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Opacity(
+              opacity: 0.78,
+              child: Image.asset(
+                'assets/images/monte_olimpo.png',
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 0.8, sigmaY: 0.8),
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              color: const Color(0xFF0B1420).withOpacity(0.46),
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color.fromRGBO(9, 17, 27, 0.26),
+                    Color.fromRGBO(17, 37, 58, 0.14),
+                    Color.fromRGBO(30, 58, 95, 0.28),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static const Color futuristicDark = Color(0xFF0B1420);
 
   @override
   void initState() {
     super.initState();
     _loadPermissionsFromProfile();
     _loadDashboardVisibilityFromProfile();
+    _syncPermissionDropdowns();
   }
 
   void _loadPermissionsFromProfile() {
@@ -2189,10 +2483,32 @@ class _PermissionsFormDialogState extends State<PermissionsFormDialog> {
     _showChat = widget.profile['show_chat'] ?? true;
   }
 
-  void _onAgendaPageChanged(bool value) {
+  void _syncPermissionDropdowns() {
+    if (!_agendaPage) {
+      _agendaPermissionLevel = 'none';
+    } else if (_agendaCreate ||
+        _agendaEdit ||
+        _agendaDelete ||
+        _agendaScore ||
+        _agendaExport) {
+      _agendaPermissionLevel = 'full';
+    } else {
+      _agendaPermissionLevel = 'view';
+    }
+
+    if (!_financialPage) {
+      _financialPermissionLevel = 'none';
+    } else {
+      _financialPermissionLevel = 'view';
+    }
+  }
+
+  void _applyAgendaPermissionLevel(String value) {
     setState(() {
-      _agendaPage = value;
-      if (!value) {
+      _agendaPermissionLevel = value;
+
+      if (value == 'none') {
+        _agendaPage = false;
         _agendaCreate = false;
         _agendaEdit = false;
         _agendaDelete = false;
@@ -2214,14 +2530,62 @@ class _PermissionsFormDialogState extends State<PermissionsFormDialog> {
         _athleteAgendaViewTreino = false;
         _athleteAgendaViewAmistoso = false;
         _athleteAgendaViewCampeonato = false;
+      } else if (value == 'view') {
+        _agendaPage = true;
+        _agendaCreate = false;
+        _agendaEdit = false;
+        _agendaDelete = false;
+        _agendaScore = false;
+        _agendaExport = false;
+        _agendaViewConvocados = true;
+        _agendaViewCheckin = true;
+        _athleteAgendaViewMonthFilter = true;
+        _athleteAgendaViewTypeFilter = true;
+        _athleteAgendaViewStatusFilter = true;
+        _athleteAgendaViewStatusBadge = true;
+        _athleteAgendaViewChampionship = true;
+        _athleteAgendaViewAddress = true;
+        _athleteAgendaRespondConvocation = true;
+        _athleteAgendaEditResponse = true;
+        _athleteAgendaViewCheckin = true;
+        _athleteAgendaDoCheckin = true;
+        _athleteAgendaViewDeadlineInfo = true;
+        _athleteAgendaViewTreino = true;
+        _athleteAgendaViewAmistoso = true;
+        _athleteAgendaViewCampeonato = true;
+      } else {
+        _agendaPage = true;
+        _agendaCreate = true;
+        _agendaEdit = true;
+        _agendaDelete = true;
+        _agendaScore = true;
+        _agendaExport = true;
+        _agendaViewConvocados = true;
+        _agendaViewCheckin = true;
+        _athleteAgendaViewMonthFilter = true;
+        _athleteAgendaViewTypeFilter = true;
+        _athleteAgendaViewStatusFilter = true;
+        _athleteAgendaViewStatusBadge = true;
+        _athleteAgendaViewChampionship = true;
+        _athleteAgendaViewAddress = true;
+        _athleteAgendaRespondConvocation = true;
+        _athleteAgendaEditResponse = true;
+        _athleteAgendaViewCheckin = true;
+        _athleteAgendaDoCheckin = true;
+        _athleteAgendaViewDeadlineInfo = true;
+        _athleteAgendaViewTreino = true;
+        _athleteAgendaViewAmistoso = true;
+        _athleteAgendaViewCampeonato = true;
       }
     });
   }
 
-  void _onFinancialPageChanged(bool value) {
+  void _applyFinancialPermissionLevel(String value) {
     setState(() {
-      _financialPage = value;
-      if (!value) {
+      _financialPermissionLevel = value;
+
+      if (value == 'none') {
+        _financialPage = false;
         _athleteFinancialViewMonthFilter = false;
         _athleteFinancialViewYearFilter = false;
         _athleteFinancialViewTypeFilter = false;
@@ -2231,6 +2595,17 @@ class _PermissionsFormDialogState extends State<PermissionsFormDialog> {
         _athleteFinancialViewDescription = false;
         _athleteFinancialUploadReceipt = false;
         _athleteFinancialViewReceiptStatus = false;
+      } else {
+        _financialPage = true;
+        _athleteFinancialViewMonthFilter = true;
+        _athleteFinancialViewYearFilter = true;
+        _athleteFinancialViewTypeFilter = true;
+        _athleteFinancialViewCounters = true;
+        _athleteFinancialViewStatusBadge = true;
+        _athleteFinancialViewDueDate = true;
+        _athleteFinancialViewDescription = true;
+        _athleteFinancialUploadReceipt = true;
+        _athleteFinancialViewReceiptStatus = true;
       }
     });
   }
@@ -2291,322 +2666,544 @@ class _PermissionsFormDialogState extends State<PermissionsFormDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
+    if (isMobile) {
+      return Scaffold(
+        backgroundColor: futuristicDark,
+        appBar: AppBar(
+          title: const Text('Editar permissões'),
+          backgroundColor: olympusBlue,
+          foregroundColor: Colors.white,
+          elevation: 2,
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: _buildFormContent(context),
+      );
+    }
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
         width: double.infinity,
         constraints: const BoxConstraints(maxWidth: 760),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Color(0xFF09111B),
-                    Color(0xFF10253A),
-                    Color(0xFF1E3A5F),
-                  ],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                ),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.admin_panel_settings,
-                      color: olympusGold, size: 28),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Editar permissões',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildSectionCard(
-                      'Permissões - Agenda',
-                      Icons.event_note,
-                      [
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Acessar Agenda'),
-                          subtitle: const Text('Controla entrada na página'),
-                          value: _agendaPage,
-                          activeColor: olympusGold,
-                          onChanged: _onAgendaPageChanged,
-                        ),
-                        const Divider(),
-                        _checkbox('Cadastrar evento', _agendaCreate,
-                            _agendaPage, (v) => _agendaCreate = v),
-                        _checkbox('Editar evento', _agendaEdit, _agendaPage,
-                            (v) => _agendaEdit = v),
-                        _checkbox('Excluir evento', _agendaDelete, _agendaPage,
-                            (v) => _agendaDelete = v),
-                        _checkbox('Inserir / editar placar', _agendaScore,
-                            _agendaPage, (v) => _agendaScore = v),
-                        _checkbox('Exportar convocados', _agendaExport,
-                            _agendaPage, (v) => _agendaExport = v),
-                        _checkbox('Ver convocados', _agendaViewConvocados,
-                            _agendaPage, (v) => _agendaViewConvocados = v),
-                        _checkbox('Ver status de check-in', _agendaViewCheckin,
-                            _agendaPage, (v) => _agendaViewCheckin = v),
-                        const Divider(),
-                        const Padding(
-                          padding: EdgeInsets.only(top: 6, bottom: 6),
-                          child: Text(
-                            'Agenda do Atleta',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: olympusBlue,
-                            ),
-                          ),
-                        ),
-                        _checkbox(
-                            'Ver filtro de mês',
-                            _athleteAgendaViewMonthFilter,
-                            _agendaPage,
-                            (v) => _athleteAgendaViewMonthFilter = v),
-                        _checkbox(
-                            'Ver filtro de tipo',
-                            _athleteAgendaViewTypeFilter,
-                            _agendaPage,
-                            (v) => _athleteAgendaViewTypeFilter = v),
-                        _checkbox(
-                            'Ver filtro de status',
-                            _athleteAgendaViewStatusFilter,
-                            _agendaPage,
-                            (v) => _athleteAgendaViewStatusFilter = v),
-                        _checkbox(
-                            'Ver badge de status',
-                            _athleteAgendaViewStatusBadge,
-                            _agendaPage,
-                            (v) => _athleteAgendaViewStatusBadge = v),
-                        _checkbox(
-                            'Ver campeonato',
-                            _athleteAgendaViewChampionship,
-                            _agendaPage,
-                            (v) => _athleteAgendaViewChampionship = v),
-                        _checkbox('Ver endereço', _athleteAgendaViewAddress,
-                            _agendaPage, (v) => _athleteAgendaViewAddress = v),
-                        _checkbox(
-                            'Responder convocação',
-                            _athleteAgendaRespondConvocation,
-                            _agendaPage,
-                            (v) => _athleteAgendaRespondConvocation = v),
-                        _checkbox('Editar resposta', _athleteAgendaEditResponse,
-                            _agendaPage, (v) => _athleteAgendaEditResponse = v),
-                        _checkbox('Ver check-in', _athleteAgendaViewCheckin,
-                            _agendaPage, (v) => _athleteAgendaViewCheckin = v),
-                        _checkbox('Permitir check-in', _athleteAgendaDoCheckin,
-                            _agendaPage, (v) => _athleteAgendaDoCheckin = v),
-                        _checkbox(
-                            'Ver prazo de edição',
-                            _athleteAgendaViewDeadlineInfo,
-                            _agendaPage,
-                            (v) => _athleteAgendaViewDeadlineInfo = v),
-                        _checkbox('Ver Treino', _athleteAgendaViewTreino,
-                            _agendaPage, (v) => _athleteAgendaViewTreino = v),
-                        _checkbox('Ver Amistoso', _athleteAgendaViewAmistoso,
-                            _agendaPage, (v) => _athleteAgendaViewAmistoso = v),
-                        _checkbox(
-                            'Ver Campeonato',
-                            _athleteAgendaViewCampeonato,
-                            _agendaPage,
-                            (v) => _athleteAgendaViewCampeonato = v),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildSectionCard(
-                      'Permissões - Financeiro',
-                      Icons.account_balance_wallet,
-                      [
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Acessar Financeiro'),
-                          subtitle: const Text('Controla entrada na página'),
-                          value: _financialPage,
-                          activeColor: olympusGold,
-                          onChanged: _onFinancialPageChanged,
-                        ),
-                        const Divider(),
-                        _checkbox(
-                            'Ver filtro de mês',
-                            _athleteFinancialViewMonthFilter,
-                            _financialPage,
-                            (v) => _athleteFinancialViewMonthFilter = v),
-                        _checkbox(
-                            'Ver filtro de ano',
-                            _athleteFinancialViewYearFilter,
-                            _financialPage,
-                            (v) => _athleteFinancialViewYearFilter = v),
-                        _checkbox(
-                            'Ver filtro de tipo',
-                            _athleteFinancialViewTypeFilter,
-                            _financialPage,
-                            (v) => _athleteFinancialViewTypeFilter = v),
-                        _checkbox(
-                            'Ver contadores',
-                            _athleteFinancialViewCounters,
-                            _financialPage,
-                            (v) => _athleteFinancialViewCounters = v),
-                        _checkbox(
-                            'Ver badge de status',
-                            _athleteFinancialViewStatusBadge,
-                            _financialPage,
-                            (v) => _athleteFinancialViewStatusBadge = v),
-                        _checkbox(
-                            'Ver vencimento',
-                            _athleteFinancialViewDueDate,
-                            _financialPage,
-                            (v) => _athleteFinancialViewDueDate = v),
-                        _checkbox(
-                            'Ver descrição',
-                            _athleteFinancialViewDescription,
-                            _financialPage,
-                            (v) => _athleteFinancialViewDescription = v),
-                        _checkbox(
-                            'Permitir envio de comprovante',
-                            _athleteFinancialUploadReceipt,
-                            _financialPage,
-                            (v) => _athleteFinancialUploadReceipt = v),
-                        _checkbox(
-                            'Ver status do comprovante',
-                            _athleteFinancialViewReceiptStatus,
-                            _financialPage,
-                            (v) => _athleteFinancialViewReceiptStatus = v),
-                      ],
-                    ),
-                    if ((widget.profile['user_type'] ?? '') == 'athlete') ...[
-                      const SizedBox(height: 16),
-                      _buildSectionCard(
-                        'Dashboard do Atleta',
-                        Icons.dashboard_customize,
-                        [
-                          _checkboxSimple('Exibir card do atleta',
-                              _showAthleteInfo, (v) => _showAthleteInfo = v),
-                          _checkboxSimple(
-                              'Exibir alerta financeiro',
-                              _showFinancialAlert,
-                              (v) => _showFinancialAlert = v),
-                          _checkboxSimple(
-                              'Exibir resumo de presença',
-                              _showPresenceSummary,
-                              (v) => _showPresenceSummary = v),
-                          _checkboxSimple('Exibir eventos da semana',
-                              _showWeekEvents, (v) => _showWeekEvents = v),
-                          _checkboxSimple('Exibir card Minha Agenda',
-                              _showAgenda, (v) => _showAgenda = v),
-                          _checkboxSimple('Exibir card Financeiro',
-                              _showFinancial, (v) => _showFinancial = v),
-                          _checkboxSimple('Exibir botão Chat', _showChat,
-                              (v) => _showChat = v),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(20),
-                  bottomRight: Radius.circular(20),
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancelar'),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: _isLoading ? null : _save,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: olympusGold,
-                      foregroundColor: olympusBlue,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor:
-                                  AlwaysStoppedAnimation<Color>(olympusBlue),
-                            ),
-                          )
-                        : const Text(
-                            'Salvar permissões',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+        child: _buildFormContent(context),
       ),
     );
   }
 
-  Widget _buildSectionCard(String title, IconData icon, List<Widget> children) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: olympusBlue.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: olympusGold.withOpacity(0.35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: olympusGold),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: olympusBlue,
+  Widget _buildFormContent(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (MediaQuery.of(context).size.width >= 600)
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFF09111B),
+                  Color(0xFF10253A),
+                  Color(0xFF1E3A5F),
+                ],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.admin_panel_settings, color: olympusGold, size: 28),
+                const SizedBox(width: 12),
+                const Text(
+                  'Editar permissões',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
+              ],
+            ),
+          ),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildSectionTitle('Permissões principais', Icons.tune),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  value: _agendaPermissionLevel,
+                  dropdownColor: futuristicCard,
+                  style: const TextStyle(color: Colors.white),
+                  iconEnabledColor: olympusGold,
+                  decoration: _inputDecorationDark(
+                    'Agenda',
+                    Icons.event_note,
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'none',
+                      child: Text('Sem acesso'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'view',
+                      child: Text('Visualização'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'full',
+                      child: Text('Acesso completo'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) _applyAgendaPermissionLevel(value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _financialPermissionLevel,
+                  dropdownColor: futuristicCard,
+                  style: const TextStyle(color: Colors.white),
+                  iconEnabledColor: olympusGold,
+                  decoration: _inputDecorationDark(
+                    'Financeiro',
+                    Icons.account_balance_wallet,
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'none',
+                      child: Text('Sem acesso'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'view',
+                      child: Text('Visualização'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) _applyFinancialPermissionLevel(value);
+                  },
+                ),
+                const SizedBox(height: 18),
+                _buildExpansionCard(
+                  title: 'Detalhamento da Agenda',
+                  icon: Icons.event,
+                  enabled: _agendaPage,
+                  children: [
+                    _checkbox(
+                      'Cadastrar evento',
+                      _agendaCreate,
+                      _agendaPage,
+                      (v) => _agendaCreate = v,
+                    ),
+                    _checkbox(
+                      'Editar evento',
+                      _agendaEdit,
+                      _agendaPage,
+                      (v) => _agendaEdit = v,
+                    ),
+                    _checkbox(
+                      'Excluir evento',
+                      _agendaDelete,
+                      _agendaPage,
+                      (v) => _agendaDelete = v,
+                    ),
+                    _checkbox(
+                      'Inserir / editar placar',
+                      _agendaScore,
+                      _agendaPage,
+                      (v) => _agendaScore = v,
+                    ),
+                    _checkbox(
+                      'Exportar convocados',
+                      _agendaExport,
+                      _agendaPage,
+                      (v) => _agendaExport = v,
+                    ),
+                    _checkbox(
+                      'Ver convocados',
+                      _agendaViewConvocados,
+                      _agendaPage,
+                      (v) => _agendaViewConvocados = v,
+                    ),
+                    _checkbox(
+                      'Ver status de check-in',
+                      _agendaViewCheckin,
+                      _agendaPage,
+                      (v) => _agendaViewCheckin = v,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _buildExpansionCard(
+                  title: 'Agenda do Atleta',
+                  icon: Icons.sports_volleyball,
+                  enabled: _agendaPage,
+                  children: [
+                    _checkbox(
+                      'Ver filtro de mês',
+                      _athleteAgendaViewMonthFilter,
+                      _agendaPage,
+                      (v) => _athleteAgendaViewMonthFilter = v,
+                    ),
+                    _checkbox(
+                      'Ver filtro de tipo',
+                      _athleteAgendaViewTypeFilter,
+                      _agendaPage,
+                      (v) => _athleteAgendaViewTypeFilter = v,
+                    ),
+                    _checkbox(
+                      'Ver filtro de status',
+                      _athleteAgendaViewStatusFilter,
+                      _agendaPage,
+                      (v) => _athleteAgendaViewStatusFilter = v,
+                    ),
+                    _checkbox(
+                      'Ver badge de status',
+                      _athleteAgendaViewStatusBadge,
+                      _agendaPage,
+                      (v) => _athleteAgendaViewStatusBadge = v,
+                    ),
+                    _checkbox(
+                      'Ver campeonato',
+                      _athleteAgendaViewChampionship,
+                      _agendaPage,
+                      (v) => _athleteAgendaViewChampionship = v,
+                    ),
+                    _checkbox(
+                      'Ver endereço',
+                      _athleteAgendaViewAddress,
+                      _agendaPage,
+                      (v) => _athleteAgendaViewAddress = v,
+                    ),
+                    _checkbox(
+                      'Responder convocação',
+                      _athleteAgendaRespondConvocation,
+                      _agendaPage,
+                      (v) => _athleteAgendaRespondConvocation = v,
+                    ),
+                    _checkbox(
+                      'Editar resposta',
+                      _athleteAgendaEditResponse,
+                      _agendaPage,
+                      (v) => _athleteAgendaEditResponse = v,
+                    ),
+                    _checkbox(
+                      'Ver check-in',
+                      _athleteAgendaViewCheckin,
+                      _agendaPage,
+                      (v) => _athleteAgendaViewCheckin = v,
+                    ),
+                    _checkbox(
+                      'Permitir check-in',
+                      _athleteAgendaDoCheckin,
+                      _agendaPage,
+                      (v) => _athleteAgendaDoCheckin = v,
+                    ),
+                    _checkbox(
+                      'Ver prazo de edição',
+                      _athleteAgendaViewDeadlineInfo,
+                      _agendaPage,
+                      (v) => _athleteAgendaViewDeadlineInfo = v,
+                    ),
+                    _checkbox(
+                      'Ver Treino',
+                      _athleteAgendaViewTreino,
+                      _agendaPage,
+                      (v) => _athleteAgendaViewTreino = v,
+                    ),
+                    _checkbox(
+                      'Ver Amistoso',
+                      _athleteAgendaViewAmistoso,
+                      _agendaPage,
+                      (v) => _athleteAgendaViewAmistoso = v,
+                    ),
+                    _checkbox(
+                      'Ver Campeonato',
+                      _athleteAgendaViewCampeonato,
+                      _agendaPage,
+                      (v) => _athleteAgendaViewCampeonato = v,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _buildExpansionCard(
+                  title: 'Financeiro do Atleta',
+                  icon: Icons.payments,
+                  enabled: _financialPage,
+                  children: [
+                    _checkbox(
+                      'Ver filtro de mês',
+                      _athleteFinancialViewMonthFilter,
+                      _financialPage,
+                      (v) => _athleteFinancialViewMonthFilter = v,
+                    ),
+                    _checkbox(
+                      'Ver filtro de ano',
+                      _athleteFinancialViewYearFilter,
+                      _financialPage,
+                      (v) => _athleteFinancialViewYearFilter = v,
+                    ),
+                    _checkbox(
+                      'Ver filtro de tipo',
+                      _athleteFinancialViewTypeFilter,
+                      _financialPage,
+                      (v) => _athleteFinancialViewTypeFilter = v,
+                    ),
+                    _checkbox(
+                      'Ver contadores',
+                      _athleteFinancialViewCounters,
+                      _financialPage,
+                      (v) => _athleteFinancialViewCounters = v,
+                    ),
+                    _checkbox(
+                      'Ver badge de status',
+                      _athleteFinancialViewStatusBadge,
+                      _financialPage,
+                      (v) => _athleteFinancialViewStatusBadge = v,
+                    ),
+                    _checkbox(
+                      'Ver vencimento',
+                      _athleteFinancialViewDueDate,
+                      _financialPage,
+                      (v) => _athleteFinancialViewDueDate = v,
+                    ),
+                    _checkbox(
+                      'Ver descrição',
+                      _athleteFinancialViewDescription,
+                      _financialPage,
+                      (v) => _athleteFinancialViewDescription = v,
+                    ),
+                    _checkbox(
+                      'Permitir envio de comprovante',
+                      _athleteFinancialUploadReceipt,
+                      _financialPage,
+                      (v) => _athleteFinancialUploadReceipt = v,
+                    ),
+                    _checkbox(
+                      'Ver status do comprovante',
+                      _athleteFinancialViewReceiptStatus,
+                      _financialPage,
+                      (v) => _athleteFinancialViewReceiptStatus = v,
+                    ),
+                  ],
+                ),
+                if ((widget.profile['user_type'] ?? '') == 'athlete') ...[
+                  const SizedBox(height: 12),
+                  _buildExpansionCard(
+                    title: 'Dashboard do Atleta',
+                    icon: Icons.dashboard_customize,
+                    enabled: true,
+                    children: [
+                      _checkboxSimple(
+                        'Exibir card do atleta',
+                        _showAthleteInfo,
+                        (v) => _showAthleteInfo = v,
+                      ),
+                      _checkboxSimple(
+                        'Exibir alerta financeiro',
+                        _showFinancialAlert,
+                        (v) => _showFinancialAlert = v,
+                      ),
+                      _checkboxSimple(
+                        'Exibir resumo de presença',
+                        _showPresenceSummary,
+                        (v) => _showPresenceSummary = v,
+                      ),
+                      _checkboxSimple(
+                        'Exibir eventos da semana',
+                        _showWeekEvents,
+                        (v) => _showWeekEvents = v,
+                      ),
+                      _checkboxSimple(
+                        'Exibir card Minha Agenda',
+                        _showAgenda,
+                        (v) => _showAgenda = v,
+                      ),
+                      _checkboxSimple(
+                        'Exibir card Financeiro',
+                        _showFinancial,
+                        (v) => _showFinancial = v,
+                      ),
+                      _checkboxSimple(
+                        'Exibir botão Chat',
+                        _showChat,
+                        (v) => _showChat = v,
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: MediaQuery.of(context).size.width >= 600
+                ? const BorderRadius.only(
+                    bottomLeft: Radius.circular(20),
+                    bottomRight: Radius.circular(20),
+                  )
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: _isLoading ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: olympusGold,
+                  foregroundColor: olympusBlue,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(olympusBlue),
+                        ),
+                      )
+                    : const Text(
+                        'Salvar permissões',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          ...children,
+        ),
+      ],
+    );
+  }
+
+  InputDecoration _inputDecorationDark(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: TextStyle(color: Colors.white.withOpacity(0.78)),
+      prefixIcon: Icon(icon, color: olympusGold),
+      filled: true,
+      fillColor: const Color(0xFF0E1B2A),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: olympusGold.withOpacity(0.25)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: olympusGold.withOpacity(0.25)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: olympusGold, width: 1.8),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: olympusGold, size: 20),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: olympusBlue,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExpansionCard({
+    required String title,
+    required IconData icon,
+    required bool enabled,
+    required List<Widget> children,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF122235),
+            Color(0xFF18324D),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: enabled
+              ? olympusGold.withOpacity(0.35)
+              : Colors.white.withOpacity(0.08),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.28),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
         ],
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          iconColor: olympusGold,
+          collapsedIconColor: olympusGold,
+          leading: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: olympusGold.withOpacity(0.14),
+              shape: BoxShape.circle,
+              border: Border.all(color: olympusGold.withOpacity(0.30)),
+            ),
+            child: Icon(
+              icon,
+              color: enabled ? olympusGold : Colors.grey,
+              size: 20,
+            ),
+          ),
+          title: Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: enabled ? Colors.white : Colors.white.withOpacity(0.65),
+            ),
+          ),
+          subtitle: Text(
+            enabled ? 'Toque para expandir' : 'Habilite no nível principal',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withOpacity(0.65),
+            ),
+          ),
+          children: children,
+        ),
       ),
     );
   }
@@ -2614,20 +3211,34 @@ class _PermissionsFormDialogState extends State<PermissionsFormDialog> {
   Widget _checkbox(String title, bool value, bool enabled, Function(bool) set) {
     return CheckboxListTile(
       contentPadding: EdgeInsets.zero,
-      title: Text(title),
+      dense: true,
+      title: Text(
+        title,
+        style: TextStyle(
+          color: enabled ? Colors.white : Colors.white.withOpacity(0.40),
+        ),
+      ),
       value: value,
       activeColor: olympusGold,
+      checkColor: olympusBlue,
       onChanged: enabled ? (v) => setState(() => set(v ?? false)) : null,
+      controlAffinity: ListTileControlAffinity.leading,
     );
   }
 
   Widget _checkboxSimple(String title, bool value, Function(bool) set) {
     return CheckboxListTile(
       contentPadding: EdgeInsets.zero,
-      title: Text(title),
+      dense: true,
+      title: Text(
+        title,
+        style: const TextStyle(color: Colors.white),
+      ),
       value: value,
       activeColor: olympusGold,
+      checkColor: olympusBlue,
       onChanged: (v) => setState(() => set(v ?? false)),
+      controlAffinity: ListTileControlAffinity.leading,
     );
   }
 

@@ -7,9 +7,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui';
 import '../services/auth_service.dart';
 import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
+import 'championships_page.dart';
 import 'chat_rooms_page.dart';
 
 class AthleteDashboardPage extends StatefulWidget {
@@ -24,6 +26,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
   final _authService = AuthService();
   Map<String, dynamic>? _profile;
   bool _isLoading = true;
+  bool _permissionsLoaded = false;
   int _pendingCount = 0;
   int _overdueFinancialCount = 0;
   Map<int, int> _overdueByMonth = {};
@@ -36,10 +39,65 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
   int _monthlyAbsenceCount = 0;
   double _monthlyPresencePercent = 0;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
+  // Paleta principal Olympus
+  static const Color olympusBlue = Color(0xFF1E3A5F); // #1E3A5F
   static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D); // #2C5F8D
+  static const Color olympusDarkBackground = Color(0xFF0B1420); // #0B1420
+  static const Color olympusGradientTop = Color(0xFF09111B); // #09111B
+  static const Color olympusGradientMid = Color(0xFF11253A); // #11253A
+  static const Color olympusCardDark = Color(0xFF122235); // #122235
+  static const Color olympusCardMid = Color(0xFF18324D); // #18324D
   static const String _eventsEmbedFk = 'convocations_event_id_fkey';
+
+  Widget _buildOlympusBackground({double parallaxOffset = 18}) {
+    return IgnorePointer(
+      child: Stack(
+        children: [
+          Positioned(
+            top: -parallaxOffset,
+            left: -12,
+            right: -12,
+            bottom: -parallaxOffset,
+            child: Opacity(
+              opacity: 0.78,
+              child: Image.asset(
+                'assets/images/monte_olimpo.png',
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 0.6, sigmaY: 0.6),
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    olympusGradientTop.withOpacity(0.58),
+                    olympusGradientMid.withOpacity(0.38),
+                    olympusBlue.withOpacity(0.48),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              color: olympusDarkBackground.withOpacity(0.18),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -59,23 +117,43 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
   }
 
   bool _canShow(String key, {bool defaultValue = true}) {
+    if (!_permissionsLoaded) return false;
     return _isVisibleFlag(_profile?[key], defaultValue: defaultValue);
   }
 
   Future<void> _loadProfile() async {
-    final user = supabase.auth.currentUser;
-    if (user != null) {
-      final profile = await _authService.getUserProfile(user.id);
-      if (mounted) {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) {
+        if (!mounted) return;
         setState(() {
-          _profile = profile;
+          _profile = null;
+          _permissionsLoaded = true;
           _isLoading = false;
         });
-        _loadPendingCount();
-        _loadOverdueFinancialCount();
-        _loadWeekEvents();
-        _loadAttendanceAndPerformance();
+        return;
       }
+
+      final profile = await _authService.getUserProfile(user.id);
+
+      if (!mounted) return;
+      setState(() {
+        _profile = profile;
+        _permissionsLoaded = true;
+        _isLoading = false;
+      });
+
+      _loadPendingCount();
+      _loadOverdueFinancialCount();
+      _loadWeekEvents();
+      _loadAttendanceAndPerformance();
+    } catch (e) {
+      debugPrint('Erro ao carregar perfil: $e');
+      if (!mounted) return;
+      setState(() {
+        _permissionsLoaded = true;
+        _isLoading = false;
+      });
     }
   }
 
@@ -486,6 +564,15 @@ event_time
         builder: (context) => const AthleteFinancialPage(),
       ),
     ).then((_) => _loadOverdueFinancialCount());
+  }
+
+  void _navigateToChampionships() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ChampionshipsPage(),
+      ),
+    );
   }
 
   void _navigateToChat() {
@@ -1133,14 +1220,18 @@ event_time
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: const LinearGradient(
+          colors: [olympusCardDark, olympusCardMid],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: olympusGold.withOpacity(0.25)),
+        border: Border.all(color: olympusLightBlue.withOpacity(0.35)),
         boxShadow: [
           BoxShadow(
-            color: olympusGold.withOpacity(0.12),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.22),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -1160,7 +1251,7 @@ event_time
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
-                  color: olympusBlue,
+                  color: Colors.white,
                 ),
               ),
             ],
@@ -1186,7 +1277,7 @@ event_time
                       style: const TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: olympusBlue,
+                        color: Color(0xFFDCEBFA),
                       ),
                     ),
                   ),
@@ -1199,7 +1290,7 @@ event_time
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF2C3E5A),
+                        color: Colors.white,
                       ),
                     ),
                   ),
@@ -1233,14 +1324,18 @@ event_time
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       padding: const EdgeInsets.fromLTRB(14, 18, 14, 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: const LinearGradient(
+          colors: [olympusCardDark, olympusCardMid],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: olympusBlue.withOpacity(0.12)),
+        border: Border.all(color: olympusLightBlue.withOpacity(0.26)),
         boxShadow: [
           BoxShadow(
-            color: olympusBlue.withOpacity(0.08),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.20),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -1252,7 +1347,7 @@ event_time
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
-              color: olympusBlue.withOpacity(0.85),
+              color: const Color(0xFFDCEBFA),
             ),
           ),
           const SizedBox(height: 10),
@@ -1269,7 +1364,7 @@ event_time
               Container(
                 width: 1,
                 height: 42,
-                color: Colors.grey.withOpacity(0.18),
+                color: Colors.white.withOpacity(0.10),
               ),
               Expanded(
                 child: _buildPresenceMetric(
@@ -1282,7 +1377,7 @@ event_time
               Container(
                 width: 1,
                 height: 42,
-                color: Colors.grey.withOpacity(0.18),
+                color: Colors.white.withOpacity(0.10),
               ),
               Expanded(
                 child: _buildPresenceMetric(
@@ -1322,7 +1417,7 @@ event_time
           label,
           style: TextStyle(
             fontSize: 11,
-            color: Colors.grey[700],
+            color: Colors.white70,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -1337,24 +1432,31 @@ event_time
     required Color color,
     required VoidCallback onTap,
     int? badgeCount,
+    Color? titleColor,
+    Color? subtitleColor,
+    Color? iconColor,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.white,
+          gradient: const LinearGradient(
+            colors: [olympusCardDark, olympusCardMid],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: color.withOpacity(0.2),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
+              color: Colors.black.withOpacity(0.22),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
             ),
           ],
           border: Border.all(
-            color: color.withOpacity(0.3),
-            width: 2,
+            color: color.withOpacity(0.34),
+            width: 1.6,
           ),
         ),
         child: Stack(
@@ -1368,13 +1470,13 @@ event_time
                     width: 60,
                     height: 60,
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.1),
+                      color: Colors.white.withOpacity(0.06),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
                       icon,
                       size: 32,
-                      color: color,
+                      color: iconColor ?? Colors.white,
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -1387,7 +1489,7 @@ event_time
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: color,
+                            color: titleColor ?? Colors.white,
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -1395,7 +1497,7 @@ event_time
                           subtitle,
                           style: TextStyle(
                             fontSize: 13,
-                            color: Colors.grey[600],
+                            color: subtitleColor ?? Colors.white,
                           ),
                         ),
                       ],
@@ -1403,7 +1505,7 @@ event_time
                   ),
                   Icon(
                     Icons.arrow_forward_ios,
-                    color: color.withOpacity(0.5),
+                    color: Colors.white54,
                     size: 18,
                   ),
                 ],
@@ -1454,7 +1556,7 @@ event_time
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFF2C5F8D), Color(0xFF1E3A5F)],
+              colors: [olympusLightBlue, olympusBlue],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -1606,13 +1708,42 @@ event_time
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+    final screenHeight = MediaQuery.of(context).size.height;
+    final parallaxOffset = (_weekEvents.length * 6.0).clamp(12.0, 28.0);
+
+    if (_isLoading || !_permissionsLoaded) {
+      return Scaffold(
+        backgroundColor: olympusDarkBackground,
+        appBar: AppBar(
+          title: const Text('Área do Atleta'),
+          backgroundColor: olympusBlue,
+          foregroundColor: Colors.white,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.person, color: Colors.white),
+              tooltip: 'Perfil',
+              onPressed: _navigateToProfilePage,
+            ),
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: 'Sair',
+              onPressed: _redirectToLogin,
+            ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            _buildOlympusBackground(parallaxOffset: parallaxOffset),
+            const Center(
+              child: CircularProgressIndicator(),
+            ),
+          ],
+        ),
       );
     }
 
     return Scaffold(
+      backgroundColor: olympusDarkBackground,
       appBar: AppBar(
         title: const Text('Área do Atleta'),
         backgroundColor: olympusBlue,
@@ -1630,36 +1761,64 @@ event_time
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (_canShow('show_athlete_info')) _buildAthleteInfoCard(),
-            if (_canShow('show_financial_alert')) _buildFinancialAlertCard(),
-            if (_canShow('show_presence_summary')) _buildPresenceSummaryCard(),
-            if (_canShow('show_week_events')) _buildWeekEventsSectionCard(),
-            if (_canShow('show_agenda'))
-              _buildDashboardCard(
-                icon: Icons.calendar_today,
-                title: 'Minha Agenda',
-                subtitle: _getAgendaSubtitle(),
-                color: olympusGold,
-                onTap: _navigateToAgenda,
-                badgeCount: _pendingCount > 0 ? _pendingCount : null,
+      body: Stack(
+        children: [
+          _buildOlympusBackground(parallaxOffset: parallaxOffset),
+          SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: screenHeight),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (_canShow('show_athlete_info')) _buildAthleteInfoCard(),
+                  if (_canShow('show_financial_alert'))
+                    _buildFinancialAlertCard(),
+                  if (_canShow('show_presence_summary'))
+                    _buildPresenceSummaryCard(),
+                  if (_canShow('show_week_events'))
+                    _buildWeekEventsSectionCard(),
+                  if (_canShow('show_agenda'))
+                    _buildDashboardCard(
+                      icon: Icons.calendar_today,
+                      title: 'Minha Agenda',
+                      subtitle: _getAgendaSubtitle(),
+                      color: olympusGold,
+                      titleColor: Colors.white,
+                      subtitleColor: Colors.white,
+                      iconColor: Colors.white,
+                      onTap: _navigateToAgenda,
+                      badgeCount: _pendingCount > 0 ? _pendingCount : null,
+                    ),
+                  if (_canShow('show_financial'))
+                    _buildDashboardCard(
+                      icon: Icons.attach_money,
+                      title: 'Financeiro',
+                      subtitle: 'Acompanhe seus pagamentos',
+                      color: olympusBlue,
+                      titleColor: Colors.white,
+                      subtitleColor: Colors.white,
+                      iconColor: Colors.white,
+                      onTap: _navigateToFinancial,
+                      badgeCount: _overdueFinancialCount > 0
+                          ? _overdueFinancialCount
+                          : null,
+                    ),
+                  _buildDashboardCard(
+                    icon: Icons.emoji_events_rounded,
+                    title: 'Campeonatos',
+                    subtitle: 'Veja ligas, jogos e eventos cadastrados',
+                    color: olympusLightBlue,
+                    titleColor: Colors.white,
+                    subtitleColor: Colors.white,
+                    iconColor: Colors.white,
+                    onTap: _navigateToChampionships,
+                  ),
+                  const SizedBox(height: 100),
+                ],
               ),
-            if (_canShow('show_financial'))
-              _buildDashboardCard(
-                icon: Icons.attach_money,
-                title: 'Financeiro',
-                subtitle: 'Acompanhe seus pagamentos',
-                color: olympusBlue,
-                onTap: _navigateToFinancial,
-                badgeCount:
-                    _overdueFinancialCount > 0 ? _overdueFinancialCount : null,
-              ),
-            const SizedBox(height: 100),
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
       floatingActionButton:
           _canShow('show_chat') ? _buildFloatingChatButton() : null,
@@ -1734,7 +1893,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
   final supabase = Supabase.instance.client;
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  static const Color olympusDarkBackground = Color(0xFF0B1420);
 
   void _showChangePasswordDialog() {
     final currentPasswordCtrl = TextEditingController();
@@ -1890,6 +2049,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
   Widget build(BuildContext context) {
     final profile = widget.profile;
     return Scaffold(
+      backgroundColor: olympusDarkBackground,
       appBar: AppBar(
         title: const Text('Meu Perfil'),
         backgroundColor: olympusBlue,
@@ -2175,7 +2335,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   String _selectedGender = '';
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  static const Color olympusDarkBackground = Color(0xFF0B1420);
 
   final Map<String, List<Map<String, String>>> _positions = {
     'Masculino': [
@@ -2413,6 +2573,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: olympusDarkBackground,
       appBar: AppBar(
         title: const Text('Editar Perfil'),
         backgroundColor: olympusBlue,

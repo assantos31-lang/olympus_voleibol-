@@ -7,12 +7,16 @@ class BirthdayService {
   Future<List<BirthdayPerson>> getAllBirthdays() async {
     final response = await _supabase
         .from('profiles')
-        .select('id, full_name, birth_date, user_type')
+        .select('id, full_name, birth_date, user_type, avatar_url, gender')
         .not('birth_date', 'is', null)
         .neq('user_type', 'admin');
 
     final list = (response as List)
-        .map((item) => BirthdayPerson.fromMap(item as Map<String, dynamic>))
+        .map(
+          (item) => BirthdayPerson.fromMap(
+            item as Map<String, dynamic>,
+          ),
+        )
         .toList();
 
     list.sort((a, b) => a.daysUntilBirthday.compareTo(b.daysUntilBirthday));
