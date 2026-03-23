@@ -9,15 +9,43 @@ import 'admin_birthdays_page.dart';
 import 'admin_financial_page.dart';
 import 'championships_page.dart';
 import 'chat_rooms_page.dart';
+import 'admin_messages_page.dart';
+import '../services/messaging_service.dart';
 
-class AdminHomePage extends StatelessWidget {
+class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
 
+  @override
+  State<AdminHomePage> createState() => _AdminHomePageState();
+}
+
+class _AdminHomePageState extends State<AdminHomePage> {
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color futuristicDark = Color(0xFF0B1420);
   static const Color futuristicCard = Color(0xFF122235);
+
+  int _unreadMessagesCount = 0;
+  final MessagingService _messagingService = MessagingService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnreadMessagesCount();
+  }
+
+  Future<void> _loadUnreadMessagesCount() async {
+    try {
+      final threads = await _messagingService.getInboxThreads();
+      final unread =
+          threads.fold<int>(0, (sum, item) => sum + item.unreadCount);
+      if (!mounted) return;
+      setState(() {
+        _unreadMessagesCount = unread;
+      });
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -317,6 +345,22 @@ class AdminHomePage extends StatelessWidget {
                             const SizedBox(height: 16),
                             _buildOlympusButton(
                               context: context,
+                              label: 'Mensagens',
+                              icon: Icons.mark_email_unread_rounded,
+                              accentColor: olympusLightBlue,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const AdminMessagesPage(),
+                                  ),
+                                ).then((_) => _loadUnreadMessagesCount());
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            _buildOlympusButton(
+                              context: context,
                               label: 'Chats',
                               icon: Icons.chat_bubble_outline_rounded,
                               accentColor: Colors.white,
@@ -353,6 +397,7 @@ class AdminHomePage extends StatelessWidget {
     required VoidCallback onTap,
     bool isPrimary = false,
     bool isMuted = false,
+    int? badgeCount,
   }) {
     final Color baseTextColor = isMuted
         ? Colors.white.withOpacity(0.76)

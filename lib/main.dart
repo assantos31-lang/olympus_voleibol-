@@ -18,6 +18,7 @@ import 'pages/member_dashboard_page.dart';
 import 'pages/profiles_page.dart';
 import 'pages/register_page.dart';
 import 'services/auth_service.dart';
+import 'services/push_notification_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -26,57 +27,62 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
   }
+
+  await firebaseMessagingBackgroundHandler(message);
 }
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (!kIsWeb) {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
+  try {
+    // 🔥 Firebase
+    if (!kIsWeb) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
+    }
+
+    // 🔥 Supabase
+    await Supabase.initialize(
+      url: 'https://wucxbbspybemvkqgqtou.supabase.co',
+      anonKey: 'sb_publishable_jfe15-g7mYFo0mSI9tuDtw_dI6qrnx4',
     );
 
-    FirebaseMessaging.onBackgroundMessage(
-      _firebaseMessagingBackgroundHandler,
+    // 🔥 Push
+    await _setupPushNotifications();
+
+    runApp(
+      MultiProvider(
+        providers: [
+          Provider<AuthService>(create: (_) => AuthService()),
+        ],
+        child: const MyApp(),
+      ),
+    );
+  } catch (e) {
+    // 🔥 EVITA TELA BRANCA
+    runApp(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: StartupErrorPage(error: e.toString()),
+      ),
     );
   }
-
-  await Supabase.initialize(
-    url: 'https://wucxbbspybemvkqgqtou.supabase.co',
-    anonKey: 'sb_publishable_jfe15-g7mYFo0mSI9tuDtw_dI6qrnx4',
-  );
-
-  await _setupPushNotifications();
-
-  runApp(
-    MultiProvider(
-      providers: [
-        Provider<AuthService>(create: (_) => AuthService()),
-      ],
-      child: const MyApp(),
-    ),
-  );
 }
 
 Future<void> _setupPushNotifications() async {
   if (kIsWeb) return;
 
-  final messaging = FirebaseMessaging.instance;
-
-  await messaging.requestPermission();
-
-  await messaging.setAutoInitEnabled(true);
-
-  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    debugPrint('Push em foreground: ${message.notification?.title}');
-  });
-
-  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-    debugPrint('Push aberto pelo usuário: ${message.messageId}');
-  });
-
-  final token = await messaging.getToken();
-  debugPrint('FCM TOKEN: $token');
+  try {
+    await PushNotificationService.instance.initialize();
+    await PushNotificationService.instance.handleInitialMessage();
+  } catch (e) {
+    debugPrint('Erro push: $e');
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -138,35 +144,40 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   Future<void> _checkAuth() async {
-    await Future.delayed(const Duration(milliseconds: 500));
+    try {
+      await Future.delayed(const Duration(milliseconds: 500));
 
-    setState(() {
-      _isLoggedIn = _authService.getCurrentUser() != null;
-      _isLoading = false;
-    });
+      if (!mounted) return;
 
-    _authService.authStateChanges.listen((event) {
-      if (mounted) {
+      setState(() {
+        _isLoggedIn = _authService.getCurrentUser() != null;
+        _isLoading = false;
+      });
+
+      _authService.authStateChanges.listen((event) {
+        if (!mounted) return;
+
         setState(() {
           _isLoggedIn = event.session != null;
         });
-      }
-    });
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+        _isLoggedIn = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
+        backgroundColor: Color(0xFF0B1420),
         body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Carregando...'),
-            ],
-          ),
+          child: CircularProgressIndicator(),
         ),
       );
     }
@@ -176,5 +187,28 @@ class _AuthWrapperState extends State<AuthWrapper> {
     }
 
     return const LoginPage();
+  }
+}
+
+class StartupErrorPage extends StatelessWidget {
+  final String error;
+
+  const StartupErrorPage({super.key, required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0B1420),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Text(
+            'Erro ao iniciar app:\n\n$error',
+            style: const TextStyle(color: Colors.white),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
+    );
   }
 }

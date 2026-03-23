@@ -13,6 +13,8 @@ import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
 import 'championships_page.dart';
 import 'chat_rooms_page.dart';
+import 'user_messages_page.dart';
+import '../services/messaging_service.dart';
 
 class AthleteDashboardPage extends StatefulWidget {
   const AthleteDashboardPage({super.key});
@@ -27,6 +29,8 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
   Map<String, dynamic>? _profile;
   bool _isLoading = true;
   bool _permissionsLoaded = false;
+  int _unreadMessagesCount = 0;
+  final MessagingService _messagingService = MessagingService();
   int _pendingCount = 0;
   int _overdueFinancialCount = 0;
   Map<int, int> _overdueByMonth = {};
@@ -49,55 +53,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
   static const Color olympusCardDark = Color(0xFF122235); // #122235
   static const Color olympusCardMid = Color(0xFF18324D); // #18324D
   static const String _eventsEmbedFk = 'convocations_event_id_fkey';
-
-  Widget _buildOlympusBackground({double parallaxOffset = 18}) {
-    return IgnorePointer(
-      child: Stack(
-        children: [
-          Positioned(
-            top: -parallaxOffset,
-            left: -12,
-            right: -12,
-            bottom: -parallaxOffset,
-            child: Opacity(
-              opacity: 0.78,
-              child: Image.asset(
-                'assets/images/monte_olimpo.png',
-                fit: BoxFit.cover,
-                alignment: Alignment.topCenter,
-              ),
-            ),
-          ),
-          Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 0.6, sigmaY: 0.6),
-              child: Container(color: Colors.transparent),
-            ),
-          ),
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    olympusGradientTop.withOpacity(0.58),
-                    olympusGradientMid.withOpacity(0.38),
-                    olympusBlue.withOpacity(0.48),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Positioned.fill(
-            child: Container(
-              color: olympusDarkBackground.withOpacity(0.18),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   void initState() {
@@ -145,6 +100,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
 
       _loadPendingCount();
       _loadOverdueFinancialCount();
+      _loadUnreadMessagesCount();
       _loadWeekEvents();
       _loadAttendanceAndPerformance();
     } catch (e) {
@@ -575,6 +531,18 @@ event_time
     );
   }
 
+  Future<void> _loadUnreadMessagesCount() async {
+    try {
+      final threads = await _messagingService.getInboxThreads();
+      final unread =
+          threads.fold<int>(0, (sum, item) => sum + item.unreadCount);
+      if (!mounted) return;
+      setState(() {
+        _unreadMessagesCount = unread;
+      });
+    } catch (_) {}
+  }
+
   void _navigateToChat() {
     Navigator.push(
       context,
@@ -582,6 +550,15 @@ event_time
         builder: (context) => const ChatRoomsPage(),
       ),
     );
+  }
+
+  void _navigateToMessages() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const UserMessagesPage(),
+      ),
+    ).then((_) => _loadUnreadMessagesCount());
   }
 
   Widget _buildAthleteInfoCard() {
@@ -1708,39 +1685,14 @@ event_time
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.of(context).size.height;
-    final parallaxOffset = (_weekEvents.length * 6.0).clamp(12.0, 28.0);
-
     if (_isLoading || !_permissionsLoaded) {
-      return Scaffold(
-        backgroundColor: olympusDarkBackground,
-        appBar: AppBar(
-          title: const Text('Área do Atleta'),
-          backgroundColor: olympusBlue,
-          foregroundColor: Colors.white,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.person, color: Colors.white),
-              tooltip: 'Perfil',
-              onPressed: _navigateToProfilePage,
-            ),
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: 'Sair',
-              onPressed: _redirectToLogin,
-            ),
-          ],
-        ),
-        body: Stack(
-          children: [
-            _buildOlympusBackground(parallaxOffset: parallaxOffset),
-            const Center(
-              child: CircularProgressIndicator(),
-            ),
-          ],
-        ),
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
     }
+
+    final screenHeight = MediaQuery.of(context).size.height;
+    final parallaxOffset = (_weekEvents.length * 6.0).clamp(12.0, 28.0);
 
     return Scaffold(
       backgroundColor: olympusDarkBackground,
@@ -1763,7 +1715,52 @@ event_time
       ),
       body: Stack(
         children: [
-          _buildOlympusBackground(parallaxOffset: parallaxOffset),
+          IgnorePointer(
+            child: Stack(
+              children: [
+                Positioned(
+                  top: -parallaxOffset,
+                  left: -12,
+                  right: -12,
+                  bottom: -parallaxOffset,
+                  child: Opacity(
+                    opacity: 0.78,
+                    child: Image.asset(
+                      'assets/images/monte_olimpo.png',
+                      fit: BoxFit.cover,
+                      alignment: Alignment.topCenter,
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 0.6, sigmaY: 0.6),
+                    child: Container(color: Colors.transparent),
+                  ),
+                ),
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          olympusGradientTop.withOpacity(0.58),
+                          olympusGradientMid.withOpacity(0.38),
+                          olympusBlue.withOpacity(0.48),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: Container(
+                    color: olympusDarkBackground.withOpacity(0.18),
+                  ),
+                ),
+              ],
+            ),
+          ),
           SingleChildScrollView(
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: screenHeight),
@@ -1812,6 +1809,18 @@ event_time
                     subtitleColor: Colors.white,
                     iconColor: Colors.white,
                     onTap: _navigateToChampionships,
+                  ),
+                  _buildDashboardCard(
+                    icon: Icons.mark_email_unread_rounded,
+                    title: 'Mensagens',
+                    subtitle: 'Veja mensagens do administrador',
+                    color: olympusLightBlue,
+                    titleColor: Colors.white,
+                    subtitleColor: Colors.white,
+                    iconColor: Colors.white,
+                    onTap: _navigateToMessages,
+                    badgeCount:
+                        _unreadMessagesCount > 0 ? _unreadMessagesCount : null,
                   ),
                   const SizedBox(height: 100),
                 ],
