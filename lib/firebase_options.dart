@@ -2,13 +2,10 @@ import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
-/// Default Firebase options for the current platform.
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web.',
-      );
+      return web;
     }
 
     switch (defaultTargetPlatform) {
@@ -22,6 +19,16 @@ class DefaultFirebaseOptions {
         );
     }
   }
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyCum0EC_dySww0nKZWKEtKmD6jBIHVrml4',
+    appId: '1:130525975992:web:675c6fb2555e897bf36b4d',
+    messagingSenderId: '130525975992',
+    projectId: 'olympus-voleibol',
+    authDomain: 'olympus-voleibol.firebaseapp.com',
+    storageBucket: 'olympus-voleibol.firebasestorage.app',
+    measurementId: 'G-5NCC7JJRVP',
+  );
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyB7eQeoamvujNPoi-_K-alcaPYxQL1X5c8',

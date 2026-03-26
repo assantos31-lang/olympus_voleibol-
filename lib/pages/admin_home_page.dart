@@ -4,6 +4,7 @@ import '../services/auth_service.dart';
 import 'agenda_page.dart';
 import 'admin_financial_page.dart';
 import 'chat_rooms_page.dart';
+import 'admin_messages_page.dart';
 
 class AdminHomePage extends StatelessWidget {
   const AdminHomePage({super.key});
@@ -265,6 +266,22 @@ class AdminHomePage extends StatelessWidget {
                                   context,
                                   MaterialPageRoute(
                                     builder: (context) => const ChatRoomsPage(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            _buildFuturisticButton(
+                              context: context,
+                              label: 'Mensagens',
+                              icon: Icons.mark_chat_unread_outlined,
+                              accentColor: const Color(0xFFFFD166),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const AdminMessagesPage(),
                                   ),
                                 );
                               },
