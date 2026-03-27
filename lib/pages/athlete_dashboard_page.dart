@@ -10,6 +10,7 @@ import 'dart:typed_data';
 import '../services/auth_service.dart';
 import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
+import 'athlete_messages_page.dart';
 import 'chat_rooms_page.dart';
 
 class AthleteDashboardPage extends StatefulWidget {
@@ -471,6 +472,15 @@ event_time
         builder: (context) => const AthleteFinancialPage(),
       ),
     ).then((_) => _loadOverdueFinancialCount());
+  }
+
+  void _navigateToMessages() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AthleteMessagesPage(),
+      ),
+    );
   }
 
   void _navigateToChat() {
@@ -1630,6 +1640,13 @@ event_time
               color: olympusGold,
               onTap: _navigateToAgenda,
               badgeCount: _pendingCount > 0 ? _pendingCount : null,
+            ),
+            _buildDashboardCard(
+              icon: Icons.mark_chat_unread_rounded,
+              title: 'Mensagens',
+              subtitle: 'Avisos e comunicados',
+              color: const Color(0xFF6C4AB6),
+              onTap: _navigateToMessages,
             ),
             _buildDashboardCard(
               icon: Icons.attach_money,
