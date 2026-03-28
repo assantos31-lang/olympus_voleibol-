@@ -21,6 +21,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
   final supabase = Supabase.instance.client;
   List<Map<String, dynamic>> profiles = [];
   bool isLoading = true;
+  bool _isCheckingAccess = true;
 
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
@@ -29,7 +30,58 @@ class _ProfilesPageState extends State<ProfilesPage> {
   @override
   void initState() {
     super.initState();
-    fetchProfiles();
+    _checkAdminAccess();
+  }
+
+  Future<void> _checkAdminAccess() async {
+    try {
+      final user = supabase.auth.currentUser;
+
+      if (user == null) {
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/login',
+            (route) => false,
+          );
+        }
+        return;
+      }
+
+      final response = await supabase
+          .from('profiles')
+          .select('user_type')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      final userType = response?['user_type'];
+
+      if (!mounted) return;
+
+      if (userType != 'admin') {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/dashboard',
+          (route) => false,
+        );
+        return;
+      }
+
+      setState(() {
+        _isCheckingAccess = false;
+      });
+
+      fetchProfiles();
+    } catch (e) {
+      debugPrint('Erro ao validar acesso aos perfis: $e');
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/dashboard',
+          (route) => false,
+        );
+      }
+    }
   }
 
   Future<void> fetchProfiles() async {
@@ -446,6 +498,14 @@ class _ProfilesPageState extends State<ProfilesPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isCheckingAccess) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -874,7 +934,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
     }
     try {
       final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${_fullNameController.text.replaceAll(RegExp(r'\D'), '')}.jpg';
+          '${DateTime.now().millisecondsSinceEpoch}_${_fullNameController.text.replaceAll(RegExp(r"\D"), "")}.jpg';
       final supabase = Supabase.instance.client;
       final Uint8List? fileBytes = await _selectedImage!.readAsBytes();
       if (fileBytes == null) return null;

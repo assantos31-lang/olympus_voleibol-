@@ -51,6 +51,7 @@ class _AddEventPageState extends State<AddEventPage> {
   final List<String> _selectedTechnicians = [];
   bool _isSearchingCep = false;
   bool _enableCheckIn = false;
+  bool _enableRideLogistics = false;
   bool _isSaving = false;
   bool _isEditing = false;
   String? _eventId;
@@ -95,6 +96,7 @@ class _AddEventPageState extends State<AddEventPage> {
         _cidadeController.text = widget.evento!['city'] ?? '';
         _estadoController.text = widget.evento!['state'] ?? '';
         _enableCheckIn = widget.evento!['allow_checkin'] ?? false;
+        _enableRideLogistics = widget.evento!['enable_ride_logistics'] ?? false;
 
         _generoEvento = widget.evento!['gender'] ?? 'masculino';
         _championshipName = widget.evento!['championship_name'] ?? '';
@@ -556,6 +558,9 @@ class _AddEventPageState extends State<AddEventPage> {
         'state': _estadoController.text,
         'set_format': _setsFormat,
         'allow_checkin': _enableCheckIn,
+        'enable_ride_logistics': _selectedType == EventType.campeonato
+            ? _enableRideLogistics
+            : false,
         'gender': _generoEvento,
         'championship_name': _selectedType == EventType.campeonato
             ? _championshipNameController.text.trim()
@@ -701,6 +706,8 @@ class _AddEventPageState extends State<AddEventPage> {
                   const SizedBox(height: 16),
                   if (_selectedType == EventType.campeonato) ...[
                     _buildChampionshipNameField(),
+                    const SizedBox(height: 16),
+                    _buildRideLogisticsOption(),
                     const SizedBox(height: 24),
                   ],
                   _buildGenderSelector(),
@@ -869,6 +876,75 @@ class _AddEventPageState extends State<AddEventPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildRideLogisticsOption() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _enableRideLogistics
+            ? goldenColor.withOpacity(0.1)
+            : Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _enableRideLogistics
+              ? goldenColor
+              : const Color(0xFF0A2463).withOpacity(0.2),
+          width: _enableRideLogistics ? 2 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.directions_car_filled_rounded,
+                      color: _enableRideLogistics ? goldenColor : Colors.grey,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Habilitar logística de carona',
+                      style: TextStyle(
+                        color: _enableRideLogistics
+                            ? const Color(0xFF0A2463)
+                            : Colors.grey[600],
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Quando ativado, atletas verão a opção de responder ida e volta ao aceitar a convocação.',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: _enableRideLogistics,
+            onChanged: (value) {
+              if (mounted) {
+                setState(() {
+                  _enableRideLogistics = value;
+                });
+              }
+            },
+            activeColor: goldenColor,
+            activeTrackColor: goldenColor.withOpacity(0.5),
+          ),
+        ],
+      ),
     );
   }
 

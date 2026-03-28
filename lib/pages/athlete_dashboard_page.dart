@@ -20,7 +20,8 @@ class AthleteDashboardPage extends StatefulWidget {
   State<AthleteDashboardPage> createState() => _AthleteDashboardPageState();
 }
 
-class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
+class _AthleteDashboardPageState extends State<AthleteDashboardPage>
+    with SingleTickerProviderStateMixin {
   final supabase = Supabase.instance.client;
   final _authService = AuthService();
   Map<String, dynamic>? _profile;
@@ -29,6 +30,10 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
   int _overdueFinancialCount = 0;
   Map<int, int> _overdueByMonth = {};
   List<Map<String, dynamic>> _weekEvents = [];
+  List<Map<String, dynamic>> _todayBirthdays = [];
+  bool _isLoadingTodayBirthdays = true;
+  late final AnimationController _birthdayBadgeController;
+  late final Animation<double> _birthdayBadgeScale;
 
   int _confirmedPresenceCount = 0;
   int _rejectedPresenceCount = 0;
@@ -45,7 +50,18 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage> {
   @override
   void initState() {
     super.initState();
+    _birthdayBadgeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
+    _birthdayBadgeScale = Tween<double>(begin: 1.0, end: 1.08).animate(
+      CurvedAnimation(
+        parent: _birthdayBadgeController,
+        curve: Curves.easeInOut,
+      ),
+    );
     _loadProfile();
+    _loadTodayBirthdays();
   }
 
   Future<void> _loadProfile() async {
@@ -365,69 +381,263 @@ event_time
   }
 
   void _showTrainingPresenceLevelsInfo() {
+    const levels = [
+      {'level': '1. Iniciante', 'range': '0% - 40%'},
+      {'level': '2. Participante', 'range': '41% - 50%'},
+      {'level': '3. Regular', 'range': '51% - 60%'},
+      {'level': '4. Comprometido', 'range': '61% - 70%'},
+      {'level': '5. Dedicado', 'range': '71% - 80%'},
+      {'level': '6. Atleta Bronze', 'range': '81% - 85%'},
+      {'level': '7. Atleta Prata', 'range': '86% - 90%'},
+      {'level': '8. Atleta Ouro', 'range': '91% - 95%'},
+      {'level': '9. Elite', 'range': '96% - 98%'},
+      {'level': '10. Lenda', 'range': '99% - 100%'},
+    ];
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Treinos'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: SingleChildScrollView(
-            child: DataTable(
-              columns: const [
-                DataColumn(label: Text('Nível')),
-                DataColumn(label: Text('Porcentagem')),
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 520),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: olympusGold.withOpacity(0.60),
+              width: 1.4,
+            ),
+            gradient: const LinearGradient(
+              colors: [
+                Color(0xFF102845),
+                Color(0xFF173A61),
+                Color(0xFF204E7B),
               ],
-              rows: const [
-                DataRow(cells: [
-                  DataCell(Text('1. Iniciante')),
-                  DataCell(Text('0% - 40%')),
-                ]),
-                DataRow(cells: [
-                  DataCell(Text('2. Participante')),
-                  DataCell(Text('41% - 50%')),
-                ]),
-                DataRow(cells: [
-                  DataCell(Text('3. Regular')),
-                  DataCell(Text('51% - 60%')),
-                ]),
-                DataRow(cells: [
-                  DataCell(Text('4. Comprometido')),
-                  DataCell(Text('61% - 70%')),
-                ]),
-                DataRow(cells: [
-                  DataCell(Text('5. Dedicado')),
-                  DataCell(Text('71% - 80%')),
-                ]),
-                DataRow(cells: [
-                  DataCell(Text('6. Atleta Bronze')),
-                  DataCell(Text('81% - 85%')),
-                ]),
-                DataRow(cells: [
-                  DataCell(Text('7. Atleta Prata')),
-                  DataCell(Text('86% - 90%')),
-                ]),
-                DataRow(cells: [
-                  DataCell(Text('8. Atleta Ouro')),
-                  DataCell(Text('91% - 95%')),
-                ]),
-                DataRow(cells: [
-                  DataCell(Text('9. Elite')),
-                  DataCell(Text('96% - 98%')),
-                ]),
-                DataRow(cells: [
-                  DataCell(Text('10. Lenda')),
-                  DataCell(Text('99% - 100%')),
-                ]),
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.30),
+                blurRadius: 24,
+                offset: const Offset(0, 10),
+              ),
+              BoxShadow(
+                color: olympusGold.withOpacity(0.12),
+                blurRadius: 26,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Stack(
+              children: [
+                Positioned(
+                  top: -28,
+                  right: -16,
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withOpacity(0.05),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: -36,
+                  left: -20,
+                  child: Container(
+                    width: 110,
+                    height: 110,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: olympusGold.withOpacity(0.06),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: const LinearGradient(
+                                colors: [
+                                  Color(0xFFF0D771),
+                                  Color(0xFFB48A23),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: olympusGold.withOpacity(0.35),
+                                  blurRadius: 10,
+                                  spreadRadius: 0.5,
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.emoji_events_rounded,
+                              color: Color(0xFF173A61),
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Treinos',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close_rounded),
+                            color: Colors.white70,
+                            splashRadius: 20,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Níveis de presença mensal no padrão Olympus.',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.72),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          color: Colors.white.withOpacity(0.08),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.10),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Nível',
+                                style: TextStyle(
+                                  color: olympusGold,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              'Porcentagem',
+                              style: TextStyle(
+                                color: olympusGold,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: List.generate(levels.length, (index) {
+                              final item = levels[index];
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(14),
+                                  color: index.isEven
+                                      ? Colors.white.withOpacity(0.06)
+                                      : Colors.white.withOpacity(0.03),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.08),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        item['level']!,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(20),
+                                        color: olympusGold.withOpacity(0.16),
+                                        border: Border.all(
+                                          color: olympusGold.withOpacity(0.28),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        item['range']!,
+                                        style: const TextStyle(
+                                          color: Color(0xFFFFF2B8),
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: TextButton.styleFrom(
+                            foregroundColor: olympusGold,
+                          ),
+                          child: const Text(
+                            'Fechar',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Fechar'),
-          ),
-        ],
       ),
     );
   }
@@ -488,6 +698,237 @@ event_time
       context,
       MaterialPageRoute(
         builder: (context) => const ChatRoomsPage(),
+      ),
+    );
+  }
+
+  DateTime? _parseBirthdayValue(dynamic rawValue) {
+    if (rawValue == null) return null;
+    final raw = rawValue.toString().trim();
+    if (raw.isEmpty) return null;
+
+    try {
+      if (raw.contains('/')) {
+        final parts = raw.split('/');
+        if (parts.length == 3) {
+          return DateTime(
+            int.parse(parts[2]),
+            int.parse(parts[1]),
+            int.parse(parts[0]),
+          );
+        }
+      }
+      return DateTime.parse(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  int? _daysUntilOwnBirthday() {
+    final birthDate = _parseBirthdayValue(_profile?['birth_date']);
+    if (birthDate == null) return null;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    var nextBirthday = DateTime(today.year, birthDate.month, birthDate.day);
+
+    if (nextBirthday.isBefore(today)) {
+      nextBirthday = DateTime(today.year + 1, birthDate.month, birthDate.day);
+    }
+
+    return nextBirthday.difference(today).inDays;
+  }
+
+  String _getBirthdayCountdownText() {
+    final days = _daysUntilOwnBirthday();
+    if (days == null) return '';
+
+    if (days == 0) {
+      return 'Hoje é dia de comemorar a vida!';
+    }
+    if (days == 1) {
+      return 'Falta 1 dia para vc comemorar a vida.';
+    }
+    return 'Faltam $days dias para vc comemorar a vida.';
+  }
+
+  Future<void> _loadTodayBirthdays() async {
+    try {
+      final response = await supabase
+          .from('profiles')
+          .select('full_name, birth_date, avatar_url, court_position')
+          .not('birth_date', 'is', null);
+
+      final now = DateTime.now();
+      final birthdays = List<Map<String, dynamic>>.from(response).where((user) {
+        final birthDate = _parseBirthdayValue(user['birth_date']);
+        if (birthDate == null) return false;
+        return birthDate.day == now.day && birthDate.month == now.month;
+      }).toList();
+
+      birthdays.sort((a, b) {
+        final aName = (a['full_name'] ?? '').toString().toLowerCase();
+        final bName = (b['full_name'] ?? '').toString().toLowerCase();
+        return aName.compareTo(bName);
+      });
+
+      if (!mounted) return;
+      setState(() {
+        _todayBirthdays = birthdays;
+        _isLoadingTodayBirthdays = false;
+      });
+    } catch (e) {
+      debugPrint('Erro ao carregar aniversariantes do dia: $e');
+      if (!mounted) return;
+      setState(() {
+        _todayBirthdays = [];
+        _isLoadingTodayBirthdays = false;
+      });
+    }
+  }
+
+  Widget _buildTodayBirthdaysCard() {
+    if (_isLoadingTodayBirthdays || _todayBirthdays.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: olympusGold.withOpacity(0.65),
+          width: 1.4,
+        ),
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFFF7EAB0),
+            Color(0xFFE6D27A),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: olympusGold.withOpacity(0.18),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(0.35),
+                  border: Border.all(
+                    color: olympusGold.withOpacity(0.45),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.cake_rounded,
+                  color: Color(0xFF8A6400),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Aniversariante do dia',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF6F5300),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ..._todayBirthdays.map((birthdayUser) {
+            final name = (birthdayUser['full_name'] ?? 'Sem nome').toString();
+            final avatarUrl =
+                (birthdayUser['avatar_url'] ?? '').toString().trim();
+            final position =
+                ((birthdayUser['court_position'] ?? '').toString().trim())
+                        .isEmpty
+                    ? 'Sem posição'
+                    : birthdayUser['court_position'].toString().trim();
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                color: Colors.white.withOpacity(0.38),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.5),
+                ),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: const Color(0xFF143A5B),
+                    backgroundImage:
+                        avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                    child: avatarUrl.isEmpty
+                        ? Text(
+                            name.isNotEmpty ? name[0].toUpperCase() : '?',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF4B3900),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          position,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF6E5A12),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Hoje o dia é de festa: $name está completando mais um ano de vida!',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF7A5A00),
+                            height: 1.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
       ),
     );
   }
@@ -629,6 +1070,18 @@ event_time
                                 ),
                               ),
                               const SizedBox(height: 6),
+                              if (_getBirthdayCountdownText().isNotEmpty) ...[
+                                Text(
+                                  _getBirthdayCountdownText(),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white.withOpacity(0.92),
+                                    height: 1.2,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                              ],
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 14,
@@ -1490,6 +1943,50 @@ event_time
     );
   }
 
+  Widget _buildAnimatedFinancialBadge() {
+    return ScaleTransition(
+      scale: _birthdayBadgeScale,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.red.shade700,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.red.shade900,
+            width: 1.1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.red.withOpacity(0.24),
+              blurRadius: 10,
+              spreadRadius: 0.4,
+            ),
+          ],
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.notifications_active_rounded,
+              size: 14,
+              color: Colors.white,
+            ),
+            SizedBox(width: 6),
+            Text(
+              'Pendência financeira',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                height: 1.0,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildFinancialAlertCard() {
     if (_overdueFinancialCount == 0) return const SizedBox.shrink();
 
@@ -1559,6 +2056,8 @@ event_time
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    _buildAnimatedFinancialBadge(),
+                    const SizedBox(height: 8),
                     Text(
                       'Pendência financeira em atraso',
                       style: TextStyle(
@@ -1600,6 +2099,12 @@ event_time
   }
 
   @override
+  void dispose() {
+    _birthdayBadgeController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
@@ -1630,6 +2135,7 @@ event_time
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             _buildAthleteInfoCard(),
+            _buildTodayBirthdaysCard(),
             _buildFinancialAlertCard(),
             _buildPresenceSummaryCard(),
             _buildWeekEventsSectionCard(),

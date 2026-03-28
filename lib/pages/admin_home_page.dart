@@ -1,13 +1,269 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
 import 'agenda_page.dart';
 import 'admin_financial_page.dart';
 import 'chat_rooms_page.dart';
 import 'admin_messages_page.dart';
+import 'admin_birthdays_page.dart';
 
-class AdminHomePage extends StatelessWidget {
+class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
+
+  @override
+  State<AdminHomePage> createState() => _AdminHomePageState();
+}
+
+class _AdminHomePageState extends State<AdminHomePage> {
+  final supabase = Supabase.instance.client;
+
+  List<Map<String, dynamic>> monthBirthdays = [];
+  bool isLoadingBirthdays = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMonthBirthdays();
+  }
+
+  Future<void> _fetchMonthBirthdays() async {
+    try {
+      final now = DateTime.now();
+
+      final response = await supabase
+          .from('profiles')
+          .select('full_name, birth_date, court_position')
+          .not('birth_date', 'is', null);
+
+      final allUsers = List<Map<String, dynamic>>.from(response);
+
+      final filtered = allUsers.where((user) {
+        final rawBirthDate = user['birth_date'];
+        if (rawBirthDate == null || rawBirthDate.toString().trim().isEmpty) {
+          return false;
+        }
+
+        final birthDate = DateTime.tryParse(rawBirthDate.toString());
+        if (birthDate == null) return false;
+
+        return birthDate.month == now.month;
+      }).map((user) {
+        final birthDate = DateTime.parse(user['birth_date'].toString());
+        return {
+          ...user,
+          'birth': birthDate,
+        };
+      }).toList();
+
+      filtered.sort((a, b) {
+        final aBirth = a['birth'] as DateTime;
+        final bBirth = b['birth'] as DateTime;
+        return aBirth.day.compareTo(bBirth.day);
+      });
+
+      if (mounted) {
+        setState(() {
+          monthBirthdays = filtered;
+          isLoadingBirthdays = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar aniversariantes do mês: $e');
+      if (mounted) {
+        setState(() {
+          isLoadingBirthdays = false;
+        });
+      }
+    }
+  }
+
+  String _formatBirthDate(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return '$day/$month';
+  }
+
+  String _formatPosition(dynamic value) {
+    if (value == null || value.toString().trim().isEmpty) {
+      return 'Sem posição';
+    }
+    return value.toString();
+  }
+
+  String _currentMonthLabel() {
+    const months = [
+      '',
+      'Janeiro',
+      'Fevereiro',
+      'Março',
+      'Abril',
+      'Maio',
+      'Junho',
+      'Julho',
+      'Agosto',
+      'Setembro',
+      'Outubro',
+      'Novembro',
+      'Dezembro',
+    ];
+    return months[DateTime.now().month];
+  }
+
+  Widget _buildMonthBirthdaysCard(BuildContext context) {
+    const goldenColor = Color(0xFFE4C050);
+    const cyanColor = Color(0xFF8FE8FF);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.16),
+          width: 1.2,
+        ),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withOpacity(0.14),
+            Colors.white.withOpacity(0.07),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: goldenColor.withOpacity(0.08),
+            blurRadius: 18,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: goldenColor.withOpacity(0.14),
+                      border: Border.all(
+                        color: goldenColor.withOpacity(0.35),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.cake_outlined,
+                      color: Color(0xFFE4C050),
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Aniversariantes do mês',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.92),
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _currentMonthLabel(),
+                          style: TextStyle(
+                            color: cyanColor.withOpacity(0.92),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const AdminBirthdaysPage(),
+                        ),
+                      );
+                    },
+                    child: const Text('Ver todos'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              if (isLoadingBirthdays)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 18),
+                    child: SizedBox(
+                      width: 26,
+                      height: 26,
+                      child: CircularProgressIndicator(strokeWidth: 2.4),
+                    ),
+                  ),
+                )
+              else if (monthBirthdays.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Text(
+                    'Nenhum aniversariante neste mês.',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.72),
+                      fontSize: 14,
+                    ),
+                  ),
+                )
+              else
+                Column(
+                  children: monthBirthdays.take(5).map((user) {
+                    final birthDate = user['birth'] as DateTime;
+                    final fullName =
+                        (user['full_name'] ?? 'Sem nome').toString();
+                    final position = _formatPosition(user['court_position']);
+
+                    return Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 11,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        color: Colors.white.withOpacity(0.06),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.08),
+                        ),
+                      ),
+                      child: Text(
+                        '$fullName - ${_formatBirthDate(birthDate)} - $position',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.86),
+                          fontSize: 14,
+                          height: 1.3,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -212,6 +468,8 @@ class AdminHomePage extends StatelessWidget {
                                 ),
                               ],
                             ),
+                            const SizedBox(height: 22),
+                            _buildMonthBirthdaysCard(context),
                             const SizedBox(height: 26),
                             _buildFuturisticButton(
                               context: context,
@@ -282,6 +540,22 @@ class AdminHomePage extends StatelessWidget {
                                   MaterialPageRoute(
                                     builder: (context) =>
                                         const AdminMessagesPage(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            _buildFuturisticButton(
+                              context: context,
+                              label: 'Aniversariantes',
+                              icon: Icons.cake_outlined,
+                              accentColor: Colors.pinkAccent,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const AdminBirthdaysPage(),
                                   ),
                                 );
                               },

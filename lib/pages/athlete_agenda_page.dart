@@ -201,7 +201,8 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
           state,
           cep,
           latitude,
-          longitude
+          longitude,
+          enable_ride_logistics
         )
       ''').eq('user_id', user.id);
 
@@ -565,6 +566,29 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       final eventId = evento['id'];
 
       if (aceitar) {
+        final tipoEvento =
+            (evento['event_type'] ?? '').toString().toLowerCase().trim();
+        final rideEnabled = evento['enable_ride_logistics'] == true;
+
+        if (tipoEvento == 'campeonato' && rideEnabled) {
+          final rideData = await _showRideDialog();
+          if (rideData == null) return;
+
+          await _supabase.from('event_rides').insert({
+            'event_id': eventId,
+            'user_id': user.id,
+            'ride_type': 'ida',
+            ...Map<String, dynamic>.from(rideData['ida'] as Map),
+          });
+
+          await _supabase.from('event_rides').insert({
+            'event_id': eventId,
+            'user_id': user.id,
+            'ride_type': 'volta',
+            ...Map<String, dynamic>.from(rideData['volta'] as Map),
+          });
+        }
+
         await _supabase
             .from('convocations')
             .update({'status': 'accepted', 'justification': null})
@@ -619,6 +643,428 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       if (!mounted) return;
       _showError('Erro: $e');
     }
+  }
+
+  Future<Map<String, dynamic>?> _showRideDialog() async {
+    bool needsRideIda = false;
+    int? seatsIda;
+    bool idaConfirmed = false;
+
+    bool needsRideVolta = false;
+    int? seatsVolta;
+    bool voltaConfirmed = false;
+
+    Widget buildSeatChip({
+      required String label,
+      required bool selected,
+      required VoidCallback onTap,
+    }) {
+      return ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        showCheckmark: false,
+        selectedColor: olympusGold,
+        backgroundColor: Colors.white.withOpacity(0.16),
+        disabledColor: Colors.white.withOpacity(0.16),
+        color: WidgetStateProperty.resolveWith<Color?>((states) {
+          if (states.contains(WidgetState.selected)) {
+            return olympusGold;
+          }
+          return Colors.white.withOpacity(0.16);
+        }),
+        labelStyle: const TextStyle(
+          color: olympusBlue,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(
+            color: selected ? olympusGold : Colors.white.withOpacity(0.24),
+            width: selected ? 1.6 : 1,
+          ),
+        ),
+      );
+    }
+
+    Widget buildSection({
+      required String title,
+      required bool needsRide,
+      required int? seats,
+      required bool confirmed,
+      required ValueChanged<bool> onNeedsRideChanged,
+      required ValueChanged<int> onSeatsChanged,
+    }) {
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: Colors.white.withOpacity(0.08),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.10),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Precisa de carona?',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                Transform.scale(
+                  scale: 1.08,
+                  child: Checkbox(
+                    value: needsRide,
+                    onChanged: (value) => onNeedsRideChanged(value ?? false),
+                    activeColor: olympusGold,
+                    checkColor: olympusBlue,
+                    side: BorderSide(
+                      color: Colors.white.withOpacity(0.55),
+                      width: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ou informe quantas vagas você tem no carro:',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.72),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                buildSeatChip(
+                  label: '4 vagas',
+                  selected: seats == 4,
+                  onTap: () => onSeatsChanged(4),
+                ),
+                buildSeatChip(
+                  label: '3 vagas',
+                  selected: seats == 3,
+                  onTap: () => onSeatsChanged(3),
+                ),
+                buildSeatChip(
+                  label: '2 vagas',
+                  selected: seats == 2,
+                  onTap: () => onSeatsChanged(2),
+                ),
+                buildSeatChip(
+                  label: '1 vaga',
+                  selected: seats == 1,
+                  onTap: () => onSeatsChanged(1),
+                ),
+                buildSeatChip(
+                  label: 'Sem vagas',
+                  selected: seats == 0,
+                  onTap: () => onSeatsChanged(0),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(
+                  confirmed ? Icons.check_circle : Icons.info_outline,
+                  size: 15,
+                  color: confirmed ? olympusGold : Colors.white70,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  confirmed
+                      ? 'Opção confirmada'
+                      : 'Escolha uma opção para continuar',
+                  style: TextStyle(
+                    color: confirmed ? olympusGold : Colors.white70,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            final canConfirm = idaConfirmed && voltaConfirmed;
+
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 24,
+              ),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 520),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                    color: olympusGold.withOpacity(0.60),
+                    width: 1.3,
+                  ),
+                  gradient: const LinearGradient(
+                    colors: [
+                      olympusBlue,
+                      olympusLightBlue,
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.28),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
+                    ),
+                    BoxShadow(
+                      color: olympusGold.withOpacity(0.14),
+                      blurRadius: 24,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Stack(
+                    children: [
+                      Positioned(
+                        top: -26,
+                        right: -12,
+                        child: Container(
+                          width: 110,
+                          height: 110,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.05),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: -28,
+                        left: -16,
+                        child: Container(
+                          width: 96,
+                          height: 96,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: olympusGold.withOpacity(0.06),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 42,
+                                  height: 42,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFFF0D771),
+                                        Color(0xFFB48A23),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.directions_car_filled_rounded,
+                                    color: olympusBlue,
+                                    size: 22,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                const Expanded(
+                                  child: Text(
+                                    'Logística de Carona',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, null),
+                                  icon: const Icon(Icons.close_rounded),
+                                  color: Colors.white70,
+                                  splashRadius: 20,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Como este evento é um campeonato, informe sua disponibilidade de ida e volta.',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.74),
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w500,
+                                height: 1.3,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            buildSection(
+                              title: 'Carona de ida',
+                              needsRide: needsRideIda,
+                              seats: seatsIda,
+                              confirmed: idaConfirmed,
+                              onNeedsRideChanged: (value) {
+                                setDialogState(() {
+                                  needsRideIda = value;
+                                  seatsIda = null;
+                                  idaConfirmed = true;
+                                });
+                              },
+                              onSeatsChanged: (value) {
+                                setDialogState(() {
+                                  seatsIda = value;
+                                  needsRideIda = false;
+                                  idaConfirmed = true;
+                                });
+                              },
+                            ),
+                            buildSection(
+                              title: 'Carona de volta',
+                              needsRide: needsRideVolta,
+                              seats: seatsVolta,
+                              confirmed: voltaConfirmed,
+                              onNeedsRideChanged: (value) {
+                                setDialogState(() {
+                                  needsRideVolta = value;
+                                  seatsVolta = null;
+                                  voltaConfirmed = true;
+                                });
+                              },
+                              onSeatsChanged: (value) {
+                                setDialogState(() {
+                                  seatsVolta = value;
+                                  needsRideVolta = false;
+                                  voltaConfirmed = true;
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, null),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.white,
+                                      side: BorderSide(
+                                        color: Colors.white.withOpacity(0.22),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 13,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: const Text('Cancelar'),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: canConfirm
+                                        ? () {
+                                            Navigator.pop(dialogContext, {
+                                              'ida': {
+                                                'needs_ride': needsRideIda,
+                                                'has_car': (seatsIda ?? 0) > 0,
+                                                'available_seats':
+                                                    seatsIda ?? 0,
+                                              },
+                                              'volta': {
+                                                'needs_ride': needsRideVolta,
+                                                'has_car':
+                                                    (seatsVolta ?? 0) > 0,
+                                                'available_seats':
+                                                    seatsVolta ?? 0,
+                                              },
+                                            });
+                                          }
+                                        : null,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: olympusGold,
+                                      foregroundColor: olympusBlue,
+                                      disabledBackgroundColor:
+                                          Colors.white.withOpacity(0.20),
+                                      disabledForegroundColor:
+                                          Colors.white.withOpacity(0.60),
+                                      elevation: 0,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 13,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Confirmar',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<Map<String, double>> _geocodeCep(String cep) async {

@@ -104,7 +104,7 @@ class MyApp extends StatelessWidget {
         '/': (context) => const AuthWrapper(),
         '/login': (context) => const LoginPage(),
         '/register': (context) => const RegisterPage(),
-        '/profiles': (context) => const ProfilesPage(),
+        '/profiles': (context) => const AdminOnlyProfilesRoute(),
         '/athlete-dashboard': (context) => const AthleteDashboardPage(),
         '/coach-dashboard': (context) => const CoachDashboardPage(),
         '/member-dashboard': (context) => const MemberDashboardPage(),
@@ -174,5 +174,87 @@ class _AuthWrapperState extends State<AuthWrapper> {
     }
 
     return const LoginPage();
+  }
+}
+
+class AdminOnlyProfilesRoute extends StatefulWidget {
+  const AdminOnlyProfilesRoute({super.key});
+
+  @override
+  State<AdminOnlyProfilesRoute> createState() => _AdminOnlyProfilesRouteState();
+}
+
+class _AdminOnlyProfilesRouteState extends State<AdminOnlyProfilesRoute> {
+  final supabase = Supabase.instance.client;
+  bool _isLoading = true;
+  bool _isAdmin = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAccess();
+  }
+
+  Future<void> _checkAccess() async {
+    try {
+      final user = supabase.auth.currentUser;
+
+      if (user == null) {
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/login',
+            (route) => false,
+          );
+        }
+        return;
+      }
+
+      final profile = await supabase
+          .from('profiles')
+          .select('user_type')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (!mounted) return;
+
+      final userType = (profile?['user_type'] ?? '').toString();
+
+      if (userType != 'admin') {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/dashboard',
+          (route) => false,
+        );
+        return;
+      }
+
+      setState(() {
+        _isAdmin = true;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/dashboard',
+        (route) => false,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!_isAdmin) {
+      return const SizedBox.shrink();
+    }
+
+    return const ProfilesPage();
   }
 }

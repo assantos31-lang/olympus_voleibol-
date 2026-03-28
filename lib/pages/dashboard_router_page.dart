@@ -4,8 +4,7 @@ import 'athlete_dashboard_page.dart';
 import 'coach_dashboard_page.dart';
 import 'member_dashboard_page.dart';
 import 'complete_profile_page.dart';
-import 'profiles_page.dart';
-import 'admin_home_page.dart'; // ← Alteração: import adicionado
+import 'admin_home_page.dart';
 
 class DashboardRouterPage extends StatefulWidget {
   const DashboardRouterPage({super.key});
@@ -35,7 +34,6 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
         return;
       }
 
-      // Aguarda um pouco para garantir que o perfil foi criado
       await Future.delayed(const Duration(milliseconds: 500));
 
       final profile = await supabase
@@ -46,9 +44,8 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
 
       if (!mounted) return;
 
-      final userType = profile?['user_type'] ?? 'member';
+      final userType = (profile?['user_type'] ?? 'member').toString();
 
-      // Verifica se é atleta e se precisa completar o cadastro
       final fullName = profile?['full_name'];
       final cpf = profile?['cpf'];
       final phone = profile?['phone'];
@@ -59,7 +56,7 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
               cpf == null ||
               phone == null);
 
-      if (needsCompleteProfile && mounted) {
+      if (needsCompleteProfile) {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -70,7 +67,6 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
       }
 
       Widget dashboard;
-      // Define o widget baseado no tipo
       switch (userType) {
         case 'athlete':
           dashboard = const AthleteDashboardPage();
@@ -82,25 +78,25 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
           dashboard = const MemberDashboardPage();
           break;
         case 'admin':
-          dashboard =
-              const AdminHomePage(); // ← Alteração: redireciona para AdminHomePage
+          dashboard = const AdminHomePage();
           break;
         default:
-          dashboard = const ProfilesPage();
+          dashboard = const MemberDashboardPage();
       }
+
+      if (!mounted) return;
 
       setState(() {
         _dashboardWidget = dashboard;
         _isLoading = false;
       });
     } catch (e) {
-      debugPrint('❌ Erro ao carregar dashboard: $e');
-      if (mounted) {
-        setState(() {
-          _dashboardWidget = const ProfilesPage();
-          _isLoading = false;
-        });
-      }
+      debugPrint('Erro ao carregar dashboard: $e');
+      if (!mounted) return;
+      setState(() {
+        _dashboardWidget = const MemberDashboardPage();
+        _isLoading = false;
+      });
     }
   }
 
@@ -121,6 +117,6 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
       );
     }
 
-    return _dashboardWidget ?? const ProfilesPage();
+    return _dashboardWidget ?? const MemberDashboardPage();
   }
 }

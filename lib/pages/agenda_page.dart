@@ -344,7 +344,7 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
-  // ✅ NOVO: Exportar dados dos convocados para Excel (CSV com delimitador ; e BOM)
+  // ✅ NOVO: Exportar respostas de carona para Excel (CSV com delimitador ; e BOM)
   Future<void> _exportarConvocados(Map<String, dynamic> evento) async {
     final eventId = evento['id']?.toString();
     if (eventId == null) return;
@@ -352,70 +352,141 @@ class _AgendaPageState extends State<AgendaPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('📊 Preparando exportação para Excel...'),
+            content: Text('📋 Preparando dados do jogo para copiar...'),
             backgroundColor: Colors.blue,
             duration: Duration(seconds: 2),
           ),
         );
       }
+
       final convocationsResponse = await _supabase
           .from('convocations')
-          .select('user_id, status, justification')
+          .select('user_id, status')
           .eq('event_id', eventId);
-      // ✅ BOM UTF-8 para Excel reconhecer acentos corretamente
-      final bom = '\uFEFF';
-      // ✅ Cabeçalho com delimitador ; (padrão Excel PT-BR)
-      List<String> csvLines = [
-        '${bom}Nome;Tipo;Status;Data de Nascimento;RG;Justificativa'
-      ];
-      for (var convocation in convocationsResponse) {
-        final userId = convocation['user_id'];
-        if (userId != null) {
-          final profileResponse = await _supabase
-              .from('profiles')
-              .select('full_name, user_type, birth_date, rg')
-              .eq('id', userId)
-              .maybeSingle();
-          if (profileResponse != null) {
-            // ✅ Sanitiza campos: remove quebras de linha e envolve em aspas se necessário
-            String _sanitize(String? value) {
-              if (value == null || value.isEmpty) return '""';
-              final cleaned = value
-                  .replaceAll('\n', ' ')
-                  .replaceAll('\r', ' ')
-                  .replaceAll('"', '""');
-              return '"$cleaned"';
-            }
 
-            final nome = _sanitize(profileResponse['full_name']);
-            final tipo = _sanitize(profileResponse['user_type']);
-            final status = _sanitize(convocation['status']);
-            // ✅ Converte data para formato DD/MM/YYYY (Excel PT-BR)
-            String birthDate = '';
-            final rawDate = profileResponse['birth_date'];
-            if (rawDate != null && rawDate.toString().length >= 10) {
-              try {
-                final date = DateTime.parse(rawDate.toString());
-                birthDate =
-                    '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
-              } catch (_) {
-                birthDate = rawDate.toString();
-              }
-            }
-            final rg = _sanitize(profileResponse['rg']);
-            final justification = _sanitize(convocation['justification']);
-            // ✅ Linha com delimitador ;
-            csvLines.add('$nome;$tipo;$status;$birthDate;$rg;$justification');
-          }
+      String _formatBirthDate(dynamic rawDate) {
+        if (rawDate == null || rawDate.toString().trim().isEmpty) return '-';
+        try {
+          final date = DateTime.parse(rawDate.toString());
+          return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+        } catch (_) {
+          return rawDate.toString();
         }
       }
-      final csvContent = csvLines.join('\n');
-      // ✅ Copia para clipboard com formato compatível com Excel
-      await Clipboard.setData(ClipboardData(text: csvContent));
+
+      String _buildRideText(Map<String, dynamic>? ride) {
+        if (ride == null) return 'Não respondeu';
+
+        final needsRide = ride['needs_ride'] == true;
+        final hasCar = ride['has_car'] == true;
+        final seatsRaw = ride['available_seats'];
+        final seats =
+            seatsRaw is int ? seatsRaw : int.tryParse('$seatsRaw') ?? 0;
+
+        if (needsRide) return 'Precisa de carona';
+        if (hasCar && seats > 0) {
+          return 'Vou de carro e tenho $seats vaga${seats > 1 ? 's' : ''}';
+        }
+        if (hasCar && seats == 0) {
+          return 'Vou de carro e não tenho vagas';
+        }
+        if (!needsRide && seats == 0) {
+          return 'Vou de carro e não tenho vagas';
+        }
+        return 'Não respondeu';
+      }
+
+      final championshipName =
+          (evento['championship_name'] ?? '-').toString().trim().isEmpty
+              ? '-'
+              : (evento['championship_name'] ?? '-').toString().trim();
+
+      final dataJogo = (evento['event_date'] ?? '-').toString().trim();
+      final horarioJogo = (evento['event_time'] ?? '-').toString().trim();
+      final nomeJogo = (evento['event_name'] ?? '-').toString().trim();
+
+      final street = (evento['street'] ?? '').toString().trim();
+      final number = (evento['street_number'] ?? '').toString().trim();
+      final neighborhood = (evento['neighborhood'] ?? '').toString().trim();
+      final city = (evento['city'] ?? '').toString().trim();
+      final state = (evento['state'] ?? '').toString().trim();
+
+      final endereco = street.isEmpty
+          ? '-'
+          : '$street'
+              '${number.isNotEmpty ? ', $number' : ''}'
+              '${neighborhood.isNotEmpty ? ' - $neighborhood' : ''}'
+              '${city.isNotEmpty ? ' - $city' : ''}'
+              '${state.isNotEmpty ? '/$state' : ''}';
+
+      final lines = <String>[
+        'Campeonato/liga: $championshipName',
+        'Data: $dataJogo - Horário: $horarioJogo',
+        nomeJogo,
+        'Endereço: $endereco',
+        '',
+        '',
+      ];
+
+      for (final convocation in convocationsResponse) {
+        final userId = convocation['user_id']?.toString();
+        if (userId == null || userId.isEmpty) continue;
+
+        final profileResponse = await _supabase
+            .from('profiles')
+            .select('full_name, birth_date, rg')
+            .eq('id', userId)
+            .maybeSingle();
+
+        if (profileResponse == null) continue;
+
+        final ridesResponse = await _supabase
+            .from('event_rides')
+            .select('ride_type, needs_ride, has_car, available_seats')
+            .eq('event_id', eventId)
+            .eq('user_id', userId);
+
+        Map<String, dynamic>? idaRide;
+        Map<String, dynamic>? voltaRide;
+
+        for (final ride in ridesResponse) {
+          final rideType =
+              (ride['ride_type'] ?? '').toString().toLowerCase().trim();
+          if (rideType == 'ida') {
+            idaRide = Map<String, dynamic>.from(ride);
+          } else if (rideType == 'volta') {
+            voltaRide = Map<String, dynamic>.from(ride);
+          }
+        }
+
+        final precisaCarona = (idaRide?['needs_ride'] == true) ||
+                (voltaRide?['needs_ride'] == true)
+            ? 'Sim'
+            : 'Não';
+
+        final nome = (profileResponse['full_name'] ?? '-').toString();
+        final dataNascimento = _formatBirthDate(profileResponse['birth_date']);
+        final rg = (profileResponse['rg'] ?? '-').toString();
+        final ida = _buildRideText(idaRide);
+        final volta = _buildRideText(voltaRide);
+
+        lines.add(
+          'Nome: $nome\n'
+          'Data de nascimento: $dataNascimento\n'
+          'RG: $rg\n'
+          'Precisa de carona: $precisaCarona\n'
+          'Ida: $ida\n'
+          'Volta: $volta\n',
+        );
+      }
+
+      final formattedContent = lines.join('\n');
+      await Clipboard.setData(ClipboardData(text: formattedContent));
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Dados copiados! Cole no Excel com Ctrl+V'),
+            content: Text('✅ Dados do jogo copiados! Agora é só colar'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 3),
           ),
@@ -1912,10 +1983,11 @@ class _AgendaPageState extends State<AgendaPage> {
                                                       ),
                                                       SizedBox(width: 8),
                                                       Text(
-                                                          '📤 Exportar para Excel'),
+                                                          '📋 Exportar dados do jogo'),
                                                     ],
                                                   ),
                                                 ));
+
                                                 // ✅ NOVO: Opção excluir no menu
                                                 items.add(PopupMenuItem(
                                                   value: 'excluir',
