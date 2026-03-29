@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'admin_competitions_page.dart';
 
 class CoachDashboardPage extends StatefulWidget {
   const CoachDashboardPage({super.key});
@@ -22,12 +23,23 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
     }
   }
 
+  void _navigateToCompetitions() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AdminCompetitionsPage(
+          canEdit: false,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Área do Técnico'),
-        backgroundColor: Colors.blue, // Cor diferenciada para o técnico
+        backgroundColor: Colors.blue,
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
@@ -36,17 +48,17 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
           ),
         ],
       ),
-      body: const Center(
+      body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
+            const Icon(
               Icons.construction,
               size: 100,
               color: Colors.blue,
             ),
-            SizedBox(height: 20),
-            Text(
+            const SizedBox(height: 20),
+            const Text(
               'Em criação',
               style: TextStyle(
                 fontSize: 24,
@@ -54,13 +66,19 @@ class _CoachDashboardPageState extends State<CoachDashboardPage> {
                 color: Colors.blue,
               ),
             ),
-            SizedBox(height: 10),
-            Text(
+            const SizedBox(height: 10),
+            const Text(
               'Esta página estará disponível em breve',
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey,
               ),
+            ),
+            const SizedBox(height: 30),
+            ElevatedButton.icon(
+              onPressed: _navigateToCompetitions,
+              icon: const Icon(Icons.emoji_events_outlined),
+              label: const Text('Competições'),
             ),
           ],
         ),

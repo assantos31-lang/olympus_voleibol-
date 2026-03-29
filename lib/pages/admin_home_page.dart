@@ -7,6 +7,7 @@ import 'admin_financial_page.dart';
 import 'chat_rooms_page.dart';
 import 'admin_messages_page.dart';
 import 'admin_birthdays_page.dart';
+import 'admin_competitions_page.dart';
 
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
@@ -471,6 +472,24 @@ class _AdminHomePageState extends State<AdminHomePage> {
                             const SizedBox(height: 22),
                             _buildMonthBirthdaysCard(context),
                             const SizedBox(height: 26),
+                            _buildFuturisticButton(
+                              context: context,
+                              label: 'Competições',
+                              icon: Icons.emoji_events_outlined,
+                              accentColor: const Color(0xFF7CE7FF),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const AdminCompetitionsPage(
+                                      canEdit: true,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 18),
                             _buildFuturisticButton(
                               context: context,
                               label: 'Gerenciar Usuários',

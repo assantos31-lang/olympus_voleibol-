@@ -12,6 +12,7 @@ import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
 import 'athlete_messages_page.dart';
 import 'chat_rooms_page.dart';
+import 'admin_competitions_page.dart';
 
 class AthleteDashboardPage extends StatefulWidget {
   const AthleteDashboardPage({super.key});
@@ -698,6 +699,17 @@ event_time
       context,
       MaterialPageRoute(
         builder: (context) => const ChatRoomsPage(),
+      ),
+    );
+  }
+
+  void _navigateToCompetitions() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AdminCompetitionsPage(
+          canEdit: false,
+        ),
       ),
     );
   }
@@ -2162,6 +2174,13 @@ event_time
               onTap: _navigateToFinancial,
               badgeCount:
                   _overdueFinancialCount > 0 ? _overdueFinancialCount : null,
+            ),
+            _buildDashboardCard(
+              icon: Icons.emoji_events_outlined,
+              title: 'Competições',
+              subtitle: 'Veja ligas, campeonatos e amistosos',
+              color: const Color(0xFF2C5F8D),
+              onTap: _navigateToCompetitions,
             ),
             const SizedBox(height: 100),
           ],
