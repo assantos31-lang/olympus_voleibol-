@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui';
 import '../services/auth_service.dart';
 import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
@@ -954,10 +955,10 @@ event_time
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: const Color(0xFF9FB6C9).withOpacity(0.75),
-          width: 2,
+          color: Colors.white.withOpacity(0.20),
+          width: 1.2,
         ),
         boxShadow: [
           BoxShadow(
@@ -982,7 +983,7 @@ event_time
         ),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         child: Stack(
           children: [
             Positioned.fill(
@@ -1593,9 +1594,9 @@ event_time
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: olympusGold.withOpacity(0.25)),
+        color: Colors.white.withOpacity(0.94),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.74)),
         boxShadow: [
           BoxShadow(
             color: olympusGold.withOpacity(0.12),
@@ -1693,9 +1694,9 @@ event_time
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       padding: const EdgeInsets.fromLTRB(14, 18, 14, 14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: olympusBlue.withOpacity(0.12)),
+        color: Colors.white.withOpacity(0.94),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.74)),
         boxShadow: [
           BoxShadow(
             color: olympusBlue.withOpacity(0.08),
@@ -1801,106 +1802,141 @@ event_time
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: color.withOpacity(0.2),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
-          ],
-          border: Border.all(
-            color: color.withOpacity(0.3),
-            width: 2,
-          ),
-        ),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withOpacity(0.20),
+                    Colors.white.withOpacity(0.11),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.18),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                  BoxShadow(
+                    color: color.withOpacity(0.12),
+                    blurRadius: 12,
+                    spreadRadius: 0.6,
+                  ),
+                ],
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.28),
+                  width: 1.2,
+                ),
+              ),
+              child: Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      icon,
-                      size: 32,
-                      color: color,
+                  Positioned(
+                    top: -22,
+                    right: -14,
+                    child: Container(
+                      width: 76,
+                      height: 76,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withOpacity(0.08),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Row(
                       children: [
-                        Text(
-                          title,
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                        Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: color.withOpacity(0.18),
+                            ),
+                          ),
+                          child: Icon(
+                            icon,
+                            size: 32,
                             color: color,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          subtitle,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey[600],
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: color,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                subtitle,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ],
                           ),
+                        ),
+                        Icon(
+                          Icons.arrow_forward_ios,
+                          color: color.withOpacity(0.55),
+                          size: 18,
                         ),
                       ],
                     ),
                   ),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    color: color.withOpacity(0.5),
-                    size: 18,
-                  ),
+                  if (badgeCount != null && badgeCount > 0)
+                    Positioned(
+                      right: 12,
+                      top: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.white, width: 2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.red.withOpacity(0.4),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          badgeCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
-            if (badgeCount != null && badgeCount > 0)
-              Positioned(
-                right: 12,
-                top: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.red.withOpacity(0.4),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Text(
-                    badgeCount.toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-          ],
+          ),
         ),
       ),
     );
@@ -1910,45 +1946,54 @@ event_time
     return SafeArea(
       child: GestureDetector(
         onTap: _navigateToChat,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF2C5F8D), Color(0xFF1E3A5F)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: olympusLightBlue.withOpacity(0.35),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
-              ),
-            ],
-            border: Border.all(
-              color: Colors.white.withOpacity(0.22),
-              width: 1.1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(
-                Icons.chat_bubble_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
-              SizedBox(width: 8),
-              Text(
-                'Chat',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withOpacity(0.18),
+                    olympusLightBlue.withOpacity(0.22),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: olympusLightBlue.withOpacity(0.30),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.28),
+                  width: 1.1,
                 ),
               ),
-            ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(
+                    Icons.chat_bubble_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Chat',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -2110,6 +2155,58 @@ event_time
     );
   }
 
+  Widget _buildPremiumDashboardBackground() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(color: const Color(0xFF102845));
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            color: Colors.black.withOpacity(0.10),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  olympusBlue.withOpacity(0.48),
+                  olympusLightBlue.withOpacity(0.20),
+                  Colors.black.withOpacity(0.60),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0, -0.62),
+                radius: 1.18,
+                colors: [
+                  olympusGold.withOpacity(0.11),
+                  Colors.transparent,
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   void dispose() {
     _birthdayBadgeController.dispose();
@@ -2142,49 +2239,57 @@ event_time
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            _buildAthleteInfoCard(),
-            _buildTodayBirthdaysCard(),
-            _buildFinancialAlertCard(),
-            _buildPresenceSummaryCard(),
-            _buildWeekEventsSectionCard(),
-            _buildDashboardCard(
-              icon: Icons.calendar_today,
-              title: 'Minha Agenda',
-              subtitle: _getAgendaSubtitle(),
-              color: olympusGold,
-              onTap: _navigateToAgenda,
-              badgeCount: _pendingCount > 0 ? _pendingCount : null,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: _buildPremiumDashboardBackground(),
+          ),
+          SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _buildAthleteInfoCard(),
+                _buildTodayBirthdaysCard(),
+                _buildFinancialAlertCard(),
+                _buildPresenceSummaryCard(),
+                _buildWeekEventsSectionCard(),
+                _buildDashboardCard(
+                  icon: Icons.calendar_today,
+                  title: 'Minha Agenda',
+                  subtitle: _getAgendaSubtitle(),
+                  color: olympusGold,
+                  onTap: _navigateToAgenda,
+                  badgeCount: _pendingCount > 0 ? _pendingCount : null,
+                ),
+                _buildDashboardCard(
+                  icon: Icons.mark_chat_unread_rounded,
+                  title: 'Mensagens',
+                  subtitle: 'Avisos e comunicados',
+                  color: const Color(0xFF6C4AB6),
+                  onTap: _navigateToMessages,
+                ),
+                _buildDashboardCard(
+                  icon: Icons.attach_money,
+                  title: 'Financeiro',
+                  subtitle: 'Acompanhe seus pagamentos',
+                  color: olympusBlue,
+                  onTap: _navigateToFinancial,
+                  badgeCount: _overdueFinancialCount > 0
+                      ? _overdueFinancialCount
+                      : null,
+                ),
+                _buildDashboardCard(
+                  icon: Icons.emoji_events_outlined,
+                  title: 'Competições',
+                  subtitle: 'Veja ligas, campeonatos e amistosos',
+                  color: const Color(0xFF2C5F8D),
+                  onTap: _navigateToCompetitions,
+                ),
+                const SizedBox(height: 100),
+              ],
             ),
-            _buildDashboardCard(
-              icon: Icons.mark_chat_unread_rounded,
-              title: 'Mensagens',
-              subtitle: 'Avisos e comunicados',
-              color: const Color(0xFF6C4AB6),
-              onTap: _navigateToMessages,
-            ),
-            _buildDashboardCard(
-              icon: Icons.attach_money,
-              title: 'Financeiro',
-              subtitle: 'Acompanhe seus pagamentos',
-              color: olympusBlue,
-              onTap: _navigateToFinancial,
-              badgeCount:
-                  _overdueFinancialCount > 0 ? _overdueFinancialCount : null,
-            ),
-            _buildDashboardCard(
-              icon: Icons.emoji_events_outlined,
-              title: 'Competições',
-              subtitle: 'Veja ligas, campeonatos e amistosos',
-              color: const Color(0xFF2C5F8D),
-              onTap: _navigateToCompetitions,
-            ),
-            const SizedBox(height: 100),
-          ],
-        ),
+          ),
+        ],
       ),
       floatingActionButton: _buildFloatingChatButton(),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,

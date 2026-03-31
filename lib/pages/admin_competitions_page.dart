@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as path;
 
 class AdminCompetitionsPage extends StatefulWidget {
   final bool canEdit;
-
   const AdminCompetitionsPage({super.key, required this.canEdit});
 
   @override
@@ -13,19 +16,17 @@ class AdminCompetitionsPage extends StatefulWidget {
 class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
     with SingleTickerProviderStateMixin {
   final SupabaseClient _supabase = Supabase.instance.client;
-
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color pageBackground = Color(0xFFF6F1FA);
 
   late final TabController _tabController;
-
   bool _loading = true;
   String? _error;
-
   List<_CompetitionGroup> _leagueGroups = [];
   List<_FriendlyYearGroup> _friendlyGroups = [];
+  Map<String, String> _championshipImages = {};
 
   @override
   void initState() {
@@ -48,32 +49,39 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
 
     try {
       final eventsResponse = await _supabase.from('events').select('''
+        id,
+        event_name,
+        event_type,
+        event_date,
+        event_time,
+        set_format,
+        championship_name,
+        championship_image_url,
+        is_featured,
+        featured_image_url,
+        street,
+        street_number,
+        neighborhood,
+        city,
+        state,
+        gender,
+        created_at,
+        event_results (
+          id,
+          final_result_label,
+          olympus_sets_won,
+          opponent_sets_won,
+          event_result_sets (
             id,
-            event_name,
-            event_type,
-            event_date,
-            event_time,
-            championship_name,
-            street,
-            street_number,
-            neighborhood,
-            city,
-            state,
-            gender,
-            created_at,
-            event_results (
-              id,
-              final_result_label,
-              olympus_sets_won,
-              opponent_sets_won,
-              event_result_sets (
-                id,
-                set_number,
-                olympus_score,
-                opponent_score
-              )
-            )
-          ''');
+            set_number,
+            olympus_score,
+            opponent_score
+          )
+        ),
+        event_photos (
+          id
+        )
+      ''');
 
       final allEvents = eventsResponse
           .map(
@@ -81,6 +89,22 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
                 _EventCompetitionCard.fromMap(Map<String, dynamic>.from(row)),
           )
           .toList();
+
+      final championshipNames = allEvents
+          .where((e) => e.type == 'campeonato' && e.championshipName.isNotEmpty)
+          .map((e) => e.championshipName)
+          .toSet();
+
+      for (final champName in championshipNames) {
+        final champEvent = allEvents.firstWhere(
+          (e) => e.championshipName == champName,
+          orElse: () => allEvents.first,
+        );
+        if (champEvent.championshipImageUrl != null &&
+            champEvent.championshipImageUrl!.isNotEmpty) {
+          _championshipImages[champName] = champEvent.championshipImageUrl!;
+        }
+      }
 
       final leagueEvents = allEvents
           .where(
@@ -123,12 +147,12 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
           ..sort(
             (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
           );
-
         return _FriendlyYearGroup(year: yearEntry.key, groups: opponentGroups);
       }).toList()
         ..sort((a, b) => b.year.compareTo(a.year));
 
       if (!mounted) return;
+
       setState(() {
         _leagueGroups = leagueGroups;
         _friendlyGroups = friendlyGroups;
@@ -158,6 +182,113 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
       ),
     );
     await _loadCompetitions();
+  }
+
+  Future<void> _openChampionshipGames(_CompetitionGroup group) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChampionshipGamesPage(
+          championshipName: group.title,
+          events: group.items,
+          canEdit: widget.canEdit,
+          imageUrl: _championshipImages[group.title],
+        ),
+      ),
+    );
+    await _loadCompetitions();
+  }
+
+  Future<void> _openEventPhotos(_EventCompetitionCard event) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EventPhotosPage(
+          eventId: event.id,
+          eventName: event.name,
+          canEdit: widget.canEdit,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openFeaturedMatch(_EventCompetitionCard event) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FeaturedMatchPage(
+          eventId: event.id,
+          eventName: event.name,
+          isFeatured: event.isFeatured ?? false,
+          featuredImageUrl: event.featuredImageUrl,
+          canEdit: widget.canEdit,
+        ),
+      ),
+    );
+    await _loadCompetitions();
+  }
+
+  Future<void> _uploadChampionshipImage(String championshipName) async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📤 Enviando imagem...'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      }
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final cleanName =
+          championshipName.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+      final fileName = 'championships/${cleanName}_$timestamp.jpg';
+
+      if (kIsWeb) {
+        final bytes = await image.readAsBytes();
+        await _supabase.storage.from('event-images').uploadBinary(
+            fileName, bytes,
+            fileOptions: const FileOptions(upsert: true));
+      } else {
+        final file = File(image.path);
+        await _supabase.storage.from('event-images').upload(fileName, file,
+            fileOptions: const FileOptions(upsert: true));
+      }
+
+      final imageUrl =
+          _supabase.storage.from('event-images').getPublicUrl(fileName);
+
+      final eventsToUpdate =
+          _leagueGroups.firstWhere((g) => g.title == championshipName).items;
+      for (final event in eventsToUpdate) {
+        await _supabase
+            .from('events')
+            .update({'championship_image_url': imageUrl}).eq('id', event.id);
+      }
+
+      if (mounted) {
+        setState(() {
+          _championshipImages[championshipName] = imageUrl;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Imagem salva com sucesso!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadCompetitions();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Erro ao enviar imagem: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -217,23 +348,18 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
       itemCount: _leagueGroups.length,
       itemBuilder: (context, index) {
         final group = _leagueGroups[index];
-        return _CompetitionSectionCard(
-          title: group.title,
-          subtitle:
-              '${group.items.length} jogo${group.items.length == 1 ? '' : 's'}',
-          children: group.items
-              .map(
-                (event) => Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: _CompetitionMatchCard(
-                    event: event,
-                    headerTitle: group.title,
-                    canEdit: widget.canEdit,
-                    onTapEdit: () => _openResultEditor(event),
-                  ),
-                ),
-              )
-              .toList(),
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: _ChampionshipCard(
+            title: group.title,
+            itemCount: group.items.length,
+            imageUrl: _championshipImages[group.title],
+            onImageTap: widget.canEdit
+                ? () => _uploadChampionshipImage(group.title)
+                : null,
+            onTap: () => _openChampionshipGames(group),
+            canEdit: widget.canEdit,
+          ),
         );
       },
     );
@@ -273,6 +399,13 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
                               headerTitle: 'Amistoso',
                               canEdit: widget.canEdit,
                               onTapEdit: () => _openResultEditor(event),
+                              onTapPhotos: () => _openEventPhotos(event),
+                              onTapFeatured: widget.canEdit &&
+                                      (event.result?.finalLabel == 'VITÓRIA' ||
+                                          event.result?.outcome ==
+                                              _ResultOutcome.victory)
+                                  ? () => _openFeaturedMatch(event)
+                                  : null,
                             ),
                           ),
                         )
@@ -283,6 +416,177 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
               .toList(),
         );
       },
+    );
+  }
+}
+
+class _ChampionshipCard extends StatelessWidget {
+  final String title;
+  final int itemCount;
+  final String? imageUrl;
+  final VoidCallback? onImageTap;
+  final VoidCallback onTap;
+  final bool canEdit;
+
+  const _ChampionshipCard({
+    required this.title,
+    required this.itemCount,
+    required this.imageUrl,
+    this.onImageTap,
+    required this.onTap,
+    required this.canEdit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+          border: Border.all(color: const Color(0xFFDCD3EA)),
+        ),
+        child: Row(
+          children: [
+            // Imagem do campeonato - comportamento diferente para admin vs usuário
+            if (canEdit)
+              // ADMIN: Pode clicar para editar/upload
+              GestureDetector(
+                onTap: onImageTap,
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: _AdminCompetitionsPageState.olympusGold
+                        .withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _AdminCompetitionsPageState.olympusGold,
+                      width: 2,
+                    ),
+                    image: imageUrl != null && imageUrl!.isNotEmpty
+                        ? DecorationImage(
+                            image: NetworkImage(imageUrl!),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
+                  ),
+                  child: imageUrl == null || imageUrl!.isEmpty
+                      ? const Icon(
+                          Icons.add_photo_alternate_outlined,
+                          size: 40,
+                          color: _AdminCompetitionsPageState.olympusGold,
+                        )
+                      : null,
+                ),
+              )
+            else
+              // USUÁRIO: Apenas visualiza, não pode editar
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.grey.withOpacity(0.3),
+                    width: 2,
+                  ),
+                  image: imageUrl != null && imageUrl!.isNotEmpty
+                      ? DecorationImage(
+                          image: NetworkImage(imageUrl!),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
+                ),
+                child: imageUrl == null || imageUrl!.isEmpty
+                    ? const Icon(
+                        Icons.lock_outline,
+                        size: 40,
+                        color: Colors.grey,
+                      )
+                    : null,
+              ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: _AdminCompetitionsPageState.olympusBlue,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _AdminCompetitionsPageState.olympusGold
+                          .withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.sports_volleyball,
+                          size: 16,
+                          color: _AdminCompetitionsPageState.olympusGold,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '$itemCount jogo${itemCount == 1 ? '' : 's'}',
+                          style: const TextStyle(
+                            color: _AdminCompetitionsPageState.olympusGold,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Text(
+                        'Toque para ver jogos',
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        size: 18,
+                        color: Colors.grey,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -382,12 +686,16 @@ class _CompetitionMatchCard extends StatefulWidget {
   final String headerTitle;
   final bool canEdit;
   final VoidCallback onTapEdit;
+  final VoidCallback? onTapPhotos;
+  final VoidCallback? onTapFeatured;
 
   const _CompetitionMatchCard({
     required this.event,
     required this.headerTitle,
     required this.canEdit,
     required this.onTapEdit,
+    this.onTapPhotos,
+    this.onTapFeatured,
   });
 
   @override
@@ -397,11 +705,61 @@ class _CompetitionMatchCard extends StatefulWidget {
 class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
   bool _expanded = false;
 
+  void _viewFeaturedImage(String? imageUrl) {
+    if (imageUrl == null || imageUrl.isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black.withOpacity(0.8),
+            foregroundColor: Colors.white,
+            title: const Text('Imagem de Destaque'),
+            actions: [
+              IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close),
+              ),
+            ],
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.contain,
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) return child;
+                  return const Center(
+                    child: CircularProgressIndicator(
+                      color: _AdminCompetitionsPageState.olympusGold,
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(
+                    Icons.error_outline,
+                    color: Colors.white,
+                    size: 48,
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final event = widget.event;
     final result = event.result;
     final hasResult = result != null;
+    final isVictory = result?.outcome == _ResultOutcome.victory;
+    final hasPhotos =
+        event.eventPhotos != null && event.eventPhotos!.isNotEmpty;
+    final isFeatured = event.isFeatured == true;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -413,6 +771,97 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // BADGES DE DESTAQUE E FOTOS - AMBOS CLICÁVEIS
+          Row(
+            children: [
+              if (isFeatured)
+                GestureDetector(
+                  onTap: () => _viewFeaturedImage(event.featuredImageUrl),
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _AdminCompetitionsPageState.olympusGold,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _AdminCompetitionsPageState.olympusGold
+                              .withOpacity(0.4),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(
+                          Icons.star,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'DESTAQUE',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (hasPhotos)
+                GestureDetector(
+                  onTap: widget.onTapPhotos,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _AdminCompetitionsPageState.olympusBlue,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _AdminCompetitionsPageState.olympusBlue
+                              .withOpacity(0.4),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.photo_library,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          '${event.eventPhotos!.length} FOTO${event.eventPhotos!.length > 1 ? 'S' : ''}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (isFeatured || hasPhotos) const SizedBox(height: 10),
+
+          // RESTANTE DO CARD
           Text(
             widget.headerTitle,
             style: const TextStyle(
@@ -577,27 +1026,42 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
           ],
           if (widget.canEdit) ...[
             const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: widget.onTapEdit,
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('Editar'),
-                style: TextButton.styleFrom(
-                  foregroundColor: _AdminCompetitionsPageState.olympusBlue,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (isVictory && widget.onTapFeatured != null)
+                  TextButton.icon(
+                    onPressed: widget.onTapFeatured,
+                    icon: Icon(
+                      event.isFeatured == true ? Icons.star : Icons.star_border,
+                      size: 18,
+                    ),
+                    label: Text(
+                        event.isFeatured == true ? 'Destaque' : 'Destacar'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: _AdminCompetitionsPageState.olympusGold,
+                    ),
+                  ),
+                if (isVictory && widget.onTapFeatured != null)
+                  const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: widget.onTapPhotos,
+                  icon: const Icon(Icons.photo_library_outlined, size: 18),
+                  label: const Text('Fotos'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: _AdminCompetitionsPageState.olympusBlue,
+                  ),
                 ),
-              ),
-            ),
-          ],
-          if (widget.canEdit) ...[
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.photo_library_outlined, size: 18),
-                label: const Text('Fotos'),
-              ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: widget.onTapEdit,
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('Editar'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: _AdminCompetitionsPageState.olympusBlue,
+                  ),
+                ),
+              ],
             ),
           ],
         ],
@@ -675,7 +1139,6 @@ class _SetScoreBadge extends StatelessWidget {
         ? (winnerUsesGold ? const Color(0xFFF7C977) : const Color(0xFFA8C0B1))
         : Colors.white;
     final fg = highlighted ? const Color(0xFF1E3A5F) : const Color(0xFF6B6B6B);
-
     return Container(
       width: 42,
       height: 34,
@@ -774,6 +1237,740 @@ class _ErrorState extends StatelessWidget {
   }
 }
 
+class ChampionshipGamesPage extends StatefulWidget {
+  final String championshipName;
+  final List<_EventCompetitionCard> events;
+  final bool canEdit;
+  final String? imageUrl;
+
+  const ChampionshipGamesPage({
+    super.key,
+    required this.championshipName,
+    required this.events,
+    required this.canEdit,
+    this.imageUrl,
+  });
+
+  @override
+  State<ChampionshipGamesPage> createState() => _ChampionshipGamesPageState();
+}
+
+class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
+  final SupabaseClient _supabase = Supabase.instance.client;
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+
+  Future<void> _openResultEditor(_EventCompetitionCard event) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AdminCompetitionResultPage(event: event),
+      ),
+    );
+    if (mounted) {
+      Navigator.of(context).pop(true);
+    }
+  }
+
+  Future<void> _openEventPhotos(_EventCompetitionCard event) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EventPhotosPage(
+          eventId: event.id,
+          eventName: event.name,
+          canEdit: widget.canEdit,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openFeaturedMatch(_EventCompetitionCard event) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FeaturedMatchPage(
+          eventId: event.id,
+          eventName: event.name,
+          isFeatured: event.isFeatured ?? false,
+          featuredImageUrl: event.featuredImageUrl,
+          canEdit: widget.canEdit,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF6F1FA),
+      appBar: AppBar(
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+        title: Text(
+          widget.championshipName,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      body: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: widget.events.length,
+        itemBuilder: (context, index) {
+          final event = widget.events[index];
+          final isVictory = event.result?.outcome == _ResultOutcome.victory;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: _CompetitionMatchCard(
+              event: event,
+              headerTitle: widget.championshipName,
+              canEdit: widget.canEdit,
+              onTapEdit: () => _openResultEditor(event),
+              onTapPhotos: () => _openEventPhotos(event),
+              onTapFeatured: widget.canEdit && isVictory
+                  ? () => _openFeaturedMatch(event)
+                  : null,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// Página de Gerenciamento de Destaque
+class FeaturedMatchPage extends StatefulWidget {
+  final String eventId;
+  final String eventName;
+  final bool isFeatured;
+  final String? featuredImageUrl;
+  final bool canEdit;
+
+  const FeaturedMatchPage({
+    super.key,
+    required this.eventId,
+    required this.eventName,
+    required this.isFeatured,
+    this.featuredImageUrl,
+    required this.canEdit,
+  });
+
+  @override
+  State<FeaturedMatchPage> createState() => _FeaturedMatchPageState();
+}
+
+class _FeaturedMatchPageState extends State<FeaturedMatchPage> {
+  final SupabaseClient _supabase = Supabase.instance.client;
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  bool _saving = false;
+  late bool _isFeatured;
+  String? _imageUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _isFeatured = widget.isFeatured;
+    _imageUrl = widget.featuredImageUrl;
+  }
+
+  Future<void> _uploadFeaturedImage() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📤 Enviando imagem de destaque...'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      }
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'featured/${widget.eventId}_$timestamp.jpg';
+
+      if (kIsWeb) {
+        final bytes = await image.readAsBytes();
+        await _supabase.storage.from('event-images').uploadBinary(
+            fileName, bytes,
+            fileOptions: const FileOptions(upsert: true));
+      } else {
+        final file = File(image.path);
+        await _supabase.storage.from('event-images').upload(fileName, file,
+            fileOptions: const FileOptions(upsert: true));
+      }
+
+      final imageUrl =
+          _supabase.storage.from('event-images').getPublicUrl(fileName);
+
+      setState(() {
+        _imageUrl = imageUrl;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Imagem de destaque enviada!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Erro ao enviar imagem: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _supabase.from('events').update({
+        'is_featured': _isFeatured,
+        'featured_image_url': _isFeatured ? _imageUrl : null,
+      }).eq('id', widget.eventId);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Destaque salvo com sucesso!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Erro ao salvar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF6F1FA),
+      appBar: AppBar(
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+        title: const Text(
+          'Destacar Partida',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE1D4EF)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Configurar Destaque',
+                  style: TextStyle(
+                    color: olympusBlue,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  widget.eventName,
+                  style: TextStyle(
+                    color: Colors.grey[700],
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE1D4EF)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.star,
+                      color: olympusGold,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Habilitar Destaque',
+                            style: TextStyle(
+                              color: olympusBlue,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            'Exibir esta partida em destaque para os usuários',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: _isFeatured,
+                      onChanged: (value) {
+                        setState(() {
+                          _isFeatured = value;
+                        });
+                      },
+                      activeColor: olympusGold,
+                    ),
+                  ],
+                ),
+                if (_isFeatured) ...[
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Imagem de Destaque',
+                    style: TextStyle(
+                      color: olympusBlue,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  GestureDetector(
+                    onTap: _uploadFeaturedImage,
+                    child: Container(
+                      height: 200,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: olympusGold,
+                          width: 2,
+                          style: BorderStyle.solid,
+                        ),
+                        image: _imageUrl != null && _imageUrl!.isNotEmpty
+                            ? DecorationImage(
+                                image: NetworkImage(_imageUrl!),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
+                      ),
+                      child: _imageUrl == null || _imageUrl!.isEmpty
+                          ? Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.add_photo_alternate_outlined,
+                                  size: 48,
+                                  color: olympusGold,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Toque para adicionar foto',
+                                  style: TextStyle(
+                                    color: olympusGold,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : null,
+                    ),
+                  ),
+                  if (_imageUrl != null && _imageUrl!.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _imageUrl = null;
+                          });
+                        },
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text('Remover foto'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.red,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            height: 50,
+            child: ElevatedButton(
+              onPressed: _saving ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: olympusGold,
+                foregroundColor: olympusBlue,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              child: _saving
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text(
+                      'Salvar Destaque',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Página de Fotos do Jogo - ADMIN e USUÁRIO
+class EventPhotosPage extends StatefulWidget {
+  final String eventId;
+  final String eventName;
+  final bool canEdit;
+
+  const EventPhotosPage({
+    super.key,
+    required this.eventId,
+    required this.eventName,
+    required this.canEdit,
+  });
+
+  @override
+  State<EventPhotosPage> createState() => _EventPhotosPageState();
+}
+
+class _EventPhotosPageState extends State<EventPhotosPage> {
+  final SupabaseClient _supabase = Supabase.instance.client;
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  bool _loading = true;
+  List<Map<String, dynamic>> _photos = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPhotos();
+  }
+
+  Future<void> _loadPhotos() async {
+    setState(() => _loading = true);
+    try {
+      final response = await _supabase
+          .from('event_photos')
+          .select()
+          .eq('event_id', widget.eventId)
+          .order('created_at', ascending: false);
+
+      if (mounted) {
+        setState(() {
+          _photos = List<Map<String, dynamic>>.from(response);
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao carregar fotos: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _uploadPhoto() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📤 Enviando foto...'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      }
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'events/${widget.eventId}/$timestamp.jpg';
+
+      if (kIsWeb) {
+        final bytes = await image.readAsBytes();
+        await _supabase.storage.from('event-images').uploadBinary(
+            fileName, bytes,
+            fileOptions: const FileOptions(upsert: true));
+      } else {
+        final file = File(image.path);
+        await _supabase.storage.from('event-images').upload(fileName, file,
+            fileOptions: const FileOptions(upsert: true));
+      }
+
+      final imageUrl =
+          _supabase.storage.from('event-images').getPublicUrl(fileName);
+
+      await _supabase.from('event_photos').insert({
+        'event_id': widget.eventId,
+        'image_url': imageUrl,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Foto enviada com sucesso!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadPhotos();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Erro ao enviar foto: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deletePhoto(String photoId, String imageUrl) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir foto?'),
+        content: const Text('Esta ação não pode ser desfeita.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final uri = Uri.parse(imageUrl);
+      final pathSegments = uri.pathSegments;
+      final filePath =
+          pathSegments.skipWhile((s) => s != 'event-images').skip(1).join('/');
+
+      await _supabase.storage.from('event-images').remove([filePath]);
+      await _supabase.from('event_photos').delete().eq('id', photoId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Foto excluída com sucesso!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadPhotos();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Erro ao excluir foto: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF6F1FA),
+      appBar: AppBar(
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+        title: const Text(
+          'Fotos do Jogo',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        actions: widget.canEdit
+            ? [
+                IconButton(
+                  onPressed: _uploadPhoto,
+                  icon: const Icon(Icons.add_a_photo),
+                ),
+              ]
+            : null,
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _photos.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.photo_library_outlined,
+                        size: 80,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        widget.canEdit
+                            ? 'Nenhuma foto ainda\nToque no + para adicionar'
+                            : 'Nenhuma foto disponível',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : GridView.builder(
+                  padding: const EdgeInsets.all(8),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                  ),
+                  itemCount: _photos.length,
+                  itemBuilder: (context, index) {
+                    final photo = _photos[index];
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        GestureDetector(
+                          onTap: () => _viewPhoto(photo['image_url']),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.network(
+                              photo['image_url'],
+                              fit: BoxFit.cover,
+                              loadingBuilder: (context, child, progress) {
+                                if (progress == null) return child;
+                                return Container(
+                                  color: Colors.grey[300],
+                                  child: const Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Colors.grey[300],
+                                  child: const Icon(Icons.error),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        if (widget.canEdit)
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: GestureDetector(
+                              onTap: () =>
+                                  _deletePhoto(photo['id'], photo['image_url']),
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.8),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.delete_outline,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+    );
+  }
+
+  void _viewPhoto(String imageUrl) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black.withOpacity(0.8),
+            foregroundColor: Colors.white,
+            actions: [
+              IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close),
+              ),
+            ],
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class AdminCompetitionResultPage extends StatefulWidget {
   final _EventCompetitionCard event;
 
@@ -789,16 +1986,29 @@ class _AdminCompetitionResultPageState
   final SupabaseClient _supabase = Supabase.instance.client;
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
-
   bool _saving = false;
   late final TextEditingController _finalLabelController;
   late final TextEditingController _olympusSetsController;
   late final TextEditingController _opponentSetsController;
   late final List<_EditableSetRow> _sets;
+  late final int _totalSets;
+  late final int _setsNeededToWin;
 
   @override
   void initState() {
     super.initState();
+    final setFormat = widget.event.setFormat ?? 'Melhor de 5';
+    if (setFormat.contains('3')) {
+      _totalSets = 3;
+      _setsNeededToWin = 2;
+    } else if (setFormat.contains('5')) {
+      _totalSets = 5;
+      _setsNeededToWin = 3;
+    } else {
+      _totalSets = 5;
+      _setsNeededToWin = 3;
+    }
+
     final result = widget.event.result;
     _finalLabelController = TextEditingController(
       text: result?.finalLabel ?? 'VITÓRIA',
@@ -811,7 +2021,7 @@ class _AdminCompetitionResultPageState
     );
 
     final existingSets = result?.sets ?? [];
-    _sets = List.generate(5, (index) {
+    _sets = List.generate(_totalSets, (index) {
       final number = index + 1;
       _EventSet? match;
       for (final item in existingSets) {
@@ -830,6 +2040,48 @@ class _AdminCompetitionResultPageState
         ),
       );
     });
+
+    _calculateSetsWon();
+    for (var set in _sets) {
+      set.olympusController.addListener(_calculateSetsWon);
+      set.opponentController.addListener(_calculateSetsWon);
+    }
+  }
+
+  void _calculateSetsWon() {
+    int olympusWins = 0;
+    int opponentWins = 0;
+
+    for (var set in _sets) {
+      final olympusScore = int.tryParse(set.olympusController.text.trim()) ?? 0;
+      final opponentScore =
+          int.tryParse(set.opponentController.text.trim()) ?? 0;
+      if (olympusScore > opponentScore && olympusScore > 0) {
+        olympusWins++;
+      } else if (opponentScore > olympusScore && opponentScore > 0) {
+        opponentWins++;
+      }
+    }
+
+    _olympusSetsController.removeListener(_calculateSetsWon);
+    _opponentSetsController.removeListener(_calculateSetsWon);
+    _olympusSetsController.text = olympusWins.toString();
+    _opponentSetsController.text = opponentWins.toString();
+
+    String finalResult;
+    if (olympusWins > opponentWins) {
+      finalResult = 'VITÓRIA';
+    } else if (opponentWins > olympusWins) {
+      finalResult = 'DERROTA';
+    } else {
+      finalResult = 'EMPATE';
+    }
+    if (_finalLabelController.text != finalResult) {
+      _finalLabelController.text = finalResult;
+    }
+
+    _olympusSetsController.addListener(_calculateSetsWon);
+    _opponentSetsController.addListener(_calculateSetsWon);
   }
 
   @override
@@ -846,20 +2098,45 @@ class _AdminCompetitionResultPageState
 
   Future<void> _save() async {
     setState(() => _saving = true);
-
     try {
       final resultLabel = _finalLabelController.text.trim();
-      final olympusSets = int.tryParse(_olympusSetsController.text.trim()) ?? 0;
-      final opponentSets =
-          int.tryParse(_opponentSetsController.text.trim()) ?? 0;
+      int setsPlayed = 0;
+      int olympusWins = 0;
+      int opponentWins = 0;
+
+      for (var set in _sets) {
+        final olympusScore =
+            int.tryParse(set.olympusController.text.trim()) ?? 0;
+        final opponentScore =
+            int.tryParse(set.opponentController.text.trim()) ?? 0;
+        if (olympusScore > 0 || opponentScore > 0) {
+          setsPlayed++;
+          if (olympusScore > opponentScore) {
+            olympusWins++;
+          } else if (opponentScore > olympusScore) {
+            opponentWins++;
+          }
+        }
+      }
+
+      String finalResult = resultLabel;
+      if (resultLabel.trim().isEmpty) {
+        if (olympusWins > opponentWins) {
+          finalResult = 'VITÓRIA';
+        } else if (opponentWins > olympusWins) {
+          finalResult = 'DERROTA';
+        } else {
+          finalResult = 'EMPATE';
+        }
+      }
 
       final resultResponse = await _supabase
           .from('event_results')
           .upsert({
             'event_id': widget.event.id,
-            'final_result_label': resultLabel,
-            'olympus_sets_won': olympusSets,
-            'opponent_sets_won': opponentSets,
+            'final_result_label': finalResult,
+            'olympus_sets_won': olympusWins,
+            'opponent_sets_won': opponentWins,
           }, onConflict: 'event_id')
           .select()
           .single();
@@ -871,17 +2148,24 @@ class _AdminCompetitionResultPageState
           .delete()
           .eq('event_result_id', resultId);
 
-      final setsPayload = _sets.map((row) {
-        return {
+      final setsPayload = <Map<String, dynamic>>[];
+      for (int i = 0; i < setsPlayed && i < _sets.length; i++) {
+        final row = _sets[i];
+        final olympusScore =
+            int.tryParse(row.olympusController.text.trim()) ?? 0;
+        final opponentScore =
+            int.tryParse(row.opponentController.text.trim()) ?? 0;
+        setsPayload.add({
           'event_result_id': resultId,
           'set_number': row.setNumber,
-          'olympus_score': int.tryParse(row.olympusController.text.trim()) ?? 0,
-          'opponent_score':
-              int.tryParse(row.opponentController.text.trim()) ?? 0,
-        };
-      }).toList();
+          'olympus_score': olympusScore,
+          'opponent_score': opponentScore,
+        });
+      }
 
-      await _supabase.from('event_result_sets').insert(setsPayload);
+      if (setsPayload.isNotEmpty) {
+        await _supabase.from('event_result_sets').insert(setsPayload);
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -909,6 +2193,34 @@ class _AdminCompetitionResultPageState
   @override
   Widget build(BuildContext context) {
     final event = widget.event;
+
+    int setsToShow = _totalSets;
+    int olympusWins = 0;
+    int opponentWins = 0;
+
+    for (int i = 0; i < _sets.length; i++) {
+      final olympusScore =
+          int.tryParse(_sets[i].olympusController.text.trim()) ?? 0;
+      final opponentScore =
+          int.tryParse(_sets[i].opponentController.text.trim()) ?? 0;
+
+      if (olympusScore > 0 || opponentScore > 0) {
+        if (olympusScore > opponentScore) {
+          olympusWins++;
+        } else if (opponentScore > olympusScore) {
+          opponentWins++;
+        }
+      }
+
+      if (olympusWins >= _setsNeededToWin || opponentWins >= _setsNeededToWin) {
+        setsToShow = i + 1;
+        break;
+      }
+
+      if (i == _sets.length - 1 && (olympusScore > 0 || opponentScore > 0)) {
+        setsToShow = i + 1;
+      }
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF6F1FA),
@@ -961,6 +2273,24 @@ class _AdminCompetitionResultPageState
                   'Endereço: ${event.addressLabel}',
                   style: TextStyle(color: Colors.grey[700]),
                 ),
+                const SizedBox(height: 4),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: olympusGold.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: olympusGold.withOpacity(0.5)),
+                  ),
+                  child: Text(
+                    'Formato: Melhor de $_totalSets sets',
+                    style: TextStyle(
+                      color: olympusGold,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -978,6 +2308,7 @@ class _AdminCompetitionResultPageState
                   controller: _olympusSetsController,
                   label: 'Sets Olympus',
                   keyboardType: TextInputType.number,
+                  enabled: false,
                 ),
               ),
               const SizedBox(width: 12),
@@ -986,6 +2317,7 @@ class _AdminCompetitionResultPageState
                   controller: _opponentSetsController,
                   label: 'Sets adversário',
                   keyboardType: TextInputType.number,
+                  enabled: false,
                 ),
               ),
             ],
@@ -1000,7 +2332,8 @@ class _AdminCompetitionResultPageState
             ),
           ),
           const SizedBox(height: 10),
-          ..._sets.map((row) {
+          ...List.generate(setsToShow, (index) {
+            final row = _sets[index];
             return Container(
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(12),
@@ -1077,15 +2410,17 @@ class _AdminCompetitionResultPageState
     required String label,
     String? hint,
     TextInputType? keyboardType,
+    bool enabled = true,
   }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      enabled: enabled,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: enabled ? Colors.white : Colors.grey[100],
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
@@ -1127,6 +2462,11 @@ class _EventCompetitionCard {
   final String addressLabel;
   final DateTime? eventDate;
   final _EventResult? result;
+  final String? setFormat;
+  final String? championshipImageUrl;
+  final bool? isFeatured;
+  final String? featuredImageUrl;
+  final List<dynamic>? eventPhotos;
 
   _EventCompetitionCard({
     required this.id,
@@ -1137,6 +2477,11 @@ class _EventCompetitionCard {
     required this.addressLabel,
     required this.eventDate,
     required this.result,
+    this.setFormat,
+    this.championshipImageUrl,
+    this.isFeatured,
+    this.featuredImageUrl,
+    this.eventPhotos,
   });
 
   factory _EventCompetitionCard.fromMap(Map<String, dynamic> map) {
@@ -1171,6 +2516,11 @@ class _EventCompetitionCard {
       addressLabel: address,
       eventDate: _parseDate((map['event_date'] ?? '').toString()),
       result: resultMap == null ? null : _EventResult.fromMap(resultMap),
+      setFormat: (map['set_format'] ?? 'Melhor de 5').toString(),
+      championshipImageUrl: (map['championship_image_url'] ?? '').toString(),
+      isFeatured: map['is_featured'] as bool?,
+      featuredImageUrl: (map['featured_image_url'] ?? '').toString(),
+      eventPhotos: map['event_photos'] as List?,
     );
   }
 

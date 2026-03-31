@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -239,6 +240,64 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
     return 1.12;
   }
 
+  Widget _buildPremiumFinancialBackground() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(color: const Color(0xFF102845));
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+            child: Container(color: Colors.transparent),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            color: Colors.black.withOpacity(0.08),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  olympusBlue.withOpacity(0.40),
+                  olympusLightBlue.withOpacity(0.18),
+                  Colors.black.withOpacity(0.55),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0, -0.62),
+                radius: 1.18,
+                colors: [
+                  olympusGold.withOpacity(0.10),
+                  Colors.transparent,
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -260,471 +319,515 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          // Modern Filter Section with Olympus Colors
-          Container(
-            padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFF1E3A5F),
-                  Color(0xFF2C5F8D),
-                ],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(16),
-                bottomRight: Radius.circular(16),
-              ),
-            ),
-            child: Column(
-              children: [
-                // ✅ Contadores de Atrasos e Novos Boletos
-                if (_overdueCount > 0 || _newBillsCount > 0)
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    margin: const EdgeInsets.only(bottom: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.95),
-                      borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
+          Positioned.fill(
+            child: _buildPremiumFinancialBackground(),
+          ),
+          Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Color(0xFF1E3A5F),
+                      Color(0xFF2C5F8D),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(16),
+                    bottomRight: Radius.circular(16),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    if (_overdueCount > 0 || _newBillsCount > 0)
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.95),
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            if (_overdueCount > 0)
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                        color: Colors.red.withOpacity(0.3)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.warning,
+                                          color: Colors.red, size: 16),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Em Atraso',
+                                              style: TextStyle(
+                                                fontSize: 9,
+                                                color: Colors.grey,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            Text(
+                                              '$_overdueCount ${_overdueCount == 1 ? "conta" : "contas"}',
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.red,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            if (_overdueCount > 0 && _newBillsCount > 0)
+                              const SizedBox(width: 6),
+                            if (_newBillsCount > 0)
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: olympusGold.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                        color: olympusGold.withOpacity(0.3)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.add_circle_outline,
+                                          color: olympusGold, size: 16),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Novos Boletos',
+                                              style: TextStyle(
+                                                fontSize: 9,
+                                                color: Colors.grey,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            Text(
+                                              '$_newBillsCount ${_newBillsCount == 1 ? "boleto" : "boletos"}',
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.bold,
+                                                color: olympusBlue,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildModernDropdown(
+                            icon: Icons.calendar_month,
+                            value: _selectedMonth,
+                            items: List.generate(12, (i) => i + 1)
+                                .map((m) => DropdownMenuItem(
+                                      value: m,
+                                      child: Text(
+                                        DateFormat.MMMM('pt_BR')
+                                            .format(DateTime(2024, m)),
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ))
+                                .toList(),
+                            onChanged: (v) => setState(() {
+                              _selectedMonth = v!;
+                              _loadRecords();
+                            }),
+                            label: 'Mês',
+                            iconColor: olympusGold,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildModernDropdown(
+                            icon: Icons.date_range,
+                            value: _selectedYear,
+                            items: List.generate(5, (i) => 2026 + i)
+                                .map((y) => DropdownMenuItem(
+                                      value: y,
+                                      child: Text(
+                                        y.toString(),
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ))
+                                .toList(),
+                            onChanged: (v) => setState(() {
+                              _selectedYear = v!;
+                              _loadRecords();
+                            }),
+                            label: 'Ano',
+                            iconColor: olympusGold,
+                          ),
                         ),
                       ],
                     ),
-                    child: Row(
-                      children: [
-                        if (_overdueCount > 0)
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.red.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                    color: Colors.red.withOpacity(0.3)),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.warning,
-                                      color: Colors.red, size: 16),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Em Atraso',
-                                          style: TextStyle(
-                                            fontSize: 9,
-                                            color: Colors.grey,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                        Text(
-                                          '$_overdueCount ${_overdueCount == 1 ? "conta" : "contas"}',
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.red,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                    const SizedBox(height: 10),
+                    _buildModernDropdown(
+                      icon: Icons.category_outlined,
+                      value: _selectedType,
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'all',
+                          child: Text(
+                            'Todos os Tipos',
+                            style: TextStyle(fontWeight: FontWeight.w500),
                           ),
-                        if (_overdueCount > 0 && _newBillsCount > 0)
-                          const SizedBox(width: 6),
-                        if (_newBillsCount > 0)
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: olympusGold.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                    color: olympusGold.withOpacity(0.3)),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.add_circle_outline,
-                                      color: olympusGold, size: 16),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Novos Boletos',
-                                          style: TextStyle(
-                                            fontSize: 9,
-                                            color: Colors.grey,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                        Text(
-                                          '$_newBillsCount ${_newBillsCount == 1 ? "boleto" : "boletos"}',
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                            color: olympusBlue,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'monthly',
+                          child: Text(
+                            'Mensalidade',
+                            style: TextStyle(fontWeight: FontWeight.w500),
                           ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'games',
+                          child: Text(
+                            'Jogos',
+                            style: TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'maintenance',
+                          child: Text(
+                            'Manutenção',
+                            style: TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'other',
+                          child: Text(
+                            'Outros',
+                            style: TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
                       ],
-                    ),
-                  ),
-                // Month and Year Row
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildModernDropdown(
-                        icon: Icons.calendar_month,
-                        value: _selectedMonth,
-                        items: List.generate(12, (i) => i + 1)
-                            .map((m) => DropdownMenuItem(
-                                  value: m,
-                                  child: Text(
-                                    DateFormat.MMMM('pt_BR')
-                                        .format(DateTime(2024, m)),
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ))
-                            .toList(),
-                        onChanged: (v) => setState(() {
-                          _selectedMonth = v!;
-                          _loadRecords();
-                        }),
-                        label: 'Mês',
-                        iconColor: olympusGold,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildModernDropdown(
-                        icon: Icons.date_range,
-                        value: _selectedYear,
-                        items: List.generate(5, (i) => 2026 + i)
-                            .map((y) => DropdownMenuItem(
-                                  value: y,
-                                  child: Text(
-                                    y.toString(),
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ))
-                            .toList(),
-                        onChanged: (v) => setState(() {
-                          _selectedYear = v!;
-                          _loadRecords();
-                        }),
-                        label: 'Ano',
-                        iconColor: olympusGold,
-                      ),
+                      onChanged: (v) => setState(() {
+                        _selectedType = v!;
+                        _loadRecords();
+                      }),
+                      label: 'Tipo',
+                      iconColor: olympusGold,
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                // Type Filter
-                _buildModernDropdown(
-                  icon: Icons.category_outlined,
-                  value: _selectedType,
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'all',
-                      child: Text(
-                        'Todos os Tipos',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'monthly',
-                      child: Text(
-                        'Mensalidade',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'games',
-                      child: Text(
-                        'Jogos',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'maintenance',
-                      child: Text(
-                        'Manutenção',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'other',
-                      child: Text(
-                        'Outros',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                  ],
-                  onChanged: (v) => setState(() {
-                    _selectedType = v!;
-                    _loadRecords();
-                  }),
-                  label: 'Tipo',
-                  iconColor: olympusGold,
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _records.isEmpty
-                    ? Center(
+              ),
+              Expanded(
+                child: _isLoading
+                    ? const Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(
-                              Icons.receipt_long_outlined,
-                              size: 64,
-                              color: const Color(0xFFBDBDBD),
+                            CircularProgressIndicator(
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(olympusGold),
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: 16),
                             Text(
-                              'Nenhum registro encontrado',
+                              'Carregando financeiro...',
                               style: TextStyle(
-                                color: const Color(0xFF757575),
-                                fontSize: 16,
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
                         ),
                       )
-                    : LayoutBuilder(
-                        builder: (context, constraints) {
-                          return GridView.builder(
-                            padding: const EdgeInsets.all(14),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount:
-                                  _getCrossAxisCount(constraints.maxWidth),
-                              childAspectRatio:
-                                  _getChildAspectRatio(constraints.maxWidth),
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                            ),
-                            itemCount: _records.length,
-                            itemBuilder: (context, index) {
-                              final record = _records[index];
-                              final typeColor = _getTypeColor(record.type);
-                              final dueDate = _getDueDate(record);
-                              final statusText =
-                                  _getStatusText(record.status, dueDate);
-                              final statusColor =
-                                  _getStatusColor(record.status, dueDate);
-                              final formattedDueDate =
-                                  DateFormat('dd/MM/yyyy').format(dueDate);
-                              final isOverdue = statusText == 'Atrasado';
-
-                              return Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Colors.white,
-                                      typeColor.withOpacity(0.05),
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: typeColor.withOpacity(0.3),
-                                    width: 1.5,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: typeColor.withOpacity(0.1),
-                                      spreadRadius: 1,
-                                      blurRadius: 6,
-                                      offset: const Offset(0, 3),
-                                    ),
-                                  ],
+                    : _records.isEmpty
+                        ? Center(
+                            child: Container(
+                              margin: const EdgeInsets.all(20),
+                              padding: const EdgeInsets.all(18),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.10),
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.14),
                                 ),
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    onTap: () => _showRecordDetails(record),
-                                    borderRadius: BorderRadius.circular(14),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(10),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.receipt_long_outlined,
+                                    size: 64,
+                                    color: Colors.white70,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  const Text(
+                                    'Nenhum registro encontrado',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : LayoutBuilder(
+                            builder: (context, constraints) {
+                              return GridView.builder(
+                                padding: const EdgeInsets.all(14),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount:
+                                      _getCrossAxisCount(constraints.maxWidth),
+                                  childAspectRatio: _getChildAspectRatio(
+                                      constraints.maxWidth),
+                                  crossAxisSpacing: 10,
+                                  mainAxisSpacing: 10,
+                                ),
+                                itemCount: _records.length,
+                                itemBuilder: (context, index) {
+                                  final record = _records[index];
+                                  final typeColor = _getTypeColor(record.type);
+                                  final dueDate = _getDueDate(record);
+                                  final statusText =
+                                      _getStatusText(record.status, dueDate);
+                                  final statusColor =
+                                      _getStatusColor(record.status, dueDate);
+                                  final formattedDueDate =
+                                      DateFormat('dd/MM/yyyy').format(dueDate);
+                                  final isOverdue = statusText == 'Atrasado';
+
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          Colors.white,
+                                          typeColor.withOpacity(0.05),
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: typeColor.withOpacity(0.3),
+                                        width: 1.5,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: typeColor.withOpacity(0.1),
+                                          spreadRadius: 1,
+                                          blurRadius: 6,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: () => _showRecordDetails(record),
+                                        borderRadius: BorderRadius.circular(14),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(10),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
+                                              Row(
+                                                children: [
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.all(7),
+                                                    decoration: BoxDecoration(
+                                                      gradient: LinearGradient(
+                                                        colors: [
+                                                          typeColor
+                                                              .withOpacity(0.2),
+                                                          typeColor
+                                                              .withOpacity(0.1),
+                                                        ],
+                                                      ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              7),
+                                                    ),
+                                                    child: Icon(
+                                                      _getTypeIcon(record.type),
+                                                      color: typeColor,
+                                                      size: 18,
+                                                    ),
+                                                  ),
+                                                  const Spacer(),
+                                                  Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                      horizontal: 7,
+                                                      vertical: 3,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: statusColor
+                                                          .withOpacity(0.15),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              5),
+                                                      border: Border.all(
+                                                        color: statusColor,
+                                                        width: 1.2,
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      statusText,
+                                                      style: TextStyle(
+                                                        color: statusColor,
+                                                        fontSize: 9,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                'R\$ ${record.value.toStringAsFixed(2)}',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 20,
+                                                  color: typeColor,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                record.typeLabel,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 13,
+                                                  color: Color(0xFF2C3E5A),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 8),
                                               Container(
+                                                width: double.infinity,
                                                 padding:
                                                     const EdgeInsets.all(7),
                                                 decoration: BoxDecoration(
-                                                  gradient: LinearGradient(
-                                                    colors: [
-                                                      typeColor
-                                                          .withOpacity(0.2),
-                                                      typeColor
-                                                          .withOpacity(0.1),
-                                                    ],
-                                                  ),
+                                                  color: isOverdue
+                                                      ? Colors.red
+                                                          .withOpacity(0.1)
+                                                      : typeColor
+                                                          .withOpacity(0.08),
                                                   borderRadius:
                                                       BorderRadius.circular(7),
-                                                ),
-                                                child: Icon(
-                                                  _getTypeIcon(record.type),
-                                                  color: typeColor,
-                                                  size: 18,
-                                                ),
-                                              ),
-                                              const Spacer(),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 7,
-                                                  vertical: 3,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: statusColor
-                                                      .withOpacity(0.15),
-                                                  borderRadius:
-                                                      BorderRadius.circular(5),
                                                   border: Border.all(
-                                                    color: statusColor,
+                                                    color: isOverdue
+                                                        ? Colors.red
+                                                            .withOpacity(0.3)
+                                                        : typeColor
+                                                            .withOpacity(0.2),
                                                     width: 1.2,
                                                   ),
                                                 ),
-                                                child: Text(
-                                                  statusText,
-                                                  style: TextStyle(
-                                                    color: statusColor,
-                                                    fontSize: 9,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.calendar_today,
+                                                      size: 14,
+                                                      color: isOverdue
+                                                          ? Colors.red
+                                                          : typeColor,
+                                                    ),
+                                                    const SizedBox(width: 5),
+                                                    Expanded(
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        children: [
+                                                          Text(
+                                                            'Vencimento',
+                                                            style: TextStyle(
+                                                              fontSize: 11,
+                                                              color: Colors
+                                                                  .grey[600],
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                            ),
+                                                          ),
+                                                          Text(
+                                                            formattedDueDate,
+                                                            style: TextStyle(
+                                                              fontSize: 12,
+                                                              color: isOverdue
+                                                                  ? Colors
+                                                                      .red[700]
+                                                                  : typeColor,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
                                             ],
                                           ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'R\$ ${record.value.toStringAsFixed(2)}',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 20,
-                                              color: typeColor,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            record.typeLabel,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 13,
-                                              color: Color(0xFF2C3E5A),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Container(
-                                            width: double.infinity,
-                                            padding: const EdgeInsets.all(7),
-                                            decoration: BoxDecoration(
-                                              color: isOverdue
-                                                  ? Colors.red.withOpacity(0.1)
-                                                  : typeColor.withOpacity(0.08),
-                                              borderRadius:
-                                                  BorderRadius.circular(7),
-                                              border: Border.all(
-                                                color: isOverdue
-                                                    ? Colors.red
-                                                        .withOpacity(0.3)
-                                                    : typeColor
-                                                        .withOpacity(0.2),
-                                                width: 1.2,
-                                              ),
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.calendar_today,
-                                                  size: 14,
-                                                  color: isOverdue
-                                                      ? Colors.red
-                                                      : typeColor,
-                                                ),
-                                                const SizedBox(width: 5),
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                        'Vencimento',
-                                                        style: TextStyle(
-                                                          fontSize: 11,
-                                                          color:
-                                                              Colors.grey[600],
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                      Text(
-                                                        formattedDueDate,
-                                                        style: TextStyle(
-                                                          fontSize: 12,
-                                                          color: isOverdue
-                                                              ? Colors.red[700]
-                                                              : typeColor,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
+                                  );
+                                },
                               );
                             },
-                          );
-                        },
-                      ),
+                          ),
+              ),
+            ],
           ),
         ],
       ),

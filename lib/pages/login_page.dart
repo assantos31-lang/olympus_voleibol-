@@ -251,6 +251,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     FocusScope.of(context).unfocus();
     setState(() => _isLoading = true);
 
+    await Future.delayed(const Duration(milliseconds: 80));
+
     final result = await _authService.signIn(
       _emailController.text.trim(),
       _passwordController.text,
@@ -258,19 +260,23 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
     if (!mounted) return;
 
-    setState(() => _isLoading = false);
-
     if (result['success'] == true) {
-      Navigator.pushReplacement(
-        context,
+      Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(
+          opaque: false,
+          barrierColor: Colors.transparent,
           pageBuilder: (context, animation, secondaryAnimation) =>
-              const DashboardRouterPage(),
-          transitionDuration: Duration.zero,
+              FadeTransition(
+            opacity: animation,
+            child: const DashboardRouterPage(),
+          ),
+          transitionDuration: const Duration(milliseconds: 180),
           reverseTransitionDuration: Duration.zero,
         ),
+        (route) => false,
       );
     } else {
+      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(result['error'] ?? 'Erro ao fazer login'),
@@ -720,7 +726,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   ),
                 ),
                 child: Container(
-                  color: Colors.black54,
+                  color: Colors.black.withOpacity(0.65),
                   child: const Center(
                     child: CircularProgressIndicator(
                       valueColor: AlwaysStoppedAnimation<Color>(olympusGold),

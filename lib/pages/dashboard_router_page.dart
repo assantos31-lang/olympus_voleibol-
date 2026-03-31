@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../main.dart';
 import 'athlete_dashboard_page.dart';
 import 'coach_dashboard_page.dart';
 import 'member_dashboard_page.dart';
@@ -103,17 +104,8 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Carregando dashboard...'),
-            ],
-          ),
-        ),
+      return const PremiumLoadingScreen(
+        text: 'Carregando dashboard...',
       );
     }
 

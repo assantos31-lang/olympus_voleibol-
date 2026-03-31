@@ -117,6 +117,68 @@ class MyApp extends StatelessWidget {
   }
 }
 
+class PremiumLoadingScreen extends StatelessWidget {
+  final String text;
+
+  const PremiumLoadingScreen({super.key, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/monte_olimpo_v2.png',
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withOpacity(0.55),
+            ),
+          ),
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0x66102845),
+                    Color(0x401E3A5F),
+                    Color(0x99000000),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const CircularProgressIndicator(
+                  color: Color(0xFFFFD54F),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  text,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
 
@@ -155,17 +217,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Carregando...'),
-            ],
-          ),
-        ),
+      return const PremiumLoadingScreen(
+        text: 'Carregando...',
       );
     }
 
@@ -246,8 +299,8 @@ class _AdminOnlyProfilesRouteState extends State<AdminOnlyProfilesRoute> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return const PremiumLoadingScreen(
+        text: 'Carregando...',
       );
     }
 
