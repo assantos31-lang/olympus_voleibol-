@@ -930,7 +930,9 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                     child: Text(
                       hasResult
                           ? result!.finalLabel
-                          : 'Cadastrar resultado do jogo',
+                          : (widget.canEdit
+                              ? 'Cadastrar resultado do jogo'
+                              : 'Resultado pendente'),
                       style: TextStyle(
                         color: hasResult
                             ? _resultForeground(result!)
@@ -943,7 +945,7 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                   Text(
                     hasResult
                         ? '${result!.olympusSets} x ${result.opponentSets} em Sets'
-                        : 'Abrir',
+                        : '',
                     style: TextStyle(
                       color: hasResult
                           ? _resultForeground(result!)
