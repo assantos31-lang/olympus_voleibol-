@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as path;
 
 class AdminCompetitionsPage extends StatefulWidget {
   final bool canEdit;
@@ -19,7 +19,6 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color pageBackground = Color(0xFFF6F1FA);
 
   late final TabController _tabController;
   bool _loading = true;
@@ -225,6 +224,102 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
     await _loadCompetitions();
   }
 
+  Widget _buildPremiumBackground() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(color: const Color(0xFF102845));
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            color: Colors.black.withOpacity(0.14),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  olympusBlue.withOpacity(0.56),
+                  olympusLightBlue.withOpacity(0.26),
+                  Colors.black.withOpacity(0.62),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0, -0.78),
+                radius: 1.08,
+                colors: [
+                  olympusGold.withOpacity(0.12),
+                  Colors.transparent,
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGlassTabShell({required Widget child}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 420;
+        final horizontal = isCompact ? 10.0 : 14.0;
+        final top = isCompact ? 10.0 : 14.0;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(horizontal, top, horizontal, 18),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.white.withOpacity(0.14),
+                      Colors.white.withOpacity(0.08),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.20),
+                    width: 1.1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.16),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _uploadChampionshipImage(String championshipName) async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
@@ -294,9 +389,10 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: pageBackground,
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: false,
       appBar: AppBar(
-        backgroundColor: olympusBlue,
+        backgroundColor: olympusBlue.withOpacity(0.96),
         foregroundColor: Colors.white,
         elevation: 0,
         title: const Text(
@@ -312,25 +408,38 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: olympusGold,
+          indicatorWeight: 3,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
+          labelStyle: const TextStyle(fontWeight: FontWeight.w700),
           tabs: const [
             Tab(text: 'Liga / Campeonatos'),
             Tab(text: 'Amistosos'),
           ],
         ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? _ErrorState(message: _error!, onRetry: _loadCompetitions)
-              : RefreshIndicator(
-                  onRefresh: _loadCompetitions,
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [_buildLeagueTab(), _buildFriendlyTab()],
-                  ),
-                ),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildPremiumBackground()),
+          _loading
+              ? const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                )
+              : _error != null
+                  ? _ErrorState(message: _error!, onRetry: _loadCompetitions)
+                  : RefreshIndicator(
+                      color: olympusBlue,
+                      onRefresh: _loadCompetitions,
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _buildGlassTabShell(child: _buildLeagueTab()),
+                          _buildGlassTabShell(child: _buildFriendlyTab()),
+                        ],
+                      ),
+                    ),
+        ],
+      ),
     );
   }
 
@@ -344,7 +453,7 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
       itemCount: _leagueGroups.length,
       itemBuilder: (context, index) {
         final group = _leagueGroups[index];
@@ -375,7 +484,7 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
       itemCount: _friendlyGroups.length,
       itemBuilder: (context, index) {
         final yearGroup = _friendlyGroups[index];
@@ -439,154 +548,184 @@ class _ChampionshipCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-          border: Border.all(color: const Color(0xFFDCD3EA)),
-        ),
-        child: Row(
-          children: [
-            // Imagem do campeonato - comportamento diferente para admin vs usuário
-            if (canEdit)
-              // ADMIN: Pode clicar para editar/upload
-              GestureDetector(
-                onTap: onImageTap,
-                child: Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: _AdminCompetitionsPageState.olympusGold
-                        .withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _AdminCompetitionsPageState.olympusGold,
-                      width: 2,
-                    ),
-                    image: imageUrl != null && imageUrl!.isNotEmpty
-                        ? DecorationImage(
-                            image: NetworkImage(imageUrl!),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
-                  ),
-                  child: imageUrl == null || imageUrl!.isEmpty
-                      ? const Icon(
-                          Icons.add_photo_alternate_outlined,
-                          size: 40,
-                          color: _AdminCompetitionsPageState.olympusGold,
-                        )
-                      : null,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 420;
+        final imageSize = isCompact ? 68.0 : 80.0;
+        final titleSize = isCompact ? 17.0 : 20.0;
+
+        Widget imageWidget;
+        if (canEdit) {
+          imageWidget = GestureDetector(
+            onTap: onImageTap,
+            child: Container(
+              width: imageSize,
+              height: imageSize,
+              decoration: BoxDecoration(
+                color:
+                    _AdminCompetitionsPageState.olympusGold.withOpacity(0.18),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color:
+                      _AdminCompetitionsPageState.olympusGold.withOpacity(0.85),
+                  width: 1.8,
                 ),
-              )
-            else
-              // USUÁRIO: Apenas visualiza, não pode editar
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.grey.withOpacity(0.3),
-                    width: 2,
-                  ),
-                  image: imageUrl != null && imageUrl!.isNotEmpty
-                      ? DecorationImage(
-                          image: NetworkImage(imageUrl!),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
-                ),
-                child: imageUrl == null || imageUrl!.isEmpty
-                    ? const Icon(
-                        Icons.lock_outline,
-                        size: 40,
-                        color: Colors.grey,
+                image: imageUrl != null && imageUrl!.isNotEmpty
+                    ? DecorationImage(
+                        image: NetworkImage(imageUrl!),
+                        fit: BoxFit.cover,
                       )
                     : null,
               ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: _AdminCompetitionsPageState.olympusBlue,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+              child: imageUrl == null || imageUrl!.isEmpty
+                  ? const Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 34,
+                      color: _AdminCompetitionsPageState.olympusGold,
+                    )
+                  : null,
+            ),
+          );
+        } else {
+          imageWidget = Container(
+            width: imageSize,
+            height: imageSize,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.16),
+                width: 1.4,
+              ),
+              image: imageUrl != null && imageUrl!.isNotEmpty
+                  ? DecorationImage(
+                      image: NetworkImage(imageUrl!),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
+            ),
+            child: imageUrl == null || imageUrl!.isEmpty
+                ? Icon(
+                    Icons.emoji_events_outlined,
+                    size: 32,
+                    color: Colors.white.withOpacity(0.80),
+                  )
+                : null,
+          );
+        }
+
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(22),
+            onTap: onTap,
+            child: Ink(
+              padding: EdgeInsets.all(isCompact ? 12 : 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(22),
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withOpacity(0.18),
+                    Colors.white.withOpacity(0.10),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.22),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.16),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
                   ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _AdminCompetitionsPageState.olympusGold
-                          .withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                ],
+              ),
+              child: Row(
+                children: [
+                  imageWidget,
+                  SizedBox(width: isCompact ? 12 : 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.sports_volleyball,
-                          size: 16,
-                          color: _AdminCompetitionsPageState.olympusGold,
-                        ),
-                        const SizedBox(width: 6),
                         Text(
-                          '$itemCount jogo${itemCount == 1 ? '' : 's'}',
-                          style: const TextStyle(
-                            color: _AdminCompetitionsPageState.olympusGold,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
+                          title,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: titleSize,
+                            fontWeight: FontWeight.w800,
+                            height: 1.1,
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _AdminCompetitionsPageState.olympusGold
+                                .withOpacity(0.18),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: _AdminCompetitionsPageState.olympusGold
+                                  .withOpacity(0.28),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.sports_volleyball,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '$itemCount jogo${itemCount == 1 ? '' : 's'}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Text(
+                              canEdit
+                                  ? 'Toque para ver e editar jogos'
+                                  : 'Toque para ver jogos',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.78),
+                                fontSize: isCompact ? 11.5 : 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              size: 18,
+                              color: Colors.white.withOpacity(0.74),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Text(
-                        'Toque para ver jogos',
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(
-                        Icons.chevron_right_rounded,
-                        size: 18,
-                        color: Colors.grey,
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -604,11 +743,13 @@ class _CompetitionSectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isCompact = MediaQuery.of(context).size.width < 380;
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(14),
+      margin: EdgeInsets.only(bottom: isCompact ? 12 : 14),
+      padding: EdgeInsets.all(isCompact ? 12 : 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.white.withOpacity(0.92),
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
@@ -624,9 +765,9 @@ class _CompetitionSectionCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: _AdminCompetitionsPageState.olympusBlue,
-              fontSize: 19,
+              fontSize: isCompact ? 17 : 19,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -636,7 +777,7 @@ class _CompetitionSectionCard extends StatelessWidget {
               subtitle!,
               style: TextStyle(
                 color: Colors.grey[700],
-                fontSize: 12,
+                fontSize: isCompact ? 11.5 : 12,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -656,10 +797,12 @@ class _CompetitionSubSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isCompact = MediaQuery.of(context).size.width < 380;
+
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.all(isCompact ? 10 : 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9F4FF),
+        color: Colors.white.withOpacity(0.12),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE0D4F0)),
       ),
@@ -668,9 +811,9 @@ class _CompetitionSubSection extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: _AdminCompetitionsPageState.olympusBlue,
-              fontSize: 15,
+              fontSize: isCompact ? 14 : 15,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -760,9 +903,10 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
     final hasPhotos =
         event.eventPhotos != null && event.eventPhotos!.isNotEmpty;
     final isFeatured = event.isFeatured == true;
+    final isCompact = MediaQuery.of(context).size.width < 380;
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(isCompact ? 12 : 14),
       decoration: BoxDecoration(
         color: const Color(0xFFF6EFFB),
         borderRadius: BorderRadius.circular(16),
@@ -771,103 +915,98 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // BADGES DE DESTAQUE E FOTOS - AMBOS CLICÁVEIS
-          Row(
-            children: [
-              if (isFeatured)
-                GestureDetector(
-                  onTap: () => _viewFeaturedImage(event.featuredImageUrl),
-                  child: Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _AdminCompetitionsPageState.olympusGold,
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _AdminCompetitionsPageState.olympusGold
-                              .withOpacity(0.4),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Icon(
-                          Icons.star,
-                          size: 16,
-                          color: Colors.white,
-                        ),
-                        SizedBox(width: 4),
-                        Text(
-                          'DESTAQUE',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 11,
+          if (isFeatured || hasPhotos)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (isFeatured)
+                  GestureDetector(
+                    onTap: () => _viewFeaturedImage(event.featuredImageUrl),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _AdminCompetitionsPageState.olympusGold,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _AdminCompetitionsPageState.olympusGold
+                                .withOpacity(0.4),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.star, size: 16, color: Colors.white),
+                          SizedBox(width: 4),
+                          Text(
+                            'DESTAQUE',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              if (hasPhotos)
-                GestureDetector(
-                  onTap: widget.onTapPhotos,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _AdminCompetitionsPageState.olympusBlue,
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _AdminCompetitionsPageState.olympusBlue
-                              .withOpacity(0.4),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.photo_library,
-                          size: 16,
-                          color: Colors.white,
-                        ),
-                        SizedBox(width: 4),
-                        Text(
-                          '${event.eventPhotos!.length} FOTO${event.eventPhotos!.length > 1 ? 'S' : ''}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 11,
+                if (hasPhotos)
+                  GestureDetector(
+                    onTap: widget.onTapPhotos,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _AdminCompetitionsPageState.olympusBlue,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _AdminCompetitionsPageState.olympusBlue
+                                .withOpacity(0.4),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.photo_library,
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${event.eventPhotos!.length} FOTO${event.eventPhotos!.length > 1 ? 'S' : ''}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-            ],
-          ),
+              ],
+            ),
           if (isFeatured || hasPhotos) const SizedBox(height: 10),
-
-          // RESTANTE DO CARD
           Text(
             widget.headerTitle,
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.deepOrange,
               fontWeight: FontWeight.w800,
-              fontSize: 18,
+              fontSize: isCompact ? 16 : 18,
             ),
           ),
           const SizedBox(height: 10),
@@ -875,16 +1014,16 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
             'Data: ${event.dateLabel} / Hora: ${event.time}',
             style: TextStyle(
               color: Colors.grey[800],
-              fontSize: 14,
+              fontSize: isCompact ? 13 : 14,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 6),
           Text(
             event.name,
-            style: const TextStyle(
+            style: TextStyle(
               color: _AdminCompetitionsPageState.olympusBlue,
-              fontSize: 17,
+              fontSize: isCompact ? 15.5 : 17,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -893,7 +1032,7 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
             'Endereço: ${event.addressLabel}',
             style: TextStyle(
               color: Colors.grey[700],
-              fontSize: 13,
+              fontSize: isCompact ? 12 : 13,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -903,7 +1042,10 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                 ? () => setState(() => _expanded = !_expanded)
                 : (widget.canEdit ? widget.onTapEdit : null),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: EdgeInsets.symmetric(
+                horizontal: isCompact ? 12 : 14,
+                vertical: isCompact ? 10 : 12,
+              ),
               decoration: BoxDecoration(
                 color: hasResult
                     ? _resultBackground(result!)
@@ -916,57 +1058,116 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                   width: 1.6,
                 ),
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    hasResult ? _resultIcon(result!) : Icons.edit_note_rounded,
-                    color: hasResult
-                        ? _resultForeground(result!)
-                        : const Color(0xFF8C6B10),
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      hasResult
-                          ? result!.finalLabel
-                          : (widget.canEdit
-                              ? 'Cadastrar resultado do jogo'
-                              : 'Resultado pendente'),
-                      style: TextStyle(
-                        color: hasResult
-                            ? _resultForeground(result!)
-                            : const Color(0xFF8C6B10),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                      ),
+              child: isCompact
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              hasResult
+                                  ? _resultIcon(result!)
+                                  : Icons.edit_note_rounded,
+                              color: hasResult
+                                  ? _resultForeground(result!)
+                                  : const Color(0xFF8C6B10),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                hasResult
+                                    ? result!.finalLabel
+                                    : (widget.canEdit
+                                        ? 'Cadastrar resultado do jogo'
+                                        : 'Resultado pendente'),
+                                style: TextStyle(
+                                  color: hasResult
+                                      ? _resultForeground(result!)
+                                      : const Color(0xFF8C6B10),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            Icon(
+                              hasResult
+                                  ? (_expanded
+                                      ? Icons.keyboard_arrow_up_rounded
+                                      : Icons.keyboard_arrow_down_rounded)
+                                  : Icons.chevron_right_rounded,
+                              color: hasResult
+                                  ? _resultForeground(result!)
+                                  : const Color(0xFF8C6B10),
+                            ),
+                          ],
+                        ),
+                        if (hasResult) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            '${result!.olympusSets} x ${result.opponentSets} em Sets',
+                            style: TextStyle(
+                              color: _resultForeground(result),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        Icon(
+                          hasResult
+                              ? _resultIcon(result!)
+                              : Icons.edit_note_rounded,
+                          color: hasResult
+                              ? _resultForeground(result!)
+                              : const Color(0xFF8C6B10),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            hasResult
+                                ? result!.finalLabel
+                                : (widget.canEdit
+                                    ? 'Cadastrar resultado do jogo'
+                                    : 'Resultado pendente'),
+                            style: TextStyle(
+                              color: hasResult
+                                  ? _resultForeground(result!)
+                                  : const Color(0xFF8C6B10),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          hasResult
+                              ? '${result!.olympusSets} x ${result.opponentSets} em Sets'
+                              : '',
+                          style: TextStyle(
+                            color: hasResult
+                                ? _resultForeground(result!)
+                                : const Color(0xFF8C6B10),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(
+                          hasResult
+                              ? (_expanded
+                                  ? Icons.keyboard_arrow_up_rounded
+                                  : Icons.keyboard_arrow_down_rounded)
+                              : Icons.chevron_right_rounded,
+                          color: hasResult
+                              ? _resultForeground(result!)
+                              : const Color(0xFF8C6B10),
+                        ),
+                      ],
                     ),
-                  ),
-                  Text(
-                    hasResult
-                        ? '${result!.olympusSets} x ${result.opponentSets} em Sets'
-                        : '',
-                    style: TextStyle(
-                      color: hasResult
-                          ? _resultForeground(result!)
-                          : const Color(0xFF8C6B10),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    hasResult
-                        ? (_expanded
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.keyboard_arrow_down_rounded)
-                        : Icons.chevron_right_rounded,
-                    color: hasResult
-                        ? _resultForeground(result!)
-                        : const Color(0xFF8C6B10),
-                  ),
-                ],
-              ),
             ),
           ),
           if (hasResult && _expanded) ...[
@@ -975,8 +1176,8 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
               final olympusWon = setItem.olympusScore > setItem.opponentScore;
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
+                padding: EdgeInsets.symmetric(
+                  horizontal: isCompact ? 10 : 12,
                   vertical: 10,
                 ),
                 decoration: BoxDecoration(
@@ -998,6 +1199,7 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                         style: TextStyle(
                           color: Colors.grey[800],
                           fontWeight: FontWeight.w700,
+                          fontSize: isCompact ? 12.5 : 14,
                         ),
                       ),
                     ),
@@ -1011,7 +1213,7 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                         'x',
                         style: TextStyle(
                           color: Colors.grey[500],
-                          fontSize: 16,
+                          fontSize: isCompact ? 14 : 16,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -1028,8 +1230,10 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
           ],
           if (widget.canEdit) ...[
             const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 4,
               children: [
                 if (isVictory && widget.onTapFeatured != null)
                   TextButton.icon(
@@ -1039,13 +1243,12 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                       size: 18,
                     ),
                     label: Text(
-                        event.isFeatured == true ? 'Destaque' : 'Destacar'),
+                      event.isFeatured == true ? 'Destaque' : 'Destacar',
+                    ),
                     style: TextButton.styleFrom(
                       foregroundColor: _AdminCompetitionsPageState.olympusGold,
                     ),
                   ),
-                if (isVictory && widget.onTapFeatured != null)
-                  const SizedBox(width: 8),
                 TextButton.icon(
                   onPressed: widget.onTapPhotos,
                   icon: const Icon(Icons.photo_library_outlined, size: 18),
@@ -1054,7 +1257,6 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                     foregroundColor: _AdminCompetitionsPageState.olympusBlue,
                   ),
                 ),
-                const SizedBox(width: 8),
                 TextButton.icon(
                   onPressed: widget.onTapEdit,
                   icon: const Icon(Icons.edit_outlined, size: 18),
@@ -1137,13 +1339,14 @@ class _SetScoreBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isCompact = MediaQuery.of(context).size.width < 380;
     final bg = highlighted
         ? (winnerUsesGold ? const Color(0xFFF7C977) : const Color(0xFFA8C0B1))
         : Colors.white;
     final fg = highlighted ? const Color(0xFF1E3A5F) : const Color(0xFF6B6B6B);
     return Container(
-      width: 42,
-      height: 34,
+      width: isCompact ? 38 : 42,
+      height: isCompact ? 32 : 34,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: bg,
@@ -1151,7 +1354,11 @@ class _SetScoreBadge extends StatelessWidget {
       ),
       child: Text(
         '$score',
-        style: TextStyle(color: fg, fontWeight: FontWeight.w800, fontSize: 22),
+        style: TextStyle(
+          color: fg,
+          fontWeight: FontWeight.w800,
+          fontSize: isCompact ? 19 : 22,
+        ),
       ),
     );
   }
@@ -1173,7 +1380,7 @@ class _EmptyState extends StatelessWidget {
     return ListView(
       children: [
         const SizedBox(height: 120),
-        Icon(icon, size: 64, color: Colors.grey),
+        Icon(icon, size: 64, color: Colors.white70),
         const SizedBox(height: 14),
         Center(
           child: Text(
@@ -1181,7 +1388,7 @@ class _EmptyState extends StatelessWidget {
             style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w800,
-              color: _AdminCompetitionsPageState.olympusBlue,
+              color: Colors.white,
             ),
           ),
         ),
@@ -1191,7 +1398,8 @@ class _EmptyState extends StatelessWidget {
           child: Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey[700], fontSize: 14),
+            style:
+                TextStyle(color: Colors.white.withOpacity(0.82), fontSize: 14),
           ),
         ),
       ],
@@ -1210,15 +1418,16 @@ class _ErrorState extends StatelessWidget {
     return ListView(
       children: [
         const SizedBox(height: 110),
-        Icon(Icons.error_outline_rounded, size: 62, color: Colors.red[300]),
+        const Icon(Icons.error_outline_rounded,
+            size: 62, color: Colors.white70),
         const SizedBox(height: 12),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.red,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.90),
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -1260,7 +1469,60 @@ class ChampionshipGamesPage extends StatefulWidget {
 class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
   static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color olympusGold = Color(0xFFD4AF37);
+
+  Widget _buildPremiumBackground() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(color: const Color(0xFF102845));
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            color: Colors.black.withOpacity(0.16),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  olympusBlue.withOpacity(0.52),
+                  olympusLightBlue.withOpacity(0.24),
+                  Colors.black.withOpacity(0.58),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0, -0.80),
+                radius: 1.08,
+                colors: [
+                  olympusGold.withOpacity(0.10),
+                  Colors.transparent,
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   Future<void> _openResultEditor(_EventCompetitionCard event) async {
     await Navigator.of(context).push(
@@ -1301,36 +1563,84 @@ class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isCompact = MediaQuery.of(context).size.width < 380;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F1FA),
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: olympusBlue,
+        backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
+        elevation: 0,
         title: Text(
           widget.championshipName,
           style: const TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: widget.events.length,
-        itemBuilder: (context, index) {
-          final event = widget.events[index];
-          final isVictory = event.result?.outcome == _ResultOutcome.victory;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: _CompetitionMatchCard(
-              event: event,
-              headerTitle: widget.championshipName,
-              canEdit: widget.canEdit,
-              onTapEdit: () => _openResultEditor(event),
-              onTapPhotos: () => _openEventPhotos(event),
-              onTapFeatured: widget.canEdit && isVictory
-                  ? () => _openFeaturedMatch(event)
-                  : null,
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildPremiumBackground()),
+          SafeArea(
+            child: ListView.builder(
+              padding: EdgeInsets.fromLTRB(
+                isCompact ? 12 : 16,
+                12,
+                isCompact ? 12 : 16,
+                20,
+              ),
+              itemCount: widget.events.length,
+              itemBuilder: (context, index) {
+                final event = widget.events[index];
+                final isVictory =
+                    event.result?.outcome == _ResultOutcome.victory;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.white.withOpacity(0.16),
+                              Colors.white.withOpacity(0.08),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.18),
+                            width: 1.0,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.14),
+                              blurRadius: 14,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: _CompetitionMatchCard(
+                          event: event,
+                          headerTitle: widget.championshipName,
+                          canEdit: widget.canEdit,
+                          onTapEdit: () => _openResultEditor(event),
+                          onTapPhotos: () => _openEventPhotos(event),
+                          onTapFeatured: widget.canEdit && isVictory
+                              ? () => _openFeaturedMatch(event)
+                              : null,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }

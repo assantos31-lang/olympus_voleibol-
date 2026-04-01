@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/permission_service.dart';
 
 class AthleteAgendaPage extends StatefulWidget {
   const AthleteAgendaPage({Key? key}) : super(key: key);
@@ -16,6 +17,8 @@ class AthleteAgendaPage extends StatefulWidget {
 
 class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
+  final PermissionService _permissionService = PermissionService();
+
   List<Map<String, dynamic>> _eventos = [];
   List<Map<String, dynamic>> _eventosFiltrados = [];
   Map<String, Map<String, String>> _convocationStatus = {};
@@ -23,16 +26,21 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   String? _error;
   String _filtroMes = '';
   String _filtroTipo = 'todos';
-
-  // ✅ NOVO: Filtro por status da convocação
   String _filtroStatus = 'todos';
-
-  // ✅ NOVO: Contadores de status
   Map<String, int> _statusCounts = {
     'accepted': 0,
     'rejected': 0,
     'pending': 0,
   };
+
+  // ✅ NOVO: Variáveis de controle de permissão
+  bool _hasPermission = false;
+  bool _checkingPermission = true;
+
+  // ✅ NOVO: Variáveis de filtros permitidos
+  bool _showMonthFilter = true;
+  bool _showStatusFilter = true;
+  List<String> _allowedEventTypes = ['treino', 'amistoso', 'campeonato'];
 
   // Cores do logo Olympus Voleibol
   static const Color olympusBlue = Color(0xFF1E3A5F);
@@ -44,6 +52,51 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   @override
   void initState() {
     super.initState();
+    _checkPermission();
+  }
+
+  // ✅ NOVO: Método para verificar permissão de acesso à agenda
+  Future<void> _checkPermission() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      }
+      return;
+    }
+
+    // Verifica se usuário tem acesso à página 'agenda'
+    final hasAccess = await _permissionService.hasAccess(user.id, 'agenda');
+
+    if (!mounted) return;
+
+    setState(() {
+      _hasPermission = hasAccess;
+      _checkingPermission = false;
+    });
+
+    // Se tiver permissão, carrega os filtros e eventos
+    if (hasAccess) {
+      _loadAgendaFilters();
+    }
+  }
+
+  // ✅ NOVO: Carregar filtros permitidos
+  Future<void> _loadAgendaFilters() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+
+    final filters = await _permissionService.getAgendaFilters(user.id);
+
+    if (!mounted) return;
+    setState(() {
+      _showMonthFilter = filters['show_month_filter'] ?? true;
+      _showStatusFilter = filters['show_status_filter'] ?? true;
+      _allowedEventTypes = filters['allowed_event_types'] != null
+          ? List<String>.from(filters['allowed_event_types'])
+          : ['treino', 'amistoso', 'campeonato'];
+    });
+
     _setMesAtual();
     _buscarEventos();
   }
@@ -130,7 +183,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     return map;
   }
 
-  // ✅ NOVO: Calcular contadores de status
   void _calcularStatusCounts() {
     final counts = {'accepted': 0, 'rejected': 0, 'pending': 0};
     for (var evento in _eventos) {
@@ -145,7 +197,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     });
   }
 
-  // ✅ NOVO: Verificar se janela de check-in já encerrou (30 min após início)
   bool _janelaCheckInEncerrada(Map<String, dynamic> evento) {
     final dataStr = (evento['event_date'] ?? '').toString().trim();
     final horaStr = (evento['event_time'] ?? '').toString().trim();
@@ -185,28 +236,27 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         return;
       }
       final response = await _supabase.from('convocations').select('''
-        event_id,
-        status,
-        events!$_eventsEmbedFk (
-          id,
-          event_name,
-          event_type,
-          event_date,
-          event_time,
-          gender,
-          championship_name,
-          street,
-          street_number,
-          neighborhood,
-          city,
-          state,
-          cep,
-          latitude,
-          longitude,
-          enable_ride_logistics
-        )
-      ''').eq('user_id', user.id);
-
+event_id,
+status,
+events!$_eventsEmbedFk (
+id,
+event_name,
+event_type,
+event_date,
+event_time,
+gender,
+championship_name,
+street,
+street_number,
+neighborhood,
+city,
+state,
+cep,
+latitude,
+longitude,
+enable_ride_logistics
+)
+''').eq('user_id', user.id);
       if (response.isEmpty) {
         if (!mounted) return;
         setState(() {
@@ -216,7 +266,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         });
         return;
       }
-
       final eventosList = <Map<String, dynamic>>[];
       final statusMap = <String, Map<String, String>>{};
       for (final item in response) {
@@ -232,15 +281,12 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
           statusMap[eid] = {'status': status};
         }
       }
-
       final eventIds = eventosList.map((e) => e['id'].toString()).toList();
       final checkinMap = await _buscarCheckinsDoUsuario(user.id, eventIds);
       for (final e in eventosList) {
         final id = e['id'].toString();
         e['check_in_status'] = checkinMap[id];
       }
-
-      // ✅ AUTO-REJECT: Verifica e atualiza pendentes vencidos
       final idsParaAtualizar = <String>{};
       for (final evento in eventosList) {
         final status = (evento['convocation_status'] ?? 'pending')
@@ -255,8 +301,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
           }
         }
       }
-
-      // ✅ NOVO: AUTO-REJECT: Aceitos sem check-in após janela encerrada (30 min)
       for (final evento in eventosList) {
         final status = (evento['convocation_status'] ?? 'pending')
             .toString()
@@ -272,7 +316,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
           }
         }
       }
-
       if (idsParaAtualizar.isNotEmpty) {
         await Future.wait(idsParaAtualizar.map((eid) => _supabase
             .from('convocations')
@@ -280,18 +323,15 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
             .eq('event_id', eid)
             .eq('user_id', user.id)));
       }
-
-      // ✅ CORREÇÃO: Ordenar dos mais recentes aos mais antigos (decrescente)
       eventosList.sort((a, b) {
         final dateA = (a['event_date'] ?? '').toString();
         final dateB = (b['event_date'] ?? '').toString();
         final timeA = (a['event_time'] ?? '').toString();
         final timeB = (b['event_time'] ?? '').toString();
-        final compare = dateB.compareTo(dateA); // ✅ Invertido: B antes de A
+        final compare = dateB.compareTo(dateA);
         if (compare != 0) return compare;
-        return timeB.compareTo(timeA); // ✅ Invertido: B antes de A
+        return timeB.compareTo(timeA);
       });
-
       if (!mounted) return;
       setState(() {
         _eventos = eventosList;
@@ -299,8 +339,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         _aplicarFiltros();
         _loading = false;
       });
-
-      // ✅ NOVO: Calcular contadores após carregar eventos
       _calcularStatusCounts();
     } catch (e, stackTrace) {
       print('❌ Erro: $e');
@@ -315,8 +353,8 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
 
   void _aplicarFiltros() {
     var eventosFiltrados = _eventos;
-
-    if (_filtroMes.isNotEmpty) {
+    final aplicarFiltroMes = _showMonthFilter && _filtroStatus == 'todos';
+    if (_filtroMes.isNotEmpty && aplicarFiltroMes) {
       eventosFiltrados = eventosFiltrados.where((evento) {
         final dataEvento = (evento['event_date'] ?? '').toString();
         if (dataEvento.length >= 7) {
@@ -326,7 +364,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         return false;
       }).toList();
     }
-
     if (_filtroTipo != 'todos') {
       eventosFiltrados = eventosFiltrados.where((evento) {
         final tipo =
@@ -334,9 +371,7 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         return tipo == _filtroTipo;
       }).toList();
     }
-
-    // ✅ NOVO: Filtro por status da convocação
-    if (_filtroStatus != 'todos') {
+    if (_filtroStatus != 'todos' && _showStatusFilter) {
       eventosFiltrados = eventosFiltrados.where((evento) {
         final status = (evento['convocation_status'] ?? 'pending')
             .toString()
@@ -345,7 +380,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         return status == _filtroStatus;
       }).toList();
     }
-
     _eventosFiltrados = eventosFiltrados;
   }
 
@@ -438,7 +472,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       );
       final now = DateTime.now();
       if (eventDateTime.isBefore(now)) return false;
-
       int horasLimite;
       switch (tipo) {
         case 'treino':
@@ -501,7 +534,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       final now = DateTime.now();
       final inicioJanela = eventDateTime.subtract(const Duration(minutes: 10));
       final fimJanela = eventDateTime.add(const Duration(minutes: 30));
-
       if (now.isBefore(inicioJanela)) {
         final minutosRestantes = inicioJanela.difference(now).inMinutes;
         return {
@@ -565,23 +597,19 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       final user = _supabase.auth.currentUser;
       if (user == null) return;
       final eventId = evento['id'];
-
       if (aceitar) {
         final tipoEvento =
             (evento['event_type'] ?? '').toString().toLowerCase().trim();
         final rideEnabled = evento['enable_ride_logistics'] == true;
-
         if (tipoEvento == 'campeonato' && rideEnabled) {
           final rideData = await _showRideDialog();
           if (rideData == null) return;
-
           await _supabase.from('event_rides').insert({
             'event_id': eventId,
             'user_id': user.id,
             'ride_type': 'ida',
             ...Map<String, dynamic>.from(rideData['ida'] as Map),
           });
-
           await _supabase.from('event_rides').insert({
             'event_id': eventId,
             'user_id': user.id,
@@ -589,7 +617,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
             ...Map<String, dynamic>.from(rideData['volta'] as Map),
           });
         }
-
         await _supabase
             .from('convocations')
             .update({'status': 'accepted', 'justification': null})
@@ -600,7 +627,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         _refreshEventos();
         return;
       }
-
       final controller = TextEditingController();
       final justification = await showDialog<String>(
         context: context,
@@ -631,7 +657,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         ),
       );
       if (justification == null) return;
-
       await _supabase
           .from('convocations')
           .update({'status': 'rejected', 'justification': justification})
@@ -650,7 +675,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     bool needsRideIda = false;
     int? seatsIda;
     bool idaConfirmed = false;
-
     bool needsRideVolta = false;
     int? seatsVolta;
     bool voltaConfirmed = false;
@@ -823,7 +847,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) {
             final canConfirm = idaConfirmed && voltaConfirmed;
-
             return Dialog(
               backgroundColor: Colors.transparent,
               insetPadding: const EdgeInsets.symmetric(
@@ -1100,19 +1123,16 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       final eventLat = (evento['latitude'] as num?)?.toDouble();
       final eventLng = (evento['longitude'] as num?)?.toDouble();
       print('📍 Coordenadas do evento: lat=$eventLat, lng=$eventLng');
-
       if (eventLat == null || eventLng == null) {
         _showError('⚠️ Evento sem coordenadas! '
             'O administrador precisa geocodificar o endereço ao criar o evento.');
         return;
       }
-
       final enabled = await Geolocator.isLocationServiceEnabled();
       if (!enabled) {
         _showError('Ative o GPS para fazer check-in.');
         return;
       }
-
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -1122,19 +1142,15 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         _showError('Permissão de localização negada.');
         return;
       }
-
       if (!mounted) return;
       _showSuccess('📡 Obtendo sua localização...');
-
-      // ✅ CORREÇÃO CRÍTICA: Forçar GPS a obter posição FRESCA (ignorar cache)
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
-        forceAndroidLocationManager: true, // ✅ FORÇA GPS REAL - ignora cache
+        forceAndroidLocationManager: true,
         timeLimit: const Duration(seconds: 15),
       );
       print('📍 Sua posição: lat=${pos.latitude}, lng=${pos.longitude}');
       print('📍 Precisão do GPS: ${pos.accuracy}m');
-
       final distancia = _calcularDistanciaMetros(
         pos.latitude,
         pos.longitude,
@@ -1142,7 +1158,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
         eventLng,
       );
       print('📍 Distância calculada: ${distancia.toStringAsFixed(0)}m');
-
       const raioMaximo = 200.0;
       if (distancia > raioMaximo) {
         _showError('❌ Você está muito longe do local! '
@@ -1151,22 +1166,17 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
             'Aproxime-se mais do local do evento.');
         return;
       }
-
       print('✅ Dentro do raio de ${raioMaximo}m. Chamando stored procedure...');
-
-      // ✅ CORREÇÃO PRINCIPAL: Latitude e longitude na ordem CORRETA
       final res = await _supabase.rpc('do_checkin', params: {
         'p_event_id': evento['id'],
-        'p_event_lat': eventLat, // ✅ latitude correta (não longitude)
-        'p_event_lng': eventLng, // ✅ longitude correta (não latitude)
-        'p_check_lat': pos.latitude, // ✅ latitude correta (não longitude)
-        'p_check_lng': pos.longitude, // ✅ longitude correta (não latitude)
+        'p_event_lat': eventLat,
+        'p_event_lng': eventLng,
+        'p_check_lat': pos.latitude,
+        'p_check_lng': pos.longitude,
       });
-
       final ok = res?['ok'] == true;
       final st = (res?['status'] ?? '').toString();
       print('📍 Resultado do check-in: ok=$ok, status=$st');
-
       if (!mounted) return;
       if (ok) {
         _showSuccess('✅ Check-in confirmado com sucesso!');
@@ -1179,124 +1189,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       if (!mounted) return;
       _showError('Erro no check-in: $e');
     }
-  }
-
-  Widget _buildFiltroTipoButtons() {
-    Widget chip(String label, String value) {
-      final selected = _filtroTipo == value;
-      return ChoiceChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) {
-          setState(() {
-            _filtroTipo = value;
-            _aplicarFiltros();
-          });
-        },
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          chip('Todos', 'todos'),
-          chip('Treino', 'treino'),
-          chip('Amistoso', 'amistoso'),
-          chip('Campeonatos', 'campeonato'),
-        ],
-      ),
-    );
-  }
-
-  // ✅ NOVO: Widget para filtro de status com marcador e BADGES
-  Widget _buildFiltroStatusButtons() {
-    Widget chip(String label, String value, Color badgeColor) {
-      final selected = _filtroStatus == value;
-      final count = _statusCounts[value] ?? 0;
-      Color chipColor;
-      switch (value) {
-        case 'accepted':
-          chipColor = Colors.green;
-          break;
-        case 'rejected':
-          chipColor = Colors.red;
-          break;
-        case 'pending':
-          chipColor = Colors.orange;
-          break;
-        default:
-          chipColor = Colors.blue;
-      }
-      return ChoiceChip(
-        label: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label),
-            if (count > 0) ...[
-              const SizedBox(width: 6),
-              // ✅ BADGE estilo imagem
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: badgeColor,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  count.toString(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-        selected: selected,
-        selectedColor: chipColor.withOpacity(0.2),
-        onSelected: (_) {
-          setState(() {
-            _filtroStatus = value;
-            _aplicarFiltros();
-          });
-        },
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ✅ MARCADOR/TÍTULO
-          const Padding(
-            padding: EdgeInsets.only(left: 4, bottom: 8),
-            child: Text(
-              'Status da Convocação',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1E3A5F),
-              ),
-            ),
-          ),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              chip('Todos', 'todos', Colors.grey),
-              chip('Aceitou', 'accepted', Colors.green),
-              chip('Recusou', 'rejected', Colors.red),
-              chip('Pendentes', 'pending', Colors.orange),
-            ],
-          ),
-        ],
-      ),
-    );
   }
 
   List<String> _getMesesDisponiveis() {
@@ -1381,8 +1273,134 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     );
   }
 
+  // ✅ NOVO: Widget para tela de acesso negado
+  Widget _buildAccessDeniedScreen() {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Agenda',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: olympusBlue,
+        iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 2,
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: _buildPremiumAgendaBackground(),
+          ),
+          Center(
+            child: Container(
+              margin: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.14),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.lock_outline,
+                    size: 80,
+                    color: olympusGold.withOpacity(0.8),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Acesso Restrito',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Você não tem permissão para acessar a agenda.\nContate o administrador.',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.8),
+                      fontSize: 14,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pushNamedAndRemoveUntil(
+                        context,
+                        '/dashboard',
+                        (route) => false,
+                      );
+                    },
+                    icon: const Icon(Icons.dashboard),
+                    label: const Text('Ir para Dashboard'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: olympusGold,
+                      foregroundColor: olympusBlue,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ NOVO: Widget para tela de verificação de permissão
+  Widget _buildPermissionCheckingScreen() {
+    return Scaffold(
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: _buildPremiumAgendaBackground(),
+          ),
+          const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(olympusGold),
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'Verificando permissões...',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // ✅ NOVO: Verificar se está checando permissão
+    if (_checkingPermission) {
+      return _buildPermissionCheckingScreen();
+    }
+
+    // ✅ NOVO: Verificar se não tem permissão
+    if (!_hasPermission) {
+      return _buildAccessDeniedScreen();
+    }
+
+    // ✅ Restante do código original do build (quando tem permissão)
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -1410,7 +1428,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
           ),
           Column(
             children: [
-              // ✅ FILTROS MODERNOS COM CORES OLYMPUS
               Container(
                 padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
                 decoration: const BoxDecoration(
@@ -1429,46 +1446,51 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                 ),
                 child: Column(
                   children: [
-                    // Filtro de Mês
-                    _buildModernDropdown(
-                      icon: Icons.calendar_month,
-                      value: _filtroMes.isEmpty ? null : _filtroMes,
-                      hint: 'Mês',
-                      items: _getMesesDisponiveis().map((mes) {
-                        return DropdownMenuItem(
-                          value: mes,
-                          child: Text(
-                            _formatarNomeMes(mes),
-                            style: TextStyle(
-                              fontWeight: _filtroMes == mes
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              color: _filtroMes == mes
-                                  ? olympusBlue
-                                  : Colors.black,
+                    // ✅ Filtro de Mês (condicional)
+                    if (_showMonthFilter && _filtroStatus == 'todos') ...[
+                      _buildModernDropdown(
+                        icon: Icons.calendar_month,
+                        value: _filtroMes.isEmpty ? null : _filtroMes,
+                        hint: 'Mês',
+                        items: _getMesesDisponiveis().map((mes) {
+                          return DropdownMenuItem(
+                            value: mes,
+                            child: Text(
+                              _formatarNomeMes(mes),
+                              style: TextStyle(
+                                fontWeight: _filtroMes == mes
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: _filtroMes == mes
+                                    ? olympusBlue
+                                    : Colors.black,
+                              ),
                             ),
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (valor) {
-                        if (valor != null) {
-                          setState(() {
-                            _filtroMes = valor;
-                            _aplicarFiltros();
-                          });
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    // Filtro de Tipo
+                          );
+                        }).toList(),
+                        onChanged: (valor) {
+                          if (valor != null) {
+                            setState(() {
+                              _filtroMes = valor;
+                              _aplicarFiltros();
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    // ✅ Filtro de Tipo (filtrado por permissão)
                     _buildModernChipFilter(
                       label: 'Tipo de Evento',
                       icon: Icons.category_outlined,
-                      options: const [
+                      options: [
                         {'value': 'todos', 'label': 'Todos'},
-                        {'value': 'treino', 'label': 'Treino'},
-                        {'value': 'amistoso', 'label': 'Amistoso'},
-                        {'value': 'campeonato', 'label': 'Campeonatos'},
+                        if (_allowedEventTypes.contains('treino'))
+                          {'value': 'treino', 'label': 'Treino'},
+                        if (_allowedEventTypes.contains('amistoso'))
+                          {'value': 'amistoso', 'label': 'Amistoso'},
+                        if (_allowedEventTypes.contains('campeonato'))
+                          {'value': 'campeonato', 'label': 'Campeonatos'},
                       ],
                       selectedValue: _filtroTipo,
                       onSelected: (value) {
@@ -1479,37 +1501,38 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                       },
                     ),
                     const SizedBox(height: 8),
-                    // Filtro de Status
-                    _buildModernChipFilter(
-                      label: 'Status da Convocação',
-                      icon: Icons.visibility_outlined,
-                      options: [
-                        {'value': 'todos', 'label': 'Todos'},
-                        {
-                          'value': 'accepted',
-                          'label': 'Aceitou',
-                          'count': _statusCounts['accepted'] ?? 0
+                    // ✅ Filtro de Status (condicional)
+                    if (_showStatusFilter)
+                      _buildModernChipFilter(
+                        label: 'Status da Convocação',
+                        icon: Icons.visibility_outlined,
+                        options: [
+                          {'value': 'todos', 'label': 'Todos'},
+                          {
+                            'value': 'accepted',
+                            'label': 'Aceitou',
+                            'count': _statusCounts['accepted'] ?? 0
+                          },
+                          {
+                            'value': 'rejected',
+                            'label': 'Recusou',
+                            'count': _statusCounts['rejected'] ?? 0
+                          },
+                          {
+                            'value': 'pending',
+                            'label': 'Pendentes',
+                            'count': _statusCounts['pending'] ?? 0
+                          },
+                        ],
+                        selectedValue: _filtroStatus,
+                        onSelected: (value) {
+                          setState(() {
+                            _filtroStatus = value;
+                            _aplicarFiltros();
+                          });
                         },
-                        {
-                          'value': 'rejected',
-                          'label': 'Recusou',
-                          'count': _statusCounts['rejected'] ?? 0
-                        },
-                        {
-                          'value': 'pending',
-                          'label': 'Pendentes',
-                          'count': _statusCounts['pending'] ?? 0
-                        },
-                      ],
-                      selectedValue: _filtroStatus,
-                      onSelected: (value) {
-                        setState(() {
-                          _filtroStatus = value;
-                          _aplicarFiltros();
-                        });
-                      },
-                      showBadges: true,
-                    ),
+                        showBadges: true,
+                      ),
                   ],
                 ),
               ),
@@ -1627,7 +1650,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                         (evento['championship_name'] ?? '')
                                             .toString()
                                             .trim();
-
                                     String? enderecoCompleto;
                                     final street = (evento['street'] ?? '')
                                         .toString()
@@ -1653,7 +1675,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                           '${cidade.isNotEmpty ? ' - $cidade' : ''}'
                                           '${estado.isNotEmpty ? '/$estado' : ''}';
                                     }
-
                                     final checkinStatus =
                                         (evento['check_in_status'] ?? '')
                                             .toString()
@@ -1662,7 +1683,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                         checkinStatus.isNotEmpty;
                                     final janelaCheckIn =
                                         _verificarJanelaCheckIn(evento);
-
                                     return Card(
                                       margin: const EdgeInsets.only(bottom: 8),
                                       elevation: 1,
@@ -1722,9 +1742,8 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
                                                         BorderRadius.circular(
                                                             12),
                                                     border: Border.all(
-                                                      color: _getStatusColor(
-                                                          status),
-                                                    ),
+                                                        color: _getStatusColor(
+                                                            status)),
                                                   ),
                                                   child: Text(
                                                     _getStatusLabel(status),
@@ -2088,7 +2107,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     );
   }
 
-  // ✅ NOVO: Widget de Dropdown Moderno com cores Olympus
   Widget _buildModernDropdown({
     required IconData icon,
     required dynamic value,
@@ -2165,7 +2183,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     );
   }
 
-  // ✅ NOVO: Widget de Filtro com Chips Modernos
   Widget _buildModernChipFilter({
     required String label,
     required IconData icon,

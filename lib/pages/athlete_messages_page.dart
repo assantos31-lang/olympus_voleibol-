@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -10,6 +11,9 @@ class AthleteMessagesPage extends StatefulWidget {
 
 class _AthleteMessagesPageState extends State<AthleteMessagesPage> {
   final SupabaseClient supabase = Supabase.instance.client;
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
 
   bool _loading = true;
   bool _refreshing = false;
@@ -298,39 +302,308 @@ class _AthleteMessagesPageState extends State<AthleteMessagesPage> {
     return parts.join(' • ');
   }
 
-  Widget _buildDebugCard() {
-    if (_debugUserId == null &&
-        _debugUserEmail == null &&
-        (_debugMessage == null || _debugMessage!.isEmpty)) {
-      return const SizedBox.shrink();
-    }
-
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: DefaultTextStyle(
-          style: const TextStyle(fontSize: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Diagnóstico',
-                style: TextStyle(fontWeight: FontWeight.w700),
+  Widget _buildPremiumBackground() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            errorBuilder: (_, __, ___) {
+              return Container(color: const Color(0xFF102845));
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            color: Colors.black.withOpacity(0.22),
+          ),
+        ),
+        Positioned.fill(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 1.5, sigmaY: 1.5),
+            child: Container(color: Colors.transparent),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  olympusBlue.withOpacity(0.54),
+                  olympusLightBlue.withOpacity(0.22),
+                  Colors.black.withOpacity(0.62),
+                ],
               ),
-              const SizedBox(height: 6),
-              if (_debugUserId != null) Text('user.id: $_debugUserId'),
-              if (_debugUserEmail != null) Text('email: $_debugUserEmail'),
-              if (_debugMessage != null && _debugMessage!.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(_debugMessage!),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0, -0.78),
+                radius: 1.05,
+                colors: [
+                  olympusGold.withOpacity(0.14),
+                  Colors.transparent,
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyState(bool isCompact) {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: isCompact ? 20 : 28,
+          vertical: 24,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(maxWidth: 540),
+              padding: EdgeInsets.all(isCompact ? 20 : 24),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withOpacity(0.18),
+                    Colors.white.withOpacity(0.10),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-            ],
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.24),
+                  width: 1.1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.16),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: isCompact ? 64 : 76,
+                    height: isCompact ? 64 : 76,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      color: Colors.white.withOpacity(0.10),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.18),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.mark_chat_unread_outlined,
+                      size: 34,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: isCompact ? 14 : 18),
+                  Text(
+                    'Nenhuma mensagem encontrada.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: isCompact ? 17 : 19,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Quando novas conversas chegarem, elas aparecerão aqui.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: isCompact ? 13 : 14,
+                      color: Colors.white.withOpacity(0.82),
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildThreadCard(Map<String, dynamic> thread, bool isCompact) {
+    final unreadCount = (thread['unread_count'] ?? 0) as int;
+    final subject = (thread['subject'] ?? 'Mensagem').toString();
+    final subtitle = _threadSubtitle(thread);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _openThread(thread),
+            borderRadius: BorderRadius.circular(22),
+            child: Ink(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(22),
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withOpacity(0.18),
+                    Colors.white.withOpacity(0.10),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                border: Border.all(
+                  color: unreadCount > 0
+                      ? Colors.white.withOpacity(0.30)
+                      : Colors.white.withOpacity(0.18),
+                  width: unreadCount > 0 ? 1.2 : 1.0,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.16),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                  BoxShadow(
+                    color:
+                        olympusGold.withOpacity(unreadCount > 0 ? 0.14 : 0.06),
+                    blurRadius: 14,
+                    spreadRadius: 0.5,
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isCompact ? 14 : 18,
+                  vertical: isCompact ? 14 : 16,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: isCompact ? 50 : 58,
+                      height: isCompact ? 50 : 58,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        color: Colors.white.withOpacity(0.10),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.14),
+                        ),
+                      ),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          const Center(
+                            child: Icon(
+                              Icons.mark_chat_unread_rounded,
+                              color: Colors.white,
+                              size: 26,
+                            ),
+                          ),
+                          if (unreadCount > 0)
+                            Positioned(
+                              right: -4,
+                              top: -4,
+                              child: Container(
+                                constraints: const BoxConstraints(
+                                  minWidth: 24,
+                                  minHeight: 24,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.shade700,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 1.4,
+                                  ),
+                                ),
+                                child: Text(
+                                  unreadCount > 99 ? '99+' : '$unreadCount',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: isCompact ? 12 : 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            subject,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: isCompact ? 16 : 17,
+                              fontWeight: unreadCount > 0
+                                  ? FontWeight.w800
+                                  : FontWeight.w700,
+                              color: Colors.white,
+                              height: 1.1,
+                            ),
+                          ),
+                          SizedBox(height: isCompact ? 6 : 8),
+                          Text(
+                            subtitle.isEmpty
+                                ? 'Toque para abrir a conversa.'
+                                : subtitle,
+                            maxLines: isCompact ? 2 : 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: isCompact ? 12.5 : 13.5,
+                              color: Colors.white.withOpacity(0.82),
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: isCompact ? 8 : 10),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: isCompact ? 16 : 18,
+                      color: Colors.white.withOpacity(0.72),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDebugCard() {
+    return const SizedBox.shrink();
   }
 
   void _showSnack(String text) {
@@ -342,78 +615,53 @@ class _AthleteMessagesPageState extends State<AthleteMessagesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final isCompact = size.width < 380;
+
     final content = _loading
-        ? const Center(child: CircularProgressIndicator())
+        ? const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          )
         : _threads.isEmpty
             ? RefreshIndicator(
+                color: olympusBlue,
                 onRefresh: () => _loadThreads(showLoader: false),
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.only(bottom: size.height * 0.08),
                   children: [
-                    _buildDebugCard(),
-                    const SizedBox(height: 96),
-                    const Icon(Icons.mark_chat_unread_outlined, size: 56),
-                    const SizedBox(height: 12),
-                    const Center(
-                      child: Text('Nenhuma mensagem encontrada.'),
-                    ),
+                    SizedBox(height: size.height * 0.12),
+                    _buildEmptyState(isCompact),
                   ],
                 ),
               )
             : RefreshIndicator(
+                color: olympusBlue,
                 onRefresh: () => _loadThreads(showLoader: false),
                 child: ListView.separated(
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.fromLTRB(
+                    isCompact ? 12 : 16,
+                    16,
+                    isCompact ? 12 : 16,
+                    24,
+                  ),
                   itemCount: _threads.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, __) =>
+                      SizedBox(height: isCompact ? 10 : 12),
                   itemBuilder: (context, index) {
                     final thread = _threads[index];
-                    final unreadCount = (thread['unread_count'] ?? 0) as int;
-                    final subject =
-                        (thread['subject'] ?? 'Mensagem').toString();
-                    final subtitle = _threadSubtitle(thread);
-
-                    return Card(
-                      child: ListTile(
-                        onTap: () => _openThread(thread),
-                        title: Text(
-                          subject,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontWeight: unreadCount > 0
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                          ),
-                        ),
-                        subtitle: subtitle.isEmpty
-                            ? null
-                            : Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(
-                                  subtitle,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                        trailing: unreadCount > 0
-                            ? CircleAvatar(
-                                radius: 14,
-                                child: Text(
-                                  unreadCount > 99 ? '99+' : '$unreadCount',
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                              )
-                            : const Icon(Icons.chevron_right),
-                      ),
-                    );
+                    return _buildThreadCard(thread, isCompact);
                   },
                 ),
               );
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Mensagens'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
             tooltip: 'Atualizar',
@@ -423,7 +671,12 @@ class _AthleteMessagesPageState extends State<AthleteMessagesPage> {
           ),
         ],
       ),
-      body: content,
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildPremiumBackground()),
+          SafeArea(child: content),
+        ],
+      ),
     );
   }
 }
@@ -447,6 +700,9 @@ class AthleteMessageThreadPage extends StatefulWidget {
 
 class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
   final SupabaseClient supabase = Supabase.instance.client;
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
   final TextEditingController _replyController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -666,6 +922,286 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
     return '$day/$month $hour:$minute';
   }
 
+  Widget _buildThreadBackground() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            errorBuilder: (_, __, ___) {
+              return Container(color: const Color(0xFF102845));
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            color: Colors.black.withOpacity(0.24),
+          ),
+        ),
+        Positioned.fill(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 1.5, sigmaY: 1.5),
+            child: Container(color: Colors.transparent),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  olympusBlue.withOpacity(0.52),
+                  olympusLightBlue.withOpacity(0.22),
+                  Colors.black.withOpacity(0.62),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMessageBubble(
+    BuildContext context,
+    Map<String, dynamic> message,
+    bool isCompact,
+  ) {
+    final isMine = _isCurrentUser(message);
+    final senderName = (message['sender_name'] ?? '').toString().trim();
+    final body = (message['body'] ?? '').toString();
+    final createdAt = _formatDateTime(message['created_at']);
+
+    return Align(
+      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth:
+              MediaQuery.of(context).size.width * (isCompact ? 0.88 : 0.80),
+        ),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          child: ClipRRect(
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(20),
+              topRight: const Radius.circular(20),
+              bottomLeft: Radius.circular(isMine ? 20 : 8),
+              bottomRight: Radius.circular(isMine ? 8 : 20),
+            ),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                padding: EdgeInsets.all(isCompact ? 12 : 14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(20),
+                    topRight: const Radius.circular(20),
+                    bottomLeft: Radius.circular(isMine ? 20 : 8),
+                    bottomRight: Radius.circular(isMine ? 8 : 20),
+                  ),
+                  gradient: LinearGradient(
+                    colors: isMine
+                        ? [
+                            olympusGold.withOpacity(0.94),
+                            const Color(0xFFE2C65A),
+                          ]
+                        : [
+                            Colors.white.withOpacity(0.18),
+                            Colors.white.withOpacity(0.10),
+                          ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  border: Border.all(
+                    color: isMine
+                        ? Colors.white.withOpacity(0.20)
+                        : Colors.white.withOpacity(0.14),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.14),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      senderName.isEmpty
+                          ? (isMine ? 'Você' : 'Administrador')
+                          : (isMine ? 'Você' : senderName),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: isCompact ? 12.5 : 13.2,
+                        color: isMine ? olympusBlue : Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      body,
+                      style: TextStyle(
+                        fontSize: isCompact ? 13.5 : 14.2,
+                        height: 1.35,
+                        color: isMine ? olympusBlue : Colors.white,
+                      ),
+                    ),
+                    if (createdAt.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          createdAt,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isMine
+                                ? olympusBlue.withOpacity(0.78)
+                                : Colors.white.withOpacity(0.72),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReplyBar(bool isCompact) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          isCompact ? 12 : 16,
+          8,
+          isCompact ? 12 : 16,
+          isCompact ? 12 : 14,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: Container(
+              padding: EdgeInsets.all(isCompact ? 8 : 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(22),
+                color: Colors.white.withOpacity(0.12),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.18),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.14),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _replyController,
+                      minLines: 1,
+                      maxLines: 4,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Digite sua resposta',
+                        hintStyle: TextStyle(
+                          color: Colors.white.withOpacity(0.62),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.08),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide: BorderSide(
+                            color: Colors.white.withOpacity(0.10),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide: BorderSide(
+                            color: Colors.white.withOpacity(0.10),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide: const BorderSide(
+                            color: Colors.white,
+                            width: 1.1,
+                          ),
+                        ),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: isCompact ? 12 : 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    height: 50,
+                    width: 50,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFFF0D771),
+                            Color(0xFFB48A23),
+                          ],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: olympusGold.withOpacity(0.35),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: FilledButton(
+                        onPressed: _sending ? null : _sendReply,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          foregroundColor: olympusBlue,
+                          padding: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: _sending
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      olympusBlue),
+                                ),
+                              )
+                            : const Icon(Icons.send_rounded),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showSnack(String text) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -675,121 +1211,68 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final isCompact = size.width < 380;
+
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(widget.subject),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: Colors.white,
       ),
-      body: Column(
+      body: Stack(
         children: [
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _messages.isEmpty
-                    ? const Center(
-                        child: Text('Nenhuma mensagem nesta conversa.'),
-                      )
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(12),
-                        itemCount: _messages.length,
-                        itemBuilder: (context, index) {
-                          final message = _messages[index];
-                          final isMine = _isCurrentUser(message);
-                          final senderName =
-                              (message['sender_name'] ?? '').toString().trim();
-                          final body = (message['body'] ?? '').toString();
-                          final createdAt =
-                              _formatDateTime(message['created_at']);
-
-                          return Align(
-                            alignment: isMine
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth:
-                                    MediaQuery.of(context).size.width * 0.82,
-                              ),
-                              child: Card(
-                                color: isMine
-                                    ? Theme.of(context)
-                                        .colorScheme
-                                        .primaryContainer
-                                    : null,
-                                margin: const EdgeInsets.only(bottom: 10),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        senderName.isEmpty
-                                            ? (isMine
-                                                ? 'Você'
-                                                : 'Administrador')
-                                            : (isMine ? 'Você' : senderName),
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(body),
-                                      if (createdAt.isNotEmpty) ...[
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          createdAt,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall,
-                                        ),
-                                      ],
-                                    ],
+          Positioned.fill(child: _buildThreadBackground()),
+          SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: _loading
+                      ? const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        )
+                      : _messages.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: isCompact ? 20 : 28,
+                                ),
+                                child: Text(
+                                  'Nenhuma mensagem nesta conversa.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: isCompact ? 16 : 18,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
                                   ),
                                 ),
                               ),
+                            )
+                          : ListView.builder(
+                              controller: _scrollController,
+                              padding: EdgeInsets.fromLTRB(
+                                isCompact ? 12 : 16,
+                                12,
+                                isCompact ? 12 : 16,
+                                16,
+                              ),
+                              itemCount: _messages.length,
+                              itemBuilder: (context, index) {
+                                final message = _messages[index];
+                                return _buildMessageBubble(
+                                  context,
+                                  message,
+                                  isCompact,
+                                );
+                              },
                             ),
-                          );
-                        },
-                      ),
-          ),
-          if (widget.allowReply)
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _replyController,
-                        minLines: 1,
-                        maxLines: 4,
-                        decoration: const InputDecoration(
-                          hintText: 'Digite sua resposta',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      height: 50,
-                      child: FilledButton(
-                        onPressed: _sending ? null : _sendReply,
-                        child: _sending
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.send),
-                      ),
-                    ),
-                  ],
                 ),
-              ),
+                if (widget.allowReply) _buildReplyBar(isCompact),
+              ],
             ),
+          ),
         ],
       ),
     );

@@ -1799,195 +1799,275 @@ event_time
     required VoidCallback onTap,
     int? badgeCount,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.white.withOpacity(0.20),
-                    Colors.white.withOpacity(0.11),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.18),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                  BoxShadow(
-                    color: color.withOpacity(0.12),
-                    blurRadius: 12,
-                    spreadRadius: 0.6,
-                  ),
-                ],
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.28),
-                  width: 1.2,
-                ),
-              ),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(
-                    top: -22,
-                    right: -14,
-                    child: Container(
-                      width: 76,
-                      height: 76,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.08),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final availableWidth =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : screenWidth;
+        final isCompact = availableWidth < 380;
+        final horizontalMargin = isCompact ? 12.0 : 16.0;
+        final verticalMargin = isCompact ? 8.0 : 10.0;
+        final cardRadius = isCompact ? 18.0 : 20.0;
+        final cardPadding = isCompact ? 16.0 : 18.0;
+        final iconBoxSize = isCompact ? 54.0 : 60.0;
+        final iconSize = isCompact ? 28.0 : 32.0;
+        final titleSize = isCompact ? 17.0 : 18.0;
+        final subtitleSize = isCompact ? 12.0 : 13.0;
+        final arrowSize = isCompact ? 16.0 : 18.0;
+        final badgeTop = isCompact ? 10.0 : 12.0;
+        final badgeRight = isCompact ? 10.0 : 12.0;
+
+        return Container(
+          margin: EdgeInsets.symmetric(
+            horizontal: horizontalMargin,
+            vertical: verticalMargin,
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(cardRadius),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(cardRadius),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.white.withOpacity(0.24),
+                          Colors.white.withOpacity(0.16),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(cardRadius),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.22),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                        BoxShadow(
+                          color: color.withOpacity(0.14),
+                          blurRadius: 14,
+                          spreadRadius: 0.8,
+                        ),
+                      ],
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.34),
+                        width: 1.25,
                       ),
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Row(
+                    child: Stack(
+                      clipBehavior: Clip.none,
                       children: [
-                        Container(
-                          width: 60,
-                          height: 60,
-                          decoration: BoxDecoration(
-                            color: color.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: color.withOpacity(0.18),
+                        Positioned(
+                          top: -20,
+                          right: -12,
+                          child: Container(
+                            width: isCompact ? 68 : 76,
+                            height: isCompact ? 68 : 76,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white.withOpacity(0.10),
                             ),
                           ),
-                          child: Icon(
-                            icon,
-                            size: 32,
-                            color: color,
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            height: 1,
+                            color: Colors.white.withOpacity(0.10),
                           ),
                         ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        Padding(
+                          padding: EdgeInsets.all(cardPadding),
+                          child: Row(
                             children: [
-                              Text(
-                                title,
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: color,
+                              Container(
+                                width: iconBoxSize,
+                                height: iconBoxSize,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.10),
+                                  borderRadius: BorderRadius.circular(
+                                      isCompact ? 14 : 16),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.16),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: color.withOpacity(0.16),
+                                      blurRadius: 10,
+                                      spreadRadius: 0.4,
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  icon,
+                                  size: iconSize,
+                                  color: Colors.white,
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                subtitle,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey[700],
+                              SizedBox(width: isCompact ? 12 : 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: titleSize,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                        height: 1.05,
+                                      ),
+                                    ),
+                                    SizedBox(height: isCompact ? 5 : 6),
+                                    Text(
+                                      subtitle,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: subtitleSize,
+                                        color: Colors.white.withOpacity(0.88),
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.22,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              SizedBox(width: isCompact ? 10 : 12),
+                              Container(
+                                width: isCompact ? 30 : 34,
+                                height: isCompact ? 30 : 34,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.08),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.14),
+                                  ),
+                                ),
+                                child: Icon(
+                                  Icons.arrow_forward_ios_rounded,
+                                  color: Colors.white.withOpacity(0.80),
+                                  size: arrowSize,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        Icon(
-                          Icons.arrow_forward_ios,
-                          color: color.withOpacity(0.55),
-                          size: 18,
-                        ),
+                        if (badgeCount != null && badgeCount > 0)
+                          Positioned(
+                            right: badgeRight,
+                            top: badgeTop,
+                            child: Container(
+                              constraints: BoxConstraints(
+                                minWidth: isCompact ? 24 : 26,
+                              ),
+                              padding: EdgeInsets.symmetric(
+                                horizontal: isCompact ? 7 : 9,
+                                vertical: isCompact ? 4 : 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                borderRadius: BorderRadius.circular(999),
+                                border:
+                                    Border.all(color: Colors.white, width: 1.8),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.red.withOpacity(0.38),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Text(
+                                badgeCount.toString(),
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: isCompact ? 11.5 : 12.5,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
-                  if (badgeCount != null && badgeCount > 0)
-                    Positioned(
-                      right: 12,
-                      top: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white, width: 2),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.red.withOpacity(0.4),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Text(
-                          badgeCount.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   Widget _buildFloatingChatButton() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isCompact = screenWidth < 380;
+
     return SafeArea(
+      minimum: EdgeInsets.only(
+        right: isCompact ? 6 : 8,
+        bottom: isCompact ? 6 : 8,
+      ),
       child: GestureDetector(
         onTap: _navigateToChat,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(isCompact ? 18 : 20),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: EdgeInsets.symmetric(
+                horizontal: isCompact ? 14 : 16,
+                vertical: isCompact ? 11 : 12,
+              ),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    Colors.white.withOpacity(0.18),
-                    olympusLightBlue.withOpacity(0.22),
+                    Colors.white.withOpacity(0.20),
+                    olympusLightBlue.withOpacity(0.26),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(isCompact ? 18 : 20),
                 boxShadow: [
                   BoxShadow(
-                    color: olympusLightBlue.withOpacity(0.30),
-                    blurRadius: 16,
+                    color: olympusLightBlue.withOpacity(0.32),
+                    blurRadius: 18,
                     offset: const Offset(0, 8),
                   ),
                 ],
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.28),
+                  color: Colors.white.withOpacity(0.30),
                   width: 1.1,
                 ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
-                children: const [
+                children: [
                   Icon(
                     Icons.chat_bubble_rounded,
                     color: Colors.white,
-                    size: 20,
+                    size: isCompact ? 18 : 20,
                   ),
-                  SizedBox(width: 8),
+                  SizedBox(width: isCompact ? 6 : 8),
                   Text(
                     'Chat',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 14,
+                      fontSize: isCompact ? 13 : 14,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -2291,8 +2371,6 @@ event_time
           ),
         ],
       ),
-      floatingActionButton: _buildFloatingChatButton(),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }

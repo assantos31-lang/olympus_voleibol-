@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../models/financial_record_model.dart';
+import '../services/permission_service.dart';
 
 class AthleteFinancialPage extends StatefulWidget {
   const AthleteFinancialPage({super.key});
@@ -15,11 +16,13 @@ class AthleteFinancialPage extends StatefulWidget {
 class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   final _supabase = Supabase.instance.client;
   final _picker = ImagePicker();
+  final PermissionService _permissionService = PermissionService();
   List<FinancialRecord> _records = [];
   bool _isLoading = true;
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
   String _selectedType = 'all';
+  List<String> _allowedTypes = ['monthly', 'games', 'maintenance', 'other'];
   // ✅ Contadores
   int _overdueCount = 0;
   int _newBillsCount = 0;
@@ -32,7 +35,50 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   @override
   void initState() {
     super.initState();
-    _loadRecords();
+    _loadFinancialFilters();
+  }
+
+  Future<void> _loadFinancialFilters() async {
+    final user = _supabase.auth.currentUser;
+
+    if (user == null) {
+      await _loadRecords();
+      return;
+    }
+
+    List<String> allowedTypes = ['monthly', 'games', 'maintenance', 'other'];
+
+    try {
+      final dynamic service = _permissionService;
+      final filters = await service.getFinancialFilters(user.id);
+
+      if (filters != null && filters['allowed_financial_types'] != null) {
+        allowedTypes = List<String>.from(filters['allowed_financial_types']);
+      }
+    } catch (_) {
+      try {
+        final dynamic service = _permissionService;
+        final filters = await service.getAgendaFilters(user.id);
+
+        if (filters != null && filters['allowed_financial_types'] != null) {
+          allowedTypes = List<String>.from(filters['allowed_financial_types']);
+        }
+      } catch (_) {
+        // Mantém o fallback padrão
+      }
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _allowedTypes = allowedTypes;
+
+      if (_selectedType != 'all' && !_allowedTypes.contains(_selectedType)) {
+        _selectedType = _allowedTypes.isNotEmpty ? _allowedTypes.first : 'all';
+      }
+    });
+
+    await _loadRecords();
   }
 
   Future<void> _loadRecords() async {
@@ -42,19 +88,30 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
     var query = _supabase
         .from('financial_records')
         .select()
-        .eq('athlete_id', currentUserId)
-        .eq('month', _selectedMonth)
-        .eq('year', _selectedYear);
+        .eq('athlete_id', currentUserId);
 
-    if (_selectedType != 'all') {
+    if (_selectedType == 'all') {
+      query = query.inFilter('type', _allowedTypes);
+    } else {
       query = query.eq('type', _selectedType);
     }
 
     final response = await query.order('created_at', ascending: false);
 
+    final allAllowedRecords =
+        (response as List).map((r) => FinancialRecord.fromMap(r)).toList();
+
+    final filteredRecords = allAllowedRecords.where((record) {
+      final isSelectedMonthYear =
+          record.month == _selectedMonth && record.year == _selectedYear;
+      final isPendingFinancialCard =
+          record.status != 'approved' && record.receiptUrl == null;
+
+      return isSelectedMonthYear || isPendingFinancialCard;
+    }).toList();
+
     setState(() {
-      _records =
-          (response as List).map((r) => FinancialRecord.fromMap(r)).toList();
+      _records = filteredRecords;
       _isLoading = false;
     });
     _calculateCounters();
@@ -512,42 +569,46 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                     _buildModernDropdown(
                       icon: Icons.category_outlined,
                       value: _selectedType,
-                      items: const [
-                        DropdownMenuItem(
+                      items: [
+                        const DropdownMenuItem(
                           value: 'all',
                           child: Text(
                             'Todos os Tipos',
                             style: TextStyle(fontWeight: FontWeight.w500),
                           ),
                         ),
-                        DropdownMenuItem(
-                          value: 'monthly',
-                          child: Text(
-                            'Mensalidade',
-                            style: TextStyle(fontWeight: FontWeight.w500),
+                        if (_allowedTypes.contains('monthly'))
+                          const DropdownMenuItem(
+                            value: 'monthly',
+                            child: Text(
+                              'Mensalidade',
+                              style: TextStyle(fontWeight: FontWeight.w500),
+                            ),
                           ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'games',
-                          child: Text(
-                            'Jogos',
-                            style: TextStyle(fontWeight: FontWeight.w500),
+                        if (_allowedTypes.contains('games'))
+                          const DropdownMenuItem(
+                            value: 'games',
+                            child: Text(
+                              'Jogos',
+                              style: TextStyle(fontWeight: FontWeight.w500),
+                            ),
                           ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'maintenance',
-                          child: Text(
-                            'Manutenção',
-                            style: TextStyle(fontWeight: FontWeight.w500),
+                        if (_allowedTypes.contains('maintenance'))
+                          const DropdownMenuItem(
+                            value: 'maintenance',
+                            child: Text(
+                              'Manutenção',
+                              style: TextStyle(fontWeight: FontWeight.w500),
+                            ),
                           ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'other',
-                          child: Text(
-                            'Outros',
-                            style: TextStyle(fontWeight: FontWeight.w500),
+                        if (_allowedTypes.contains('other'))
+                          const DropdownMenuItem(
+                            value: 'other',
+                            child: Text(
+                              'Outros',
+                              style: TextStyle(fontWeight: FontWeight.w500),
+                            ),
                           ),
-                        ),
                       ],
                       onChanged: (v) => setState(() {
                         _selectedType = v!;

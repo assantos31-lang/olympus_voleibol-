@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // ✅ NOVO: para Clipboard na exportação Excel
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import '../pages/add_event_page.dart';
+import '../services/permission_service.dart'; // ✅ NOVO
 
 class AgendaPage extends StatefulWidget {
   const AgendaPage({Key? key}) : super(key: key);
@@ -13,6 +14,12 @@ class AgendaPage extends StatefulWidget {
 
 class _AgendaPageState extends State<AgendaPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
+  final PermissionService _permissionService = PermissionService(); // ✅ NOVO
+
+  // ✅ NOVO: Variáveis de controle de permissão
+  bool _hasPermission = true;
+  bool _checkingPermission = true;
+
   List<Map<String, dynamic>> _eventos = [];
   List<Map<String, dynamic>> _eventosFiltrados = [];
   Map<String, Map<String, int>> _quantidadeConvocados =
@@ -28,7 +35,6 @@ class _AgendaPageState extends State<AgendaPage> {
   String _filtroMes = '';
   String _filtroGenero = 'Todos';
   Set<String> _placaresExpandidos = {}; // IDs dos placares expandidos
-
   // ✅ Cores do logo Olympus Voleibol
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
@@ -37,8 +43,56 @@ class _AgendaPageState extends State<AgendaPage> {
   @override
   void initState() {
     super.initState();
+    _checkPermission(); // ✅ NOVO: verifica permissão primeiro
     _setMesAtual();
     _buscarEventos();
+  }
+
+  // ✅ NOVO: Verifica se usuário tem permissão para acessar a Agenda
+  Future<void> _checkPermission() async {
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) {
+        setState(() {
+          _hasPermission = false;
+          _checkingPermission = false;
+        });
+        return;
+      }
+
+      // Busca o perfil do usuário
+      final profileResponse = await _supabase
+          .from('profiles')
+          .select('user_type')
+          .eq('id', user.id)
+          .single();
+
+      final userType = profileResponse['user_type'] ?? 'member';
+
+      // Admins SEMPRE têm acesso
+      if (userType == 'admin') {
+        setState(() {
+          _hasPermission = true;
+          _checkingPermission = false;
+        });
+        return;
+      }
+
+      // Verifica permissão na tabela page_permissions
+      final hasAccess = await _permissionService.hasAccess(user.id, 'agenda');
+
+      setState(() {
+        _hasPermission = hasAccess;
+        _checkingPermission = false;
+      });
+    } catch (e) {
+      print('❌ Erro ao verificar permissão da Agenda: $e');
+      // Em caso de erro, permite acesso (fail-safe)
+      setState(() {
+        _hasPermission = true;
+        _checkingPermission = false;
+      });
+    }
   }
 
   void _setMesAtual() {
@@ -358,12 +412,10 @@ class _AgendaPageState extends State<AgendaPage> {
           ),
         );
       }
-
       final convocationsResponse = await _supabase
           .from('convocations')
           .select('user_id, status')
           .eq('event_id', eventId);
-
       String _formatBirthDate(dynamic rawDate) {
         if (rawDate == null || rawDate.toString().trim().isEmpty) return '-';
         try {
@@ -376,13 +428,11 @@ class _AgendaPageState extends State<AgendaPage> {
 
       String _buildRideText(Map<String, dynamic>? ride) {
         if (ride == null) return 'Não respondeu';
-
         final needsRide = ride['needs_ride'] == true;
         final hasCar = ride['has_car'] == true;
         final seatsRaw = ride['available_seats'];
         final seats =
             seatsRaw is int ? seatsRaw : int.tryParse('$seatsRaw') ?? 0;
-
         if (needsRide) return 'Precisa de carona';
         if (hasCar && seats > 0) {
           return 'Vou de carro e tenho $seats vaga${seats > 1 ? 's' : ''}';
@@ -400,17 +450,14 @@ class _AgendaPageState extends State<AgendaPage> {
           (evento['championship_name'] ?? '-').toString().trim().isEmpty
               ? '-'
               : (evento['championship_name'] ?? '-').toString().trim();
-
       final dataJogo = (evento['event_date'] ?? '-').toString().trim();
       final horarioJogo = (evento['event_time'] ?? '-').toString().trim();
       final nomeJogo = (evento['event_name'] ?? '-').toString().trim();
-
       final street = (evento['street'] ?? '').toString().trim();
       final number = (evento['street_number'] ?? '').toString().trim();
       final neighborhood = (evento['neighborhood'] ?? '').toString().trim();
       final city = (evento['city'] ?? '').toString().trim();
       final state = (evento['state'] ?? '').toString().trim();
-
       final endereco = street.isEmpty
           ? '-'
           : '$street'
@@ -418,7 +465,6 @@ class _AgendaPageState extends State<AgendaPage> {
               '${neighborhood.isNotEmpty ? ' - $neighborhood' : ''}'
               '${city.isNotEmpty ? ' - $city' : ''}'
               '${state.isNotEmpty ? '/$state' : ''}';
-
       final lines = <String>[
         'Campeonato/liga: $championshipName',
         'Data: $dataJogo - Horário: $horarioJogo',
@@ -427,28 +473,22 @@ class _AgendaPageState extends State<AgendaPage> {
         '',
         '',
       ];
-
       for (final convocation in convocationsResponse) {
         final userId = convocation['user_id']?.toString();
         if (userId == null || userId.isEmpty) continue;
-
         final profileResponse = await _supabase
             .from('profiles')
             .select('full_name, birth_date, rg')
             .eq('id', userId)
             .maybeSingle();
-
         if (profileResponse == null) continue;
-
         final ridesResponse = await _supabase
             .from('event_rides')
             .select('ride_type, needs_ride, has_car, available_seats')
             .eq('event_id', eventId)
             .eq('user_id', userId);
-
         Map<String, dynamic>? idaRide;
         Map<String, dynamic>? voltaRide;
-
         for (final ride in ridesResponse) {
           final rideType =
               (ride['ride_type'] ?? '').toString().toLowerCase().trim();
@@ -458,18 +498,15 @@ class _AgendaPageState extends State<AgendaPage> {
             voltaRide = Map<String, dynamic>.from(ride);
           }
         }
-
         final precisaCarona = (idaRide?['needs_ride'] == true) ||
                 (voltaRide?['needs_ride'] == true)
             ? 'Sim'
             : 'Não';
-
         final nome = (profileResponse['full_name'] ?? '-').toString();
         final dataNascimento = _formatBirthDate(profileResponse['birth_date']);
         final rg = (profileResponse['rg'] ?? '-').toString();
         final ida = _buildRideText(idaRide);
         final volta = _buildRideText(voltaRide);
-
         lines.add(
           'Nome: $nome\n'
           'Data de nascimento: $dataNascimento\n'
@@ -479,10 +516,8 @@ class _AgendaPageState extends State<AgendaPage> {
           'Volta: $volta\n',
         );
       }
-
       final formattedContent = lines.join('\n');
       await Clipboard.setData(ClipboardData(text: formattedContent));
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1595,6 +1630,68 @@ class _AgendaPageState extends State<AgendaPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ NOVO: Verifica permissão antes de mostrar a tela
+    if (_checkingPermission) {
+      return Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!_hasPermission) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Agenda'),
+          backgroundColor: olympusBlue,
+          foregroundColor: Colors.white,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.lock_outline,
+                size: 80,
+                color: Colors.grey[400],
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Acesso Restrito',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[700],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Você não tem permissão para acessar a agenda.',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: olympusBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 12,
+                  ),
+                ),
+                child: const Text('Voltar'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -1987,7 +2084,6 @@ class _AgendaPageState extends State<AgendaPage> {
                                                     ],
                                                   ),
                                                 ));
-
                                                 // ✅ NOVO: Opção excluir no menu
                                                 items.add(PopupMenuItem(
                                                   value: 'excluir',
@@ -2727,7 +2823,6 @@ class _AgendaPageState extends State<AgendaPage> {
                 final value = option['value'] as String;
                 final labelText = option['label'] as String;
                 final selected = selectedValue == value;
-
                 Color chipColor;
                 switch (value) {
                   case 'Campeonato':
@@ -2742,7 +2837,6 @@ class _AgendaPageState extends State<AgendaPage> {
                   default:
                     chipColor = olympusBlue;
                 }
-
                 return ChoiceChip(
                   label: Text(labelText),
                   selected: selected,
