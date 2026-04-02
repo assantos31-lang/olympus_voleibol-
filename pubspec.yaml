@@ -26,24 +26,29 @@ dependencies:
   flutter_masked_text2: ^0.9.1
   firebase_core: ^4.5.0
   firebase_messaging: ^16.1.2
-
-  # 🔥 INSERIDO CORRETAMENTE (APENAS ISSO)
   pdf: ^3.11.0
   printing: ^5.13.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
   flutter_lints: ^3.0.2
   flutter_launcher_icons: ^0.13.1
   flutter_native_splash: ^2.4.0
 
+# 🔥 CONFIGURAÇÃO CORRIGIDA DO ÍCONE
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: assets/images/olympus_logo.png
+
+  # 👉 USE A IMAGEM DE ÍCONE (NÃO A LOGO CHEIA)
+  image_path: assets/images/olympus_logo_icon.png
+
   remove_alpha_ios: true
+
+  # 👉 ANDROID ADAPTIVE ICON (resolve o problema de escala)
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/images/olympus_logo_icon.png
 
 flutter_native_splash:
   color: "#ffffff"
@@ -57,4 +62,5 @@ flutter:
 
   assets:
     - assets/images/olympus_logo.png
+    - assets/images/olympus_logo_icon.png
     - assets/images/monte_olimpo_v2.png

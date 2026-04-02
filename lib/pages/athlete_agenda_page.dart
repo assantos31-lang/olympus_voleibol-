@@ -853,234 +853,251 @@ enable_ride_logistics
                 horizontal: 18,
                 vertical: 24,
               ),
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 520),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(
-                    color: olympusGold.withOpacity(0.60),
-                    width: 1.3,
-                  ),
-                  gradient: const LinearGradient(
-                    colors: [
-                      olympusBlue,
-                      olympusLightBlue,
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.28),
-                      blurRadius: 24,
-                      offset: const Offset(0, 10),
-                    ),
-                    BoxShadow(
-                      color: olympusGold.withOpacity(0.14),
-                      blurRadius: 24,
-                      spreadRadius: 1,
-                    ),
-                  ],
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 520,
+                  maxHeight: MediaQuery.of(dialogContext).size.height * 0.86,
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        top: -26,
-                        right: -12,
-                        child: Container(
-                          width: 110,
-                          height: 110,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white.withOpacity(0.05),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(
+                      color: olympusGold.withOpacity(0.60),
+                      width: 1.3,
+                    ),
+                    gradient: const LinearGradient(
+                      colors: [
+                        olympusBlue,
+                        olympusLightBlue,
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.28),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10),
+                      ),
+                      BoxShadow(
+                        color: olympusGold.withOpacity(0.14),
+                        blurRadius: 24,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: Stack(
+                      children: [
+                        Positioned(
+                          top: -26,
+                          right: -12,
+                          child: Container(
+                            width: 110,
+                            height: 110,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white.withOpacity(0.05),
+                            ),
                           ),
                         ),
-                      ),
-                      Positioned(
-                        bottom: -28,
-                        left: -16,
-                        child: Container(
-                          width: 96,
-                          height: 96,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: olympusGold.withOpacity(0.06),
+                        Positioned(
+                          bottom: -28,
+                          left: -16,
+                          child: Container(
+                            width: 96,
+                            height: 96,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: olympusGold.withOpacity(0.06),
+                            ),
                           ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  width: 42,
-                                  height: 42,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: const LinearGradient(
-                                      colors: [
-                                        Color(0xFFF0D771),
-                                        Color(0xFFB48A23),
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                  ),
-                                  child: const Icon(
-                                    Icons.directions_car_filled_rounded,
-                                    color: olympusBlue,
-                                    size: 22,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                const Expanded(
-                                  child: Text(
-                                    'Logística de Carona',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                                IconButton(
-                                  onPressed: () =>
-                                      Navigator.pop(dialogContext, null),
-                                  icon: const Icon(Icons.close_rounded),
-                                  color: Colors.white70,
-                                  splashRadius: 20,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Como este evento é um campeonato, informe sua disponibilidade de ida e volta.',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.74),
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w500,
-                                height: 1.3,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            buildSection(
-                              title: 'Carona de ida',
-                              needsRide: needsRideIda,
-                              seats: seatsIda,
-                              confirmed: idaConfirmed,
-                              onNeedsRideChanged: (value) {
-                                setDialogState(() {
-                                  needsRideIda = value;
-                                  seatsIda = null;
-                                  idaConfirmed = true;
-                                });
-                              },
-                              onSeatsChanged: (value) {
-                                setDialogState(() {
-                                  seatsIda = value;
-                                  needsRideIda = false;
-                                  idaConfirmed = true;
-                                });
-                              },
-                            ),
-                            buildSection(
-                              title: 'Carona de volta',
-                              needsRide: needsRideVolta,
-                              seats: seatsVolta,
-                              confirmed: voltaConfirmed,
-                              onNeedsRideChanged: (value) {
-                                setDialogState(() {
-                                  needsRideVolta = value;
-                                  seatsVolta = null;
-                                  voltaConfirmed = true;
-                                });
-                              },
-                              onSeatsChanged: (value) {
-                                setDialogState(() {
-                                  seatsVolta = value;
-                                  needsRideVolta = false;
-                                  voltaConfirmed = true;
-                                });
-                              },
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext, null),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.white,
-                                      side: BorderSide(
-                                        color: Colors.white.withOpacity(0.22),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 13,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 42,
+                                    height: 42,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          Color(0xFFF0D771),
+                                          Color(0xFFB48A23),
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
                                       ),
                                     ),
-                                    child: const Text('Cancelar'),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: ElevatedButton(
-                                    onPressed: canConfirm
-                                        ? () {
-                                            Navigator.pop(dialogContext, {
-                                              'ida': {
-                                                'needs_ride': needsRideIda,
-                                                'has_car': (seatsIda ?? 0) > 0,
-                                                'available_seats':
-                                                    seatsIda ?? 0,
-                                              },
-                                              'volta': {
-                                                'needs_ride': needsRideVolta,
-                                                'has_car':
-                                                    (seatsVolta ?? 0) > 0,
-                                                'available_seats':
-                                                    seatsVolta ?? 0,
-                                              },
-                                            });
-                                          }
-                                        : null,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: olympusGold,
-                                      foregroundColor: olympusBlue,
-                                      disabledBackgroundColor:
-                                          Colors.white.withOpacity(0.20),
-                                      disabledForegroundColor:
-                                          Colors.white.withOpacity(0.60),
-                                      elevation: 0,
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 13,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
+                                    child: const Icon(
+                                      Icons.directions_car_filled_rounded,
+                                      color: olympusBlue,
+                                      size: 22,
                                     ),
-                                    child: const Text(
-                                      'Confirmar',
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Expanded(
+                                    child: Text(
+                                      'Logística de Carona',
                                       style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 20,
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
                                   ),
+                                  IconButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, null),
+                                    icon: const Icon(Icons.close_rounded),
+                                    color: Colors.white70,
+                                    splashRadius: 20,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Como este evento é um campeonato, informe sua disponibilidade de ida e volta.',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.74),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.3,
                                 ),
-                              ],
-                            ),
-                          ],
+                              ),
+                              const SizedBox(height: 16),
+                              Flexible(
+                                child: SingleChildScrollView(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      buildSection(
+                                        title: 'Carona de ida',
+                                        needsRide: needsRideIda,
+                                        seats: seatsIda,
+                                        confirmed: idaConfirmed,
+                                        onNeedsRideChanged: (value) {
+                                          setDialogState(() {
+                                            needsRideIda = value;
+                                            seatsIda = null;
+                                            idaConfirmed = true;
+                                          });
+                                        },
+                                        onSeatsChanged: (value) {
+                                          setDialogState(() {
+                                            seatsIda = value;
+                                            needsRideIda = false;
+                                            idaConfirmed = true;
+                                          });
+                                        },
+                                      ),
+                                      buildSection(
+                                        title: 'Carona de volta',
+                                        needsRide: needsRideVolta,
+                                        seats: seatsVolta,
+                                        confirmed: voltaConfirmed,
+                                        onNeedsRideChanged: (value) {
+                                          setDialogState(() {
+                                            needsRideVolta = value;
+                                            seatsVolta = null;
+                                            voltaConfirmed = true;
+                                          });
+                                        },
+                                        onSeatsChanged: (value) {
+                                          setDialogState(() {
+                                            seatsVolta = value;
+                                            needsRideVolta = false;
+                                            voltaConfirmed = true;
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dialogContext, null),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.white,
+                                        side: BorderSide(
+                                          color: Colors.white.withOpacity(0.22),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 13,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                      child: const Text('Cancelar'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: canConfirm
+                                          ? () {
+                                              Navigator.pop(dialogContext, {
+                                                'ida': {
+                                                  'needs_ride': needsRideIda,
+                                                  'has_car':
+                                                      (seatsIda ?? 0) > 0,
+                                                  'available_seats':
+                                                      seatsIda ?? 0,
+                                                },
+                                                'volta': {
+                                                  'needs_ride': needsRideVolta,
+                                                  'has_car':
+                                                      (seatsVolta ?? 0) > 0,
+                                                  'available_seats':
+                                                      seatsVolta ?? 0,
+                                                },
+                                              });
+                                            }
+                                          : null,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: olympusGold,
+                                        foregroundColor: olympusBlue,
+                                        disabledBackgroundColor:
+                                            Colors.white.withOpacity(0.20),
+                                        disabledForegroundColor:
+                                            Colors.white.withOpacity(0.60),
+                                        elevation: 0,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 13,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'Confirmar',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

@@ -658,7 +658,14 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                   SizedBox(height: isVerySmall ? 10 : 16),
                                   TextButton(
                                     onPressed: () {
-                                      Navigator.pushNamed(context, '/register');
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content:
+                                              Text('Área em construção 🚧'),
+                                          duration: Duration(seconds: 2),
+                                        ),
+                                      );
                                     },
                                     child: Text(
                                       'Seja um sócio torcedor! Cadastre-se!',
