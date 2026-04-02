@@ -14,6 +14,20 @@ class MessagingService {
       'content': content,
       'created_at': DateTime.now().toIso8601String(),
     });
+
+    try {
+      await _supabase.functions.invoke(
+        'send-push-notification',
+        body: {
+          'type': 'chat',
+          'room_id': roomId,
+          'sender_id': senderId,
+          'content': content,
+        },
+      );
+    } catch (e) {
+      print('Erro ao enviar push de chat: $e');
+    }
   }
 
   Stream<List<Map<String, dynamic>>> streamMessages(String roomId) {

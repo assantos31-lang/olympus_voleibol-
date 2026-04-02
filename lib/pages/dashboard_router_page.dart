@@ -17,6 +17,7 @@ class DashboardRouterPage extends StatefulWidget {
 class _DashboardRouterPageState extends State<DashboardRouterPage> {
   final supabase = Supabase.instance.client;
   bool _isLoading = true;
+  bool _isRedirecting = false;
   Widget? _dashboardWidget;
 
   @override
@@ -29,19 +30,25 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
     try {
       final user = supabase.auth.currentUser;
       if (user == null) {
-        if (mounted) {
-          Navigator.pushReplacementNamed(context, '/login');
+        if (mounted && !_isRedirecting) {
+          _isRedirecting = true;
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/login',
+            (route) => false,
+          );
         }
         return;
       }
 
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 300));
 
       final profile = await supabase
           .from('profiles')
-          .select()
+          .select('user_type, full_name, cpf, phone')
           .eq('id', user.id)
-          .maybeSingle();
+          .maybeSingle()
+          .timeout(const Duration(seconds: 10));
 
       if (!mounted) return;
 
@@ -58,12 +65,15 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
               phone == null);
 
       if (needsCompleteProfile) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const CompleteProfilePage(),
-          ),
-        );
+        if (!_isRedirecting) {
+          _isRedirecting = true;
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const CompleteProfilePage(),
+            ),
+          );
+        }
         return;
       }
 

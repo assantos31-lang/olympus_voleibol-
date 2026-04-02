@@ -804,46 +804,30 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
   }
 
   Future<List<String>> _loadDeviceTokens(List<String> userIds) async {
-    if (userIds.isEmpty) return [];
-
-    final response = await supabase
-        .from('user_push_tokens')
-        .select('device_token')
-        .inFilter('user_id', userIds);
-
-    final rows = List<Map<String, dynamic>>.from(response);
-
-    return rows
-        .map((e) => (e['device_token'] ?? '').toString().trim())
-        .where((e) => e.isNotEmpty)
-        .toSet()
-        .toList();
+    return userIds.where((e) => e.trim().isNotEmpty).toSet().toList();
   }
 
   Future<void> _sendPushNotification({
-    required List<String> tokens,
+    required List<String> recipientUserIds,
     required String title,
     required String body,
     String? threadId,
     required bool isUrgent,
   }) async {
-    for (final token in tokens) {
-      try {
-        await supabase.functions.invoke(
-          'send-push-notification',
-          body: {
-            'token': token,
-            'device_token': token,
-            'title': isUrgent ? 'URGENTE: $title' : title,
-            'body': body,
-            'data': {
-              'thread_id': threadId,
-              'type': 'admin_message',
-              'is_urgent': isUrgent,
-            },
-          },
-        );
-      } catch (_) {}
+    if (recipientUserIds.isEmpty) return;
+
+    try {
+      await supabase.functions.invoke(
+        'send-push-notification',
+        body: {
+          'recipientUserIds': recipientUserIds,
+          'title': isUrgent ? 'URGENTE: $title' : title,
+          'body': body,
+          'threadId': threadId,
+        },
+      );
+    } catch (e) {
+      print('Erro ao enviar push de admin: $e');
     }
   }
 
@@ -994,13 +978,12 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
         final recipientIds = recipients
             .map((e) => e['id'].toString())
             .where((e) => e.isNotEmpty)
+            .toSet()
             .toList();
 
-        final tokens = await _loadDeviceTokens(recipientIds);
-
-        if (tokens.isNotEmpty) {
+        if (recipientIds.isNotEmpty) {
           await _sendPushNotification(
-            tokens: tokens,
+            recipientUserIds: recipientIds,
             title: subject,
             body: body,
             threadId: threadId,
@@ -1569,7 +1552,9 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
           .select('user_id, unread_count')
           .eq('thread_id', widget.threadId);
 
-      for (final row in List<Map<String, dynamic>>.from(participants)) {
+      final participantRows = List<Map<String, dynamic>>.from(participants);
+
+      for (final row in participantRows) {
         final participantId = (row['user_id'] ?? '').toString();
         if (participantId.isEmpty || participantId == admin.id) continue;
 
@@ -1580,6 +1565,24 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
             .update({'unread_count': currentUnread + 1})
             .eq('thread_id', widget.threadId)
             .eq('user_id', participantId);
+      }
+
+      final recipientUserIds = participantRows
+          .map((row) => (row['user_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty && id != admin.id)
+          .toSet()
+          .toList();
+
+      if (recipientUserIds.isNotEmpty) {
+        await supabase.functions.invoke(
+          'send-push-notification',
+          body: {
+            'recipientUserIds': recipientUserIds,
+            'title': widget.subject,
+            'body': body,
+            'threadId': widget.threadId,
+          },
+        );
       }
 
       _replyController.clear();

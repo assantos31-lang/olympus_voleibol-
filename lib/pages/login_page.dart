@@ -2,7 +2,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
-import 'dashboard_router_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -261,18 +260,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     if (!mounted) return;
 
     if (result['success'] == true) {
-      Navigator.of(context).pushAndRemoveUntil(
-        PageRouteBuilder(
-          opaque: false,
-          barrierColor: Colors.transparent,
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              FadeTransition(
-            opacity: animation,
-            child: const DashboardRouterPage(),
-          ),
-          transitionDuration: const Duration(milliseconds: 180),
-          reverseTransitionDuration: Duration.zero,
-        ),
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/dashboard',
         (route) => false,
       );
     } else {

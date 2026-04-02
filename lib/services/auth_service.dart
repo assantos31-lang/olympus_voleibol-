@@ -1,10 +1,38 @@
-import 'package:flutter/foundation.dart'; // ← ADICIONADO
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AuthService {
   final supabase = Supabase.instance.client;
 
-  // 🔹 Login
+  Future<void> _savePushTokenForCurrentUser() async {
+    if (kIsWeb) return;
+
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      debugPrint('Sem usuário logado para salvar token push.');
+      return;
+    }
+
+    final token = await FirebaseMessaging.instance.getToken();
+    debugPrint('FCM TOKEN NO AUTH SERVICE: $token');
+
+    if (token == null || token.isEmpty) {
+      debugPrint('Token FCM vazio no AuthService.');
+      return;
+    }
+
+    await supabase.from('user_push_tokens').upsert({
+      'user_id': user.id,
+      'device_token': token,
+      'platform': 'android',
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+
+    debugPrint('Token push salvo com sucesso pelo AuthService.');
+  }
+
+  // Login
   Future<Map<String, dynamic>> signIn(String email, String password) async {
     try {
       final response = await supabase.auth.signInWithPassword(
@@ -16,7 +44,8 @@ class AuthService {
         return {'success': false, 'error': 'Usuário não encontrado'};
       }
 
-      // Buscar dados do perfil
+      await _savePushTokenForCurrentUser();
+
       final profile = await getUserProfile(response.user!.id);
 
       return {
@@ -31,9 +60,13 @@ class AuthService {
     }
   }
 
-  // 🔹 Registro
+  // Registro
   Future<Map<String, dynamic>> signUp(
-      String email, String password, String fullName, String userType) async {
+    String email,
+    String password,
+    String fullName,
+    String userType,
+  ) async {
     try {
       final response = await supabase.auth.signUp(
         email: email,
@@ -56,17 +89,17 @@ class AuthService {
     }
   }
 
-  // 🔹 Logout
+  // Logout
   Future<void> signOut() async {
     await supabase.auth.signOut();
   }
 
-  // 🔹 Verificar se está logado
+  // Verificar se está logado
   User? getCurrentUser() {
     return supabase.auth.currentUser;
   }
 
-  // 🔹 Buscar perfil do usuário (NOVO)
+  // Buscar perfil do usuário
   Future<Map<String, dynamic>?> getUserProfile(String userId) async {
     try {
       final response =
@@ -79,6 +112,6 @@ class AuthService {
     }
   }
 
-  // 🔹 Stream de autenticação
+  // Stream de autenticação
   Stream<AuthState> get authStateChanges => supabase.auth.onAuthStateChange;
 }

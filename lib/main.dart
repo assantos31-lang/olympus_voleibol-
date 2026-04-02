@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -56,12 +58,40 @@ void main() async {
   );
 }
 
+Future<void> _saveCurrentUserPushToken() async {
+  if (kIsWeb) return;
+
+  final user = Supabase.instance.client.auth.currentUser;
+  if (user == null) {
+    debugPrint('Sem usuário logado para salvar token push.');
+    return;
+  }
+
+  final token = await FirebaseMessaging.instance.getToken();
+  debugPrint('FCM TOKEN ATUAL: $token');
+
+  if (token == null || token.isEmpty) {
+    debugPrint('Token FCM vazio.');
+    return;
+  }
+
+  await Supabase.instance.client.from('user_push_tokens').upsert({
+    'user_id': user.id,
+    'device_token': token,
+    'platform': 'android',
+    'updated_at': DateTime.now().toIso8601String(),
+  });
+
+  debugPrint('Token salvo com sucesso no Supabase.');
+}
+
 Future<void> _setupPushNotifications() async {
   if (kIsWeb) return;
 
   final messaging = FirebaseMessaging.instance;
 
-  await messaging.requestPermission();
+  final settings = await messaging.requestPermission();
+  debugPrint('Permissão push: ${settings.authorizationStatus}');
 
   await messaging.setAutoInitEnabled(true);
 
@@ -73,8 +103,23 @@ Future<void> _setupPushNotifications() async {
     debugPrint('Push aberto pelo usuário: ${message.messageId}');
   });
 
-  final token = await messaging.getToken();
-  debugPrint('FCM TOKEN: $token');
+  FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+    debugPrint('FCM TOKEN REFRESH: $newToken');
+
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser != null) {
+      await Supabase.instance.client.from('user_push_tokens').upsert({
+        'user_id': currentUser.id,
+        'device_token': newToken,
+        'platform': 'android',
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+
+      debugPrint('Token refresh salvo no Supabase.');
+    }
+  });
+
+  await _saveCurrentUserPushToken();
 }
 
 class MyApp extends StatelessWidget {
@@ -188,30 +233,63 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> {
   final _authService = AuthService();
+  StreamSubscription<AuthState>? _authSubscription;
   bool _isLoading = true;
   bool _isLoggedIn = false;
 
   @override
   void initState() {
     super.initState();
+    _authSubscription = _authService.authStateChanges.listen((event) async {
+      final isLoggedIn = event.session != null;
+
+      if (mounted) {
+        setState(() {
+          _isLoggedIn = isLoggedIn;
+          _isLoading = false;
+        });
+      }
+
+      if (isLoggedIn) {
+        await _saveCurrentUserPushToken();
+      }
+    });
+
     _checkAuth();
   }
 
   Future<void> _checkAuth() async {
-    await Future.delayed(const Duration(milliseconds: 500));
+    try {
+      await Future.delayed(const Duration(milliseconds: 300));
 
-    setState(() {
-      _isLoggedIn = _authService.getCurrentUser() != null;
-      _isLoading = false;
-    });
+      final isLoggedIn = _authService.getCurrentUser() != null;
 
-    _authService.authStateChanges.listen((event) {
-      if (mounted) {
-        setState(() {
-          _isLoggedIn = event.session != null;
-        });
+      if (!mounted) return;
+
+      setState(() {
+        _isLoggedIn = isLoggedIn;
+        _isLoading = false;
+      });
+
+      if (isLoggedIn) {
+        await _saveCurrentUserPushToken();
       }
-    });
+    } catch (e) {
+      debugPrint('Erro ao verificar autenticação: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoggedIn = false;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   @override
