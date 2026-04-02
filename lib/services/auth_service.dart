@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class AuthService {
   final supabase = Supabase.instance.client;
 
+  // ✅ CORRIGIDO AQUI
   Future<void> _savePushTokenForCurrentUser() async {
     if (kIsWeb) return;
 
@@ -22,17 +23,20 @@ class AuthService {
       return;
     }
 
-    await supabase.from('user_push_tokens').upsert({
-      'user_id': user.id,
-      'device_token': token,
-      'platform': 'android',
-      'updated_at': DateTime.now().toIso8601String(),
-    });
+    try {
+      await supabase.from('user_push_tokens').upsert({
+        'user_id': user.id,
+        'device_token': token,
+        'platform': 'android',
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'user_id,device_token'); // 🔥 CORREÇÃO PRINCIPAL
 
-    debugPrint('Token push salvo com sucesso pelo AuthService.');
+      debugPrint('Token push salvo com sucesso pelo AuthService.');
+    } catch (e) {
+      debugPrint('Erro ao salvar token push: $e');
+    }
   }
 
-  // Login
   Future<Map<String, dynamic>> signIn(String email, String password) async {
     try {
       final response = await supabase.auth.signInWithPassword(
@@ -60,7 +64,6 @@ class AuthService {
     }
   }
 
-  // Registro
   Future<Map<String, dynamic>> signUp(
     String email,
     String password,
@@ -89,17 +92,20 @@ class AuthService {
     }
   }
 
-  // Logout
   Future<void> signOut() async {
     await supabase.auth.signOut();
   }
 
-  // Verificar se está logado
   User? getCurrentUser() {
     return supabase.auth.currentUser;
   }
 
-  // Buscar perfil do usuário
+  bool isAuthenticated() {
+    final session = supabase.auth.currentSession;
+    final user = supabase.auth.currentUser;
+    return session != null && user != null;
+  }
+
   Future<Map<String, dynamic>?> getUserProfile(String userId) async {
     try {
       final response =
@@ -112,6 +118,5 @@ class AuthService {
     }
   }
 
-  // Stream de autenticação
   Stream<AuthState> get authStateChanges => supabase.auth.onAuthStateChange;
 }

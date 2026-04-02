@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart';
@@ -16,6 +18,7 @@ class DashboardRouterPage extends StatefulWidget {
 
 class _DashboardRouterPageState extends State<DashboardRouterPage> {
   final supabase = Supabase.instance.client;
+  StreamSubscription<AuthState>? _authSubscription;
   bool _isLoading = true;
   bool _isRedirecting = false;
   Widget? _dashboardWidget;
@@ -23,25 +26,43 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
   @override
   void initState() {
     super.initState();
+
+    _authSubscription = supabase.auth.onAuthStateChange.listen((event) {
+      if (!mounted || _isRedirecting) return;
+
+      if (event.event == AuthChangeEvent.signedOut) {
+        _isRedirecting = true;
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/login',
+          (route) => false,
+        );
+      }
+    });
+
     _loadDashboard();
   }
 
   Future<void> _loadDashboard() async {
     try {
-      final user = supabase.auth.currentUser;
-      if (user == null) {
-        if (mounted && !_isRedirecting) {
-          _isRedirecting = true;
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            '/login',
-            (route) => false,
-          );
+      Session? session = supabase.auth.currentSession;
+      User? user = supabase.auth.currentUser;
+
+      if (session == null || user == null) {
+        await Future.delayed(const Duration(milliseconds: 1200));
+        session = supabase.auth.currentSession;
+        user = supabase.auth.currentUser;
+      }
+
+      if (session == null || user == null) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _dashboardWidget = null;
+          });
         }
         return;
       }
-
-      await Future.delayed(const Duration(milliseconds: 300));
 
       final profile = await supabase
           .from('profiles')
@@ -112,6 +133,12 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
   }
 
   @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const PremiumLoadingScreen(
@@ -119,6 +146,29 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
       );
     }
 
-    return _dashboardWidget ?? const MemberDashboardPage();
+    if (_dashboardWidget == null) {
+      return const LoginPageFallback();
+    }
+
+    return _dashboardWidget!;
+  }
+}
+
+class LoginPageFallback extends StatelessWidget {
+  const LoginPageFallback({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/login',
+        (route) => false,
+      );
+    });
+
+    return const PremiumLoadingScreen(
+      text: 'Redirecionando...',
+    );
   }
 }

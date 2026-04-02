@@ -28,6 +28,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   final _authService = AuthService();
   Map<String, dynamic>? _profile;
   bool _isLoading = true;
+  bool _isBackgroundReady = false;
   int _pendingCount = 0;
   int _overdueFinancialCount = 0;
   Map<int, int> _overdueByMonth = {};
@@ -36,6 +37,13 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   bool _isLoadingTodayBirthdays = true;
   late final AnimationController _birthdayBadgeController;
   late final Animation<double> _birthdayBadgeScale;
+  int _messageUnreadCount = 0;
+  int _competitionNewCount = 0;
+  DateTime? _lastCompetitionsViewedAt;
+  RealtimeChannel? _messagesRealtimeChannel;
+  RealtimeChannel? _competitionsRealtimeChannel;
+  RealtimeChannel? _convocationsRealtimeChannel;
+  RealtimeChannel? _financialRealtimeChannel;
 
   int _confirmedPresenceCount = 0;
   int _rejectedPresenceCount = 0;
@@ -48,6 +56,24 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const String _eventsEmbedFk = 'convocations_event_id_fkey';
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (!_isBackgroundReady) {
+      precacheImage(
+        const AssetImage('assets/images/monte_olimpo_v2.png'),
+        context,
+      ).whenComplete(() {
+        if (mounted) {
+          setState(() {
+            _isBackgroundReady = true;
+          });
+        }
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -79,7 +105,134 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
         _loadOverdueFinancialCount();
         _loadWeekEvents();
         _loadAttendanceAndPerformance();
+        _loadMessageUnreadCount();
+        _loadCompetitionNewCount();
+        _setupRealtimeListeners();
       }
+    }
+  }
+
+  void _setupRealtimeListeners() {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    _messagesRealtimeChannel ??=
+        supabase.channel('athlete-dashboard-messages-${user.id}')
+          ..onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'app_message_participants',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'user_id',
+              value: user.id,
+            ),
+            callback: (_) {
+              _loadMessageUnreadCount();
+            },
+          )
+          ..subscribe();
+
+    _competitionsRealtimeChannel ??=
+        supabase.channel('athlete-dashboard-competitions')
+          ..onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'events',
+            callback: (_) {
+              _loadCompetitionNewCount();
+            },
+          )
+          ..subscribe();
+
+    _convocationsRealtimeChannel ??=
+        supabase.channel('athlete-dashboard-convocations-${user.id}')
+          ..onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'convocations',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'user_id',
+              value: user.id,
+            ),
+            callback: (_) {
+              _loadPendingCount();
+              _loadWeekEvents();
+              _loadAttendanceAndPerformance();
+            },
+          )
+          ..subscribe();
+
+    _financialRealtimeChannel ??=
+        supabase.channel('athlete-dashboard-financial-${user.id}')
+          ..onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'financial_records',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'athlete_id',
+              value: user.id,
+            ),
+            callback: (_) {
+              _loadOverdueFinancialCount();
+            },
+          )
+          ..subscribe();
+  }
+
+  Future<void> _loadMessageUnreadCount() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final response = await supabase
+          .from('app_message_participants')
+          .select('unread_count')
+          .eq('user_id', user.id);
+
+      final unreadTotal = List<Map<String, dynamic>>.from(response).fold<int>(
+        0,
+        (sum, row) => sum + (((row['unread_count'] ?? 0) as num).toInt()),
+      );
+
+      if (mounted) {
+        setState(() {
+          _messageUnreadCount = unreadTotal;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar mensagens não lidas: $e');
+    }
+  }
+
+  Future<void> _loadCompetitionNewCount() async {
+    try {
+      final response = await supabase
+          .from('events')
+          .select('id, created_at, event_type')
+          .inFilter('event_type', ['campeonato', 'amistoso']);
+
+      final referenceDate = _lastCompetitionsViewedAt ??
+          DateTime.now().subtract(const Duration(days: 7));
+
+      int count = 0;
+      for (final row in List<Map<String, dynamic>>.from(response)) {
+        final createdAt =
+            DateTime.tryParse((row['created_at'] ?? '').toString())?.toLocal();
+        if (createdAt != null && createdAt.isAfter(referenceDate)) {
+          count++;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _competitionNewCount = count;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar novidades de competições: $e');
     }
   }
 
@@ -692,7 +845,7 @@ event_time
       MaterialPageRoute(
         builder: (context) => const AthleteMessagesPage(),
       ),
-    );
+    ).then((_) => _loadMessageUnreadCount());
   }
 
   void _navigateToChat() {
@@ -705,6 +858,11 @@ event_time
   }
 
   void _navigateToCompetitions() {
+    setState(() {
+      _lastCompetitionsViewedAt = DateTime.now();
+      _competitionNewCount = 0;
+    });
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -712,7 +870,7 @@ event_time
           canEdit: false,
         ),
       ),
-    );
+    ).then((_) => _loadCompetitionNewCount());
   }
 
   DateTime? _parseBirthdayValue(dynamic rawValue) {
@@ -2290,85 +2448,105 @@ event_time
   @override
   void dispose() {
     _birthdayBadgeController.dispose();
+    if (_messagesRealtimeChannel != null) {
+      supabase.removeChannel(_messagesRealtimeChannel!);
+    }
+    if (_competitionsRealtimeChannel != null) {
+      supabase.removeChannel(_competitionsRealtimeChannel!);
+    }
+    if (_convocationsRealtimeChannel != null) {
+      supabase.removeChannel(_convocationsRealtimeChannel!);
+    }
+    if (_financialRealtimeChannel != null) {
+      supabase.removeChannel(_financialRealtimeChannel!);
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Área do Atleta'),
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person, color: Colors.white),
-            tooltip: 'Perfil',
-            onPressed: _navigateToProfilePage,
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sair',
-            onPressed: _redirectToLogin,
-          ),
-        ],
-      ),
+      backgroundColor: const Color(0xFF102845),
+      appBar: _isLoading
+          ? null
+          : AppBar(
+              title: const Text('Área do Atleta'),
+              backgroundColor: olympusBlue,
+              foregroundColor: Colors.white,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.person, color: Colors.white),
+                  tooltip: 'Perfil',
+                  onPressed: _navigateToProfilePage,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.logout),
+                  tooltip: 'Sair',
+                  onPressed: _redirectToLogin,
+                ),
+              ],
+            ),
       body: Stack(
         children: [
           Positioned.fill(
             child: _buildPremiumDashboardBackground(),
           ),
-          SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                _buildAthleteInfoCard(),
-                _buildTodayBirthdaysCard(),
-                _buildFinancialAlertCard(),
-                _buildPresenceSummaryCard(),
-                _buildWeekEventsSectionCard(),
-                _buildDashboardCard(
-                  icon: Icons.calendar_today,
-                  title: 'Minha Agenda',
-                  subtitle: _getAgendaSubtitle(),
-                  color: olympusGold,
-                  onTap: _navigateToAgenda,
-                  badgeCount: _pendingCount > 0 ? _pendingCount : null,
-                ),
-                _buildDashboardCard(
-                  icon: Icons.mark_chat_unread_rounded,
-                  title: 'Mensagens',
-                  subtitle: 'Avisos e comunicados',
-                  color: const Color(0xFF6C4AB6),
-                  onTap: _navigateToMessages,
-                ),
-                _buildDashboardCard(
-                  icon: Icons.attach_money,
-                  title: 'Financeiro',
-                  subtitle: 'Acompanhe seus pagamentos',
-                  color: olympusBlue,
-                  onTap: _navigateToFinancial,
-                  badgeCount: _overdueFinancialCount > 0
-                      ? _overdueFinancialCount
-                      : null,
-                ),
-                _buildDashboardCard(
-                  icon: Icons.emoji_events_outlined,
-                  title: 'Competições',
-                  subtitle: 'Veja ligas, campeonatos e amistosos',
-                  color: const Color(0xFF2C5F8D),
-                  onTap: _navigateToCompetitions,
-                ),
-                const SizedBox(height: 100),
-              ],
+          if (_isLoading)
+            const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+          else
+            SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _buildAthleteInfoCard(),
+                  _buildTodayBirthdaysCard(),
+                  _buildFinancialAlertCard(),
+                  _buildPresenceSummaryCard(),
+                  _buildWeekEventsSectionCard(),
+                  _buildDashboardCard(
+                    icon: Icons.calendar_today,
+                    title: 'Minha Agenda',
+                    subtitle: _getAgendaSubtitle(),
+                    color: olympusGold,
+                    onTap: _navigateToAgenda,
+                    badgeCount: _pendingCount > 0 ? _pendingCount : null,
+                  ),
+                  _buildDashboardCard(
+                    icon: Icons.mark_chat_unread_rounded,
+                    title: 'Mensagens',
+                    subtitle: 'Avisos e comunicados',
+                    color: const Color(0xFF6C4AB6),
+                    onTap: _navigateToMessages,
+                    badgeCount:
+                        _messageUnreadCount > 0 ? _messageUnreadCount : null,
+                  ),
+                  _buildDashboardCard(
+                    icon: Icons.attach_money,
+                    title: 'Financeiro',
+                    subtitle: 'Acompanhe seus pagamentos',
+                    color: olympusBlue,
+                    onTap: _navigateToFinancial,
+                    badgeCount: _overdueFinancialCount > 0
+                        ? _overdueFinancialCount
+                        : null,
+                  ),
+                  _buildDashboardCard(
+                    icon: Icons.emoji_events_outlined,
+                    title: 'Competições',
+                    subtitle: 'Veja ligas, campeonatos e amistosos',
+                    color: const Color(0xFF2C5F8D),
+                    onTap: _navigateToCompetitions,
+                    badgeCount:
+                        _competitionNewCount > 0 ? _competitionNewCount : null,
+                  ),
+                  const SizedBox(height: 100),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

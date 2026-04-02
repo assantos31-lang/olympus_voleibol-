@@ -36,26 +36,21 @@ dev_dependencies:
   flutter_launcher_icons: ^0.13.1
   flutter_native_splash: ^2.4.0
 
-# 🔥 CONFIGURAÇÃO CORRIGIDA DO ÍCONE
 flutter_launcher_icons:
   android: true
   ios: true
-
-  # 👉 USE A IMAGEM DE ÍCONE (NÃO A LOGO CHEIA)
   image_path: assets/images/olympus_logo_icon.png
-
   remove_alpha_ios: true
-
-  # 👉 ANDROID ADAPTIVE ICON (resolve o problema de escala)
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: assets/images/olympus_logo_icon.png
 
 flutter_native_splash:
-  color: "#ffffff"
-  image: assets/images/olympus_logo.png
+  color: "#000000"
+  image: assets/images/monte_olimpo_v2.png
   android: true
   ios: true
   web: false
+  fullscreen: true
 
 flutter:
   uses-material-design: true

@@ -28,25 +28,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   );
 }
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-
-  if (!kIsWeb) {
-    FirebaseMessaging.onBackgroundMessage(
-      _firebaseMessagingBackgroundHandler,
-    );
-  }
-
-  await Supabase.initialize(
-    url: 'https://wucxbbspybemvkqgqtou.supabase.co',
-    anonKey: 'sb_publishable_jfe15-g7mYFo0mSI9tuDtw_dI6qrnx4',
-  );
-
-  await _setupPushNotifications();
 
   runApp(
     MultiProvider(
@@ -146,7 +129,7 @@ class MyApp extends StatelessWidget {
       ),
       initialRoute: '/',
       routes: {
-        '/': (context) => const AuthWrapper(),
+        '/': (context) => const AppBootstrapPage(),
         '/login': (context) => const LoginPage(),
         '/register': (context) => const RegisterPage(),
         '/profiles': (context) => const AdminOnlyProfilesRoute(),
@@ -159,6 +142,124 @@ class MyApp extends StatelessWidget {
         '/chat-rooms': (context) => const ChatRoomsPage(),
       },
     );
+  }
+}
+
+class AppBootstrapPage extends StatefulWidget {
+  const AppBootstrapPage({super.key});
+
+  @override
+  State<AppBootstrapPage> createState() => _AppBootstrapPageState();
+}
+
+class _AppBootstrapPageState extends State<AppBootstrapPage> {
+  bool _isReady = false;
+  bool _hasError = false;
+  String _errorMessage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+
+      if (!kIsWeb) {
+        FirebaseMessaging.onBackgroundMessage(
+          _firebaseMessagingBackgroundHandler,
+        );
+      }
+
+      await Supabase.initialize(
+        url: 'https://wucxbbspybemvkqgqtou.supabase.co',
+        anonKey: 'sb_publishable_jfe15-g7mYFo0mSI9tuDtw_dI6qrnx4',
+      );
+
+      if (mounted) {
+        setState(() {
+          _isReady = true;
+        });
+      }
+
+      unawaited(_setupPushNotifications());
+    } catch (e) {
+      debugPrint('Erro no bootstrap do app: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        _hasError = true;
+        _errorMessage = e.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_hasError) {
+      return Scaffold(
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: Image.asset(
+                'assets/images/monte_olimpo_v2.png',
+                fit: BoxFit.cover,
+              ),
+            ),
+            Positioned.fill(
+              child: Container(color: Colors.black.withOpacity(0.65)),
+            ),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: Colors.white,
+                      size: 48,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Erro ao iniciar o aplicativo',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _errorMessage,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (!_isReady) {
+      return const PremiumLoadingScreen(
+        text: 'Iniciando aplicativo...',
+      );
+    }
+
+    return const AuthWrapper();
   }
 }
 
@@ -232,79 +333,52 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
-  final _authService = AuthService();
-  StreamSubscription<AuthState>? _authSubscription;
-  bool _isLoading = true;
-  bool _isLoggedIn = false;
+  final _auth = Supabase.instance.client.auth;
+  bool _initialAuthResolved = false;
 
   @override
   void initState() {
     super.initState();
-    _authSubscription = _authService.authStateChanges.listen((event) async {
-      final isLoggedIn = event.session != null;
 
-      if (mounted) {
-        setState(() {
-          _isLoggedIn = isLoggedIn;
-          _isLoading = false;
-        });
-      }
-
-      if (isLoggedIn) {
-        await _saveCurrentUserPushToken();
-      }
+    Future<void>.delayed(const Duration(milliseconds: 1200), () {
+      if (!mounted) return;
+      setState(() {
+        _initialAuthResolved = true;
+      });
     });
-
-    _checkAuth();
-  }
-
-  Future<void> _checkAuth() async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      final isLoggedIn = _authService.getCurrentUser() != null;
-
-      if (!mounted) return;
-
-      setState(() {
-        _isLoggedIn = isLoggedIn;
-        _isLoading = false;
-      });
-
-      if (isLoggedIn) {
-        await _saveCurrentUserPushToken();
-      }
-    } catch (e) {
-      debugPrint('Erro ao verificar autenticação: $e');
-
-      if (!mounted) return;
-
-      setState(() {
-        _isLoggedIn = false;
-        _isLoading = false;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _authSubscription?.cancel();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const PremiumLoadingScreen(
-        text: 'Carregando...',
-      );
-    }
+    return StreamBuilder<AuthState>(
+      stream: _auth.onAuthStateChange,
+      builder: (context, snapshot) {
+        final hasSession =
+            _auth.currentSession != null && _auth.currentUser != null;
 
-    if (_isLoggedIn) {
-      return const DashboardRouterPage();
-    }
+        if (!_initialAuthResolved && !hasSession) {
+          return const PremiumLoadingScreen(
+            text: 'Restaurando sessão...',
+          );
+        }
 
-    return const LoginPage();
+        if (hasSession) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _saveCurrentUserPushToken();
+          });
+          return const DashboardRouterPage();
+        }
+
+        if (!_initialAuthResolved &&
+            snapshot.connectionState == ConnectionState.waiting) {
+          return const PremiumLoadingScreen(
+            text: 'Restaurando sessão...',
+          );
+        }
+
+        return const LoginPage();
+      },
+    );
   }
 }
 
