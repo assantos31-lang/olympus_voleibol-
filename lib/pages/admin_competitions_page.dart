@@ -78,7 +78,9 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
           )
         ),
         event_photos (
-          id
+          id,
+          image_url,
+          created_at
         )
       ''');
 
@@ -207,6 +209,7 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
         ),
       ),
     );
+    await _loadCompetitions();
   }
 
   Future<void> _openFeaturedMatch(_EventCompetitionCard event) async {
@@ -902,6 +905,9 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
     final isVictory = result?.outcome == _ResultOutcome.victory;
     final hasPhotos =
         event.eventPhotos != null && event.eventPhotos!.isNotEmpty;
+    final previewImageUrl = event.firstPhotoUrl;
+    final hasPreviewImage =
+        previewImageUrl != null && previewImageUrl.isNotEmpty;
     final isFeatured = event.isFeatured == true;
     final isCompact = MediaQuery.of(context).size.width < 380;
 
@@ -915,6 +921,10 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (hasPreviewImage) ...[
+            _EventCardPhotoPreview(imageUrl: previewImageUrl),
+            const SizedBox(height: 12),
+          ],
           if (isFeatured || hasPhotos)
             Wrap(
               spacing: 8,
@@ -1326,6 +1336,83 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
   }
 }
 
+class _EventCardPhotoPreview extends StatelessWidget {
+  final String imageUrl;
+
+  const _EventCardPhotoPreview({required this.imageUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.network(
+              imageUrl,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return Container(
+                  color: const Color(0xFFEDE7F3),
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      color: _AdminCompetitionsPageState.olympusBlue,
+                    ),
+                  ),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  color: const Color(0xFFEDE7F3),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.image_not_supported_outlined,
+                    color: _AdminCompetitionsPageState.olympusBlue,
+                    size: 34,
+                  ),
+                );
+              },
+            ),
+            Positioned(
+              left: 10,
+              top: 10,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.48),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.photo_library_outlined,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                    SizedBox(width: 5),
+                    Text(
+                      'Foto do jogo',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SetScoreBadge extends StatelessWidget {
   final int score;
   final bool highlighted;
@@ -1545,6 +1632,9 @@ class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
         ),
       ),
     );
+    if (mounted) {
+      Navigator.of(context).pop(true);
+    }
   }
 
   Future<void> _openFeaturedMatch(_EventCompetitionCard event) async {
@@ -2011,11 +2101,20 @@ class _EventPhotosPageState extends State<EventPhotosPage> {
           .from('event_photos')
           .select()
           .eq('event_id', widget.eventId)
-          .order('created_at', ascending: false);
+          .order('created_at', ascending: true);
 
       if (mounted) {
+        final loadedPhotos = List<Map<String, dynamic>>.from(response);
+        loadedPhotos.sort((a, b) {
+          final aDate = DateTime.tryParse((a['created_at'] ?? '').toString()) ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = DateTime.tryParse((b['created_at'] ?? '').toString()) ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate);
+        });
+
         setState(() {
-          _photos = List<Map<String, dynamic>>.from(response);
+          _photos = loadedPhotos;
           _loading = false;
         });
       }
@@ -2848,6 +2947,29 @@ class _EventCompetitionCard {
       return name.substring(11).trim();
     }
     return name;
+  }
+
+  String? get firstPhotoUrl {
+    final photos = eventPhotos;
+    if (photos == null || photos.isEmpty) return null;
+
+    final photoMaps = photos
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+
+    if (photoMaps.isEmpty) return null;
+
+    photoMaps.sort((a, b) {
+      final aDate = DateTime.tryParse((a['created_at'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = DateTime.tryParse((b['created_at'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      return aDate.compareTo(bDate);
+    });
+
+    final imageUrl = (photoMaps.first['image_url'] ?? '').toString().trim();
+    return imageUrl.isEmpty ? null : imageUrl;
   }
 
   String get typeLabel {

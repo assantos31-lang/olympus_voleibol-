@@ -23,7 +23,7 @@ class AthleteDashboardPage extends StatefulWidget {
 }
 
 class _AthleteDashboardPageState extends State<AthleteDashboardPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final supabase = Supabase.instance.client;
   final _authService = AuthService();
   Map<String, dynamic>? _profile;
@@ -78,6 +78,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _birthdayBadgeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1100),
@@ -88,27 +89,55 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
         curve: Curves.easeInOut,
       ),
     );
-    _loadProfile();
-    _loadTodayBirthdays();
+    _refreshDashboard();
+  }
+
+  Future<void> _refreshDashboard() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _isLoadingTodayBirthdays = true;
+    });
+
+    await Future.wait([
+      _loadProfile(),
+      _loadTodayBirthdays(),
+    ]);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshDashboard();
+    }
   }
 
   Future<void> _loadProfile() async {
     final user = supabase.auth.currentUser;
-    if (user != null) {
-      final profile = await _authService.getUserProfile(user.id);
+
+    if (user == null) {
       if (mounted) {
         setState(() {
-          _profile = profile;
+          _profile = null;
           _isLoading = false;
         });
-        _loadPendingCount();
-        _loadOverdueFinancialCount();
-        _loadWeekEvents();
-        _loadAttendanceAndPerformance();
-        _loadMessageUnreadCount();
-        _loadCompetitionNewCount();
-        _setupRealtimeListeners();
       }
+      return;
+    }
+
+    final profile = await _authService.getUserProfile(user.id);
+    if (mounted) {
+      setState(() {
+        _profile = profile;
+        _isLoading = false;
+      });
+      _loadPendingCount();
+      _loadOverdueFinancialCount();
+      _loadWeekEvents();
+      _loadAttendanceAndPerformance();
+      _loadMessageUnreadCount();
+      _loadCompetitionNewCount();
+      _setupRealtimeListeners();
     }
   }
 
@@ -2447,6 +2476,7 @@ event_time
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _birthdayBadgeController.dispose();
     if (_messagesRealtimeChannel != null) {
       supabase.removeChannel(_messagesRealtimeChannel!);

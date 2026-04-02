@@ -248,7 +248,7 @@ class _AthleteMessagesPageState extends State<AthleteMessagesPage> {
     final threadId = (thread['thread_id'] ?? thread['id'] ?? '').toString();
     if (threadId.isEmpty) return;
 
-    final result = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => AthleteMessageThreadPage(
           threadId: threadId,
@@ -258,9 +258,7 @@ class _AthleteMessagesPageState extends State<AthleteMessagesPage> {
       ),
     );
 
-    if (result == true) {
-      await _loadThreads(showLoader: false);
-    }
+    await _loadThreads(showLoader: false);
   }
 
   String _formatDateTime(dynamic value) {
@@ -737,6 +735,12 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
     return supabase.auth.currentSession?.user ?? supabase.auth.currentUser;
   }
 
+  Future<void> _handleBack() async {
+    await _markThreadAsRead();
+    if (!mounted) return;
+    Navigator.of(context).pop(true);
+  }
+
   void _setupRealtime() {
     _threadChannel = supabase.channel('thread-${widget.threadId}')
       ..onPostgresChanges(
@@ -888,9 +892,6 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
       _replyController.clear();
       await _markThreadAsRead();
       await _loadMessages();
-
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
     } catch (e) {
       _showSnack('Erro ao enviar resposta: $e');
     } finally {
@@ -1214,66 +1215,77 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
     final size = MediaQuery.of(context).size;
     final isCompact = size.width < 380;
 
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(widget.subject),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: Colors.white,
-      ),
-      body: Stack(
-        children: [
-          Positioned.fill(child: _buildThreadBackground()),
-          SafeArea(
-            child: Column(
-              children: [
-                Expanded(
-                  child: _loading
-                      ? const Center(
-                          child: CircularProgressIndicator(color: Colors.white),
-                        )
-                      : _messages.isEmpty
-                          ? Center(
-                              child: Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: isCompact ? 20 : 28,
-                                ),
-                                child: Text(
-                                  'Nenhuma mensagem nesta conversa.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: isCompact ? 16 : 18,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
+    return WillPopScope(
+      onWillPop: () async {
+        await _handleBack();
+        return false;
+      },
+      child: Scaffold(
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _handleBack,
+          ),
+          title: Text(widget.subject),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          foregroundColor: Colors.white,
+        ),
+        body: Stack(
+          children: [
+            Positioned.fill(child: _buildThreadBackground()),
+            SafeArea(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: _loading
+                        ? const Center(
+                            child:
+                                CircularProgressIndicator(color: Colors.white),
+                          )
+                        : _messages.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: isCompact ? 20 : 28,
+                                  ),
+                                  child: Text(
+                                    'Nenhuma mensagem nesta conversa.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: isCompact ? 16 : 18,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
+                              )
+                            : ListView.builder(
+                                controller: _scrollController,
+                                padding: EdgeInsets.fromLTRB(
+                                  isCompact ? 12 : 16,
+                                  12,
+                                  isCompact ? 12 : 16,
+                                  16,
+                                ),
+                                itemCount: _messages.length,
+                                itemBuilder: (context, index) {
+                                  final message = _messages[index];
+                                  return _buildMessageBubble(
+                                    context,
+                                    message,
+                                    isCompact,
+                                  );
+                                },
                               ),
-                            )
-                          : ListView.builder(
-                              controller: _scrollController,
-                              padding: EdgeInsets.fromLTRB(
-                                isCompact ? 12 : 16,
-                                12,
-                                isCompact ? 12 : 16,
-                                16,
-                              ),
-                              itemCount: _messages.length,
-                              itemBuilder: (context, index) {
-                                final message = _messages[index];
-                                return _buildMessageBubble(
-                                  context,
-                                  message,
-                                  isCompact,
-                                );
-                              },
-                            ),
-                ),
-                if (widget.allowReply) _buildReplyBar(isCompact),
-              ],
+                  ),
+                  if (widget.allowReply) _buildReplyBar(isCompact),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
