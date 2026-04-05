@@ -25,6 +25,7 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
   String? _error;
   List<_CompetitionGroup> _leagueGroups = [];
   List<_FriendlyYearGroup> _friendlyGroups = [];
+  List<_HallAchievement> _hallAchievements = [];
   Map<String, String> _championshipImages = {};
   Map<String, String> _friendlyCardImages = {};
 
@@ -33,6 +34,31 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _loadCompetitions();
+  }
+
+  String _parseAchievementType(String label) {
+    final value = label.toLowerCase();
+    if (value.contains('campe')) return 'champion';
+    if (value.contains('vice')) return 'runner_up';
+    if (value.contains('3º') ||
+        value.contains('3o') ||
+        value.contains('terceiro')) {
+      return 'third';
+    }
+    return 'none';
+  }
+
+  String _buildFinalResultLabel(String baseResult, String achievementType) {
+    switch (achievementType) {
+      case 'champion':
+        return 'CAMPEÃO';
+      case 'runner_up':
+        return 'VICE-CAMPEÃO';
+      case 'third':
+        return '3º LUGAR';
+      default:
+        return baseResult;
+    }
   }
 
   @override
@@ -198,9 +224,44 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
         }
       }
 
+      final hallAchievements = <_HallAchievement>[];
+      for (final group in leagueGroups) {
+        if (group.items.isEmpty) continue;
+        final sortedItems = [...group.items]..sort(_compareEventsAsc);
+        final decisiveEvent = sortedItems.last;
+        final result = decisiveEvent.result;
+        final finalLabel = (result?.displayFinalLabel ?? '').toLowerCase();
+
+        final hasAchievement = finalLabel.contains('campe') ||
+            finalLabel.contains('vice') ||
+            finalLabel.contains('3º') ||
+            finalLabel.contains('3o') ||
+            finalLabel.contains('terceiro');
+
+        if (hasAchievement) {
+          hallAchievements.add(
+            _HallAchievement(
+              title: group.title,
+              eventName: decisiveEvent.name,
+              year: decisiveEvent.eventDate?.year ?? 0,
+              dateLabel: decisiveEvent.dateLabel,
+              imageUrl: _championshipImages[group.title] ??
+                  decisiveEvent.championshipImageUrl,
+              resultLabel: result?.displayFinalLabel ?? 'CONQUISTA',
+            ),
+          );
+        }
+      }
+
+      hallAchievements.sort((a, b) {
+        if (a.year != b.year) return b.year.compareTo(a.year);
+        return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      });
+
       setState(() {
         _leagueGroups = leagueGroups;
         _friendlyGroups = friendlyGroups;
+        _hallAchievements = hallAchievements;
         _friendlyCardImages = friendlyCardImages;
         _loading = false;
       });
@@ -219,6 +280,497 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
     final cmp = aDate.compareTo(bDate);
     if (cmp != 0) return cmp;
     return a.time.compareTo(b.time);
+  }
+
+  int _getTotalPointsForGroup(_CompetitionGroup group) {
+    int total = 0;
+    for (final event in group.items) {
+      total += event.result?.points ?? 0;
+    }
+    return total;
+  }
+
+  int? _getClassificationPointsForGroup(_CompetitionGroup group) {
+    if (group.items.isEmpty) return null;
+    final sortedItems = [...group.items]..sort(_compareEventsAsc);
+    final decisiveEvent = sortedItems.last;
+    return decisiveEvent.result?.classificationPoints;
+  }
+
+  int? _getQualifyingGamesForGroup(_CompetitionGroup group) {
+    if (group.items.isEmpty) return null;
+    final sortedItems = [...group.items]..sort(_compareEventsAsc);
+    final decisiveEvent = sortedItems.last;
+    return decisiveEvent.result?.qualifyingGames;
+  }
+
+  String? _getClassificationStageForGroup(_CompetitionGroup group) {
+    if (group.items.isEmpty) return null;
+    final sortedItems = [...group.items]..sort(_compareEventsAsc);
+    final decisiveEvent = sortedItems.last;
+    return decisiveEvent.result?.classificationStage;
+  }
+
+  String _extractDisplayLabel(String rawLabel) {
+    final clean = rawLabel.trim();
+    if (clean.isEmpty) return 'RESULTADO';
+    final index = clean.indexOf('||');
+    if (index == -1) return clean;
+    return clean.substring(0, index).trim();
+  }
+
+  Map<String, String> _parseResultMetadata(String rawLabel) {
+    final meta = <String, String>{};
+    final index = rawLabel.indexOf('||');
+    if (index == -1) return meta;
+
+    final rawMeta = rawLabel.substring(index + 2);
+    for (final part in rawMeta.split('|')) {
+      final item = part.trim();
+      if (item.isEmpty || !item.contains('=')) continue;
+      final eq = item.indexOf('=');
+      meta[item.substring(0, eq).trim()] = item.substring(eq + 1).trim();
+    }
+    return meta;
+  }
+
+  String _composeResultLabel(
+      String displayLabel, Map<String, String> metadata) {
+    final filtered = Map<String, String>.from(metadata)
+      ..removeWhere((key, value) => value.trim().isEmpty);
+    if (filtered.isEmpty) return displayLabel.trim();
+    return '${displayLabel.trim()}||${filtered.entries.map((e) => '${e.key}=${e.value}').join('|')}';
+  }
+
+  String? _getAchievementLabelForGroup(_CompetitionGroup group) {
+    for (final achievement in _hallAchievements) {
+      if (achievement.title == group.title) {
+        return achievement.resultLabel;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _openChampionshipClassificationEditor(
+    _CompetitionGroup group,
+  ) async {
+    if (group.items.isEmpty) return;
+
+    final currentPoints = _getClassificationPointsForGroup(group);
+    final currentGames = _getQualifyingGamesForGroup(group);
+    String selectedStage = _getClassificationStageForGroup(group) ?? '';
+    final pointsController = TextEditingController(
+      text: currentPoints != null ? '$currentPoints' : '',
+    );
+    final gamesController = TextEditingController(
+      text: currentGames != null ? '$currentGames' : '',
+    );
+
+    final shouldSave = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF6F1FA),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Classificação da fase classificatória',
+                        style: TextStyle(
+                          color: olympusBlue,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        group.title,
+                        style: TextStyle(
+                          color: Colors.grey[700],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: gamesController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Total de jogos',
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: selectedStage,
+                        decoration: const InputDecoration(
+                          labelText: 'Fase',
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: '',
+                            child: Text('Sem classificação'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Classificado para Oitavas de Finais',
+                            child: Text('Classificado para Oitavas de Finais'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Classificado para Quartas de Finais',
+                            child: Text('Classificado para Quartas de Finais'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Classificado para Semifinal',
+                            child: Text('Classificado para Semifinal'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Classificado para a Final',
+                            child: Text('Classificado para a Final'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          setModalState(() {
+                            selectedStage = value ?? '';
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: pointsController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Pontuação para classificação',
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text('Cancelar'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.of(context).pop(true),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: olympusGold,
+                                foregroundColor: olympusBlue,
+                              ),
+                              child: const Text(
+                                'Salvar',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (shouldSave != true) return;
+
+    await _saveChampionshipClassificationData(
+      group,
+      classificationPointsText: pointsController.text.trim(),
+      qualifyingGamesText: gamesController.text.trim(),
+      classificationStageText: selectedStage.trim(),
+    );
+  }
+
+  Future<void> _saveChampionshipClassificationData(
+    _CompetitionGroup group, {
+    required String classificationPointsText,
+    required String qualifyingGamesText,
+    required String classificationStageText,
+  }) async {
+    try {
+      if (group.items.isEmpty) return;
+      final sortedItems = [...group.items]..sort(_compareEventsAsc);
+      final decisiveEvent = sortedItems.last;
+      final existingResult = decisiveEvent.result;
+      final displayLabel = _extractDisplayLabel(
+        existingResult?.finalLabel ?? 'RESULTADO',
+      );
+      final metadata = _parseResultMetadata(existingResult?.finalLabel ?? '');
+
+      if (classificationPointsText.isEmpty) {
+        metadata.remove('CLASSPTS');
+      } else {
+        metadata['CLASSPTS'] = classificationPointsText;
+      }
+
+      if (qualifyingGamesText.isEmpty) {
+        metadata.remove('CLASSGAMES');
+      } else {
+        metadata['CLASSGAMES'] = qualifyingGamesText;
+      }
+
+      if (classificationStageText.isEmpty) {
+        metadata.remove('CLASSSTAGE');
+      } else {
+        metadata['CLASSSTAGE'] = classificationStageText;
+      }
+
+      await _supabase.from('event_results').upsert({
+        'event_id': decisiveEvent.id,
+        'final_result_label': _composeResultLabel(displayLabel, metadata),
+        'olympus_sets_won': existingResult?.olympusSets ?? 0,
+        'opponent_sets_won': existingResult?.opponentSets ?? 0,
+      }, onConflict: 'event_id');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Dados de classificação salvos com sucesso!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      await _loadCompetitions();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Erro ao salvar dados de classificação: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _openChampionshipAchievementEditor(
+    _CompetitionGroup group,
+  ) async {
+    String selectedType = 'none';
+    final currentLabel = _getAchievementLabelForGroup(group) ?? '';
+    if (currentLabel.isNotEmpty) {
+      selectedType = _parseAchievementType(currentLabel);
+    }
+
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF6F1FA),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 42,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Editar Conquista',
+                      style: const TextStyle(
+                        color: olympusBlue,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      group.title,
+                      style: TextStyle(
+                        color: Colors.grey[700],
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedType,
+                      decoration: const InputDecoration(
+                        labelText: 'Hall de Conquistas',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'none',
+                          child: Text('Sem conquista'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'third',
+                          child: Text('3º lugar'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'runner_up',
+                          child: Text('Vice-campeão'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'champion',
+                          child: Text('Campeão'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        setModalState(() {
+                          selectedType = value ?? 'none';
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Cancelar'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () =>
+                                Navigator.of(context).pop(selectedType),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: olympusGold,
+                              foregroundColor: olympusBlue,
+                            ),
+                            child: const Text(
+                              'Salvar',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (result == null) return;
+    await _saveChampionshipAchievement(group, result);
+  }
+
+  Future<void> _removeChampionshipAchievement(_CompetitionGroup group) async {
+    await _saveChampionshipAchievement(group, 'none');
+  }
+
+  Future<void> _saveChampionshipAchievement(
+    _CompetitionGroup group,
+    String achievementType,
+  ) async {
+    try {
+      if (group.items.isEmpty) return;
+      final sortedItems = [...group.items]..sort(_compareEventsAsc);
+      final decisiveEvent = sortedItems.last;
+      final existingResult = decisiveEvent.result;
+
+      String baseResult = 'RESULTADO';
+      if (existingResult != null) {
+        switch (existingResult.outcome) {
+          case _ResultOutcome.victory:
+            baseResult = 'VITÓRIA';
+            break;
+          case _ResultOutcome.defeat:
+            baseResult = 'DERROTA';
+            break;
+          case _ResultOutcome.draw:
+            baseResult = 'EMPATE';
+            break;
+          case _ResultOutcome.undefined:
+            baseResult = 'RESULTADO';
+            break;
+        }
+      }
+
+      final finalLabel = _composeResultLabel(
+        _buildFinalResultLabel(baseResult, achievementType),
+        _parseResultMetadata(existingResult?.finalLabel ?? ''),
+      );
+
+      await _supabase.from('event_results').upsert({
+        'event_id': decisiveEvent.id,
+        'final_result_label': finalLabel,
+        'olympus_sets_won': existingResult?.olympusSets ?? 0,
+        'opponent_sets_won': existingResult?.opponentSets ?? 0,
+      }, onConflict: 'event_id');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            achievementType == 'none'
+                ? '✅ Conquista removida com sucesso!'
+                : '✅ Conquista salva com sucesso!',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+      await _loadCompetitions();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Erro ao salvar conquista: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _openResultEditor(_EventCompetitionCard event) async {
@@ -257,6 +809,19 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
           canEdit: widget.canEdit,
           imageUrl:
               _friendlyCardImages['${yearGroup.year}_${genderGroup.title}'],
+        ),
+      ),
+    );
+    await _loadCompetitions();
+  }
+
+  Future<void> _openHallOfAchievements() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => HallOfAchievementsPage(
+          achievements: _hallAchievements,
+          championshipGroups: _leagueGroups,
+          canEdit: widget.canEdit,
         ),
       ),
     );
@@ -552,18 +1117,6 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: olympusGold,
-          indicatorWeight: 3,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w700),
-          tabs: const [
-            Tab(text: 'Liga / Campeonatos'),
-            Tab(text: 'Amistosos'),
-          ],
-        ),
       ),
       body: Stack(
         children: [
@@ -574,16 +1127,158 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
                 )
               : _error != null
                   ? _ErrorState(message: _error!, onRetry: _loadCompetitions)
-                  : RefreshIndicator(
-                      color: olympusBlue,
-                      onRefresh: _loadCompetitions,
-                      child: TabBarView(
-                        controller: _tabController,
-                        children: [
-                          _buildGlassTabShell(child: _buildLeagueTab()),
-                          _buildGlassTabShell(child: _buildFriendlyTab()),
-                        ],
-                      ),
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isCompact = constraints.maxWidth < 380;
+                        final horizontalPadding = isCompact ? 12.0 : 14.0;
+                        final topPadding = isCompact ? 8.0 : 10.0;
+                        final buttonRadius = isCompact ? 16.0 : 18.0;
+                        final buttonVertical = isCompact ? 10.0 : 12.0;
+                        final iconBoxSize = isCompact ? 34.0 : 42.0;
+                        final titleFontSize = isCompact ? 14.0 : 16.0;
+                        final subtitleFontSize = isCompact ? 10.0 : 11.5;
+                        final trailingIconSize = isCompact ? 16.0 : 18.0;
+
+                        return Column(
+                          children: [
+                            Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                horizontalPadding,
+                                topPadding,
+                                horizontalPadding,
+                                8,
+                              ),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      Color(0xFFFFE28A),
+                                      olympusGold,
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius:
+                                      BorderRadius.circular(buttonRadius),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: olympusGold.withOpacity(0.22),
+                                      blurRadius: isCompact ? 10 : 14,
+                                      offset: Offset(0, isCompact ? 4 : 6),
+                                    ),
+                                  ],
+                                ),
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius:
+                                        BorderRadius.circular(buttonRadius),
+                                    onTap: _openHallOfAchievements,
+                                    child: Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: isCompact ? 12 : 16,
+                                        vertical: buttonVertical,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            width: iconBoxSize,
+                                            height: iconBoxSize,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white
+                                                  .withOpacity(0.22),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: Icon(
+                                              Icons.workspace_premium_rounded,
+                                              color: olympusBlue,
+                                              size: isCompact ? 20 : 24,
+                                            ),
+                                          ),
+                                          SizedBox(width: isCompact ? 10 : 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  'Hall de Conquistas',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: olympusBlue,
+                                                    fontWeight: FontWeight.w900,
+                                                    fontSize: titleFontSize,
+                                                    height: 1.0,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  _hallAchievements.isEmpty
+                                                      ? 'Toque para ver títulos'
+                                                      : '${_hallAchievements.length} conquista${_hallAchievements.length == 1 ? '' : 's'} registrada${_hallAchievements.length == 1 ? '' : 's'}',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: olympusBlue
+                                                        .withOpacity(0.78),
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: subtitleFontSize,
+                                                    height: 1.0,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          SizedBox(width: isCompact ? 6 : 8),
+                                          Icon(
+                                            Icons.arrow_forward_ios_rounded,
+                                            color: olympusBlue,
+                                            size: trailingIconSize,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            TabBar(
+                              controller: _tabController,
+                              indicatorColor: olympusGold,
+                              indicatorWeight: 3,
+                              labelColor: Colors.white,
+                              unselectedLabelColor: Colors.white70,
+                              labelStyle: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: isCompact ? 13 : 14,
+                              ),
+                              tabs: const [
+                                Tab(text: 'Liga / Campeonatos'),
+                                Tab(text: 'Amistosos'),
+                              ],
+                            ),
+                            Expanded(
+                              child: RefreshIndicator(
+                                color: olympusBlue,
+                                onRefresh: _loadCompetitions,
+                                child: TabBarView(
+                                  controller: _tabController,
+                                  children: [
+                                    _buildGlassTabShell(
+                                        child: _buildLeagueTab()),
+                                    _buildGlassTabShell(
+                                        child: _buildFriendlyTab()),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
         ],
       ),
@@ -615,6 +1310,21 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
                 : null,
             onTap: () => _openChampionshipGames(group),
             canEdit: widget.canEdit,
+            achievementLabel: _getAchievementLabelForGroup(group),
+            totalPoints: _getTotalPointsForGroup(group),
+            classificationPoints: _getClassificationPointsForGroup(group),
+            qualifyingGames: _getQualifyingGamesForGroup(group),
+            classificationStage: _getClassificationStageForGroup(group),
+            onEditClassification: widget.canEdit
+                ? () => _openChampionshipClassificationEditor(group)
+                : null,
+            onEditAchievement: widget.canEdit
+                ? () => _openChampionshipAchievementEditor(group)
+                : null,
+            onRemoveAchievement:
+                widget.canEdit && _getAchievementLabelForGroup(group) != null
+                    ? () => _removeChampionshipAchievement(group)
+                    : null,
           ),
         );
       },
@@ -725,6 +1435,14 @@ class _ChampionshipCard extends StatelessWidget {
   final VoidCallback? onImageTap;
   final VoidCallback onTap;
   final bool canEdit;
+  final String? achievementLabel;
+  final int totalPoints;
+  final int? classificationPoints;
+  final int? qualifyingGames;
+  final String? classificationStage;
+  final VoidCallback? onEditClassification;
+  final VoidCallback? onEditAchievement;
+  final VoidCallback? onRemoveAchievement;
 
   const _ChampionshipCard({
     required this.title,
@@ -733,6 +1451,14 @@ class _ChampionshipCard extends StatelessWidget {
     this.onImageTap,
     required this.onTap,
     required this.canEdit,
+    this.achievementLabel,
+    this.totalPoints = 0,
+    this.classificationPoints,
+    this.qualifyingGames,
+    this.classificationStage,
+    this.onEditClassification,
+    this.onEditAchievement,
+    this.onRemoveAchievement,
   });
 
   @override
@@ -805,6 +1531,13 @@ class _ChampionshipCard extends StatelessWidget {
           );
         }
 
+        final hasClassificationData = classificationPoints != null ||
+            qualifyingGames != null ||
+            (classificationStage != null &&
+                classificationStage!.trim().isNotEmpty);
+        final showAdminMenu = canEdit &&
+            (onEditClassification != null || onEditAchievement != null);
+
         return Material(
           color: Colors.transparent,
           child: InkWell(
@@ -839,16 +1572,58 @@ class _ChampionshipCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          title,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: titleSize,
-                            fontWeight: FontWeight.w800,
-                            height: 1.1,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: titleSize,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.1,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (showAdminMenu)
+                              PopupMenuButton<String>(
+                                onSelected: (value) {
+                                  if (value == 'classification') {
+                                    onEditClassification?.call();
+                                  } else if (value == 'edit') {
+                                    onEditAchievement?.call();
+                                  } else if (value == 'remove') {
+                                    onRemoveAchievement?.call();
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  if (onEditClassification != null)
+                                    const PopupMenuItem(
+                                      value: 'classification',
+                                      child: Text(
+                                        'Inserir dados da classificação',
+                                      ),
+                                    ),
+                                  if (onEditAchievement != null)
+                                    const PopupMenuItem(
+                                      value: 'edit',
+                                      child: Text('Editar Conquista'),
+                                    ),
+                                  if (achievementLabel != null)
+                                    const PopupMenuItem(
+                                      value: 'remove',
+                                      child: Text('Remover Conquista'),
+                                    ),
+                                ],
+                                icon: const Icon(
+                                  Icons.more_vert,
+                                  color: Colors.white,
+                                ),
+                              ),
+                          ],
                         ),
                         const SizedBox(height: 8),
                         Container(
@@ -875,7 +1650,7 @@ class _ChampionshipCard extends StatelessWidget {
                               ),
                               const SizedBox(width: 6),
                               Text(
-                                '$itemCount jogo${itemCount == 1 ? '' : 's'}',
+                                '$itemCount jogo${itemCount == 1 ? '' : 's'} • $totalPoints ponto${totalPoints == 1 ? '' : 's'}',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
@@ -886,6 +1661,85 @@ class _ChampionshipCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 8),
+                        if (hasClassificationData) ...[
+                          if (qualifyingGames != null)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                'Total de jogos: $qualifyingGames',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.92),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          if (classificationStage != null &&
+                              classificationStage!.trim().isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                classificationStage!,
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.92),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          if (classificationPoints != null)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                'Pontuação para classificação: $classificationPoints',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.92),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                        ],
+                        if (achievementLabel != null) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _AdminCompetitionsPageState.olympusGold,
+                              borderRadius: BorderRadius.circular(999),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _AdminCompetitionsPageState.olympusGold
+                                      .withOpacity(0.30),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.emoji_events,
+                                  size: 15,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  achievementLabel!,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                         Row(
                           children: [
                             Text(
@@ -915,6 +1769,514 @@ class _ChampionshipCard extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class HallOfAchievementsPage extends StatelessWidget {
+  final List<_HallAchievement> achievements;
+  final List<_CompetitionGroup> championshipGroups;
+  final bool canEdit;
+
+  const HallOfAchievementsPage({
+    super.key,
+    required this.achievements,
+    required this.championshipGroups,
+    required this.canEdit,
+  });
+
+  static const Color olympusBlue = _AdminCompetitionsPageState.olympusBlue;
+  static const Color olympusLightBlue =
+      _AdminCompetitionsPageState.olympusLightBlue;
+  static const Color olympusGold = _AdminCompetitionsPageState.olympusGold;
+
+  Widget _buildPremiumBackground() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(color: const Color(0xFF102845));
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: Container(color: Colors.black.withOpacity(0.14)),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  olympusBlue.withOpacity(0.56),
+                  olympusLightBlue.withOpacity(0.26),
+                  Colors.black.withOpacity(0.62),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0, -0.78),
+                radius: 1.08,
+                colors: [
+                  olympusGold.withOpacity(0.12),
+                  Colors.transparent,
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  _CompetitionGroup? _findGroup(String title) {
+    for (final group in championshipGroups) {
+      if (group.title == title) return group;
+    }
+    return null;
+  }
+
+  Future<void> _openTournamentPhotos(
+    BuildContext context,
+    _HallAchievement achievement,
+  ) async {
+    final group = _findGroup(achievement.title);
+    if (group == null) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TournamentPhotosGalleryPage(
+          championshipTitle: achievement.title,
+          events: group.items,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isCompact = MediaQuery.of(context).size.width < 380;
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: olympusBlue.withOpacity(0.96),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text(
+          'Hall de Conquistas',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildPremiumBackground()),
+          achievements.isEmpty
+              ? const _EmptyState(
+                  icon: Icons.workspace_premium_outlined,
+                  title: 'Nenhuma conquista cadastrada',
+                  subtitle:
+                      'As conquistas aparecerão aqui quando forem marcadas.',
+                )
+              : ListView.builder(
+                  padding: EdgeInsets.fromLTRB(
+                    isCompact ? 12 : 16,
+                    16,
+                    isCompact ? 12 : 16,
+                    20,
+                  ),
+                  itemCount: achievements.length,
+                  itemBuilder: (context, index) {
+                    final achievement = achievements[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(22),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(22),
+                              gradient: LinearGradient(
+                                colors: [
+                                  const Color(0xFFFFF1BF).withOpacity(0.96),
+                                  const Color(0xFFFFE08A).withOpacity(0.92),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              border: Border.all(
+                                color: olympusGold.withOpacity(0.95),
+                                width: 1.5,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: olympusGold.withOpacity(0.22),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 78,
+                                      height: 78,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(16),
+                                        color: Colors.white.withOpacity(0.40),
+                                        image: achievement.imageUrl != null &&
+                                                achievement.imageUrl!.isNotEmpty
+                                            ? DecorationImage(
+                                                image: NetworkImage(
+                                                  achievement.imageUrl!,
+                                                ),
+                                                fit: BoxFit.cover,
+                                              )
+                                            : null,
+                                      ),
+                                      child: achievement.imageUrl == null ||
+                                              achievement.imageUrl!.isEmpty
+                                          ? const Icon(
+                                              Icons.workspace_premium,
+                                              size: 34,
+                                              color: olympusBlue,
+                                            )
+                                          : null,
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: olympusBlue,
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: Text(
+                                              achievement.resultLabel,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            achievement.title,
+                                            style: const TextStyle(
+                                              color: olympusBlue,
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            achievement.eventName,
+                                            style: TextStyle(
+                                              color: Colors.brown[700],
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            '${achievement.dateLabel}${achievement.year == 0 ? '' : ' • ${achievement.year}'}',
+                                            style: const TextStyle(
+                                              color: olympusBlue,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () => _openTournamentPhotos(
+                                      context,
+                                      achievement,
+                                    ),
+                                    icon: const Icon(
+                                      Icons.photo_library_outlined,
+                                      size: 18,
+                                    ),
+                                    label: const Text(
+                                      'Ver todas as fotos do torneio',
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: olympusBlue,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 13,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ],
+      ),
+    );
+  }
+}
+
+class TournamentPhotosGalleryPage extends StatelessWidget {
+  final String championshipTitle;
+  final List<_EventCompetitionCard> events;
+
+  const TournamentPhotosGalleryPage({
+    super.key,
+    required this.championshipTitle,
+    required this.events,
+  });
+
+  static const Color olympusBlue = _AdminCompetitionsPageState.olympusBlue;
+  static const Color olympusLightBlue =
+      _AdminCompetitionsPageState.olympusLightBlue;
+
+  Widget _buildPremiumBackground() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(color: const Color(0xFF102845));
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: Container(color: Colors.black.withOpacity(0.16)),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  olympusBlue.withOpacity(0.52),
+                  olympusLightBlue.withOpacity(0.24),
+                  Colors.black.withOpacity(0.58),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Map<String, dynamic>> _allPhotos() {
+    final photos = <Map<String, dynamic>>[];
+
+    for (final event in events) {
+      final rawPhotos = event.eventPhotos;
+      if (rawPhotos == null) continue;
+
+      for (final item in rawPhotos) {
+        if (item is Map) {
+          final photo = Map<String, dynamic>.from(item);
+          final imageUrl = (photo['image_url'] ?? '').toString().trim();
+          if (imageUrl.isEmpty) continue;
+          photo['event_name_ref'] = event.name;
+          photo['event_date_ref'] = event.dateLabel;
+          photos.add(photo);
+        }
+      }
+    }
+
+    photos.sort((a, b) {
+      final aDate = DateTime.tryParse((a['created_at'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = DateTime.tryParse((b['created_at'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      return bDate.compareTo(aDate);
+    });
+
+    return photos;
+  }
+
+  void _viewPhoto(BuildContext context, String imageUrl) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black.withOpacity(0.8),
+            foregroundColor: Colors.white,
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              child: Image.network(imageUrl, fit: BoxFit.contain),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final photos = _allPhotos();
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: olympusBlue.withOpacity(0.96),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text(
+          'Fotos do Torneio',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildPremiumBackground()),
+          photos.isEmpty
+              ? const _EmptyState(
+                  icon: Icons.photo_library_outlined,
+                  title: 'Nenhuma foto encontrada',
+                  subtitle:
+                      'Ainda não existem fotos carregadas nos jogos deste torneio.',
+                )
+              : GridView.builder(
+                  padding: const EdgeInsets.all(12),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                  ),
+                  itemCount: photos.length,
+                  itemBuilder: (context, index) {
+                    final photo = photos[index];
+                    final imageUrl = (photo['image_url'] ?? '').toString();
+
+                    return GestureDetector(
+                      onTap: () => _viewPhoto(context, imageUrl),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Image.network(
+                              imageUrl,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (context, child, progress) {
+                                if (progress == null) return child;
+                                return Container(
+                                  color: Colors.white.withOpacity(0.10),
+                                  child: const Center(
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Colors.white.withOpacity(0.10),
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                      color: Colors.white,
+                                      size: 32,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            Positioned(
+                              left: 8,
+                              right: 8,
+                              bottom: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.52),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      (photo['event_name_ref'] ?? '')
+                                          .toString(),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      (photo['event_date_ref'] ?? '')
+                                          .toString(),
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ],
+      ),
     );
   }
 }
@@ -1034,14 +2396,17 @@ class _CompetitionMatchCard extends StatefulWidget {
   final bool canEdit;
   final VoidCallback onTapEdit;
   final VoidCallback? onTapPhotos;
+  final VoidCallback? onTapPoints;
   final VoidCallback? onTapFeatured;
 
   const _CompetitionMatchCard({
+    super.key,
     required this.event,
     required this.headerTitle,
     required this.canEdit,
     required this.onTapEdit,
     this.onTapPhotos,
+    this.onTapPoints,
     this.onTapFeatured,
   });
 
@@ -1126,7 +2491,7 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
             _EventCardPhotoPreview(imageUrl: previewImageUrl),
             const SizedBox(height: 12),
           ],
-          if (isFeatured || hasPhotos)
+          if (isFeatured || hasPhotos || (event.result?.points ?? 0) > 0)
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -1209,9 +2574,48 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                       ),
                     ),
                   ),
+                if ((event.result?.points ?? 0) > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _AdminCompetitionsPageState.olympusGold,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _AdminCompetitionsPageState.olympusGold
+                              .withOpacity(0.35),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.stacked_line_chart_rounded,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${event.result!.points} PONTO${event.result!.points == 1 ? '' : 'S'}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
-          if (isFeatured || hasPhotos) const SizedBox(height: 10),
+          if (isFeatured || hasPhotos || (event.result?.points ?? 0) > 0)
+            const SizedBox(height: 10),
           Text(
             widget.headerTitle,
             style: TextStyle(
@@ -1245,6 +2649,40 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
               color: Colors.grey[700],
               fontSize: isCompact ? 12 : 13,
               fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: isCompact ? 12 : 14,
+              vertical: 10,
+            ),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8E8),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _AdminCompetitionsPageState.olympusGold.withOpacity(0.7),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.stacked_line_chart_rounded,
+                  color: _AdminCompetitionsPageState.olympusGold,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Pontuação do jogo: ${event.result?.points ?? 0}',
+                    style: TextStyle(
+                      color: Colors.brown[800],
+                      fontSize: isCompact ? 13 : 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 14),
@@ -1288,7 +2726,7 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                             Expanded(
                               child: Text(
                                 hasResult
-                                    ? result!.finalLabel
+                                    ? result!.displayFinalLabel
                                     : (widget.canEdit
                                         ? 'Cadastrar resultado do jogo'
                                         : 'Resultado pendente'),
@@ -1341,7 +2779,7 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                         Expanded(
                           child: Text(
                             hasResult
-                                ? result!.finalLabel
+                                ? result!.displayFinalLabel
                                 : (widget.canEdit
                                     ? 'Cadastrar resultado do jogo'
                                     : 'Resultado pendente'),
@@ -1468,6 +2906,16 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                     foregroundColor: _AdminCompetitionsPageState.olympusBlue,
                   ),
                 ),
+                if (widget.onTapPoints != null)
+                  TextButton.icon(
+                    onPressed: widget.onTapPoints,
+                    icon:
+                        const Icon(Icons.stacked_line_chart_rounded, size: 18),
+                    label: const Text('Pontos'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: _AdminCompetitionsPageState.olympusGold,
+                    ),
+                  ),
                 TextButton.icon(
                   onPressed: widget.onTapEdit,
                   icon: const Icon(Icons.edit_outlined, size: 18),
@@ -1765,6 +3213,66 @@ class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color olympusGold = Color(0xFFD4AF37);
 
+  late List<_EventCompetitionCard> _events;
+
+  @override
+  void initState() {
+    super.initState();
+    _events = [...widget.events];
+  }
+
+  Future<void> _refreshSingleEvent(String eventId) async {
+    final response = await _supabase.from('events').select('''
+      id,
+      event_name,
+      event_type,
+      event_date,
+      event_time,
+      set_format,
+      championship_name,
+      championship_image_url,
+      is_featured,
+      featured_image_url,
+      street,
+      street_number,
+      neighborhood,
+      city,
+      state,
+      gender,
+      created_at,
+      event_results (
+        id,
+        final_result_label,
+        olympus_sets_won,
+        opponent_sets_won,
+        event_result_sets (
+          id,
+          set_number,
+          olympus_score,
+          opponent_score
+        )
+      ),
+      event_photos (
+        id,
+        image_url,
+        created_at
+      )
+    ''').eq('id', eventId).single();
+
+    final refreshed = _EventCompetitionCard.fromMap(
+      Map<String, dynamic>.from(response),
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      final index = _events.indexWhere((item) => item.id == eventId);
+      if (index != -1) {
+        _events[index] = refreshed;
+      }
+    });
+  }
+
   Widget _buildPremiumBackground() {
     return Stack(
       children: [
@@ -1852,6 +3360,162 @@ class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
     );
   }
 
+  String _extractDisplayLabel(String rawLabel) {
+    final clean = rawLabel.trim();
+    if (clean.isEmpty) return 'RESULTADO';
+    final index = clean.indexOf('||');
+    if (index == -1) return clean;
+    return clean.substring(0, index).trim();
+  }
+
+  Map<String, String> _parseResultMetadata(String rawLabel) {
+    final meta = <String, String>{};
+    final index = rawLabel.indexOf('||');
+    if (index == -1) return meta;
+
+    final rawMeta = rawLabel.substring(index + 2);
+    for (final part in rawMeta.split('|')) {
+      final item = part.trim();
+      if (item.isEmpty || !item.contains('=')) continue;
+      final eq = item.indexOf('=');
+      meta[item.substring(0, eq).trim()] = item.substring(eq + 1).trim();
+    }
+    return meta;
+  }
+
+  String _composeResultLabel(
+      String displayLabel, Map<String, String> metadata) {
+    final filtered = Map<String, String>.from(metadata)
+      ..removeWhere((key, value) => value.trim().isEmpty);
+    if (filtered.isEmpty) return displayLabel.trim();
+    return '${displayLabel.trim()}||${filtered.entries.map((e) => '${e.key}=${e.value}').join('|')}';
+  }
+
+  Future<void> _openPointsEditor(_EventCompetitionCard event) async {
+    final controller = TextEditingController(
+      text: event.result != null && event.result!.points > 0
+          ? '${event.result!.points}'
+          : '',
+    );
+
+    final shouldSave = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF6F1FA),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Pontuação do jogo',
+                    style: TextStyle(
+                      color: olympusBlue,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    event.name,
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Pontos conquistados',
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: olympusGold,
+                        foregroundColor: olympusBlue,
+                      ),
+                      child: const Text(
+                        'Salvar pontuação',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (shouldSave != true) return;
+
+    try {
+      final existingResult = event.result;
+      final displayLabel = _extractDisplayLabel(
+        existingResult?.finalLabel ?? 'RESULTADO',
+      );
+      final metadata = _parseResultMetadata(existingResult?.finalLabel ?? '')
+        ..['PTS'] = controller.text.trim();
+
+      await _supabase.from('event_results').upsert({
+        'event_id': event.id,
+        'final_result_label': _composeResultLabel(displayLabel, metadata),
+        'olympus_sets_won': existingResult?.olympusSets ?? 0,
+        'opponent_sets_won': existingResult?.opponentSets ?? 0,
+      }, onConflict: 'event_id');
+
+      await _refreshSingleEvent(event.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Pontuação salva com sucesso!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Erro ao salvar pontuação: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isCompact = MediaQuery.of(context).size.width < 380;
@@ -1879,9 +3543,9 @@ class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
                 isCompact ? 12 : 16,
                 20,
               ),
-              itemCount: widget.events.length,
+              itemCount: _events.length,
               itemBuilder: (context, index) {
-                final event = widget.events[index];
+                final event = _events[index];
                 final isVictory =
                     event.result?.outcome == _ResultOutcome.victory;
 
@@ -1915,11 +3579,17 @@ class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
                           ],
                         ),
                         child: _CompetitionMatchCard(
+                          key: ValueKey(
+                            '${event.id}_${event.result?.finalLabel ?? 'sem_resultado'}_${event.result?.points ?? 0}',
+                          ),
                           event: event,
                           headerTitle: widget.championshipName,
                           canEdit: widget.canEdit,
                           onTapEdit: () => _openResultEditor(event),
                           onTapPhotos: () => _openEventPhotos(event),
+                          onTapPoints: widget.canEdit
+                              ? () => _openPointsEditor(event)
+                              : null,
                           onTapFeatured: widget.canEdit && isVictory
                               ? () => _openFeaturedMatch(event)
                               : null,
@@ -2602,6 +4272,7 @@ class _AdminCompetitionResultPageState
   late final List<_EditableSetRow> _sets;
   late final int _totalSets;
   late final int _setsNeededToWin;
+  String _achievementType = 'none';
 
   @override
   void initState() {
@@ -2620,7 +4291,7 @@ class _AdminCompetitionResultPageState
 
     final result = widget.event.result;
     _finalLabelController = TextEditingController(
-      text: result?.finalLabel ?? 'VITÓRIA',
+      text: result?.displayFinalLabel ?? 'VITÓRIA',
     );
     _olympusSetsController = TextEditingController(
       text: '${result?.olympusSets ?? 0}',
@@ -2628,6 +4299,7 @@ class _AdminCompetitionResultPageState
     _opponentSetsController = TextEditingController(
       text: '${result?.opponentSets ?? 0}',
     );
+    _achievementType = _parseAchievementType(result?.displayFinalLabel ?? '');
 
     final existingSets = result?.sets ?? [];
     _sets = List.generate(_totalSets, (index) {
@@ -2693,6 +4365,54 @@ class _AdminCompetitionResultPageState
     _opponentSetsController.addListener(_calculateSetsWon);
   }
 
+  String _parseAchievementType(String label) {
+    final value = label.toLowerCase();
+    if (value.contains('campe')) return 'champion';
+    if (value.contains('vice')) return 'runner_up';
+    if (value.contains('3º') ||
+        value.contains('3o') ||
+        value.contains('terceiro')) {
+      return 'third';
+    }
+    return 'none';
+  }
+
+  String _buildFinalResultLabel(String baseResult, String achievementType) {
+    switch (achievementType) {
+      case 'champion':
+        return 'CAMPEÃO';
+      case 'runner_up':
+        return 'VICE-CAMPEÃO';
+      case 'third':
+        return '3º LUGAR';
+      default:
+        return baseResult;
+    }
+  }
+
+  Map<String, String> _parseResultMetadata(String rawLabel) {
+    final meta = <String, String>{};
+    final index = rawLabel.indexOf('||');
+    if (index == -1) return meta;
+
+    final rawMeta = rawLabel.substring(index + 2);
+    for (final part in rawMeta.split('|')) {
+      final item = part.trim();
+      if (item.isEmpty || !item.contains('=')) continue;
+      final eq = item.indexOf('=');
+      meta[item.substring(0, eq).trim()] = item.substring(eq + 1).trim();
+    }
+    return meta;
+  }
+
+  String _composeResultLabel(
+      String displayLabel, Map<String, String> metadata) {
+    final filtered = Map<String, String>.from(metadata)
+      ..removeWhere((key, value) => value.trim().isEmpty);
+    if (filtered.isEmpty) return displayLabel.trim();
+    return '${displayLabel.trim()}||${filtered.entries.map((e) => '${e.key}=${e.value}').join('|')}';
+  }
+
   @override
   void dispose() {
     _finalLabelController.dispose();
@@ -2739,11 +4459,16 @@ class _AdminCompetitionResultPageState
         }
       }
 
+      finalResult = _buildFinalResultLabel(finalResult, _achievementType);
+      final existingMeta =
+          _parseResultMetadata(widget.event.result?.finalLabel ?? '');
+
       final resultResponse = await _supabase
           .from('event_results')
           .upsert({
             'event_id': widget.event.id,
-            'final_result_label': finalResult,
+            'final_result_label':
+                _composeResultLabel(finalResult, existingMeta),
             'olympus_sets_won': olympusWins,
             'opponent_sets_won': opponentWins,
           }, onConflict: 'event_id')
@@ -3050,6 +4775,24 @@ class _EditableSetRow {
   });
 }
 
+class _HallAchievement {
+  final String title;
+  final String eventName;
+  final int year;
+  final String dateLabel;
+  final String? imageUrl;
+  final String resultLabel;
+
+  _HallAchievement({
+    required this.title,
+    required this.eventName,
+    required this.year,
+    required this.dateLabel,
+    this.imageUrl,
+    required this.resultLabel,
+  });
+}
+
 class _CompetitionGroup {
   final String title;
   final List<_EventCompetitionCard> items;
@@ -3252,8 +4995,55 @@ class _EventResult {
     );
   }
 
+  String get displayFinalLabel {
+    final index = finalLabel.indexOf('||');
+    if (index == -1) return finalLabel;
+    return finalLabel.substring(0, index).trim();
+  }
+
+  int get points {
+    final marker = 'PTS=';
+    final index = finalLabel.indexOf(marker);
+    if (index == -1) return 0;
+    final rest = finalLabel.substring(index + marker.length);
+    final end = rest.indexOf('|');
+    final raw = end == -1 ? rest : rest.substring(0, end);
+    return int.tryParse(raw.trim()) ?? 0;
+  }
+
+  int? get classificationPoints {
+    final marker = 'CLASSPTS=';
+    final index = finalLabel.indexOf(marker);
+    if (index == -1) return null;
+    final rest = finalLabel.substring(index + marker.length);
+    final end = rest.indexOf('|');
+    final raw = end == -1 ? rest : rest.substring(0, end);
+    return int.tryParse(raw.trim());
+  }
+
+  int? get qualifyingGames {
+    final marker = 'CLASSGAMES=';
+    final index = finalLabel.indexOf(marker);
+    if (index == -1) return null;
+    final rest = finalLabel.substring(index + marker.length);
+    final end = rest.indexOf('|');
+    final raw = end == -1 ? rest : rest.substring(0, end);
+    return int.tryParse(raw.trim());
+  }
+
+  String? get classificationStage {
+    final marker = 'CLASSSTAGE=';
+    final index = finalLabel.indexOf(marker);
+    if (index == -1) return null;
+    final rest = finalLabel.substring(index + marker.length);
+    final end = rest.indexOf('|');
+    final raw = end == -1 ? rest : rest.substring(0, end);
+    final value = raw.trim();
+    return value.isEmpty ? null : value;
+  }
+
   _ResultOutcome get outcome {
-    final label = finalLabel.toLowerCase();
+    final label = displayFinalLabel.toLowerCase();
     if (label.contains('vit')) return _ResultOutcome.victory;
     if (label.contains('der')) return _ResultOutcome.defeat;
     if (label.contains('emp')) return _ResultOutcome.draw;

@@ -47,8 +47,8 @@ class _AddEventPageState extends State<AddEventPage> {
   String _setsFormat = '1 Set';
   String _championshipName = '';
 
-  final List<String> _selectedAthletes = [];
-  final List<String> _selectedTechnicians = [];
+  final Set<String> _selectedAthleteIds = {};
+  final Set<String> _selectedTechnicianIds = {};
   bool _isSearchingCep = false;
   bool _enableCheckIn = false;
   bool _enableRideLogistics = false;
@@ -118,34 +118,49 @@ class _AddEventPageState extends State<AddEventPage> {
           .select('user_id')
           .eq('event_id', _eventId!);
 
+      final athleteIds = <String>{};
+      final technicianIds = <String>{};
+
       for (var convocation in convocationsResponse) {
-        final userId = convocation['user_id'];
-        if (userId != null) {
+        final userId = convocation['user_id']?.toString();
+        if (userId == null || userId.isEmpty) continue;
+
+        final athleteExists =
+            _athletesList.any((athlete) => athlete['uid'] == userId);
+        final technicianExists =
+            _techniciansList.any((tech) => tech['uid'] == userId);
+
+        if (athleteExists) {
+          athleteIds.add(userId);
+        } else if (technicianExists) {
+          technicianIds.add(userId);
+        } else {
           final profileResponse = await supabase
               .from('profiles')
-              .select('full_name, user_type')
+              .select('id, user_type')
               .eq('id', userId)
               .single();
 
           if (profileResponse != null) {
-            final fullName = profileResponse['full_name'] ?? '';
             final userType = profileResponse['user_type'] ?? '';
-
             if (userType == 'athlete') {
-              if (!_selectedAthletes.contains(fullName)) {
-                setState(() {
-                  _selectedAthletes.add(fullName);
-                });
-              }
+              athleteIds.add(userId);
             } else if (userType == 'coach') {
-              if (!_selectedTechnicians.contains(fullName)) {
-                setState(() {
-                  _selectedTechnicians.add(fullName);
-                });
-              }
+              technicianIds.add(userId);
             }
           }
         }
+      }
+
+      if (mounted) {
+        setState(() {
+          _selectedAthleteIds
+            ..clear()
+            ..addAll(athleteIds);
+          _selectedTechnicianIds
+            ..clear()
+            ..addAll(technicianIds);
+        });
       }
     } catch (e) {
       print('Erro ao carregar convocados: $e');
@@ -158,7 +173,7 @@ class _AddEventPageState extends State<AddEventPage> {
 
       final athletesResponse = await supabase
           .from('profiles')
-          .select('id, full_name, user_type')
+          .select('id, full_name, user_type, gender')
           .eq('user_type', 'athlete');
 
       final coachesResponse = await supabase
@@ -170,7 +185,7 @@ class _AddEventPageState extends State<AddEventPage> {
         return {
           'uid': p['id']?.toString() ?? '',
           'nome': p['full_name'] ?? 'Usuário',
-          'genero': 'Masculino',
+          'genero': _normalizeGenero(p['gender']?.toString()),
         };
       }).toList();
 
@@ -189,6 +204,10 @@ class _AddEventPageState extends State<AddEventPage> {
           _isLoadingProfiles = false;
         });
       }
+
+      if (_isEditing && _eventId != null) {
+        await _loadConvocados();
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoadingProfiles = false);
@@ -197,19 +216,25 @@ class _AddEventPageState extends State<AddEventPage> {
     }
   }
 
-  List<Map<String, String>> get _athletesList =>
-      widget.registeredAthletes?.isNotEmpty == true
-          ? widget.registeredAthletes!
-          : _athletesFromSupabase.isNotEmpty
-              ? _athletesFromSupabase
-              : _mockAthletes;
+  List<Map<String, String>> get _athletesList {
+    final list = widget.registeredAthletes?.isNotEmpty == true
+        ? widget.registeredAthletes!
+        : _athletesFromSupabase.isNotEmpty
+            ? _athletesFromSupabase
+            : _mockAthletes;
 
-  List<Map<String, String>> get _techniciansList =>
-      widget.registeredTechnicians?.isNotEmpty == true
-          ? widget.registeredTechnicians!
-          : _techniciansFromSupabase.isNotEmpty
-              ? _techniciansFromSupabase
-              : _mockTechnicians;
+    return _sortByName(list);
+  }
+
+  List<Map<String, String>> get _techniciansList {
+    final list = widget.registeredTechnicians?.isNotEmpty == true
+        ? widget.registeredTechnicians!
+        : _techniciansFromSupabase.isNotEmpty
+            ? _techniciansFromSupabase
+            : _mockTechnicians;
+
+    return _sortByName(list);
+  }
 
   static const List<Map<String, String>> _mockAthletes = [
     {'nome': 'Ana Silva', 'genero': 'Feminino'},
@@ -220,11 +245,29 @@ class _AddEventPageState extends State<AddEventPage> {
     {'nome': 'Lucas Oliveira', 'genero': 'Masculino'},
   ];
 
-  static const List<Map<String, String>> _mockTechnicians = [
-    {'nome': 'Carlos Mendes', 'especialidade': 'Técnico Principal'},
-    {'nome': 'Mariana Alves', 'especialidade': 'Preparadora Física'},
-    {'nome': 'Roberto Dias', 'especialidade': 'Assistente'},
-  ];
+  static const List<Map<String, String>> _mockTechnicians = [];
+
+  String _normalizeGenero(String? genero) {
+    final valor = (genero ?? '').trim().toLowerCase();
+
+    if (valor == 'feminino' || valor == 'female' || valor == 'f') {
+      return 'Feminino';
+    }
+
+    if (valor == 'masculino' || valor == 'male' || valor == 'm') {
+      return 'Masculino';
+    }
+
+    return 'Masculino';
+  }
+
+  List<Map<String, String>> _sortByName(List<Map<String, String>> list) {
+    final sortedList = List<Map<String, String>>.from(list);
+    sortedList.sort((a, b) => (a['nome'] ?? '').toLowerCase().compareTo(
+          (b['nome'] ?? '').toLowerCase(),
+        ));
+    return sortedList;
+  }
 
   @override
   void dispose() {
@@ -459,30 +502,33 @@ class _AddEventPageState extends State<AddEventPage> {
 
   List<Map<String, String>> _getFilteredAthletes() {
     if (_filtroGeneroAtleta == 'Todos') return _athletesList;
+
     return _athletesList
-        .where((a) => a['genero'] == _filtroGeneroAtleta)
+        .where(
+          (a) => _normalizeGenero(a['genero']) == _filtroGeneroAtleta,
+        )
         .toList();
   }
 
-  void _toggleAthleteSelection(String nome) {
+  void _toggleAthleteSelection(String userId) {
     if (mounted) {
       setState(() {
-        if (_selectedAthletes.contains(nome)) {
-          _selectedAthletes.remove(nome);
+        if (_selectedAthleteIds.contains(userId)) {
+          _selectedAthleteIds.remove(userId);
         } else {
-          _selectedAthletes.add(nome);
+          _selectedAthleteIds.add(userId);
         }
       });
     }
   }
 
-  void _toggleTechnicianSelection(String nome) {
+  void _toggleTechnicianSelection(String userId) {
     if (mounted) {
       setState(() {
-        if (_selectedTechnicians.contains(nome)) {
-          _selectedTechnicians.remove(nome);
+        if (_selectedTechnicianIds.contains(userId)) {
+          _selectedTechnicianIds.remove(userId);
         } else {
-          _selectedTechnicians.add(nome);
+          _selectedTechnicianIds.add(userId);
         }
       });
     }
@@ -590,54 +636,41 @@ class _AddEventPageState extends State<AddEventPage> {
 
       final eventId = response[0]['id'];
 
-      if (_isEditing) {
-        await supabase.from('convocations').delete().eq('event_id', eventId);
+      final selectedUserIds = <String>{
+        ..._selectedAthleteIds,
+        ..._selectedTechnicianIds,
+      };
+
+      final existingConvocations = await supabase
+          .from('convocations')
+          .select('user_id')
+          .eq('event_id', eventId);
+
+      final existingUserIds = existingConvocations
+          .map<String>((c) => c['user_id'].toString())
+          .toSet();
+
+      final userIdsToInsert = selectedUserIds.difference(existingUserIds);
+      final userIdsToDelete = existingUserIds.difference(selectedUserIds);
+
+      if (userIdsToDelete.isNotEmpty) {
+        await supabase
+            .from('convocations')
+            .delete()
+            .eq('event_id', eventId)
+            .inFilter('user_id', userIdsToDelete.toList());
       }
 
-      if (_selectedAthletes.isNotEmpty) {
-        final athleteConvocations = <Map<String, dynamic>>[];
+      if (userIdsToInsert.isNotEmpty) {
+        final newConvocations = userIdsToInsert
+            .map((userId) => {
+                  'event_id': eventId,
+                  'user_id': userId,
+                  'status': 'pending',
+                })
+            .toList();
 
-        for (var athleteName in _selectedAthletes) {
-          final athlete = _athletesList.firstWhere(
-            (a) => a['nome'] == athleteName,
-            orElse: () => {'uid': ''},
-          );
-
-          if (athlete['uid']!.isNotEmpty) {
-            athleteConvocations.add({
-              'event_id': eventId,
-              'user_id': athlete['uid'],
-              'status': 'pending',
-            });
-          }
-        }
-
-        if (athleteConvocations.isNotEmpty) {
-          await supabase.from('convocations').insert(athleteConvocations);
-        }
-      }
-
-      if (_selectedTechnicians.isNotEmpty) {
-        final technicianConvocations = <Map<String, dynamic>>[];
-
-        for (var techName in _selectedTechnicians) {
-          final technician = _techniciansList.firstWhere(
-            (t) => t['nome'] == techName,
-            orElse: () => {'uid': ''},
-          );
-
-          if (technician['uid']!.isNotEmpty) {
-            technicianConvocations.add({
-              'event_id': eventId,
-              'user_id': technician['uid'],
-              'status': 'pending',
-            });
-          }
-        }
-
-        if (technicianConvocations.isNotEmpty) {
-          await supabase.from('convocations').insert(technicianConvocations);
-        }
+        await supabase.from('convocations').insert(newConvocations);
       }
 
       if (mounted) {
@@ -647,7 +680,7 @@ class _AddEventPageState extends State<AddEventPage> {
       if (!mounted) return;
 
       final totalConvocados =
-          _selectedAthletes.length + _selectedTechnicians.length;
+          _selectedAthleteIds.length + _selectedTechnicianIds.length;
       _showSuccess(
         '✅ Evento ${_isEditing ? 'atualizado' : 'salvo'} com sucesso!\n'
         '$totalConvocados convocados registrados'
@@ -1353,60 +1386,78 @@ class _AddEventPageState extends State<AddEventPage> {
               padding: const EdgeInsets.all(8),
               children: _filtroPessoa == 'Atleta'
                   ? _getFilteredAthletes().map((athlete) {
+                      final athleteId = athlete['uid'] ?? '';
                       return _buildPersonTile(
                         name: athlete['nome']!,
                         subtitle: athlete['genero'],
                         avatarUrl: athlete['avatar_url'],
-                        isSelected: _selectedAthletes.contains(athlete['nome']),
-                        onToggle: () =>
-                            _toggleAthleteSelection(athlete['nome']!),
+                        isSelected: _selectedAthleteIds.contains(athleteId),
+                        onToggle: athleteId.isEmpty
+                            ? null
+                            : () => _toggleAthleteSelection(athleteId),
                       );
                     }).toList()
                   : _techniciansList.map((tech) {
+                      final technicianId = tech['uid'] ?? '';
                       return _buildPersonTile(
                         name: tech['nome']!,
                         subtitle: tech['especialidade'],
                         avatarUrl: tech['avatar_url'],
-                        isSelected: _selectedTechnicians.contains(tech['nome']),
-                        onToggle: () =>
-                            _toggleTechnicianSelection(tech['nome']!),
+                        isSelected:
+                            _selectedTechnicianIds.contains(technicianId),
+                        onToggle: technicianId.isEmpty
+                            ? null
+                            : () => _toggleTechnicianSelection(technicianId),
                       );
                     }).toList(),
             ),
           ),
-        if (_selectedAthletes.isNotEmpty) ...[
+        if (_selectedAthleteIds.isNotEmpty) ...[
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _selectedAthletes.map((name) {
+            children: _athletesList
+                .where(
+                    (athlete) => _selectedAthleteIds.contains(athlete['uid']))
+                .map((athlete) {
+              final athleteId = athlete['uid'] ?? '';
+              final athleteName = athlete['nome'] ?? '';
               return Chip(
-                label: Text(name,
+                label: Text(athleteName,
                     style: const TextStyle(
                         fontSize: 12, color: Color(0xFF0A2463))),
                 backgroundColor: goldenColor.withOpacity(0.3),
                 side: const BorderSide(color: Color(0xFFD4AF37), width: 1),
                 deleteIcon:
                     const Icon(Icons.close, size: 16, color: Color(0xFF0A2463)),
-                onDeleted: () => _toggleAthleteSelection(name),
+                onDeleted: athleteId.isEmpty
+                    ? null
+                    : () => _toggleAthleteSelection(athleteId),
               );
             }).toList(),
           ),
         ],
-        if (_selectedTechnicians.isNotEmpty) ...[
+        if (_selectedTechnicianIds.isNotEmpty) ...[
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _selectedTechnicians.map((name) {
+            children: _techniciansList
+                .where((tech) => _selectedTechnicianIds.contains(tech['uid']))
+                .map((tech) {
+              final technicianId = tech['uid'] ?? '';
+              final technicianName = tech['nome'] ?? '';
               return Chip(
-                label: Text(name,
+                label: Text(technicianName,
                     style: const TextStyle(fontSize: 12, color: Colors.white)),
                 backgroundColor: techColor.withOpacity(0.3),
                 side: const BorderSide(color: Color(0xFF1E3A8A), width: 1),
                 deleteIcon:
                     const Icon(Icons.close, size: 16, color: Colors.white),
-                onDeleted: () => _toggleTechnicianSelection(name),
+                onDeleted: technicianId.isEmpty
+                    ? null
+                    : () => _toggleTechnicianSelection(technicianId),
               );
             }).toList(),
           ),
@@ -1480,7 +1531,7 @@ class _AddEventPageState extends State<AddEventPage> {
     required String? subtitle,
     required String? avatarUrl,
     required bool isSelected,
-    required VoidCallback onToggle,
+    required VoidCallback? onToggle,
   }) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -1502,7 +1553,7 @@ class _AddEventPageState extends State<AddEventPage> {
           : null,
       trailing: Checkbox(
         value: isSelected,
-        onChanged: (_) => onToggle(),
+        onChanged: onToggle == null ? null : (_) => onToggle(),
         activeColor: goldenColor,
         checkColor: Colors.white,
         side: BorderSide(color: const Color(0xFF0A2463).withOpacity(0.5)),

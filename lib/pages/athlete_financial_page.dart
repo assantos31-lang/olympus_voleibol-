@@ -1149,345 +1149,351 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.white, Color(0xFFF8F9FA)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+      builder: (context) => SafeArea(
+        top: false,
+        child: Container(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewPadding.bottom + 12,
           ),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 35,
-              height: 3,
-              decoration: BoxDecoration(
-                color: Color(0xFFE0E0E0),
-                borderRadius: BorderRadius.circular(2),
-              ),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.white, Color(0xFFF8F9FA)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
             ),
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: Column(
-                children: [
-                  // Header melhorado - INVERTIDO: Descrição à esquerda, X à direita
-                  Row(
-                    children: [
-                      // Ícone do tipo e descrição à ESQUERDA
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 35,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: Color(0xFFE0E0E0),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: Column(
+                  children: [
+                    // Header melhorado - INVERTIDO: Descrição à esquerda, X à direita
+                    Row(
+                      children: [
+                        // Ícone do tipo e descrição à ESQUERDA
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                typeColor.withOpacity(0.2),
+                                typeColor.withOpacity(0.1),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            _getTypeIcon(record.type),
+                            color: typeColor,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                record.typeLabel,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF2C3E5A),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.calendar_today,
+                                    size: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    formattedDueDate,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Botão X à DIREITA
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.close, size: 20),
+                            onPressed: () => Navigator.pop(context),
+                            padding: const EdgeInsets.all(6),
+                            constraints: const BoxConstraints(),
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    // Card de detalhes
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withOpacity(0.1),
+                            spreadRadius: 1,
+                            blurRadius: 6,
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          _buildDetailRow(
+                            icon: Icons.attach_money,
+                            label: 'Valor',
+                            value: 'R\$ ${record.value.toStringAsFixed(2)}',
+                            valueColor: const Color(0xFF2C3E5A),
+                            valueWeight: FontWeight.bold,
+                          ),
+                          const Divider(height: 24),
+                          _buildDetailRow(
+                            icon: record.status == 'approved'
+                                ? Icons.check_circle
+                                : record.status == 'pending'
+                                    ? (DateTime.now().isAfter(dueDate)
+                                        ? Icons.warning
+                                        : Icons.schedule)
+                                    : Icons.cancel,
+                            label: 'Status',
+                            value: statusText,
+                            valueColor: statusColor,
+                            valueWeight: FontWeight.w600,
+                            iconColor: statusColor,
+                          ),
+                          const Divider(height: 24),
+                          _buildDetailRow(
+                            icon: Icons.event,
+                            label: 'Data de Vencimento',
+                            value: formattedDueDate,
+                            valueColor: const Color(0xFF616161),
+                          ),
+                          if (record.description != null) ...[
+                            const Divider(height: 24),
+                            _buildDetailRow(
+                              icon: Icons.description,
+                              label: 'Descrição',
+                              value: record.description!,
+                              valueColor: const Color(0xFF616161),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (record.status == 'pending' && record.receiptUrl == null)
                       Container(
-                        width: 48,
-                        height: 48,
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              typeColor.withOpacity(0.2),
-                              typeColor.withOpacity(0.1),
+                              olympusBlue,
+                              olympusLightBlue,
                             ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
                           ),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [
+                            BoxShadow(
+                              color: olympusBlue.withOpacity(0.3),
+                              spreadRadius: 1,
+                              blurRadius: 6,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
                         ),
-                        child: Icon(
-                          _getTypeIcon(record.type),
-                          color: typeColor,
-                          size: 24,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              record.typeLabel,
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF2C3E5A),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => _uploadReceipt(record),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(5),
+                                    ),
+                                    child: const Icon(
+                                      Icons.camera_alt,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Anexar Comprovante',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 2),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.calendar_today,
-                                  size: 12,
-                                  color: Colors.grey[600],
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  formattedDueDate,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                      // Botão X à DIREITA
+                      )
+                    else if (record.receiptUrl != null)
                       Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.grey[100],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.close, size: 20),
-                          onPressed: () => Navigator.pop(context),
-                          padding: const EdgeInsets.all(6),
-                          constraints: const BoxConstraints(),
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  // Card de detalhes
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.1),
-                          spreadRadius: 1,
-                          blurRadius: 6,
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        _buildDetailRow(
-                          icon: Icons.attach_money,
-                          label: 'Valor',
-                          value: 'R\$ ${record.value.toStringAsFixed(2)}',
-                          valueColor: const Color(0xFF2C3E5A),
-                          valueWeight: FontWeight.bold,
-                        ),
-                        const Divider(height: 24),
-                        _buildDetailRow(
-                          icon: record.status == 'approved'
-                              ? Icons.check_circle
-                              : record.status == 'pending'
-                                  ? (DateTime.now().isAfter(dueDate)
-                                      ? Icons.warning
-                                      : Icons.schedule)
-                                  : Icons.cancel,
-                          label: 'Status',
-                          value: statusText,
-                          valueColor: statusColor,
-                          valueWeight: FontWeight.w600,
-                          iconColor: statusColor,
-                        ),
-                        const Divider(height: 24),
-                        _buildDetailRow(
-                          icon: Icons.event,
-                          label: 'Data de Vencimento',
-                          value: formattedDueDate,
-                          valueColor: const Color(0xFF616161),
-                        ),
-                        if (record.description != null) ...[
-                          const Divider(height: 24),
-                          _buildDetailRow(
-                            icon: Icons.description,
-                            label: 'Descrição',
-                            value: record.description!,
-                            valueColor: const Color(0xFF616161),
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFFE8F5E9),
+                              const Color(0xFFC8E6C9)
+                            ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
                           ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (record.status == 'pending' && record.receiptUrl == null)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            olympusBlue,
-                            olympusLightBlue,
-                          ],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: olympusBlue.withOpacity(0.3),
-                            spreadRadius: 1,
-                            blurRadius: 6,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => _uploadReceipt(record),
                           borderRadius: BorderRadius.circular(10),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(5),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(5),
-                                  ),
-                                  child: const Icon(
-                                    Icons.camera_alt,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'Anexar Comprovante',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                          border: Border.all(color: const Color(0xFFA5D6A7)),
                         ),
-                      ),
-                    )
-                  else if (record.receiptUrl != null)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            const Color(0xFFE8F5E9),
-                            const Color(0xFFC8E6C9)
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: Colors.green,
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: const Icon(
+                                Icons.check_circle,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Comprovante Enviado',
+                                    style: TextStyle(
+                                      color: Color(0xFF2E7D32),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Aguarde a aprovação',
+                                    style: TextStyle(
+                                      color: Color(0xFF43A047),
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(Icons.chevron_right,
+                                color: const Color(0xFF388E3C), size: 16),
                           ],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
                         ),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFA5D6A7)),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: Colors.green,
-                              borderRadius: BorderRadius.circular(5),
-                            ),
-                            child: const Icon(
-                              Icons.check_circle,
-                              color: Colors.white,
-                              size: 16,
-                            ),
+                      )
+                    else if (record.status == 'approved')
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFFE8F5E9),
+                              const Color(0xFFC8E6C9)
+                            ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
                           ),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Comprovante Enviado',
-                                  style: TextStyle(
-                                    color: Color(0xFF2E7D32),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                Text(
-                                  'Aguarde a aprovação',
-                                  style: TextStyle(
-                                    color: Color(0xFF43A047),
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFA5D6A7)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: Colors.green,
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: const Icon(
+                                Icons.verified,
+                                color: Colors.white,
+                                size: 16,
+                              ),
                             ),
-                          ),
-                          Icon(Icons.chevron_right,
-                              color: const Color(0xFF388E3C), size: 16),
-                        ],
-                      ),
-                    )
-                  else if (record.status == 'approved')
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            const Color(0xFFE8F5E9),
-                            const Color(0xFFC8E6C9)
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Pagamento Aprovado',
+                                    style: TextStyle(
+                                      color: Color(0xFF2E7D32),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Confirmado',
+                                    style: TextStyle(
+                                      color: Color(0xFF43A047),
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(Icons.chevron_right,
+                                color: const Color(0xFF388E3C), size: 16),
                           ],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
                         ),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFA5D6A7)),
                       ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: Colors.green,
-                              borderRadius: BorderRadius.circular(5),
-                            ),
-                            child: const Icon(
-                              Icons.verified,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Pagamento Aprovado',
-                                  style: TextStyle(
-                                    color: Color(0xFF2E7D32),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                Text(
-                                  'Confirmado',
-                                  style: TextStyle(
-                                    color: Color(0xFF43A047),
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Icon(Icons.chevron_right,
-                              color: const Color(0xFF388E3C), size: 16),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 18),
-                ],
+                    const SizedBox(height: 18),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

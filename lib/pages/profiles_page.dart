@@ -831,12 +831,16 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.copy, color: olympusGold),
-                    tooltip: 'Copiar senha',
+                    tooltip: 'Copiar e-mail e senha',
                     onPressed: () {
-                      Clipboard.setData(ClipboardData(text: password));
+                      Clipboard.setData(
+                        ClipboardData(
+                          text: 'E-mail: $email\nSenha: $password',
+                        ),
+                      );
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Senha copiada!'),
+                          content: Text('E-mail e senha copiados!'),
                           duration: Duration(seconds: 2),
                           backgroundColor: olympusBlue,
                         ),

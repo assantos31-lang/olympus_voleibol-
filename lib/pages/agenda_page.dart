@@ -414,7 +414,7 @@ class _AgendaPageState extends State<AgendaPage> {
       }
       final convocationsResponse = await _supabase
           .from('convocations')
-          .select('user_id, status')
+          .select('user_id, status, justification')
           .eq('event_id', eventId);
       String _formatBirthDate(dynamic rawDate) {
         if (rawDate == null || rawDate.toString().trim().isEmpty) return '-';
@@ -471,51 +471,78 @@ class _AgendaPageState extends State<AgendaPage> {
         nomeJogo,
         'Endereço: $endereco',
         '',
+        'ACEITARAM',
+        '',
+      ];
+      final pendentesLines = <String>[
+        '',
+        'PENDENTES',
+        '',
+      ];
+      final recusadosLines = <String>[
+        '',
+        'RECUSARAM',
         '',
       ];
       for (final convocation in convocationsResponse) {
         final userId = convocation['user_id']?.toString();
         if (userId == null || userId.isEmpty) continue;
+        final status = (convocation['status'] ?? 'pending').toString();
         final profileResponse = await _supabase
             .from('profiles')
             .select('full_name, birth_date, rg')
             .eq('id', userId)
             .maybeSingle();
         if (profileResponse == null) continue;
-        final ridesResponse = await _supabase
-            .from('event_rides')
-            .select('ride_type, needs_ride, has_car, available_seats')
-            .eq('event_id', eventId)
-            .eq('user_id', userId);
-        Map<String, dynamic>? idaRide;
-        Map<String, dynamic>? voltaRide;
-        for (final ride in ridesResponse) {
-          final rideType =
-              (ride['ride_type'] ?? '').toString().toLowerCase().trim();
-          if (rideType == 'ida') {
-            idaRide = Map<String, dynamic>.from(ride);
-          } else if (rideType == 'volta') {
-            voltaRide = Map<String, dynamic>.from(ride);
-          }
-        }
-        final precisaCarona = (idaRide?['needs_ride'] == true) ||
-                (voltaRide?['needs_ride'] == true)
-            ? 'Sim'
-            : 'Não';
         final nome = (profileResponse['full_name'] ?? '-').toString();
-        final dataNascimento = _formatBirthDate(profileResponse['birth_date']);
-        final rg = (profileResponse['rg'] ?? '-').toString();
-        final ida = _buildRideText(idaRide);
-        final volta = _buildRideText(voltaRide);
-        lines.add(
-          'Nome: $nome\n'
-          'Data de nascimento: $dataNascimento\n'
-          'RG: $rg\n'
-          'Precisa de carona: $precisaCarona\n'
-          'Ida: $ida\n'
-          'Volta: $volta\n',
-        );
+
+        if (status == 'accepted') {
+          final ridesResponse = await _supabase
+              .from('event_rides')
+              .select('ride_type, needs_ride, has_car, available_seats')
+              .eq('event_id', eventId)
+              .eq('user_id', userId);
+          Map<String, dynamic>? idaRide;
+          Map<String, dynamic>? voltaRide;
+          for (final ride in ridesResponse) {
+            final rideType =
+                (ride['ride_type'] ?? '').toString().toLowerCase().trim();
+            if (rideType == 'ida') {
+              idaRide = Map<String, dynamic>.from(ride);
+            } else if (rideType == 'volta') {
+              voltaRide = Map<String, dynamic>.from(ride);
+            }
+          }
+          final precisaCarona = (idaRide?['needs_ride'] == true) ||
+                  (voltaRide?['needs_ride'] == true)
+              ? 'Sim'
+              : 'Não';
+          final dataNascimento =
+              _formatBirthDate(profileResponse['birth_date']);
+          final rg = (profileResponse['rg'] ?? '-').toString();
+          final ida = _buildRideText(idaRide);
+          final volta = _buildRideText(voltaRide);
+          lines.add(
+            'Nome: $nome\n'
+            'Data de nascimento: $dataNascimento\n'
+            'RG: $rg\n'
+            'Precisa de carona: $precisaCarona\n'
+            'Ida: $ida\n'
+            'Volta: $volta\n',
+          );
+        } else if (status == 'rejected') {
+          final justificativa =
+              (convocation['justification'] ?? '-').toString().trim();
+          recusadosLines.add(
+            'Nome: $nome\n'
+            'Justificativa: ${justificativa.isEmpty ? '-' : justificativa}\n',
+          );
+        } else {
+          pendentesLines.add('Nome: $nome\n');
+        }
       }
+      lines.addAll(pendentesLines);
+      lines.addAll(recusadosLines);
       final formattedContent = lines.join('\n');
       await Clipboard.setData(ClipboardData(text: formattedContent));
       if (mounted) {
@@ -779,7 +806,7 @@ class _AgendaPageState extends State<AgendaPage> {
       // ✅ 1. Buscar TODOS os convocados que aceitaram
       final convocationsResponse = await _supabase
           .from('convocations')
-          .select('user_id, status')
+          .select('user_id, status, justification')
           .eq('event_id', eventId);
       // ✅ 2. Buscar quem REALMENTE fez check-in (tabela checkins)
       final checkinsResponse = await _supabase
@@ -1886,6 +1913,14 @@ class _AgendaPageState extends State<AgendaPage> {
                                 final corTipo = _getCorTipoEvento(
                                     evento['event_type'] ?? '');
                                 final eventType = evento['event_type'] ?? '';
+                                final normalizedEventType =
+                                    eventType.toString().toLowerCase().trim();
+                                final showVerConvocados = allowCheckin ||
+                                    normalizedEventType == 'treino' ||
+                                    normalizedEventType == 'amistoso' ||
+                                    normalizedEventType == 'campeonato' ||
+                                    normalizedEventType == 'liga' ||
+                                    normalizedEventType == 'campeonato/liga';
                                 final hasPlacar = evento['score'] != null;
                                 final genero = evento['gender'] ?? '';
                                 // ✅ NOVO: Nome do campeonato
@@ -2036,7 +2071,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                                     ),
                                                   ));
                                                 }
-                                                if (allowCheckin) {
+                                                if (showVerConvocados) {
                                                   items.add(PopupMenuItem(
                                                     value: 'checkin',
                                                     child: Row(
@@ -2051,6 +2086,8 @@ class _AgendaPageState extends State<AgendaPage> {
                                                       ],
                                                     ),
                                                   ));
+                                                }
+                                                if (allowCheckin) {
                                                   items.add(PopupMenuItem(
                                                     value: 'status_checkin',
                                                     child: Row(
