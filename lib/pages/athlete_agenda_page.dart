@@ -178,9 +178,64 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     for (final r in rows) {
       final eid = (r['event_id'] ?? '').toString();
       if (eid.isEmpty) continue;
-      map[eid] = (r['check_in_status'] ?? '').toString();
+      map[eid] = _normalizarCheckInStatus(r['check_in_status']);
     }
     return map;
+  }
+
+  String _normalizarCheckInStatus(dynamic status) {
+    final value = (status ?? '').toString().trim().toLowerCase();
+    if (value.isEmpty) return '';
+    if ([
+      'ok',
+      'realizado',
+      'realizado com sucesso',
+      'checked_in',
+      'checkin_realizado',
+      'success',
+      'completed',
+      'done',
+    ].contains(value)) {
+      return 'realizado';
+    }
+    if (['pending', 'pendente'].contains(value)) {
+      return 'pendente';
+    }
+    return value;
+  }
+
+  bool _isCheckInRealizado(dynamic status) {
+    return _normalizarCheckInStatus(status) == 'realizado';
+  }
+
+  Future<void> _sincronizarCheckInStatus(
+    String eventId,
+    String userId,
+  ) async {
+    try {
+      final existing = await _supabase
+          .from('checkins')
+          .select('event_id')
+          .eq('event_id', eventId)
+          .eq('user_id', userId)
+          .limit(1);
+
+      if (existing.isNotEmpty) {
+        await _supabase
+            .from('checkins')
+            .update({'check_in_status': 'realizado'})
+            .eq('event_id', eventId)
+            .eq('user_id', userId);
+      } else {
+        await _supabase.from('checkins').insert({
+          'event_id': eventId,
+          'user_id': userId,
+          'check_in_status': 'realizado',
+        });
+      }
+    } catch (e) {
+      print('❌ Erro ao sincronizar status do check-in no Supabase: $e');
+    }
   }
 
   void _calcularStatusCounts() {
@@ -285,7 +340,7 @@ enable_ride_logistics
       final checkinMap = await _buscarCheckinsDoUsuario(user.id, eventIds);
       for (final e in eventosList) {
         final id = e['id'].toString();
-        e['check_in_status'] = checkinMap[id];
+        e['check_in_status'] = _normalizarCheckInStatus(checkinMap[id]);
       }
       final idsParaAtualizar = <String>{};
       for (final evento in eventosList) {
@@ -1196,6 +1251,12 @@ enable_ride_logistics
       print('📍 Resultado do check-in: ok=$ok, status=$st');
       if (!mounted) return;
       if (ok) {
+        await _sincronizarCheckInStatus(evento['id'].toString(), user.id);
+        if (mounted) {
+          setState(() {
+            evento['check_in_status'] = 'realizado';
+          });
+        }
         _showSuccess('✅ Check-in confirmado com sucesso!');
         await _refreshEventos();
       } else {
@@ -1693,11 +1754,11 @@ enable_ride_logistics
                                           '${estado.isNotEmpty ? '/$estado' : ''}';
                                     }
                                     final checkinStatus =
-                                        (evento['check_in_status'] ?? '')
-                                            .toString()
-                                            .trim();
+                                        _normalizarCheckInStatus(
+                                      evento['check_in_status'],
+                                    );
                                     final jaFezCheckin =
-                                        checkinStatus.isNotEmpty;
+                                        _isCheckInRealizado(checkinStatus);
                                     final janelaCheckIn =
                                         _verificarJanelaCheckIn(evento);
                                     return Card(
@@ -1999,26 +2060,19 @@ enable_ride_logistics
                                             if (jaFezCheckin)
                                               Row(
                                                 children: [
-                                                  Icon(
-                                                    checkinStatus == 'ok'
-                                                        ? Icons.verified
-                                                        : Icons.error,
-                                                    color: checkinStatus == 'ok'
-                                                        ? Colors.green
-                                                        : Colors.red,
+                                                  const Icon(
+                                                    Icons.verified,
+                                                    color: Colors.green,
                                                     size: 16,
                                                   ),
                                                   const SizedBox(width: 6),
-                                                  Text(
-                                                    'Check-in: $checkinStatus',
+                                                  const Text(
+                                                    'Check-in realizado',
                                                     style: TextStyle(
                                                       fontWeight:
                                                           FontWeight.w600,
                                                       fontSize: 11,
-                                                      color:
-                                                          checkinStatus == 'ok'
-                                                              ? Colors.green
-                                                              : Colors.red,
+                                                      color: Colors.green,
                                                     ),
                                                   ),
                                                 ],

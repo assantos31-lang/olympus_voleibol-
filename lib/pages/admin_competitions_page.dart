@@ -26,6 +26,7 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
   List<_CompetitionGroup> _leagueGroups = [];
   List<_FriendlyYearGroup> _friendlyGroups = [];
   Map<String, String> _championshipImages = {};
+  Map<String, String> _friendlyCardImages = {};
 
   @override
   void initState() {
@@ -132,31 +133,75 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
           (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
         );
 
-      final Map<int, Map<String, List<_EventCompetitionCard>>> friendlyMap = {};
+      final Map<int, Map<String, Map<String, List<_EventCompetitionCard>>>>
+          friendlyMap = {};
       for (final event in friendlyEvents) {
         final year = event.eventDate?.year ?? 0;
+        final gender = event.genderLabel;
         final opponent = event.opponentName;
         friendlyMap.putIfAbsent(year, () => {});
-        friendlyMap[year]!.putIfAbsent(opponent, () => []).add(event);
+        friendlyMap[year]!.putIfAbsent(gender, () => {});
+        friendlyMap[year]![gender]!.putIfAbsent(opponent, () => []).add(event);
       }
 
       final friendlyGroups = friendlyMap.entries.map((yearEntry) {
-        final opponentGroups = yearEntry.value.entries.map((opponentEntry) {
-          final items = [...opponentEntry.value]..sort(_compareEventsAsc);
-          return _CompetitionGroup(title: opponentEntry.key, items: items);
-        }).toList()
-          ..sort(
-            (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+        final genderGroups = yearEntry.value.entries.map((genderEntry) {
+          final opponentGroups = genderEntry.value.entries.map((opponentEntry) {
+            final items = [...opponentEntry.value]..sort(_compareEventsAsc);
+            return _CompetitionGroup(
+              title: opponentEntry.key,
+              items: items,
+            );
+          }).toList()
+            ..sort(
+              (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+            );
+
+          final flatItems = opponentGroups
+              .expand((group) => group.items)
+              .toList()
+            ..sort(_compareEventsAsc);
+
+          final imageUrl = flatItems.isNotEmpty
+              ? flatItems.first.championshipImageUrl?.trim() ?? ''
+              : '';
+
+          return _FriendlyGenderGroup(
+            title: genderEntry.key,
+            groups: opponentGroups,
+            items: flatItems,
+            imageUrl: imageUrl.isEmpty ? null : imageUrl,
           );
-        return _FriendlyYearGroup(year: yearEntry.key, groups: opponentGroups);
+        }).toList()
+          ..sort((a, b) {
+            const order = {'Masculino': 0, 'Feminino': 1};
+            final aOrder = order[a.title] ?? 99;
+            final bOrder = order[b.title] ?? 99;
+            if (aOrder != bOrder) return aOrder.compareTo(bOrder);
+            return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+          });
+
+        return _FriendlyYearGroup(year: yearEntry.key, groups: genderGroups);
       }).toList()
         ..sort((a, b) => b.year.compareTo(a.year));
 
       if (!mounted) return;
 
+      final friendlyCardImages = <String, String>{};
+      for (final yearGroup in friendlyGroups) {
+        for (final genderGroup in yearGroup.groups) {
+          final imageUrl = genderGroup.imageUrl;
+          if (imageUrl != null && imageUrl.isNotEmpty) {
+            friendlyCardImages['${yearGroup.year}_${genderGroup.title}'] =
+                imageUrl;
+          }
+        }
+      }
+
       setState(() {
         _leagueGroups = leagueGroups;
         _friendlyGroups = friendlyGroups;
+        _friendlyCardImages = friendlyCardImages;
         _loading = false;
       });
     } catch (e) {
@@ -197,6 +242,100 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
       ),
     );
     await _loadCompetitions();
+  }
+
+  Future<void> _openFriendlyGenderGames(
+    _FriendlyYearGroup yearGroup,
+    _FriendlyGenderGroup genderGroup,
+  ) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChampionshipGamesPage(
+          championshipName:
+              'Amistoso ${genderGroup.title} ${yearGroup.year == 0 ? '' : yearGroup.year}',
+          events: genderGroup.items,
+          canEdit: widget.canEdit,
+          imageUrl:
+              _friendlyCardImages['${yearGroup.year}_${genderGroup.title}'],
+        ),
+      ),
+    );
+    await _loadCompetitions();
+  }
+
+  Future<void> _uploadFriendlyCardImage(
+    _FriendlyYearGroup yearGroup,
+    _FriendlyGenderGroup genderGroup,
+  ) async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📤 Enviando imagem...'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      }
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final cleanName = '${yearGroup.year}_${genderGroup.title}'.replaceAll(
+        RegExp(r'[^a-zA-Z0-9]'),
+        '_',
+      );
+      final fileName = 'friendlies/${cleanName}_$timestamp.jpg';
+
+      if (kIsWeb) {
+        final bytes = await image.readAsBytes();
+        await _supabase.storage.from('event-images').uploadBinary(
+              fileName,
+              bytes,
+              fileOptions: const FileOptions(upsert: true),
+            );
+      } else {
+        final file = File(image.path);
+        await _supabase.storage.from('event-images').upload(
+              fileName,
+              file,
+              fileOptions: const FileOptions(upsert: true),
+            );
+      }
+
+      final imageUrl =
+          _supabase.storage.from('event-images').getPublicUrl(fileName);
+
+      for (final event in genderGroup.items) {
+        await _supabase
+            .from('events')
+            .update({'championship_image_url': imageUrl}).eq('id', event.id);
+      }
+
+      if (mounted) {
+        setState(() {
+          _friendlyCardImages['${yearGroup.year}_${genderGroup.title}'] =
+              imageUrl;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Imagem salva com sucesso!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadCompetitions();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Erro ao enviar imagem: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _openEventPhotos(_EventCompetitionCard event) async {
@@ -241,9 +380,7 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
           ),
         ),
         Positioned.fill(
-          child: Container(
-            color: Colors.black.withOpacity(0.14),
-          ),
+          child: Container(color: Colors.black.withOpacity(0.14)),
         ),
         Positioned.fill(
           child: Container(
@@ -339,19 +476,26 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
       }
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final cleanName =
-          championshipName.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+      final cleanName = championshipName.replaceAll(
+        RegExp(r'[^a-zA-Z0-9]'),
+        '_',
+      );
       final fileName = 'championships/${cleanName}_$timestamp.jpg';
 
       if (kIsWeb) {
         final bytes = await image.readAsBytes();
         await _supabase.storage.from('event-images').uploadBinary(
-            fileName, bytes,
-            fileOptions: const FileOptions(upsert: true));
+              fileName,
+              bytes,
+              fileOptions: const FileOptions(upsert: true),
+            );
       } else {
         final file = File(image.path);
-        await _supabase.storage.from('event-images').upload(fileName, file,
-            fileOptions: const FileOptions(upsert: true));
+        await _supabase.storage.from('event-images').upload(
+              fileName,
+              file,
+              fileOptions: const FileOptions(upsert: true),
+            );
       }
 
       final imageUrl =
@@ -491,43 +635,85 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
       itemCount: _friendlyGroups.length,
       itemBuilder: (context, index) {
         final yearGroup = _friendlyGroups[index];
+        final totalGames = yearGroup.groups.fold<int>(
+          0,
+          (acc, genderGroup) => acc + genderGroup.items.length,
+        );
+
         return _CompetitionSectionCard(
           title:
               'Amistosos ${yearGroup.year == 0 ? 'Sem ano' : yearGroup.year}',
-          subtitle:
-              '${yearGroup.groups.fold<int>(0, (acc, item) => acc + item.items.length)} jogo(s)',
-          children: yearGroup.groups
-              .map(
-                (group) => Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: _CompetitionSubSection(
-                    title: 'vs ${group.title}',
-                    children: group.items
-                        .map(
-                          (event) => Padding(
-                            padding: const EdgeInsets.only(top: 10),
-                            child: _CompetitionMatchCard(
-                              event: event,
-                              headerTitle: 'Amistoso',
-                              canEdit: widget.canEdit,
-                              onTapEdit: () => _openResultEditor(event),
-                              onTapPhotos: () => _openEventPhotos(event),
-                              onTapFeatured: widget.canEdit &&
-                                      (event.result?.finalLabel == 'VITÓRIA' ||
-                                          event.result?.outcome ==
-                                              _ResultOutcome.victory)
-                                  ? () => _openFeaturedMatch(event)
-                                  : null,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ),
-              )
-              .toList(),
+          subtitle: '$totalGames jogo(s)',
+          children: [
+            const SizedBox(height: 12),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isMobile = constraints.maxWidth < 600;
+
+                final cards = yearGroup.groups
+                    .map(
+                      (genderGroup) => Padding(
+                        padding: EdgeInsets.only(
+                          bottom: isMobile ? 12 : 14,
+                        ),
+                        child: _FriendlyCategoryCard(
+                          title: 'Amistoso ${genderGroup.title}',
+                          itemCount: genderGroup.items.length,
+                          imageUrl: _friendlyCardImages[
+                              '${yearGroup.year}_${genderGroup.title}'],
+                          onImageTap: widget.canEdit
+                              ? () => _uploadFriendlyCardImage(
+                                    yearGroup,
+                                    genderGroup,
+                                  )
+                              : null,
+                          onTap: () =>
+                              _openFriendlyGenderGames(yearGroup, genderGroup),
+                          canEdit: widget.canEdit,
+                        ),
+                      ),
+                    )
+                    .toList();
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: cards,
+                );
+              },
+            ),
+          ],
         );
       },
+    );
+  }
+}
+
+class _FriendlyCategoryCard extends StatelessWidget {
+  final String title;
+  final int itemCount;
+  final String? imageUrl;
+  final VoidCallback? onImageTap;
+  final VoidCallback onTap;
+  final bool canEdit;
+
+  const _FriendlyCategoryCard({
+    required this.title,
+    required this.itemCount,
+    required this.imageUrl,
+    this.onImageTap,
+    required this.onTap,
+    required this.canEdit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _ChampionshipCard(
+      title: title,
+      itemCount: itemCount,
+      imageUrl: imageUrl,
+      onImageTap: onImageTap,
+      onTap: onTap,
+      canEdit: canEdit,
     );
   }
 }
@@ -565,12 +751,14 @@ class _ChampionshipCard extends StatelessWidget {
               width: imageSize,
               height: imageSize,
               decoration: BoxDecoration(
-                color:
-                    _AdminCompetitionsPageState.olympusGold.withOpacity(0.18),
+                color: _AdminCompetitionsPageState.olympusGold.withOpacity(
+                  0.18,
+                ),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color:
-                      _AdminCompetitionsPageState.olympusGold.withOpacity(0.85),
+                  color: _AdminCompetitionsPageState.olympusGold.withOpacity(
+                    0.85,
+                  ),
                   width: 1.8,
                 ),
                 image: imageUrl != null && imageUrl!.isNotEmpty
@@ -634,9 +822,7 @@ class _ChampionshipCard extends StatelessWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.22),
-                ),
+                border: Border.all(color: Colors.white.withOpacity(0.22)),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.16),
@@ -750,43 +936,58 @@ class _CompetitionSectionCard extends StatelessWidget {
 
     return Container(
       margin: EdgeInsets.only(bottom: isCompact ? 12 : 14),
-      padding: EdgeInsets.all(isCompact ? 12 : 14),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.92),
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-        border: Border.all(color: const Color(0xFFDCD3EA)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: _AdminCompetitionsPageState.olympusBlue,
-              fontSize: isCompact ? 17 : 19,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              subtitle!,
-              style: TextStyle(
-                color: Colors.grey[700],
-                fontSize: isCompact ? 11.5 : 12,
-                fontWeight: FontWeight.w600,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            padding: EdgeInsets.all(isCompact ? 12 : 14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white.withOpacity(0.12),
+                  Colors.white.withOpacity(0.06),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white.withOpacity(0.18)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.12),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-          ],
-          ...children,
-        ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: _AdminCompetitionsPageState.olympusBlue,
+                    fontSize: isCompact ? 17 : 19,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle!,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.75),
+                      fontSize: isCompact ? 11.5 : 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                ...children,
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1485,8 +1686,10 @@ class _EmptyState extends StatelessWidget {
           child: Text(
             subtitle,
             textAlign: TextAlign.center,
-            style:
-                TextStyle(color: Colors.white.withOpacity(0.82), fontSize: 14),
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.82),
+              fontSize: 14,
+            ),
           ),
         ),
       ],
@@ -1505,8 +1708,11 @@ class _ErrorState extends StatelessWidget {
     return ListView(
       children: [
         const SizedBox(height: 110),
-        const Icon(Icons.error_outline_rounded,
-            size: 62, color: Colors.white70),
+        const Icon(
+          Icons.error_outline_rounded,
+          size: 62,
+          color: Colors.white70,
+        ),
         const SizedBox(height: 12),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -1573,9 +1779,7 @@ class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
           ),
         ),
         Positioned.fill(
-          child: Container(
-            color: Colors.black.withOpacity(0.16),
-          ),
+          child: Container(color: Colors.black.withOpacity(0.16)),
         ),
         Positioned.fill(
           child: Container(
@@ -1612,12 +1816,12 @@ class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
   }
 
   Future<void> _openResultEditor(_EventCompetitionCard event) async {
-    await Navigator.of(context).push(
+    final changed = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => AdminCompetitionResultPage(event: event),
       ),
     );
-    if (mounted) {
+    if (changed == true && mounted) {
       Navigator.of(context).pop(true);
     }
   }
@@ -1632,9 +1836,6 @@ class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
         ),
       ),
     );
-    if (mounted) {
-      Navigator.of(context).pop(true);
-    }
   }
 
   Future<void> _openFeaturedMatch(_EventCompetitionCard event) async {
@@ -1793,12 +1994,17 @@ class _FeaturedMatchPageState extends State<FeaturedMatchPage> {
       if (kIsWeb) {
         final bytes = await image.readAsBytes();
         await _supabase.storage.from('event-images').uploadBinary(
-            fileName, bytes,
-            fileOptions: const FileOptions(upsert: true));
+              fileName,
+              bytes,
+              fileOptions: const FileOptions(upsert: true),
+            );
       } else {
         final file = File(image.path);
-        await _supabase.storage.from('event-images').upload(fileName, file,
-            fileOptions: const FileOptions(upsert: true));
+        await _supabase.storage.from('event-images').upload(
+              fileName,
+              file,
+              fileOptions: const FileOptions(upsert: true),
+            );
       }
 
       final imageUrl =
@@ -1895,10 +2101,7 @@ class _FeaturedMatchPageState extends State<FeaturedMatchPage> {
                 const SizedBox(height: 4),
                 Text(
                   widget.eventName,
-                  style: TextStyle(
-                    color: Colors.grey[700],
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: Colors.grey[700], fontSize: 14),
                 ),
               ],
             ),
@@ -1916,11 +2119,7 @@ class _FeaturedMatchPageState extends State<FeaturedMatchPage> {
               children: [
                 Row(
                   children: [
-                    const Icon(
-                      Icons.star,
-                      color: olympusGold,
-                      size: 24,
-                    ),
+                    const Icon(Icons.star, color: olympusGold, size: 24),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -2152,12 +2351,17 @@ class _EventPhotosPageState extends State<EventPhotosPage> {
       if (kIsWeb) {
         final bytes = await image.readAsBytes();
         await _supabase.storage.from('event-images').uploadBinary(
-            fileName, bytes,
-            fileOptions: const FileOptions(upsert: true));
+              fileName,
+              bytes,
+              fileOptions: const FileOptions(upsert: true),
+            );
       } else {
         final file = File(image.path);
-        await _supabase.storage.from('event-images').upload(fileName, file,
-            fileOptions: const FileOptions(upsert: true));
+        await _supabase.storage.from('event-images').upload(
+              fileName,
+              file,
+              fileOptions: const FileOptions(upsert: true),
+            );
       }
 
       final imageUrl =
@@ -2279,10 +2483,7 @@ class _EventPhotosPageState extends State<EventPhotosPage> {
                             ? 'Nenhuma foto ainda\nToque no + para adicionar'
                             : 'Nenhuma foto disponível',
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 16,
-                        ),
+                        style: TextStyle(color: Colors.grey[600], fontSize: 16),
                       ),
                     ],
                   ),
@@ -2370,10 +2571,7 @@ class _EventPhotosPageState extends State<EventPhotosPage> {
           ),
           body: Center(
             child: InteractiveViewer(
-              child: Image.network(
-                imageUrl,
-                fit: BoxFit.contain,
-              ),
+              child: Image.network(imageUrl, fit: BoxFit.contain),
             ),
           ),
         ),
@@ -2686,8 +2884,10 @@ class _AdminCompetitionResultPageState
                 ),
                 const SizedBox(height: 4),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: olympusGold.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(8),
@@ -2857,9 +3057,23 @@ class _CompetitionGroup {
   _CompetitionGroup({required this.title, required this.items});
 }
 
+class _FriendlyGenderGroup {
+  final String title;
+  final List<_CompetitionGroup> groups;
+  final List<_EventCompetitionCard> items;
+  final String? imageUrl;
+
+  _FriendlyGenderGroup({
+    required this.title,
+    required this.groups,
+    required this.items,
+    this.imageUrl,
+  });
+}
+
 class _FriendlyYearGroup {
   final int year;
-  final List<_CompetitionGroup> groups;
+  final List<_FriendlyGenderGroup> groups;
 
   _FriendlyYearGroup({required this.year, required this.groups});
 }
@@ -2870,6 +3084,7 @@ class _EventCompetitionCard {
   final String type;
   final String championshipName;
   final String time;
+  final String gender;
   final String addressLabel;
   final DateTime? eventDate;
   final _EventResult? result;
@@ -2885,6 +3100,7 @@ class _EventCompetitionCard {
     required this.type,
     required this.championshipName,
     required this.time,
+    required this.gender,
     required this.addressLabel,
     required this.eventDate,
     required this.result,
@@ -2924,6 +3140,7 @@ class _EventCompetitionCard {
       type: (map['event_type'] ?? '').toString().toLowerCase().trim(),
       championshipName: (map['championship_name'] ?? '').toString(),
       time: (map['event_time'] ?? '-').toString(),
+      gender: (map['gender'] ?? '').toString().trim(),
       addressLabel: address,
       eventDate: _parseDate((map['event_date'] ?? '').toString()),
       result: resultMap == null ? null : _EventResult.fromMap(resultMap),
@@ -2970,6 +3187,13 @@ class _EventCompetitionCard {
 
     final imageUrl = (photoMaps.first['image_url'] ?? '').toString().trim();
     return imageUrl.isEmpty ? null : imageUrl;
+  }
+
+  String get genderLabel {
+    final value = gender.toLowerCase().trim();
+    if (value.contains('masc')) return 'Masculino';
+    if (value.contains('fem')) return 'Feminino';
+    return gender.isEmpty ? 'Sem gênero' : gender;
   }
 
   String get typeLabel {

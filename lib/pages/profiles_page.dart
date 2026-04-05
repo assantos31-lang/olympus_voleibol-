@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
@@ -23,6 +24,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
   List<Map<String, dynamic>> profiles = [];
   bool isLoading = true;
   bool _isCheckingAccess = true;
+  String _selectedGenderFilter = 'Todos';
+  String _selectedUserTypeFilter = 'Todos';
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
@@ -83,7 +86,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
       final response = await supabase
           .from('profiles')
           .select()
-          .order('created_at', ascending: false);
+          .order('full_name', ascending: true);
       setState(() {
         profiles = List<Map<String, dynamic>>.from(response);
         isLoading = false;
@@ -866,146 +869,805 @@ class _ProfilesPageState extends State<ProfilesPage> {
     final emailCtrl = TextEditingController();
     final phoneCtrl = MaskedTextController(mask: '(00) 00000-0000');
     String selectedType = 'member';
+    bool isSubmitting = false;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.person_add_alt_1, color: olympusGold),
-            const SizedBox(width: 8),
-            const Text('Novo Usuário (Acesso)'),
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.person_add_alt_1, color: olympusGold),
+              const SizedBox(width: 8),
+              const Text('Novo Usuário (Acesso)'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  enabled: !isSubmitting,
+                  decoration: InputDecoration(
+                    labelText: 'Nome Completo',
+                    prefixIcon: const Icon(Icons.person, color: olympusGold),
+                    border: const OutlineInputBorder(),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide:
+                          const BorderSide(color: olympusGold, width: 2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: emailCtrl,
+                  enabled: !isSubmitting,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    labelText: 'E-mail',
+                    prefixIcon: const Icon(Icons.email, color: olympusGold),
+                    border: const OutlineInputBorder(),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide:
+                          const BorderSide(color: olympusGold, width: 2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: phoneCtrl,
+                  enabled: !isSubmitting,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    labelText: 'Telefone',
+                    prefixIcon: const Icon(Icons.phone, color: olympusGold),
+                    border: const OutlineInputBorder(),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide:
+                          const BorderSide(color: olympusGold, width: 2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: selectedType,
+                  decoration: InputDecoration(
+                    labelText: 'Tipo de Usuário',
+                    prefixIcon: const Icon(Icons.badge, color: olympusGold),
+                    border: const OutlineInputBorder(),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide:
+                          const BorderSide(color: olympusGold, width: 2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'member', child: Text('Membro')),
+                    DropdownMenuItem(value: 'athlete', child: Text('Atleta')),
+                    DropdownMenuItem(value: 'coach', child: Text('Técnico')),
+                    DropdownMenuItem(
+                        value: 'admin', child: Text('Administrador')),
+                  ],
+                  onChanged: isSubmitting
+                      ? null
+                      : (val) {
+                          if (val != null) {
+                            setDialogState(() {
+                              selectedType = val;
+                            });
+                          }
+                        },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed:
+                  isSubmitting ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton.icon(
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      if (nameCtrl.text.isEmpty || emailCtrl.text.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Preencha nome e e-mail'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                        return;
+                      }
+
+                      final password = _generateRandomPassword();
+                      final email = emailCtrl.text.trim();
+                      final adminRefreshToken =
+                          supabase.auth.currentSession?.refreshToken;
+                      final adminUserId = supabase.auth.currentUser?.id;
+
+                      setDialogState(() {
+                        isSubmitting = true;
+                      });
+
+                      try {
+                        final response = await supabase.auth.signUp(
+                          email: email,
+                          password: password,
+                        );
+
+                        if (response.user == null) {
+                          throw Exception('Usuário não foi criado.');
+                        }
+
+                        if (adminRefreshToken != null) {
+                          await supabase.auth.setSession(adminRefreshToken);
+                          await Future.delayed(
+                            const Duration(milliseconds: 300),
+                          );
+                        }
+
+                        if (adminUserId != null &&
+                            supabase.auth.currentUser?.id != adminUserId) {
+                          throw Exception(
+                            'Não foi possível restaurar a sessão do administrador.',
+                          );
+                        }
+
+                        final userId = response.user!.id;
+
+                        await Future.delayed(const Duration(milliseconds: 500));
+
+                        await supabase.from('profiles').update({
+                          'full_name': nameCtrl.text.trim(),
+                          'phone': phoneCtrl.text.replaceAll(RegExp(r'\D'), ''),
+                          'user_type': selectedType,
+                          'updated_at': DateTime.now().toIso8601String(),
+                        }).eq('id', userId);
+
+                        if (!mounted) return;
+
+                        Navigator.pop(dialogContext);
+                        _showPasswordResultDialog(password, email);
+                        fetchProfiles();
+                      } catch (e) {
+                        debugPrint('❌ Erro ao cadastrar: $e');
+
+                        if (adminRefreshToken != null) {
+                          try {
+                            await supabase.auth.setSession(adminRefreshToken);
+                          } catch (restoreError) {
+                            debugPrint(
+                              '❌ Erro ao restaurar sessão do admin: $restoreError',
+                            );
+                          }
+                        }
+
+                        if (!mounted) return;
+
+                        String errorMessage = 'Erro ao cadastrar';
+                        if (e.toString().contains('Database error')) {
+                          errorMessage =
+                              'Erro no banco. Verifique se o trigger está configurado corretamente.';
+                        } else if (e
+                            .toString()
+                            .contains('User already registered')) {
+                          errorMessage = 'E-mail já cadastrado.';
+                        } else if (e.toString().contains(
+                            'Não foi possível restaurar a sessão do administrador')) {
+                          errorMessage =
+                              'Usuário criado, mas a sessão do admin não foi restaurada corretamente.';
+                        }
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(errorMessage),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      } finally {
+                        if (mounted) {
+                          setDialogState(() {
+                            isSubmitting = false;
+                          });
+                        }
+                      }
+                    },
+              icon: isSubmitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(olympusBlue),
+                      ),
+                    )
+                  : const Icon(Icons.save),
+              label: Text(isSubmitting ? 'Cadastrando...' : 'Cadastrar'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: olympusGold,
+                foregroundColor: olympusBlue,
+              ),
+            ),
           ],
         ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _getFilteredProfiles() {
+    final filtered = profiles.where((profile) {
+      final gender = (profile['gender'] ?? '').toString().trim();
+      final userType = (profile['user_type'] ?? '').toString().trim();
+
+      final matchesGender =
+          _selectedGenderFilter == 'Todos' || gender == _selectedGenderFilter;
+      final matchesUserType = _selectedUserTypeFilter == 'Todos' ||
+          userType == _selectedUserTypeFilter;
+
+      return matchesGender && matchesUserType;
+    }).toList();
+
+    filtered.sort((a, b) {
+      final nameA = (a['full_name'] ?? '').toString().trim().toLowerCase();
+      final nameB = (b['full_name'] ?? '').toString().trim().toLowerCase();
+      return nameA.compareTo(nameB);
+    });
+
+    return filtered;
+  }
+
+  String _getSelectedFiltersLabel() {
+    if (_selectedGenderFilter == 'Todos' &&
+        _selectedUserTypeFilter == 'Todos') {
+      return 'Todos os perfis';
+    }
+    if (_selectedGenderFilter != 'Todos' &&
+        _selectedUserTypeFilter != 'Todos') {
+      return '${_getTypeLabel(_selectedUserTypeFilter)} • $_selectedGenderFilter';
+    }
+    if (_selectedUserTypeFilter != 'Todos') {
+      return _getTypeLabel(_selectedUserTypeFilter);
+    }
+    return _selectedGenderFilter;
+  }
+
+  Widget _buildFilterDropdown({
+    required IconData icon,
+    required String label,
+    required String value,
+    required List<DropdownMenuItem<String>> items,
+    required void Function(String?) onChanged,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.18),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: olympusGold, size: 18),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withOpacity(0.92),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: value,
+              iconEnabledColor: olympusGold,
+              dropdownColor: olympusBlue.withOpacity(0.96),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.10),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: Colors.white.withOpacity(0.12),
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: Colors.white.withOpacity(0.12),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(color: olympusGold, width: 1.8),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              items: items,
+              onChanged: onChanged,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFiltersBar(int resultsCount) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+      child: Column(
+        children: [
+          Row(
             children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: InputDecoration(
-                  labelText: 'Nome Completo',
-                  prefixIcon: const Icon(Icons.person, color: olympusGold),
-                  border: const OutlineInputBorder(),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: olympusGold, width: 2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: emailCtrl,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  labelText: 'E-mail',
-                  prefixIcon: const Icon(Icons.email, color: olympusGold),
-                  border: const OutlineInputBorder(),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: olympusGold, width: 2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: phoneCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: InputDecoration(
-                  labelText: 'Telefone',
-                  prefixIcon: const Icon(Icons.phone, color: olympusGold),
-                  border: const OutlineInputBorder(),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: olympusGold, width: 2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: selectedType,
-                decoration: InputDecoration(
-                  labelText: 'Tipo de Usuário',
-                  prefixIcon: const Icon(Icons.badge, color: olympusGold),
-                  border: const OutlineInputBorder(),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: olympusGold, width: 2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
+              _buildFilterDropdown(
+                icon: Icons.filter_alt_outlined,
+                label: 'Gênero',
+                value: _selectedGenderFilter,
                 items: const [
+                  DropdownMenuItem(value: 'Todos', child: Text('Todos')),
+                  DropdownMenuItem(
+                      value: 'Masculino', child: Text('Masculino')),
+                  DropdownMenuItem(value: 'Feminino', child: Text('Feminino')),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _selectedGenderFilter = value;
+                  });
+                },
+              ),
+              const SizedBox(width: 10),
+              _buildFilterDropdown(
+                icon: Icons.badge_outlined,
+                label: 'Tipo de usuário',
+                value: _selectedUserTypeFilter,
+                items: const [
+                  DropdownMenuItem(value: 'Todos', child: Text('Todos')),
                   DropdownMenuItem(value: 'member', child: Text('Membro')),
                   DropdownMenuItem(value: 'athlete', child: Text('Atleta')),
                   DropdownMenuItem(value: 'coach', child: Text('Técnico')),
                   DropdownMenuItem(
                       value: 'admin', child: Text('Administrador')),
                 ],
-                onChanged: (val) {
-                  if (val != null) selectedType = val;
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _selectedUserTypeFilter = value;
+                  });
                 },
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () async {
-              if (nameCtrl.text.isEmpty || emailCtrl.text.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('Preencha nome e e-mail'),
-                      backgroundColor: Colors.orange),
-                );
-                return;
-              }
-              final password = _generateRandomPassword();
-              final email = emailCtrl.text.trim();
-              try {
-                final response = await supabase.auth.signUp(
-                  email: email,
-                  password: password,
-                );
-                if (response.user != null) {
-                  final userId = response.user!.id;
-                  await Future.delayed(const Duration(milliseconds: 1000));
-                  await supabase.from('profiles').update({
-                    'full_name': nameCtrl.text.trim(),
-                    'phone': phoneCtrl.text.replaceAll(RegExp(r'\D'), ''),
-                    'user_type': selectedType,
-                    'updated_at': DateTime.now().toIso8601String(),
-                  }).eq('id', userId);
-                  if (!mounted) return;
-                  Navigator.pop(context);
-                  _showPasswordResultDialog(password, email);
-                  fetchProfiles();
-                }
-              } catch (e) {
-                debugPrint('❌ Erro ao cadastrar: $e');
-                if (!mounted) return;
-                String errorMessage = 'Erro ao cadastrar';
-                if (e.toString().contains('Database error')) {
-                  errorMessage =
-                      'Erro no banco. Verifique se o trigger está configurado corretamente.';
-                } else if (e.toString().contains('User already registered')) {
-                  errorMessage = 'E-mail já cadastrado.';
-                }
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(errorMessage),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            },
-            icon: const Icon(Icons.save),
-            label: const Text('Cadastrar'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: olympusGold,
-              foregroundColor: olympusBlue,
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.14),
+              ),
             ),
+            child: Row(
+              children: [
+                Icon(Icons.people_alt_outlined, color: olympusGold, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _getSelectedFiltersLabel(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: olympusGold.withOpacity(0.18),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: olympusGold.withOpacity(0.28),
+                    ),
+                  ),
+                  child: Text(
+                    '$resultsCount resultado${resultsCount == 1 ? '' : 's'}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileCard(Map<String, dynamic> profile) {
+    final avatarUrl = profile['avatar_url'];
+    final userType = (profile['user_type'] ?? '').toString();
+    final phone = (profile['phone'] ?? '').toString();
+    final cpf = (profile['cpf'] ?? '').toString();
+    final gender = (profile['gender'] ?? '').toString();
+
+    Color cardColor;
+    if (gender == 'Masculino') {
+      cardColor = Colors.blue;
+    } else if (gender == 'Feminino') {
+      cardColor = Colors.purple;
+    } else {
+      cardColor = Colors.white;
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  cardColor.withOpacity(0.25),
+                  cardColor.withOpacity(0.15),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: cardColor.withOpacity(0.35),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.16),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(22),
+              onTap: () => showProfileDialog(profile: profile),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _getColorForType(userType).withOpacity(0.35),
+                          width: 2,
+                        ),
+                      ),
+                      child: CircleAvatar(
+                        radius: 28,
+                        backgroundColor:
+                            _getColorForType(userType).withOpacity(0.16),
+                        backgroundImage:
+                            avatarUrl != null && avatarUrl.toString().isNotEmpty
+                                ? NetworkImage(avatarUrl)
+                                : null,
+                        child: avatarUrl == null || avatarUrl.toString().isEmpty
+                            ? Text(
+                                profile['full_name']?[0]?.toUpperCase() ?? '?',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 22,
+                                ),
+                              )
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            profile['full_name'] ?? 'Sem nome',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              fontSize: 21,
+                              height: 1.1,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _getColorForType(userType)
+                                      .withOpacity(0.10),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: _getColorForType(userType)
+                                        .withOpacity(0.20),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.badge_outlined,
+                                      size: 14,
+                                      color: _getColorForType(userType),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      _getTypeLabel(userType),
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (gender.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: cardColor.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: cardColor.withOpacity(0.25),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.wc,
+                                        size: 14,
+                                        color: Colors.white,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        gender,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          if (phone.isNotEmpty)
+                            _buildProfileInfoLine(
+                              icon: Icons.phone_outlined,
+                              text: _formatPhone(phone),
+                            ),
+                          if (cpf.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: _buildProfileInfoLine(
+                                icon: Icons.credit_card_outlined,
+                                text: 'CPF: ${_formatCpf(cpf)}',
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    PopupMenuButton<String>(
+                      icon: Icon(Icons.more_vert_rounded, color: olympusGold),
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          showProfileDialog(profile: profile);
+                        } else if (value == 'delete') {
+                          _confirmDelete(profile['id']);
+                        } else if (value == 'permissions') {
+                          _showPermissionsDialog(profile);
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: 'edit',
+                          child: Text('Editar'),
+                        ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Excluir'),
+                        ),
+                        PopupMenuItem(
+                          value: 'permissions',
+                          child: Text('Permissões'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileInfoLine({
+    required IconData icon,
+    required String text,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: olympusGold),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 13.5,
+              color: Colors.white.withOpacity(0.85),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPremiumBackground() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(color: const Color(0xFF102845));
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            color: Colors.black.withOpacity(0.14),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  olympusBlue.withOpacity(0.56),
+                  olympusLightBlue.withOpacity(0.26),
+                  Colors.black.withOpacity(0.62),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0, -0.78),
+                radius: 1.08,
+                colors: [
+                  olympusGold.withOpacity(0.12),
+                  Colors.transparent,
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGlassContentShell({required Widget child}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 420;
+        final horizontal = isCompact ? 10.0 : 14.0;
+        final top = isCompact ? 10.0 : 14.0;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(horizontal, top, horizontal, 18),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.white.withOpacity(0.14),
+                      Colors.white.withOpacity(0.08),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.20),
+                    width: 1.1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.16),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildProfilesEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.people_outline, size: 80, color: Colors.white70),
+          const SizedBox(height: 16),
+          Text(
+            'Nenhum perfil encontrado para os filtros selecionados',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.white.withOpacity(0.92),
+              fontWeight: FontWeight.w600,
+            ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -1014,6 +1676,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final filteredProfiles = _getFilteredProfiles();
+
     if (_isCheckingAccess) {
       return const Scaffold(
         body: Center(
@@ -1022,6 +1686,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
       );
     }
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1076,174 +1741,36 @@ class _ProfilesPageState extends State<ProfilesPage> {
           ),
         ],
       ),
-      body: isLoading
-          ? Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(olympusGold),
-              ),
-            )
-          : profiles.isEmpty
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildPremiumBackground()),
+          isLoading
               ? Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(olympusGold),
+                  ),
+                )
+              : _buildGlassContentShell(
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.people_outline,
-                          size: 80, color: Colors.grey[400]),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Nenhum perfil cadastrado',
-                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                      _buildFiltersBar(filteredProfiles.length),
+                      Expanded(
+                        child: filteredProfiles.isEmpty
+                            ? _buildProfilesEmptyState()
+                            : ListView.builder(
+                                itemCount: filteredProfiles.length,
+                                padding: const EdgeInsets.all(8),
+                                itemBuilder: (context, index) {
+                                  final profile = filteredProfiles[index];
+                                  return _buildProfileCard(profile);
+                                },
+                              ),
                       ),
                     ],
                   ),
-                )
-              : ListView.builder(
-                  itemCount: profiles.length,
-                  padding: const EdgeInsets.all(8),
-                  itemBuilder: (context, index) {
-                    final profile = profiles[index];
-                    final avatarUrl = profile['avatar_url'];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                          vertical: 4, horizontal: 8),
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        leading: CircleAvatar(
-                          radius: 28,
-                          backgroundColor:
-                              _getColorForType(profile['user_type'])
-                                  .withOpacity(0.2),
-                          backgroundImage: avatarUrl != null &&
-                                  avatarUrl.toString().isNotEmpty
-                              ? NetworkImage(avatarUrl)
-                              : null,
-                          child:
-                              avatarUrl == null || avatarUrl.toString().isEmpty
-                                  ? Text(
-                                      profile['full_name']?[0]?.toUpperCase() ??
-                                          '?',
-                                      style: TextStyle(
-                                          color: _getColorForType(
-                                              profile['user_type']),
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 20),
-                                    )
-                                  : null,
-                        ),
-                        title: Text(
-                          profile['full_name'] ?? 'Sem nome',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: olympusBlue,
-                            fontSize: 16,
-                          ),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 4),
-                            if (profile['user_type'] != null &&
-                                profile['user_type'].toString().isNotEmpty)
-                              Row(
-                                children: [
-                                  Icon(Icons.badge_outlined,
-                                      size: 14, color: olympusGold),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    _getTypeLabel(profile['user_type']),
-                                    style: TextStyle(
-                                        fontSize: 13, color: Colors.grey[700]),
-                                  ),
-                                ],
-                              ),
-                            const SizedBox(height: 2),
-                            if (profile['phone'] != null &&
-                                profile['phone'].toString().isNotEmpty)
-                              Row(
-                                children: [
-                                  Icon(Icons.phone,
-                                      size: 14, color: olympusGold),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    _formatPhone(profile['phone']),
-                                    style: TextStyle(
-                                        fontSize: 13, color: Colors.grey[700]),
-                                  ),
-                                ],
-                              ),
-                            const SizedBox(height: 2),
-                            if (profile['cpf'] != null &&
-                                profile['cpf'].toString().isNotEmpty)
-                              Row(
-                                children: [
-                                  Icon(Icons.credit_card,
-                                      size: 14, color: olympusGold),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'CPF: ${_formatCpf(profile['cpf'])}',
-                                    style: TextStyle(
-                                        fontSize: 13, color: Colors.grey[700]),
-                                  ),
-                                ],
-                              ),
-                          ],
-                        ),
-                        trailing: PopupMenuButton<String>(
-                          icon: Icon(Icons.more_vert, color: olympusGold),
-                          onSelected: (value) {
-                            if (value == 'edit') {
-                              showProfileDialog(profile: profile);
-                            } else if (value == 'delete') {
-                              _confirmDelete(profile['id']);
-                            } else if (value == 'permissions') {
-                              _showPermissionsDialog(profile);
-                            }
-                          },
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(
-                              value: 'edit',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.edit,
-                                      size: 18, color: olympusBlue),
-                                  SizedBox(width: 8),
-                                  Text('✏️ Editar'),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'delete',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.delete_outline,
-                                      size: 18, color: Colors.red),
-                                  SizedBox(width: 8),
-                                  Text('🗑️ Excluir'),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'permissions',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.lock_outline,
-                                      size: 18, color: olympusGold),
-                                  SizedBox(width: 8),
-                                  Text('🔐 Gerenciar Permissões'),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
                 ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => showProfileDialog(),
         icon: const Icon(Icons.person_add),

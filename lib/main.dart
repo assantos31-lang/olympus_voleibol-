@@ -28,8 +28,23 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   );
 }
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  if (!kIsWeb) {
+    FirebaseMessaging.onBackgroundMessage(
+      _firebaseMessagingBackgroundHandler,
+    );
+  }
+
+  await Supabase.initialize(
+    url: 'https://wucxbbspybemvkqgqtou.supabase.co',
+    anonKey: 'sb_publishable_jfe15-g7mYFo0mSI9tuDtw_dI6qrnx4',
+  );
 
   runApp(
     MultiProvider(
@@ -165,21 +180,6 @@ class _AppBootstrapPageState extends State<AppBootstrapPage> {
 
   Future<void> _bootstrap() async {
     try {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-
-      if (!kIsWeb) {
-        FirebaseMessaging.onBackgroundMessage(
-          _firebaseMessagingBackgroundHandler,
-        );
-      }
-
-      await Supabase.initialize(
-        url: 'https://wucxbbspybemvkqgqtou.supabase.co',
-        anonKey: 'sb_publishable_jfe15-g7mYFo0mSI9tuDtw_dI6qrnx4',
-      );
-
       if (mounted) {
         setState(() {
           _isReady = true;

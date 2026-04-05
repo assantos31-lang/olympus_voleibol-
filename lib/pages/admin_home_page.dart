@@ -4,7 +4,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
 import 'agenda_page.dart';
 import 'admin_financial_page.dart';
-import 'chat_rooms_page.dart';
 import 'admin_messages_page.dart';
 import 'admin_birthdays_page.dart';
 import 'admin_competitions_page.dart';
@@ -287,6 +286,21 @@ class _AdminHomePageState extends State<AdminHomePage> {
         child: Stack(
           children: [
             Positioned.fill(
+              child: Image.asset(
+                'assets/images/monte_olimpo_v2.png',
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
+                errorBuilder: (context, error, stackTrace) {
+                  return const SizedBox.shrink();
+                },
+              ),
+            ),
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.35),
+              ),
+            ),
+            Positioned.fill(
               child: IgnorePointer(
                 child: CustomPaint(
                   painter: _FuturisticBackgroundPainter(),
@@ -474,6 +488,37 @@ class _AdminHomePageState extends State<AdminHomePage> {
                             const SizedBox(height: 26),
                             _buildFuturisticButton(
                               context: context,
+                              label: 'Agenda',
+                              icon: Icons.calendar_month_rounded,
+                              accentColor: cyanColor,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const AgendaPage(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            _buildFuturisticButton(
+                              context: context,
+                              label: 'Aniversariantes',
+                              icon: Icons.cake_outlined,
+                              accentColor: Colors.pinkAccent,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const AdminBirthdaysPage(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            _buildFuturisticButton(
+                              context: context,
                               label: 'Competições',
                               icon: Icons.emoji_events_outlined,
                               accentColor: const Color(0xFF7CE7FF),
@@ -485,32 +530,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                         const AdminCompetitionsPage(
                                       canEdit: true,
                                     ),
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
-                              context: context,
-                              label: 'Gerenciar Usuários',
-                              icon: Icons.groups_rounded,
-                              accentColor: goldenColor,
-                              isPrimary: true,
-                              onTap: () {
-                                Navigator.pushNamed(context, '/profiles');
-                              },
-                            ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
-                              context: context,
-                              label: 'Agenda',
-                              icon: Icons.calendar_month_rounded,
-                              accentColor: cyanColor,
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => const AgendaPage(),
                                   ),
                                 );
                               },
@@ -534,17 +553,12 @@ class _AdminHomePageState extends State<AdminHomePage> {
                             const SizedBox(height: 18),
                             _buildFuturisticButton(
                               context: context,
-                              label: 'Chats',
-                              icon: Icons.chat_bubble_outline_rounded,
-                              accentColor: Colors.white,
-                              isMuted: true,
+                              label: 'Gerenciar Usuários',
+                              icon: Icons.groups_rounded,
+                              accentColor: goldenColor,
+                              isPrimary: true,
                               onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => const ChatRoomsPage(),
-                                  ),
-                                );
+                                Navigator.pushNamed(context, '/profiles');
                               },
                             ),
                             const SizedBox(height: 18),
@@ -559,22 +573,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                   MaterialPageRoute(
                                     builder: (context) =>
                                         const AdminMessagesPage(),
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
-                              context: context,
-                              label: 'Aniversariantes',
-                              icon: Icons.cake_outlined,
-                              accentColor: Colors.pinkAccent,
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const AdminBirthdaysPage(),
                                   ),
                                 );
                               },

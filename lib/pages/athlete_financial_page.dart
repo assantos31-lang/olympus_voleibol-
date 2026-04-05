@@ -702,182 +702,264 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                       DateFormat('dd/MM/yyyy').format(dueDate);
                                   final isOverdue = statusText == 'Atrasado';
 
-                                  return Container(
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          Colors.white,
-                                          typeColor.withOpacity(0.05),
-                                        ],
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                      ),
-                                      borderRadius: BorderRadius.circular(14),
-                                      border: Border.all(
-                                        color: typeColor.withOpacity(0.3),
-                                        width: 1.5,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: typeColor.withOpacity(0.1),
-                                          spreadRadius: 1,
-                                          blurRadius: 6,
-                                          offset: const Offset(0, 3),
+                                  return ClipRRect(
+                                    borderRadius: BorderRadius.circular(18),
+                                    child: BackdropFilter(
+                                      filter: ImageFilter.blur(
+                                          sigmaX: 10, sigmaY: 10),
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              Colors.white.withOpacity(0.94),
+                                              Colors.white.withOpacity(0.86),
+                                            ],
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                          ),
+                                          borderRadius:
+                                              BorderRadius.circular(18),
+                                          border: Border.all(
+                                            color:
+                                                Colors.white.withOpacity(0.38),
+                                            width: 1.4,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black
+                                                  .withOpacity(0.14),
+                                              blurRadius: 12,
+                                              offset: const Offset(0, 5),
+                                            ),
+                                            BoxShadow(
+                                              color:
+                                                  typeColor.withOpacity(0.12),
+                                              blurRadius: 10,
+                                              spreadRadius: 0.4,
+                                            ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
-                                    child: Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        onTap: () => _showRecordDetails(record),
-                                        borderRadius: BorderRadius.circular(14),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(10),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
+                                        child: Material(
+                                          color: Colors.transparent,
+                                          child: InkWell(
+                                            onTap: () =>
+                                                _showRecordDetails(record),
+                                            borderRadius:
+                                                BorderRadius.circular(18),
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(14),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
                                                 children: [
-                                                  Container(
-                                                    padding:
-                                                        const EdgeInsets.all(7),
-                                                    decoration: BoxDecoration(
-                                                      gradient: LinearGradient(
-                                                        colors: [
-                                                          typeColor
-                                                              .withOpacity(0.2),
-                                                          typeColor
-                                                              .withOpacity(0.1),
-                                                        ],
+                                                  Row(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Container(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .all(8),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: typeColor
+                                                              .withOpacity(
+                                                                  0.12),
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(10),
+                                                          border: Border.all(
+                                                            color: typeColor
+                                                                .withOpacity(
+                                                                    0.18),
+                                                          ),
+                                                        ),
+                                                        child: Icon(
+                                                          _getTypeIcon(
+                                                              record.type),
+                                                          color: typeColor,
+                                                          size: 18,
+                                                        ),
                                                       ),
+                                                      const Spacer(),
+                                                      Container(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                          horizontal: 10,
+                                                          vertical: 5,
+                                                        ),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: statusColor,
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(
+                                                                      999),
+                                                          boxShadow: [
+                                                            BoxShadow(
+                                                              color: statusColor
+                                                                  .withOpacity(
+                                                                      0.22),
+                                                              blurRadius: 6,
+                                                              offset:
+                                                                  const Offset(
+                                                                      0, 2),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                        child: Text(
+                                                          statusText,
+                                                          style:
+                                                              const TextStyle(
+                                                            color: Colors.white,
+                                                            fontSize: 10,
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 14),
+                                                  Text(
+                                                    'R\$ ${record.value.toStringAsFixed(2)}',
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      fontSize: 28,
+                                                      color: Color(0xFF1E3A5F),
+                                                      height: 1,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 6,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: typeColor
+                                                          .withOpacity(0.10),
                                                       borderRadius:
                                                           BorderRadius.circular(
-                                                              7),
+                                                              10),
                                                     ),
-                                                    child: Icon(
-                                                      _getTypeIcon(record.type),
-                                                      color: typeColor,
-                                                      size: 18,
+                                                    child: Text(
+                                                      record.typeLabel,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        fontSize: 13,
+                                                        color: typeColor,
+                                                      ),
                                                     ),
                                                   ),
                                                   const Spacer(),
                                                   Container(
-                                                    padding: const EdgeInsets
-                                                        .symmetric(
-                                                      horizontal: 7,
-                                                      vertical: 3,
-                                                    ),
+                                                    width: double.infinity,
+                                                    padding:
+                                                        const EdgeInsets.all(
+                                                            10),
                                                     decoration: BoxDecoration(
-                                                      color: statusColor
-                                                          .withOpacity(0.15),
+                                                      color: isOverdue
+                                                          ? Colors.red
+                                                              .withOpacity(0.10)
+                                                          : const Color(
+                                                              0xFFF5F7FA),
                                                       borderRadius:
                                                           BorderRadius.circular(
-                                                              5),
+                                                              12),
                                                       border: Border.all(
-                                                        color: statusColor,
+                                                        color: isOverdue
+                                                            ? Colors.red
+                                                                .withOpacity(
+                                                                    0.28)
+                                                            : const Color(
+                                                                0xFFD8E0EA),
                                                         width: 1.2,
                                                       ),
                                                     ),
-                                                    child: Text(
-                                                      statusText,
-                                                      style: TextStyle(
-                                                        color: statusColor,
-                                                        fontSize: 9,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                      ),
+                                                    child: Row(
+                                                      children: [
+                                                        Container(
+                                                          width: 30,
+                                                          height: 30,
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            color: isOverdue
+                                                                ? Colors.red
+                                                                    .withOpacity(
+                                                                        0.12)
+                                                                : typeColor
+                                                                    .withOpacity(
+                                                                        0.12),
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        8),
+                                                          ),
+                                                          child: Icon(
+                                                            Icons
+                                                                .calendar_today,
+                                                            size: 15,
+                                                            color: isOverdue
+                                                                ? Colors.red
+                                                                : typeColor,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                            width: 8),
+                                                        Expanded(
+                                                          child: Column(
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment
+                                                                    .start,
+                                                            children: [
+                                                              Text(
+                                                                'Vencimento',
+                                                                style:
+                                                                    TextStyle(
+                                                                  fontSize: 11,
+                                                                  color: Colors
+                                                                          .grey[
+                                                                      600],
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w600,
+                                                                ),
+                                                              ),
+                                                              const SizedBox(
+                                                                  height: 2),
+                                                              Text(
+                                                                formattedDueDate,
+                                                                style:
+                                                                    TextStyle(
+                                                                  fontSize: 14,
+                                                                  color: isOverdue
+                                                                      ? Colors.red[
+                                                                          700]
+                                                                      : const Color(
+                                                                          0xFF1E3A5F),
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w800,
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
                                                   ),
                                                 ],
                                               ),
-                                              const SizedBox(height: 8),
-                                              Text(
-                                                'R\$ ${record.value.toStringAsFixed(2)}',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 20,
-                                                  color: typeColor,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                record.typeLabel,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 13,
-                                                  color: Color(0xFF2C3E5A),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 8),
-                                              Container(
-                                                width: double.infinity,
-                                                padding:
-                                                    const EdgeInsets.all(7),
-                                                decoration: BoxDecoration(
-                                                  color: isOverdue
-                                                      ? Colors.red
-                                                          .withOpacity(0.1)
-                                                      : typeColor
-                                                          .withOpacity(0.08),
-                                                  borderRadius:
-                                                      BorderRadius.circular(7),
-                                                  border: Border.all(
-                                                    color: isOverdue
-                                                        ? Colors.red
-                                                            .withOpacity(0.3)
-                                                        : typeColor
-                                                            .withOpacity(0.2),
-                                                    width: 1.2,
-                                                  ),
-                                                ),
-                                                child: Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.calendar_today,
-                                                      size: 14,
-                                                      color: isOverdue
-                                                          ? Colors.red
-                                                          : typeColor,
-                                                    ),
-                                                    const SizedBox(width: 5),
-                                                    Expanded(
-                                                      child: Column(
-                                                        crossAxisAlignment:
-                                                            CrossAxisAlignment
-                                                                .start,
-                                                        children: [
-                                                          Text(
-                                                            'Vencimento',
-                                                            style: TextStyle(
-                                                              fontSize: 11,
-                                                              color: Colors
-                                                                  .grey[600],
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w600,
-                                                            ),
-                                                          ),
-                                                          Text(
-                                                            formattedDueDate,
-                                                            style: TextStyle(
-                                                              fontSize: 12,
-                                                              color: isOverdue
-                                                                  ? Colors
-                                                                      .red[700]
-                                                                  : typeColor,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
+                                            ),
                                           ),
                                         ),
                                       ),

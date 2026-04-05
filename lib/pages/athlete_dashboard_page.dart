@@ -39,18 +39,26 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   late final Animation<double> _birthdayBadgeScale;
   int _messageUnreadCount = 0;
   int _competitionNewCount = 0;
+  int? _currentUserRankingPosition;
+  List<Map<String, dynamic>> _genderRanking = [];
+  List<Map<String, dynamic>> _monthlyHistory = [];
+  bool _isRankingExpanded = false;
+  bool _isMonthlyHistoryExpanded = false;
   DateTime? _lastCompetitionsViewedAt;
   RealtimeChannel? _messagesRealtimeChannel;
   RealtimeChannel? _competitionsRealtimeChannel;
   RealtimeChannel? _convocationsRealtimeChannel;
   RealtimeChannel? _financialRealtimeChannel;
+  RealtimeChannel? _checkinsRealtimeChannel;
 
   int _confirmedPresenceCount = 0;
   int _rejectedPresenceCount = 0;
   int _monthlyTrainingTotal = 0;
   int _monthlyPresenceCount = 0;
   int _monthlyAbsenceCount = 0;
+  int _currentStreak = 0;
   double _monthlyPresencePercent = 0;
+  bool _showingLevelUpDialog = false;
 
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
@@ -131,13 +139,243 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
         _profile = profile;
         _isLoading = false;
       });
+      _checkAndShowLevelUp(profile);
       _loadPendingCount();
       _loadOverdueFinancialCount();
       _loadWeekEvents();
       _loadAttendanceAndPerformance();
+      _loadGenderRanking(profile);
+      _loadMonthlyHistory();
       _loadMessageUnreadCount();
       _loadCompetitionNewCount();
       _setupRealtimeListeners();
+    }
+  }
+
+  int _parsePerformanceLevelRank(dynamic value) {
+    if (value == null) return 1;
+    if (value is int) return value;
+    return int.tryParse(value.toString()) ?? 1;
+  }
+
+  String _getPerformanceLevelLabelFromRank(int rank) {
+    switch (rank) {
+      case 1:
+        return 'Iniciante';
+      case 2:
+        return 'Participante';
+      case 3:
+        return 'Regular';
+      case 4:
+        return 'Comprometido';
+      case 5:
+        return 'Dedicado';
+      case 6:
+        return 'Atleta Bronze';
+      case 7:
+        return 'Atleta Prata';
+      case 8:
+        return 'Atleta Ouro';
+      case 9:
+        return 'Elite';
+      default:
+        return 'Lenda';
+    }
+  }
+
+  Future<void> _checkAndShowLevelUp(Map<String, dynamic>? profile) async {
+    if (!mounted || profile == null || _showingLevelUpDialog) return;
+
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final currentRank = _parsePerformanceLevelRank(
+      profile['performance_level_rank'],
+    );
+    final currentLevel =
+        (profile['performance_level'] ?? '').toString().trim().isNotEmpty
+            ? profile['performance_level'].toString().trim()
+            : _getPerformanceLevelLabelFromRank(currentRank);
+
+    final metadata = user.userMetadata ?? {};
+    final lastSeenRank = _parsePerformanceLevelRank(
+      metadata['last_seen_performance_level_rank'],
+    );
+
+    if (currentRank <= lastSeenRank) return;
+
+    _showingLevelUpDialog = true;
+
+    if (!mounted) return;
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: 'level-up',
+      barrierColor: Colors.black.withOpacity(0.72),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        final firstName =
+            profile['full_name']?.toString().split(' ').first ?? 'Atleta';
+
+        Future.delayed(const Duration(seconds: 3), () {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
+        });
+
+        return SafeArea(
+          child: Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: olympusGold.withOpacity(0.85),
+                  width: 1.6,
+                ),
+                gradient: const LinearGradient(
+                  colors: [
+                    Color(0xFF0D223B),
+                    Color(0xFF123861),
+                    Color(0xFF235E94),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.35),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
+                  ),
+                  BoxShadow(
+                    color: olympusGold.withOpacity(0.18),
+                    blurRadius: 28,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 88,
+                    height: 88,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [
+                          Color(0xFFF0D771),
+                          Color(0xFFB48A23),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: olympusGold.withOpacity(0.40),
+                          blurRadius: 18,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.emoji_events_rounded,
+                      color: olympusBlue,
+                      size: 42,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'PARABÉNS!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xFFFFE082),
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    '$firstName, você subiu de nível!',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      color: olympusGold.withOpacity(0.16),
+                      border: Border.all(
+                        color: olympusGold.withOpacity(0.50),
+                      ),
+                    ),
+                    child: Text(
+                      currentLevel.toUpperCase(),
+                      style: const TextStyle(
+                        color: Color(0xFFFFF2B8),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Seu desempenho evoluiu. Continue assim para alcançar o próximo patamar.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.88),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutBack,
+        );
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.88, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+      transitionDuration: const Duration(milliseconds: 380),
+    ).then((_) {
+      _showingLevelUpDialog = false;
+    });
+
+    try {
+      await supabase.auth.updateUser(
+        UserAttributes(
+          data: {
+            ...metadata,
+            'last_seen_performance_level_rank': currentRank,
+          },
+        ),
+      );
+    } catch (e) {
+      debugPrint('Erro ao salvar último nível visualizado: $e');
     }
   }
 
@@ -189,6 +427,8 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
               _loadPendingCount();
               _loadWeekEvents();
               _loadAttendanceAndPerformance();
+              _loadGenderRanking(_profile);
+              _loadMonthlyHistory();
             },
           )
           ..subscribe();
@@ -206,6 +446,25 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
             ),
             callback: (_) {
               _loadOverdueFinancialCount();
+            },
+          )
+          ..subscribe();
+
+    _checkinsRealtimeChannel ??=
+        supabase.channel('athlete-dashboard-checkins-${user.id}')
+          ..onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'checkins',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'user_id',
+              value: user.id,
+            ),
+            callback: (_) {
+              _loadAttendanceAndPerformance();
+              _loadGenderRanking(_profile);
+              _loadMonthlyHistory();
             },
           )
           ..subscribe();
@@ -236,6 +495,13 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     }
   }
 
+  DateTime? _getPersistedCompetitionsViewedAt() {
+    final user = supabase.auth.currentUser;
+    final raw = user?.userMetadata?['last_competitions_viewed_at'];
+    if (raw == null) return null;
+    return DateTime.tryParse(raw.toString())?.toLocal();
+  }
+
   Future<void> _loadCompetitionNewCount() async {
     try {
       final response = await supabase
@@ -244,6 +510,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
           .inFilter('event_type', ['campeonato', 'amistoso']);
 
       final referenceDate = _lastCompetitionsViewedAt ??
+          _getPersistedCompetitionsViewedAt() ??
           DateTime.now().subtract(const Duration(days: 7));
 
       int count = 0;
@@ -321,6 +588,999 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     } catch (e) {
       debugPrint('Erro ao carregar atrasos financeiros: $e');
     }
+  }
+
+  String _normalizarCheckInStatus(dynamic status) {
+    final value = (status ?? '').toString().trim().toLowerCase();
+    if (value.isEmpty) return '';
+    if ([
+      'ok',
+      'realizado',
+      'realizado com sucesso',
+      'checked_in',
+      'checkin_realizado',
+      'success',
+      'completed',
+      'done',
+    ].contains(value)) {
+      return 'realizado';
+    }
+    if (['pending', 'pendente'].contains(value)) {
+      return 'pendente';
+    }
+    return value;
+  }
+
+  bool _isCheckInRealizado(dynamic status) {
+    return _normalizarCheckInStatus(status) == 'realizado';
+  }
+
+  String _getStreakLabel() {
+    if (_currentStreak <= 0) return '🔥 Inicie sua sequência';
+    if (_currentStreak == 1) return '🔥 1 treino seguido';
+    return '🔥 $_currentStreak treinos seguidos';
+  }
+
+  Future<void> _loadGenderRanking(Map<String, dynamic>? profile) async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null || profile == null) return;
+
+      final gender = (profile['gender'] ?? '').toString().trim();
+      if (gender.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _genderRanking = [];
+            _currentUserRankingPosition = null;
+          });
+        }
+        return;
+      }
+
+      final athletesResponse = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, gender, user_type')
+          .eq('gender', gender)
+          .eq('user_type', 'athlete');
+
+      final athletes = List<Map<String, dynamic>>.from(athletesResponse);
+      if (athletes.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _genderRanking = [];
+            _currentUserRankingPosition = null;
+          });
+        }
+        return;
+      }
+
+      final athleteIds = athletes
+          .map((a) => (a['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      if (athleteIds.isEmpty) return;
+
+      final convocationsResponse =
+          await supabase.from('convocations').select('''
+user_id,
+event_id,
+events!$_eventsEmbedFk (
+id,
+event_type,
+event_date,
+event_time
+)
+''').inFilter('user_id', athleteIds);
+
+      final now = DateTime.now();
+      final month = now.month;
+      final year = now.year;
+
+      final Map<String, List<String>> athleteEventIds = {};
+      final Set<String> trainingEventIds = {};
+
+      for (final row in List<Map<String, dynamic>>.from(convocationsResponse)) {
+        final event = row['events'];
+        if (event == null) continue;
+
+        final eventMap = Map<String, dynamic>.from(event);
+        final eventType =
+            (eventMap['event_type'] ?? '').toString().toLowerCase().trim();
+        if (eventType != 'treino') continue;
+
+        final eventDate = _parseEventDateTime(
+          (eventMap['event_date'] ?? '').toString(),
+          (eventMap['event_time'] ?? '').toString(),
+        );
+        if (eventDate == null) continue;
+        if (eventDate.month != month || eventDate.year != year) continue;
+
+        final athleteId = (row['user_id'] ?? '').toString();
+        final eventId = (row['event_id'] ?? '').toString();
+        if (athleteId.isEmpty || eventId.isEmpty) continue;
+
+        athleteEventIds.putIfAbsent(athleteId, () => []).add(eventId);
+        trainingEventIds.add(eventId);
+      }
+
+      final checkinsResponse = trainingEventIds.isEmpty
+          ? <dynamic>[]
+          : await supabase
+              .from('checkins')
+              .select('user_id, event_id, check_in_status')
+              .inFilter('user_id', athleteIds)
+              .inFilter('event_id', trainingEventIds.toList());
+
+      final Map<String, int> presenceByAthlete = {
+        for (final athleteId in athleteIds) athleteId: 0,
+      };
+
+      final Set<String> countedPairs = {};
+      for (final row in checkinsResponse) {
+        final athleteId = (row['user_id'] ?? '').toString();
+        final eventId = (row['event_id'] ?? '').toString();
+        if (athleteId.isEmpty || eventId.isEmpty) continue;
+        if (!_isCheckInRealizado(row['check_in_status'])) continue;
+
+        final validEvents = athleteEventIds[athleteId] ?? const <String>[];
+        if (!validEvents.contains(eventId)) continue;
+
+        final pairKey = '$athleteId|$eventId';
+        if (countedPairs.contains(pairKey)) continue;
+        countedPairs.add(pairKey);
+
+        presenceByAthlete[athleteId] = (presenceByAthlete[athleteId] ?? 0) + 1;
+      }
+
+      final ranking = athletes.map((athlete) {
+        final athleteId = (athlete['id'] ?? '').toString();
+        final fullName = (athlete['full_name'] ?? 'Atleta').toString().trim();
+        final firstName =
+            fullName.isEmpty ? 'Atleta' : fullName.split(' ').first;
+
+        return {
+          'id': athleteId,
+          'name': fullName,
+          'first_name': firstName,
+          'avatar_url': (athlete['avatar_url'] ?? '').toString().trim(),
+          'presence_count': presenceByAthlete[athleteId] ?? 0,
+        };
+      }).toList()
+        ..sort((a, b) {
+          final cmp = (b['presence_count'] as int)
+              .compareTo(a['presence_count'] as int);
+          if (cmp != 0) return cmp;
+          return (a['name'] as String).toLowerCase().compareTo(
+                (b['name'] as String).toLowerCase(),
+              );
+        });
+
+      int? currentPosition;
+      for (int i = 0; i < ranking.length; i++) {
+        ranking[i]['position'] = i + 1;
+        if ((ranking[i]['id'] ?? '').toString() == user.id) {
+          currentPosition = i + 1;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _genderRanking = ranking.take(5).toList();
+          _currentUserRankingPosition = currentPosition;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar ranking por gênero: $e');
+    }
+  }
+
+  String _getRankingGenderTitle() {
+    final gender = (_profile?['gender'] ?? '').toString().trim();
+    if (gender.isEmpty) return 'Ranking do mês';
+    return 'Ranking do mês • $gender';
+  }
+
+  String _getRankingMedal(int position) {
+    switch (position) {
+      case 1:
+        return '🥇';
+      case 2:
+        return '🥈';
+      case 3:
+        return '🥉';
+      default:
+        return '${position}º';
+    }
+  }
+
+  String _getRetrospectiveHeadline(Map<String, dynamic> item) {
+    final presencePercent = ((item['presence_percent'] ?? 0) as num).toDouble();
+    final rankingPosition = ((item['ranking_position'] ?? 0) as num).toInt();
+    if (rankingPosition == 1 && presencePercent > 0) {
+      return '🏆 Você liderou o mês';
+    }
+    if (presencePercent >= 80) {
+      return '🔥 Mês de alto rendimento';
+    }
+    if (presencePercent >= 50) {
+      return '📈 Você manteve boa regularidade';
+    }
+    if (presencePercent > 0) {
+      return '💪 Seu mês contou como progresso';
+    }
+    return '🌱 Todo ciclo é chance de recomeço';
+  }
+
+  String _getRetrospectiveSupportText(Map<String, dynamic> item) {
+    final presencePercent = ((item['presence_percent'] ?? 0) as num).toDouble();
+    final rankingPosition = ((item['ranking_position'] ?? 0) as num).toInt();
+    final totalTrainings = ((item['total_trainings'] ?? 0) as num).toInt();
+    if (totalTrainings == 0) {
+      return 'Este mês não teve treinos registrados para o seu histórico.';
+    }
+    if (rankingPosition == 1 && presencePercent > 0) {
+      return 'Você terminou o mês em 1º lugar no ranking e deixou sua marca.';
+    }
+    if (presencePercent >= 80) {
+      return 'Sua consistência foi destaque. Continue assim no próximo mês.';
+    }
+    if (presencePercent >= 50) {
+      return 'Você ficou presente em boa parte dos treinos e construiu regularidade.';
+    }
+    if (presencePercent > 0) {
+      return 'Mesmo com oscilações, você somou presença e experiência no mês.';
+    }
+    return 'Nem todo mês sai como esperado, mas o próximo pode ser sua virada.';
+  }
+
+  void _showMonthlyRetrospective(Map<String, dynamic> item) {
+    final year = (item['reference_year'] ?? 0) as int;
+    final month = (item['reference_month'] ?? 1) as int;
+    final presenceCount = ((item['presence_count'] ?? 0) as num).toInt();
+    final absenceCount = ((item['absence_count'] ?? 0) as num).toInt();
+    final totalTrainings = ((item['total_trainings'] ?? 0) as num).toInt();
+    final rankingPosition = item['ranking_position'] == null
+        ? '-'
+        : '${((item['ranking_position'] ?? 0) as num).toInt()}º';
+    final presencePercent = ((item['presence_percent'] ?? 0) as num).toDouble();
+    final streak = ((item['current_streak'] ?? 0) as num).toInt();
+    final level = (item['performance_level'] ?? 'Iniciante').toString();
+    final label = _getMonthlyHistoryLabel(month, year);
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.62),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(
+              color: olympusGold.withOpacity(0.55),
+              width: 1.4,
+            ),
+            gradient: const LinearGradient(
+              colors: [
+                Color(0xFF0D223B),
+                Color(0xFF123861),
+                Color(0xFF235E94),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.30),
+                blurRadius: 24,
+                offset: const Offset(0, 12),
+              ),
+              BoxShadow(
+                color: olympusGold.withOpacity(0.14),
+                blurRadius: 22,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFFF0D771),
+                            Color(0xFFB48A23),
+                          ],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: olympusGold.withOpacity(0.35),
+                            blurRadius: 10,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.auto_awesome_rounded,
+                        color: olympusBlue,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Retrospectiva de $label',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded),
+                      color: Colors.white70,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    color: Colors.white.withOpacity(0.08),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.10),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        _getRetrospectiveHeadline(item),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFFFFE082),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _getRetrospectiveSupportText(item),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.88),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildHistoryTag(
+                      'Presenças',
+                      '$presenceCount/$totalTrainings',
+                      const Color(0xFF1F9D55),
+                    ),
+                    _buildHistoryTag(
+                      'Taxa',
+                      '${presencePercent.toStringAsFixed(0)}%',
+                      olympusGold,
+                    ),
+                    _buildHistoryTag(
+                      'Faltas',
+                      '$absenceCount',
+                      const Color(0xFFE15A5A),
+                    ),
+                    _buildHistoryTag(
+                      'Streak',
+                      '$streak',
+                      const Color(0xFFEF8B17),
+                    ),
+                    _buildHistoryTag(
+                      'Nível',
+                      level,
+                      const Color(0xFF4FA3FF),
+                    ),
+                    _buildHistoryTag(
+                      'Ranking',
+                      rankingPosition,
+                      const Color(0xFF7B61FF),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                      foregroundColor: olympusGold,
+                    ),
+                    child: const Text(
+                      'Fechar',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGenderRankingCard() {
+    if (_genderRanking.isEmpty && _monthlyHistory.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final userId = supabase.auth.currentUser?.id;
+    final currentUserInTop = _genderRanking.any(
+      (athlete) => (athlete['id'] ?? '').toString() == userId,
+    );
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.94),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.74)),
+        boxShadow: [
+          BoxShadow(
+            color: olympusGold.withOpacity(0.10),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _getRankingGenderTitle(),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: olympusBlue.withOpacity(0.85),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _currentUserRankingPosition != null
+                      ? 'Sua posição atual: ${_currentUserRankingPosition}º'
+                      : 'Sua posição atual: -',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: olympusBlue.withOpacity(0.75),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _isRankingExpanded = !_isRankingExpanded;
+                  });
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: olympusGold,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                ),
+                child: Text(
+                  _isRankingExpanded ? 'Ocultar' : 'Ver ranking',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          if (_isRankingExpanded && _genderRanking.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ..._genderRanking.map((athlete) {
+              final isMe = (athlete['id'] ?? '').toString() == userId;
+              final position = (athlete['position'] ?? 0) as int;
+              final presenceCount = (athlete['presence_count'] ?? 0) as int;
+              final avatarUrl = (athlete['avatar_url'] ?? '').toString().trim();
+              final firstName = (athlete['first_name'] ?? 'Atleta').toString();
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: isMe
+                      ? olympusGold.withOpacity(0.12)
+                      : olympusBlue.withOpacity(0.04),
+                  border: Border.all(
+                    color: isMe
+                        ? olympusGold.withOpacity(0.40)
+                        : olympusBlue.withOpacity(0.08),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 34,
+                      child: Text(
+                        _getRankingMedal(position),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: position <= 3 ? 18 : 13,
+                          fontWeight: FontWeight.w800,
+                          color: olympusBlue,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundColor: olympusBlue.withOpacity(0.12),
+                      backgroundImage:
+                          avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                      child: avatarUrl.isEmpty
+                          ? Text(
+                              firstName.isNotEmpty
+                                  ? firstName[0].toUpperCase()
+                                  : '?',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: olympusBlue,
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        isMe ? '$firstName (você)' : firstName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: olympusBlue,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$presenceCount treinos',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            if (_currentUserRankingPosition != null && !currentUserInTop) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Você está em ${_currentUserRankingPosition}º no ranking do mês.',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: olympusBlue.withOpacity(0.75),
+                ),
+              ),
+            ],
+          ],
+          if (_monthlyHistory.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: olympusBlue.withOpacity(0.04),
+                border: Border.all(
+                  color: olympusBlue.withOpacity(0.08),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Histórico mensal',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: olympusBlue.withOpacity(0.82),
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _isMonthlyHistoryExpanded =
+                                !_isMonthlyHistoryExpanded;
+                          });
+                        },
+                        style: TextButton.styleFrom(
+                          foregroundColor: olympusGold,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                        ),
+                        child: Text(
+                          _isMonthlyHistoryExpanded
+                              ? 'Ocultar'
+                              : 'Ver histórico',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_isMonthlyHistoryExpanded) ...[
+                    const SizedBox(height: 6),
+                    ..._monthlyHistory.take(3).map((item) {
+                      final year = (item['reference_year'] ?? 0) as int;
+                      final month = (item['reference_month'] ?? 1) as int;
+                      final presenceCount =
+                          ((item['presence_count'] ?? 0) as num).toInt();
+                      final absenceCount =
+                          ((item['absence_count'] ?? 0) as num).toInt();
+                      final totalTrainings =
+                          ((item['total_trainings'] ?? 0) as num).toInt();
+                      final rankingPosition = item['ranking_position'] == null
+                          ? '-'
+                          : '${((item['ranking_position'] ?? 0) as num).toInt()}º';
+                      final presencePercent =
+                          ((item['presence_percent'] ?? 0) as num).toDouble();
+                      final streak =
+                          ((item['current_streak'] ?? 0) as num).toInt();
+                      final level =
+                          (item['performance_level'] ?? 'Iniciante').toString();
+
+                      return Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.white.withOpacity(0.70),
+                          border: Border.all(
+                            color: olympusBlue.withOpacity(0.08),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _getMonthlyHistoryLabel(month, year),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      color: olympusBlue,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      _showMonthlyRetrospective(item),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: olympusGold,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Retrospectiva',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.w800),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _buildHistoryTag(
+                                  'Presenças',
+                                  '$presenceCount/$totalTrainings',
+                                  const Color(0xFF1F9D55),
+                                ),
+                                _buildHistoryTag(
+                                  'Taxa',
+                                  '${presencePercent.toStringAsFixed(0)}%',
+                                  olympusGold,
+                                ),
+                                _buildHistoryTag(
+                                  'Faltas',
+                                  '$absenceCount',
+                                  const Color(0xFFE15A5A),
+                                ),
+                                _buildHistoryTag(
+                                  'Streak',
+                                  '$streak',
+                                  const Color(0xFFEF8B17),
+                                ),
+                                _buildHistoryTag(
+                                  'Nível',
+                                  level,
+                                  const Color(0xFF4FA3FF),
+                                ),
+                                _buildHistoryTag(
+                                  'Ranking',
+                                  rankingPosition,
+                                  const Color(0xFF7B61FF),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _loadMonthlyHistory() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final now = DateTime.now();
+
+      final response = await supabase
+          .from('athlete_monthly_history')
+          .select(
+            'reference_year, reference_month, total_trainings, presence_count, absence_count, presence_percent, current_streak, performance_level, ranking_position',
+          )
+          .eq('user_id', user.id)
+          .order('reference_year', ascending: false)
+          .order('reference_month', ascending: false)
+          .limit(12);
+
+      final history = List<Map<String, dynamic>>.from(response).where((item) {
+        final year = ((item['reference_year'] ?? 0) as num).toInt();
+        final month = ((item['reference_month'] ?? 0) as num).toInt();
+
+        if (year > now.year) return true;
+        if (year == now.year && month >= now.month) return true;
+        return false;
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _monthlyHistory = history;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar histórico mensal: $e');
+    }
+  }
+
+  String _getMonthlyHistoryLabel(int month, int year) {
+    final date = DateTime(year, month);
+    final label = DateFormat('MMMM', 'pt_BR').format(date);
+    return '${label[0].toUpperCase()}${label.substring(1)} / $year';
+  }
+
+  Widget _buildMonthlyHistoryCard() {
+    if (_monthlyHistory.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.94),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.74)),
+        boxShadow: [
+          BoxShadow(
+            color: olympusGold.withOpacity(0.10),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Histórico mensal',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: olympusBlue.withOpacity(0.85),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Fechamentos salvos dos últimos meses',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: olympusBlue.withOpacity(0.70),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _isMonthlyHistoryExpanded = !_isMonthlyHistoryExpanded;
+                  });
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: olympusGold,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                ),
+                child: Text(
+                  _isMonthlyHistoryExpanded ? 'Ocultar' : 'Ver histórico',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          if (_isMonthlyHistoryExpanded) ...[
+            const SizedBox(height: 8),
+            ..._monthlyHistory.take(3).map((item) {
+              final year = (item['reference_year'] ?? 0) as int;
+              final month = (item['reference_month'] ?? 1) as int;
+              final presenceCount =
+                  ((item['presence_count'] ?? 0) as num).toInt();
+              final absenceCount =
+                  ((item['absence_count'] ?? 0) as num).toInt();
+              final totalTrainings =
+                  ((item['total_trainings'] ?? 0) as num).toInt();
+              final rankingPosition = item['ranking_position'] == null
+                  ? '-'
+                  : '${((item['ranking_position'] ?? 0) as num).toInt()}º';
+              final presencePercent =
+                  ((item['presence_percent'] ?? 0) as num).toDouble();
+              final streak = ((item['current_streak'] ?? 0) as num).toInt();
+              final level =
+                  (item['performance_level'] ?? 'Iniciante').toString();
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: olympusBlue.withOpacity(0.04),
+                  border: Border.all(
+                    color: olympusBlue.withOpacity(0.08),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _getMonthlyHistoryLabel(month, year),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: olympusBlue,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildHistoryTag(
+                          'Presenças',
+                          '$presenceCount/$totalTrainings',
+                          const Color(0xFF1F9D55),
+                        ),
+                        _buildHistoryTag(
+                          'Taxa',
+                          '${presencePercent.toStringAsFixed(0)}%',
+                          olympusGold,
+                        ),
+                        _buildHistoryTag(
+                          'Faltas',
+                          '$absenceCount',
+                          const Color(0xFFE15A5A),
+                        ),
+                        _buildHistoryTag(
+                          'Streak',
+                          '$streak',
+                          const Color(0xFFEF8B17),
+                        ),
+                        _buildHistoryTag(
+                          'Nível',
+                          level,
+                          const Color(0xFF4FA3FF),
+                        ),
+                        _buildHistoryTag(
+                          'Ranking',
+                          rankingPosition,
+                          const Color(0xFF7B61FF),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryTag(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: color.withOpacity(0.10),
+        border: Border.all(
+          color: color.withOpacity(0.22),
+        ),
+      ),
+      child: RichText(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+            TextSpan(
+              text: value,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: olympusBlue,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadWeekEvents() async {
@@ -458,22 +1718,26 @@ event_time
       for (final row in checkins) {
         final eventId = (row['event_id'] ?? '').toString();
         if (eventId.isEmpty) continue;
-        checkinMap[eventId] =
-            (row['check_in_status'] ?? '').toString().toLowerCase().trim();
+        checkinMap[eventId] = _normalizarCheckInStatus(row['check_in_status']);
       }
 
       int monthlyPresence = 0;
       int monthlyAbsence = 0;
+
+      trainingEvents.sort(
+        (a, b) => (a['event_datetime'] as DateTime)
+            .compareTo(b['event_datetime'] as DateTime),
+      );
 
       for (final event in trainingEvents) {
         final eventId = (event['id'] ?? '').toString();
         final status = (event['status'] ?? '').toString().toLowerCase().trim();
         final justification =
             (event['justification'] ?? '').toString().toLowerCase().trim();
-        final checkinStatus = (checkinMap[eventId] ?? '').toLowerCase().trim();
+        final checkinStatus = _normalizarCheckInStatus(checkinMap[eventId]);
         final eventDate = event['event_datetime'] as DateTime;
 
-        if (checkinStatus == 'ok') {
+        if (_isCheckInRealizado(checkinStatus)) {
           monthlyPresence++;
           confirmedPresence++;
           continue;
@@ -483,7 +1747,7 @@ event_time
             now.isAfter(eventDate.add(const Duration(minutes: 30)));
 
         final isAbsence = checkinExpired &&
-            ((status == 'accepted' && checkinStatus != 'ok') ||
+            ((status == 'accepted' && !_isCheckInRealizado(checkinStatus)) ||
                 (status == 'rejected' && justification == 'prazo expirado'));
 
         if (isAbsence) {
@@ -495,6 +1759,32 @@ event_time
       final presencePercent =
           totalTrainings > 0 ? (monthlyPresence / totalTrainings) * 100 : 0.0;
 
+      int currentStreak = 0;
+      final completedTrainings = trainingEvents
+          .where(
+            (event) => now.isAfter(
+              (event['event_datetime'] as DateTime).add(
+                const Duration(minutes: 30),
+              ),
+            ),
+          )
+          .toList()
+        ..sort(
+          (a, b) => (b['event_datetime'] as DateTime)
+              .compareTo(a['event_datetime'] as DateTime),
+        );
+
+      for (final event in completedTrainings) {
+        final eventId = (event['id'] ?? '').toString();
+        final checkinStatus = _normalizarCheckInStatus(checkinMap[eventId]);
+
+        if (_isCheckInRealizado(checkinStatus)) {
+          currentStreak++;
+        } else {
+          break;
+        }
+      }
+
       if (mounted) {
         setState(() {
           _confirmedPresenceCount = confirmedPresence;
@@ -502,6 +1792,7 @@ event_time
           _monthlyTrainingTotal = totalTrainings;
           _monthlyPresenceCount = monthlyPresence;
           _monthlyAbsenceCount = monthlyAbsence;
+          _currentStreak = currentStreak;
           _monthlyPresencePercent = presencePercent;
         });
       }
@@ -887,10 +2178,20 @@ event_time
   }
 
   void _navigateToCompetitions() {
+    final viewedAt = DateTime.now();
+
     setState(() {
-      _lastCompetitionsViewedAt = DateTime.now();
+      _lastCompetitionsViewedAt = viewedAt;
       _competitionNewCount = 0;
     });
+
+    supabase.auth.updateUser(
+      UserAttributes(
+        data: {
+          'last_competitions_viewed_at': viewedAt.toIso8601String(),
+        },
+      ),
+    );
 
     Navigator.push(
       context,
@@ -947,9 +2248,9 @@ event_time
       return 'Hoje é dia de comemorar a vida!';
     }
     if (days == 1) {
-      return 'Falta 1 dia para vc comemorar a vida.';
+      return 'Falta 1 dia para você celebrar a vida 🎉';
     }
-    return 'Faltam $days dias para vc comemorar a vida.';
+    return 'Faltam $days dias para você celebrar a vida 🎉';
   }
 
   Future<void> _loadTodayBirthdays() async {
@@ -1175,7 +2476,7 @@ event_time
           children: [
             Positioned.fill(
               child: Opacity(
-                opacity: 0.12,
+                opacity: 0.18,
                 child: avatarUrl != null && avatarUrl.isNotEmpty
                     ? Image.network(
                         avatarUrl,
@@ -1216,44 +2517,126 @@ event_time
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: 68,
-                        height: 68,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(18),
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFF0D771), Color(0xFFB48A23)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: olympusGold.withOpacity(0.45),
-                              blurRadius: 12,
-                              spreadRadius: 1,
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 90,
+                            height: 90,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(24),
+                              gradient: const LinearGradient(
+                                colors: [
+                                  Color(0xFFF0D771),
+                                  Color(0xFFB48A23),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: olympusGold.withOpacity(0.45),
+                                  blurRadius: 12,
+                                  spreadRadius: 1,
+                                ),
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.18),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        padding: const EdgeInsets.all(2.2),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            color: const Color(0xFF113457),
+                            padding: const EdgeInsets.all(2.6),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(22),
+                                color: const Color(0xFF113457),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(21),
+                                child: avatarUrl != null && avatarUrl.isNotEmpty
+                                    ? Image.network(
+                                        avatarUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (c, o, s) =>
+                                            _buildAvatarPlaceholder(firstName),
+                                      )
+                                    : _buildAvatarPlaceholder(firstName),
+                              ),
+                            ),
                           ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(15),
-                            child: avatarUrl != null && avatarUrl.isNotEmpty
-                                ? Image.network(
-                                    avatarUrl,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (c, o, s) =>
-                                        _buildAvatarPlaceholder(firstName),
-                                  )
-                                : _buildAvatarPlaceholder(firstName),
+                          const SizedBox(height: 8),
+                          Container(
+                            constraints: const BoxConstraints(minWidth: 90),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(999),
+                              color: olympusGold.withOpacity(0.16),
+                              border: Border.all(
+                                color: olympusGold.withOpacity(0.42),
+                              ),
+                            ),
+                            child: Text(
+                              _getPerformanceLevel(),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFFFFF2B8),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 6),
+                          Column(
+                            children: [
+                              Text(
+                                '${_monthlyPresenceCount}/${_monthlyTrainingTotal} treinos',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.82),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(999),
+                                child: SizedBox(
+                                  width: 90,
+                                  child: LinearProgressIndicator(
+                                    value: _monthlyTrainingTotal > 0
+                                        ? _monthlyPresenceCount /
+                                            _monthlyTrainingTotal
+                                        : 0,
+                                    minHeight: 6,
+                                    backgroundColor:
+                                        Colors.white.withOpacity(0.15),
+                                    valueColor:
+                                        const AlwaysStoppedAnimation<Color>(
+                                      olympusGold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _monthlyTrainingTotal > 0
+                                    ? '${((_monthlyPresenceCount / _monthlyTrainingTotal) * 100).toStringAsFixed(0)}%'
+                                    : '0%',
+                                style: TextStyle(
+                                  color: olympusGold,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Padding(
                           padding: const EdgeInsets.only(top: 2),
@@ -1340,6 +2723,29 @@ event_time
                               if (_weekEvents.isNotEmpty) ...[
                                 const SizedBox(height: 8),
                                 _buildCompactWeekEventsPreview(),
+                                const SizedBox(height: 8),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    color: Colors.white.withOpacity(0.06),
+                                    border: Border.all(
+                                      color: olympusGold.withOpacity(0.22),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _getStreakLabel(),
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.88),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
                               ],
                             ],
                           ),
@@ -1909,7 +3315,7 @@ event_time
               Expanded(
                 child: _buildPresenceMetric(
                   icon: Icons.check_circle,
-                  label: 'Confirmado',
+                  label: 'Check-in realizado',
                   value: _confirmedPresenceCount,
                   color: Colors.green,
                 ),
@@ -2490,6 +3896,9 @@ event_time
     if (_financialRealtimeChannel != null) {
       supabase.removeChannel(_financialRealtimeChannel!);
     }
+    if (_checkinsRealtimeChannel != null) {
+      supabase.removeChannel(_checkinsRealtimeChannel!);
+    }
     super.dispose();
   }
 
@@ -2536,6 +3945,7 @@ event_time
                   _buildTodayBirthdaysCard(),
                   _buildFinancialAlertCard(),
                   _buildPresenceSummaryCard(),
+                  _buildGenderRankingCard(),
                   _buildWeekEventsSectionCard(),
                   _buildDashboardCard(
                     icon: Icons.calendar_today,

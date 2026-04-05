@@ -35,6 +35,7 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
 
   String _selectedGender = '';
   String _selectedPosition = '';
+  String _existingAvatarUrl = '';
   XFile? _selectedImage;
   bool _isLoading = false;
   bool _isFetchingCep = false;
@@ -92,6 +93,7 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
           _stateController.text = profile['state'] ?? '';
           _selectedGender = profile['gender'] ?? '';
           _selectedPosition = profile['court_position'] ?? '';
+          _existingAvatarUrl = profile['avatar_url'] ?? '';
         });
       }
     }
@@ -335,10 +337,20 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
+    if (_selectedImage == null && _existingAvatarUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecione uma foto para continuar'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
-      String? avatarUrl;
+      String? avatarUrl = _existingAvatarUrl;
       if (_selectedImage != null) {
         avatarUrl = await _uploadImage();
       }
@@ -362,7 +374,7 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
         'city': _cityController.text.trim(),
         'state': _stateController.text.trim().toUpperCase(),
         'updated_at': DateTime.now().toIso8601String(),
-        if (avatarUrl != null) 'avatar_url': avatarUrl,
+        if (avatarUrl != null && avatarUrl.isNotEmpty) 'avatar_url': avatarUrl,
       };
 
       await supabase.from('profiles').update(data).eq('id', user.id);
@@ -738,6 +750,14 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
           }
           return const Icon(Icons.person, size: 60, color: Colors.grey);
         },
+      );
+    }
+    if (_existingAvatarUrl.isNotEmpty) {
+      return Image.network(
+        _existingAvatarUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (c, o, s) =>
+            const Icon(Icons.person, size: 60, color: Colors.grey),
       );
     }
     return const Icon(Icons.person, size: 60, color: Colors.grey);

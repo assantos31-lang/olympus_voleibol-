@@ -1160,8 +1160,14 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       body: Column(
         children: [
           Container(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            color: const Color(0xFFF5F5F5),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFFF7F8FA), Color(0xFFEEF2F7)],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
             child: Column(
               children: [
                 Row(
@@ -1243,213 +1249,252 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFE3E8EF)),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.grey.withOpacity(0.08),
+                        color: Colors.black.withOpacity(0.06),
                         spreadRadius: 1,
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
                       ),
                     ],
                   ),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Mês',
-                              style: TextStyle(
-                                fontSize: 9,
-                                color: Color(0xFF757575),
-                                fontWeight: FontWeight.w600,
-                              ),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.tune_rounded,
+                            size: 16,
+                            color: Color(0xFF2C3E5A),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Filtros',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF2C3E5A),
                             ),
-                            const SizedBox(height: 2),
-                            Container(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 6),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF5F5F5),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: DropdownButton<int>(
-                                value: _selectedMonth,
-                                isExpanded: true,
-                                underline: const SizedBox(),
-                                icon: const Icon(Icons.keyboard_arrow_down,
-                                    color: Color(0xFF757575), size: 14),
-                                items: List.generate(12, (i) => i + 1)
-                                    .map((m) => DropdownMenuItem(
-                                          value: m,
-                                          child: Text(
-                                            DateFormat.MMMM('pt_BR')
-                                                .format(DateTime(2024, m)),
-                                            style: const TextStyle(
-                                              fontSize: 11,
-                                              color: Color(0xFF424242),
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ))
-                                    .toList(),
-                                onChanged: (v) => setState(() {
-                                  _selectedMonth = v!;
-                                  _loadRecords();
-                                }),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Ano',
-                              style: TextStyle(
-                                fontSize: 9,
-                                color: Color(0xFF757575),
-                                fontWeight: FontWeight.w600,
-                              ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Mês',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Color(0xFF757575),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF6F8FB),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: const Color(0xFFE1E6ED),
+                                    ),
+                                  ),
+                                  child: DropdownButton<int>(
+                                    value: _selectedMonth,
+                                    isExpanded: true,
+                                    underline: const SizedBox(),
+                                    icon: const Icon(
+                                      Icons.keyboard_arrow_down,
+                                      color: Color(0xFF757575),
+                                      size: 16,
+                                    ),
+                                    items: List.generate(12, (i) => i + 1)
+                                        .map((m) => DropdownMenuItem(
+                                              value: m,
+                                              child: Text(
+                                                DateFormat.MMMM('pt_BR')
+                                                    .format(DateTime(2024, m)),
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: Color(0xFF424242),
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ))
+                                        .toList(),
+                                    onChanged: (v) => setState(() {
+                                      _selectedMonth = v!;
+                                      _loadRecords();
+                                    }),
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 2),
-                            Container(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 6),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF5F5F5),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: DropdownButton<int>(
-                                value: _selectedYear,
-                                isExpanded: true,
-                                underline: const SizedBox(),
-                                icon: const Icon(Icons.keyboard_arrow_down,
-                                    color: Color(0xFF757575), size: 14),
-                                items: [2026, 2027, 2028, 2029, 2030]
-                                    .map((y) => DropdownMenuItem(
-                                          value: y,
-                                          child: Text(
-                                            y.toString(),
-                                            style: const TextStyle(
-                                              fontSize: 11,
-                                              color: Color(0xFF424242),
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ))
-                                    .toList(),
-                                onChanged: (v) => setState(() {
-                                  _selectedYear = v!;
-                                  _loadRecords();
-                                }),
-                              ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Ano',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Color(0xFF757575),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF6F8FB),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: const Color(0xFFE1E6ED),
+                                    ),
+                                  ),
+                                  child: DropdownButton<int>(
+                                    value: _selectedYear,
+                                    isExpanded: true,
+                                    underline: const SizedBox(),
+                                    icon: const Icon(
+                                      Icons.keyboard_arrow_down,
+                                      color: Color(0xFF757575),
+                                      size: 16,
+                                    ),
+                                    items: [2026, 2027, 2028, 2029, 2030]
+                                        .map((y) => DropdownMenuItem(
+                                              value: y,
+                                              child: Text(
+                                                y.toString(),
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: Color(0xFF424242),
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ))
+                                        .toList(),
+                                    onChanged: (v) => setState(() {
+                                      _selectedYear = v!;
+                                      _loadRecords();
+                                    }),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Tipo',
-                              style: TextStyle(
-                                fontSize: 9,
+                      const SizedBox(height: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Tipo',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Color(0xFF757575),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF6F8FB),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: const Color(0xFFE1E6ED),
+                              ),
+                            ),
+                            child: DropdownButton<String>(
+                              value: _selectedType,
+                              isExpanded: true,
+                              underline: const SizedBox(),
+                              icon: const Icon(
+                                Icons.keyboard_arrow_down,
                                 color: Color(0xFF757575),
-                                fontWeight: FontWeight.w600,
+                                size: 16,
                               ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'all',
+                                  child: Text(
+                                    'Todos',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF424242),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'monthly',
+                                  child: Text(
+                                    'Mensalidade',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF424242),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'games',
+                                  child: Text(
+                                    'Jogos',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF424242),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'maintenance',
+                                  child: Text(
+                                    'Manutenção',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF424242),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'other',
+                                  child: Text(
+                                    'Outros',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF424242),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              onChanged: (v) => setState(() {
+                                _selectedType = v!;
+                                _loadRecords();
+                              }),
                             ),
-                            const SizedBox(height: 2),
-                            Container(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 6),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF5F5F5),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: DropdownButton<String>(
-                                value: _selectedType,
-                                isExpanded: true,
-                                underline: const SizedBox(),
-                                icon: const Icon(Icons.keyboard_arrow_down,
-                                    color: Color(0xFF757575), size: 14),
-                                items: const [
-                                  DropdownMenuItem(
-                                    value: 'all',
-                                    child: Text(
-                                      'Todos',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFF424242),
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'monthly',
-                                    child: Text(
-                                      'Mensalidade',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFF424242),
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'games',
-                                    child: Text(
-                                      'Jogos',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFF424242),
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'maintenance',
-                                    child: Text(
-                                      'Manutenção',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFF424242),
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'other',
-                                    child: Text(
-                                      'Outros',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFF424242),
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                onChanged: (v) => setState(() {
-                                  _selectedType = v!;
-                                  _loadRecords();
-                                }),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
