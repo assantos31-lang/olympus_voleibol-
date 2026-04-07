@@ -474,8 +474,9 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.person),
                 ),
-                validator: (value) =>
-                    value?.isEmpty ?? true ? 'Campo obrigatório' : null,
+                validator: (value) => value?.isEmpty ?? true
+                    ? 'Pendente preenchimento do campo Nome Completo'
+                    : null,
               ),
               const SizedBox(height: 12),
 
@@ -492,7 +493,7 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                       ),
                       keyboardType: TextInputType.number,
                       validator: (value) => _removeMask(value).length != 11
-                          ? 'CPF inválido'
+                          ? 'Pendente preenchimento do campo CPF'
                           : null,
                     ),
                   ),
@@ -506,8 +507,9 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                         prefixIcon: Icon(Icons.credit_card),
                       ),
                       keyboardType: TextInputType.number,
-                      validator: (value) =>
-                          value?.isEmpty ?? true ? 'Campo obrigatório' : null,
+                      validator: (value) => value?.isEmpty ?? true
+                          ? 'Pendente preenchimento do campo RG'
+                          : null,
                     ),
                   ),
                 ],
@@ -527,7 +529,7 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                       ),
                       keyboardType: TextInputType.phone,
                       validator: (value) => _removeMask(value).length < 10
-                          ? 'Telefone inválido'
+                          ? 'Pendente preenchimento do campo Telefone'
                           : null,
                     ),
                   ),
@@ -553,8 +555,9 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                           _selectedPosition = '';
                         });
                       },
-                      validator: (value) =>
-                          value == null ? 'Campo obrigatório' : null,
+                      validator: (value) => value == null
+                          ? 'Pendente preenchimento do campo Gênero'
+                          : null,
                     ),
                   ),
                 ],
@@ -574,6 +577,9 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                   ),
                 ),
                 readOnly: true,
+                validator: (value) => value == null || value.isEmpty
+                    ? 'Pendente preenchimento do campo Data de Nascimento'
+                    : null,
               ),
               const SizedBox(height: 12),
 
@@ -618,8 +624,9 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                 ),
                 keyboardType: TextInputType.number,
                 maxLength: 9,
-                validator: (value) =>
-                    _removeMask(value).length != 8 ? 'CEP inválido' : null,
+                validator: (value) => _removeMask(value).length != 8
+                    ? 'Pendente preenchimento do campo CEP'
+                    : null,
               ),
               const SizedBox(height: 8),
 
@@ -633,8 +640,9 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                         labelText: 'Rua *',
                         border: OutlineInputBorder(),
                       ),
-                      validator: (value) =>
-                          value?.isEmpty ?? true ? 'Campo obrigatório' : null,
+                      validator: (value) => value?.isEmpty ?? true
+                          ? 'Pendente preenchimento do campo Rua'
+                          : null,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -646,8 +654,9 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.number,
-                      validator: (value) =>
-                          value?.isEmpty ?? true ? 'Campo obrigatório' : null,
+                      validator: (value) => value?.isEmpty ?? true
+                          ? 'Pendente preenchimento do campo Número'
+                          : null,
                     ),
                   ),
                 ],
@@ -669,8 +678,9 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                   labelText: 'Bairro *',
                   border: OutlineInputBorder(),
                 ),
-                validator: (value) =>
-                    value?.isEmpty ?? true ? 'Campo obrigatório' : null,
+                validator: (value) => value?.isEmpty ?? true
+                    ? 'Pendente preenchimento do campo Bairro'
+                    : null,
               ),
               const SizedBox(height: 8),
 
@@ -684,8 +694,9 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                         labelText: 'Cidade *',
                         border: OutlineInputBorder(),
                       ),
-                      validator: (value) =>
-                          value?.isEmpty ?? true ? 'Campo obrigatório' : null,
+                      validator: (value) => value?.isEmpty ?? true
+                          ? 'Pendente preenchimento do campo Cidade'
+                          : null,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -697,8 +708,9 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                         border: OutlineInputBorder(),
                       ),
                       maxLength: 2,
-                      validator: (value) =>
-                          value?.isEmpty ?? true ? 'Campo obrigatório' : null,
+                      validator: (value) => value?.isEmpty ?? true
+                          ? 'Pendente preenchimento do campo Estado'
+                          : null,
                     ),
                   ),
                 ],

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:ui';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -1138,12 +1139,57 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
     );
   }
 
+  String? _extractPixKey(FinancialRecord record) {
+    try {
+      final dynamic value = (record as dynamic).pixKey;
+      if (value != null && value.toString().trim().isNotEmpty) {
+        return value.toString().trim();
+      }
+    } catch (_) {}
+
+    try {
+      final dynamic value = (record as dynamic).pix_key;
+      if (value != null && value.toString().trim().isNotEmpty) {
+        return value.toString().trim();
+      }
+    } catch (_) {}
+
+    final description = record.description?.trim();
+    if (description == null || description.isEmpty) return null;
+
+    final match =
+        RegExp(r'Chave Pix(?: \(([^)]+)\))?:\s*(.+)', caseSensitive: false)
+            .firstMatch(description);
+
+    if (match == null) return null;
+
+    final pixType = (match.group(1) ?? '').toLowerCase().trim();
+    final rawKey = (match.group(2) ?? '').trim();
+
+    if (pixType == 'cnpj' || pixType == 'cpf') {
+      return rawKey.replaceAll(RegExp(r'\D'), '');
+    }
+
+    return rawKey;
+  }
+
+  bool _descriptionIsOnlyPix(FinancialRecord record) {
+    final description = record.description?.trim();
+    if (description == null || description.isEmpty) return false;
+    return RegExp(r'^Chave Pix(?: \(([^)]+)\))?:\s*.+$', caseSensitive: false)
+        .hasMatch(description);
+  }
+
   void _showRecordDetails(FinancialRecord record) {
     final typeColor = _getTypeColor(record.type);
     final dueDate = _getDueDate(record);
     final statusText = _getStatusText(record.status, dueDate);
     final statusColor = _getStatusColor(record.status, dueDate);
     final formattedDueDate = DateFormat('dd/MM/yyyy').format(dueDate);
+    final pixKey = _extractPixKey(record);
+    final showDescription = record.description != null &&
+        record.description!.trim().isNotEmpty &&
+        !_descriptionIsOnlyPix(record);
 
     showModalBottomSheet(
       context: context,
@@ -1298,22 +1344,156 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                             value: formattedDueDate,
                             valueColor: const Color(0xFF616161),
                           ),
-                          if (record.description != null) ...[
+                          if (showDescription) ...[
                             const Divider(height: 24),
                             _buildDetailRow(
                               icon: Icons.description,
                               label: 'Descrição',
-                              value: record.description!,
+                              value: record.description!.trim(),
                               valueColor: const Color(0xFF616161),
+                            ),
+                          ],
+                          if (pixKey != null) ...[
+                            const Divider(height: 24),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: olympusBlue.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Icon(
+                                    Icons.pix,
+                                    size: 18,
+                                    color: olympusBlue,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Chave Pix',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Color(0xFF757575),
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        pixKey!,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          color: Color(0xFF616161),
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: olympusBlue.withOpacity(0.08),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: IconButton(
+                                    onPressed: () async {
+                                      await Clipboard.setData(
+                                        ClipboardData(text: pixKey!),
+                                      );
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Chave Pix copiada!'),
+                                            backgroundColor: Colors.green,
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    icon: const Icon(
+                                      Icons.copy_rounded,
+                                      color: olympusBlue,
+                                      size: 20,
+                                    ),
+                                    tooltip: 'Copiar chave Pix',
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ],
                       ),
                     ),
                     const SizedBox(height: 16),
-                    if (record.status == 'pending' && record.receiptUrl == null)
+                    if (record.receiptUrl != null)
                       Container(
                         width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFFE8F5E9),
+                              const Color(0xFFC8E6C9)
+                            ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFA5D6A7)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: Colors.green,
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: const Icon(
+                                Icons.check_circle,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Comprovante Enviado',
+                                    style: TextStyle(
+                                      color: Color(0xFF2E7D32),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Aguarde a aprovação',
+                                    style: TextStyle(
+                                      color: Color(0xFF43A047),
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(Icons.chevron_right,
+                                color: const Color(0xFF388E3C), size: 16),
+                          ],
+                        ),
+                      )
+                    else if (record.status == 'pending' &&
+                        record.receiptUrl == null)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(top: 4),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
@@ -1370,64 +1550,6 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                               ),
                             ),
                           ),
-                        ),
-                      )
-                    else if (record.receiptUrl != null)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              const Color(0xFFE8F5E9),
-                              const Color(0xFFC8E6C9)
-                            ],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFA5D6A7)),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(5),
-                              decoration: BoxDecoration(
-                                color: Colors.green,
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              child: const Icon(
-                                Icons.check_circle,
-                                color: Colors.white,
-                                size: 16,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Comprovante Enviado',
-                                    style: TextStyle(
-                                      color: Color(0xFF2E7D32),
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  Text(
-                                    'Aguarde a aprovação',
-                                    style: TextStyle(
-                                      color: Color(0xFF43A047),
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Icon(Icons.chevron_right,
-                                color: const Color(0xFF388E3C), size: 16),
-                          ],
                         ),
                       )
                     else if (record.status == 'approved')

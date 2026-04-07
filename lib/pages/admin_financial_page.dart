@@ -39,7 +39,11 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
 
       if (mounted) {
         setState(() {
-          _athletes = List<Map<String, dynamic>>.from(response);
+          _athletes = List<Map<String, dynamic>>.from(response)
+            ..sort((a, b) => (a['full_name'] ?? '')
+                .toString()
+                .toLowerCase()
+                .compareTo((b['full_name'] ?? '').toString().toLowerCase()));
         });
       }
     } catch (e) {
@@ -369,11 +373,83 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
     }
   }
 
+  String _getPixTypeLabel(String type) {
+    switch (type) {
+      case 'phone':
+        return 'Telefone';
+      case 'cpf':
+        return 'CPF';
+      case 'cnpj':
+        return 'CNPJ';
+      default:
+        return 'CPF';
+    }
+  }
+
+  String _getPixHintText(String type) {
+    switch (type) {
+      case 'phone':
+        return 'Informe o telefone da chave Pix';
+      case 'cpf':
+        return 'Informe o CPF da chave Pix';
+      case 'cnpj':
+        return 'Informe o CNPJ da chave Pix';
+      default:
+        return 'Informe a chave Pix';
+    }
+  }
+
+  List<TextInputFormatter> _getPixInputFormatters(String type) {
+    switch (type) {
+      case 'phone':
+        return [
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9()\-\s+]')),
+        ];
+      case 'cpf':
+      case 'cnpj':
+        return [
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9./\-]')),
+        ];
+      default:
+        return [];
+    }
+  }
+
+  String? _validatePixKey(String? value, String type) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Campo obrigatório';
+    }
+
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+
+    switch (type) {
+      case 'phone':
+        if (digits.length < 10 || digits.length > 11) {
+          return 'Telefone Pix inválido';
+        }
+        break;
+      case 'cpf':
+        if (digits.length != 11) {
+          return 'CPF Pix inválido';
+        }
+        break;
+      case 'cnpj':
+        if (digits.length != 14) {
+          return 'CNPJ Pix inválido';
+        }
+        break;
+    }
+
+    return null;
+  }
+
   void _showCreateRecordDialog() {
-    String? selectedAthleteId;
+    String? selectedAthleteId = 'all';
     String selectedType = 'monthly';
     final valueController = TextEditingController();
     final descriptionController = TextEditingController();
+    final pixKeyController = TextEditingController();
+    String selectedPixKeyType = 'cpf';
     int selectedMonth = _selectedMonth;
     int selectedYear = _selectedYear;
     int selectedDay = DateTime.now().day;
@@ -578,6 +654,111 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                       },
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE8EAF6), Color(0xFFC5CAE9)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF9FA8DA)),
+                    ),
+                    child: DropdownButtonFormField<String>(
+                      value: selectedPixKeyType,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo da Chave Pix *',
+                        labelStyle:
+                            TextStyle(fontSize: 11, color: Color(0xFF3949AB)),
+                        border: InputBorder.none,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      ),
+                      isExpanded: true,
+                      icon: const Icon(Icons.keyboard_arrow_down,
+                          color: Color(0xFF5C6BC0), size: 18),
+                      style: const TextStyle(
+                          fontSize: 12, color: Color(0xFF424242)),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'phone',
+                          child: Text(
+                            'Telefone',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF424242),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'cpf',
+                          child: Text(
+                            'CPF',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF424242),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'cnpj',
+                          child: Text(
+                            'CNPJ',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF424242),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        setDialogState(() {
+                          selectedPixKeyType = value!;
+                          pixKeyController.clear();
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE1F5FE), Color(0xFFB3E5FC)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF81D4FA)),
+                    ),
+                    child: TextFormField(
+                      controller: pixKeyController,
+                      decoration: InputDecoration(
+                        labelText: 'Chave Pix *',
+                        labelStyle: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF0277BD),
+                        ),
+                        border: InputBorder.none,
+                        hintText: _getPixHintText(selectedPixKeyType),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 8),
+                      ),
+                      style: const TextStyle(fontSize: 12),
+                      keyboardType: selectedPixKeyType == 'phone'
+                          ? TextInputType.phone
+                          : TextInputType.number,
+                      inputFormatters:
+                          _getPixInputFormatters(selectedPixKeyType),
+                      validator: (value) =>
+                          _validatePixKey(value, selectedPixKeyType),
+                    ),
+                  ),
                   if (showOtherDescription) ...[
                     const SizedBox(height: 8),
                     Container(
@@ -774,20 +955,45 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                         .replaceAll(RegExp(r'[^\d,]'), '')
                         .replaceAll(',', '.');
 
-                    await _supabase.from('financial_records').insert({
-                      'athlete_id':
-                          selectedAthleteId == 'all' ? null : selectedAthleteId,
-                      'type': selectedType,
-                      'value': double.parse(numericValue),
-                      'description': selectedType == 'other'
-                          ? descriptionController.text
-                          : null,
-                      'day': selectedDay,
-                      'month': selectedMonth,
-                      'year': selectedYear,
-                      'status': 'pending',
-                      'created_at': DateTime.now().toIso8601String(),
-                    }).select();
+                    final pixDescription =
+                        'Chave Pix (${_getPixTypeLabel(selectedPixKeyType)}): ${pixKeyController.text.trim()}';
+                    final finalDescription = selectedType == 'other' &&
+                            descriptionController.text.trim().isNotEmpty
+                        ? '${descriptionController.text.trim()}\n$pixDescription'
+                        : pixDescription;
+
+                    if (selectedAthleteId == 'all') {
+                      final records = _athletes
+                          .map((athlete) => {
+                                'athlete_id': athlete['id'],
+                                'type': selectedType,
+                                'value': double.parse(numericValue),
+                                'description': finalDescription,
+                                'day': selectedDay,
+                                'month': selectedMonth,
+                                'year': selectedYear,
+                                'status': 'pending',
+                                'created_at': DateTime.now().toIso8601String(),
+                              })
+                          .toList();
+
+                      await _supabase
+                          .from('financial_records')
+                          .insert(records)
+                          .select();
+                    } else {
+                      await _supabase.from('financial_records').insert({
+                        'athlete_id': selectedAthleteId,
+                        'type': selectedType,
+                        'value': double.parse(numericValue),
+                        'description': finalDescription,
+                        'day': selectedDay,
+                        'month': selectedMonth,
+                        'year': selectedYear,
+                        'status': 'pending',
+                        'created_at': DateTime.now().toIso8601String(),
+                      }).select();
+                    }
 
                     if (mounted) {
                       Navigator.pop(context);
@@ -1626,6 +1832,46 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                                               color: Color(0xFF2C3E5A),
                                             ),
                                           ),
+                                          if (record.receiptUrl != null) ...[
+                                            const SizedBox(height: 4),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 3,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.blue
+                                                    .withOpacity(0.1),
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                                border: Border.all(
+                                                  color: Colors.blue
+                                                      .withOpacity(0.25),
+                                                ),
+                                              ),
+                                              child: const Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    Icons.attach_file,
+                                                    size: 11,
+                                                    color: Colors.blue,
+                                                  ),
+                                                  SizedBox(width: 4),
+                                                  Text(
+                                                    'Comprovante',
+                                                    style: TextStyle(
+                                                      color: Colors.blue,
+                                                      fontSize: 10,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
                                           const SizedBox(height: 4),
                                           _buildStatusBadge(
                                             record.status,
@@ -1898,354 +2144,267 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.white, Color(0xFFF8F9FA)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+      builder: (context) => SafeArea(
+        top: false,
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.88,
           ),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Color(0xFFE0E0E0),
-                borderRadius: BorderRadius.circular(2),
-              ),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.white, Color(0xFFF8F9FA)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
             ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: typeColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Icon(
-                          _getTypeIcon(record.type),
-                          color: typeColor,
-                          size: 30,
-                        ),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              top: 12,
+              bottom: MediaQuery.of(context).viewPadding.bottom + 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0E0E0),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: typeColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Icon(
+                        _getTypeIcon(record.type),
+                        color: typeColor,
+                        size: 30,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Tipo: ${record.typeLabel}',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF2C3E5A),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Mês ${record.month}/${record.year}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFF757575),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _deleteRecord(record.id);
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        spreadRadius: 2,
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      _buildDetailRow(
+                        icon: Icons.person,
+                        label: 'Atleta',
+                        value: _getAthleteName(record.athleteId),
+                        valueColor: const Color(0xFF2C3E5A),
+                        valueWeight: FontWeight.w600,
+                      ),
+                      const Divider(height: 32),
+                      _buildDetailRow(
+                        icon: Icons.attach_money,
+                        label: 'Valor',
+                        value: 'R\$ ${record.value.toStringAsFixed(2)}',
+                        valueColor: const Color(0xFF2C3E5A),
+                        valueWeight: FontWeight.bold,
+                      ),
+                      const Divider(height: 32),
+                      _buildDetailRow(
+                        icon: isOverdue
+                            ? Icons.warning
+                            : record.status == 'approved'
+                                ? Icons.check_circle
+                                : record.status == 'pending'
+                                    ? Icons.schedule
+                                    : Icons.cancel,
+                        label: 'Status',
+                        value: isOverdue ? 'Atrasado' : record.statusLabel,
+                        valueColor: isOverdue
+                            ? Colors.red
+                            : record.status == 'approved'
+                                ? Colors.green
+                                : record.status == 'pending'
+                                    ? Colors.orange
+                                    : Colors.red,
+                        valueWeight: FontWeight.w600,
+                        iconColor: isOverdue
+                            ? Colors.red
+                            : record.status == 'approved'
+                                ? Colors.green
+                                : record.status == 'pending'
+                                    ? Colors.orange
+                                    : Colors.red,
+                      ),
+                      const Divider(height: 32),
+                      _buildDetailRow(
+                        icon: Icons.calendar_today,
+                        label: 'Data vencimento',
+                        value: dueDate,
+                        valueColor:
+                            isOverdue ? Colors.red : const Color(0xFF616161),
+                        valueWeight:
+                            isOverdue ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                      const Divider(height: 32),
+                      _buildDetailRow(
+                        icon: Icons.calendar_today,
+                        label: 'Mês/Ano',
+                        value: '${record.month}/${record.year}',
+                        valueColor: const Color(0xFF616161),
+                      ),
+                      if (record.description != null) ...[
+                        const Divider(height: 32),
+                        _buildDetailRow(
+                          icon: Icons.description,
+                          label: 'Descrição',
+                          value: record.description!,
+                          valueColor: const Color(0xFF616161),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (record.receiptUrl != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE3F2FD), Color(0xFFBBDEFB)],
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFF90CAF9)),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
                           children: [
-                            Text(
-                              'Tipo: ${record.typeLabel}',
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF2C3E5A),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.blue,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.attach_file,
+                                color: Colors.white,
+                                size: 22,
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Mês ${record.month}/${record.year}',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Color(0xFF757575),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Comprovante anexado pelo atleta',
+                                    style: TextStyle(
+                                      color: Color(0xFF1565C0),
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Toque abaixo para visualizar o arquivo',
+                                    style: TextStyle(
+                                      color: Color(0xFF42A5F5),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
-                      ),
-                      IconButton(
-                        icon:
-                            const Icon(Icons.delete_outline, color: Colors.red),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _deleteRecord(record.id);
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.1),
-                          spreadRadius: 2,
-                          blurRadius: 8,
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        _buildDetailRow(
-                          icon: Icons.person,
-                          label: 'Atleta',
-                          value: _getAthleteName(record.athleteId),
-                          valueColor: const Color(0xFF2C3E5A),
-                          valueWeight: FontWeight.w600,
-                        ),
-                        const Divider(height: 32),
-                        _buildDetailRow(
-                          icon: Icons.attach_money,
-                          label: 'Valor',
-                          value: 'R\$ ${record.value.toStringAsFixed(2)}',
-                          valueColor: const Color(0xFF2C3E5A),
-                          valueWeight: FontWeight.bold,
-                        ),
-                        const Divider(height: 32),
-                        _buildDetailRow(
-                          icon: isOverdue
-                              ? Icons.warning
-                              : record.status == 'approved'
-                                  ? Icons.check_circle
-                                  : record.status == 'pending'
-                                      ? Icons.schedule
-                                      : Icons.cancel,
-                          label: 'Status',
-                          value: isOverdue ? 'Atrasado' : record.statusLabel,
-                          valueColor: isOverdue
-                              ? Colors.red
-                              : record.status == 'approved'
-                                  ? Colors.green
-                                  : record.status == 'pending'
-                                      ? Colors.orange
-                                      : Colors.red,
-                          valueWeight: FontWeight.w600,
-                          iconColor: isOverdue
-                              ? Colors.red
-                              : record.status == 'approved'
-                                  ? Colors.green
-                                  : record.status == 'pending'
-                                      ? Colors.orange
-                                      : Colors.red,
-                        ),
-                        const Divider(height: 32),
-                        _buildDetailRow(
-                          icon: Icons.calendar_today,
-                          label: 'Data vencimento',
-                          value: dueDate,
-                          valueColor:
-                              isOverdue ? Colors.red : const Color(0xFF616161),
-                          valueWeight:
-                              isOverdue ? FontWeight.w600 : FontWeight.normal,
-                        ),
-                        const Divider(height: 32),
-                        _buildDetailRow(
-                          icon: Icons.calendar_today,
-                          label: 'Mês/Ano',
-                          value: '${record.month}/${record.year}',
-                          valueColor: const Color(0xFF616161),
-                        ),
-                        if (record.description != null) ...[
-                          const Divider(height: 32),
-                          _buildDetailRow(
-                            icon: Icons.description,
-                            label: 'Descrição',
-                            value: record.description!,
-                            valueColor: const Color(0xFF616161),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  if (record.status == 'pending') ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.green[600]!,
-                                  Colors.green[400]!
-                                ],
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.green.withOpacity(0.3),
-                                  spreadRadius: 1,
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () async {
-                                  await _approvePayment(record.id);
-                                  if (mounted) {
-                                    Navigator.pop(context);
-                                  }
-                                },
-                                borderRadius: BorderRadius.circular(12),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.check,
-                                        color: Colors.white, size: 20),
-                                    const SizedBox(width: 8),
-                                    const Text(
-                                      'Aprovar',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [Colors.red[600]!, Colors.red[400]!],
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.red.withOpacity(0.3),
-                                  spreadRadius: 1,
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () async {
-                                  await _rejectPayment(record.id);
-                                  if (mounted) {
-                                    Navigator.pop(context);
-                                  }
-                                },
-                                borderRadius: BorderRadius.circular(12),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.close,
-                                        color: Colors.white, size: 20),
-                                    const SizedBox(width: 8),
-                                    const Text(
-                                      'Rejeitar',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ] else if (record.status != 'pending') ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            record.status == 'approved'
-                                ? Icons.check_circle
-                                : Icons.cancel,
-                            color: record.status == 'approved'
-                                ? Colors.green
-                                : Colors.red,
-                            size: 24,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  record.status == 'approved'
-                                      ? 'Pagamento Aprovado'
-                                      : 'Pagamento Rejeitado',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 15,
-                                    color: Colors.grey[800],
-                                  ),
-                                ),
-                                Text(
-                                  'Registro finalizado',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              _editRecord(record);
-                            },
-                            icon: const Icon(Icons.edit, size: 18),
-                            label: const Text('Editar'),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () => _viewReceipt(record.receiptUrl!),
+                            icon: const Icon(Icons.visibility),
+                            label: const Text('Ver comprovante'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2C3E5A),
+                              backgroundColor: Colors.blue,
                               foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                  const SizedBox(height: 12),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                if (record.status == 'pending') ...[
                   Row(
                     children: [
                       Expanded(
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF25D366), Color(0xFF128C7E)],
+                            gradient: LinearGradient(
+                              colors: [Colors.green[600]!, Colors.green[400]!],
                               begin: Alignment.centerLeft,
                               end: Alignment.centerRight,
                             ),
                             borderRadius: BorderRadius.circular(12),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF25D366).withOpacity(0.3),
+                                color: Colors.green.withOpacity(0.3),
                                 spreadRadius: 1,
                                 blurRadius: 6,
                                 offset: const Offset(0, 3),
@@ -2255,19 +2414,21 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                           child: Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              onTap: () {
-                                Navigator.pop(context);
-                                _navigateToAthleteProfile(record);
+                              onTap: () async {
+                                await _approvePayment(record.id);
+                                if (mounted) {
+                                  Navigator.pop(context);
+                                }
                               },
                               borderRadius: BorderRadius.circular(12),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(Icons.person,
+                                  const Icon(Icons.check,
                                       color: Colors.white, size: 20),
                                   const SizedBox(width: 8),
                                   const Text(
-                                    'Enviar Mensagem',
+                                    'Aprovar',
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 14,
@@ -2285,15 +2446,15 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF2C3E5A), Color(0xFF4A6FA5)],
+                            gradient: LinearGradient(
+                              colors: [Colors.red[600]!, Colors.red[400]!],
                               begin: Alignment.centerLeft,
                               end: Alignment.centerRight,
                             ),
                             borderRadius: BorderRadius.circular(12),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF2C3E5A).withOpacity(0.3),
+                                color: Colors.red.withOpacity(0.3),
                                 spreadRadius: 1,
                                 blurRadius: 6,
                                 offset: const Offset(0, 3),
@@ -2303,7 +2464,12 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                           child: Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              onTap: () => Navigator.pop(context),
+                              onTap: () async {
+                                await _rejectPayment(record.id);
+                                if (mounted) {
+                                  Navigator.pop(context);
+                                }
+                              },
                               borderRadius: BorderRadius.circular(12),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -2312,7 +2478,7 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                                       color: Colors.white, size: 20),
                                   const SizedBox(width: 8),
                                   const Text(
-                                    'Fechar',
+                                    'Rejeitar',
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 14,
@@ -2327,67 +2493,157 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                       ),
                     ],
                   ),
-                  if (record.receiptUrl != null) ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFE3F2FD), Color(0xFFBBDEFB)],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
+                ] else if (record.status != 'pending') ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          record.status == 'approved'
+                              ? Icons.check_circle
+                              : Icons.cancel,
+                          color: record.status == 'approved'
+                              ? Colors.green
+                              : Colors.red,
+                          size: 24,
                         ),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFF90CAF9)),
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => _viewReceipt(record.receiptUrl!),
-                          borderRadius: BorderRadius.circular(16),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                record.status == 'approved'
+                                    ? 'Pagamento Aprovado'
+                                    : 'Pagamento Rejeitado',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                  color: Colors.grey[800],
+                                ),
+                              ),
+                              Text(
+                                'Registro finalizado',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _editRecord(record);
+                          },
+                          icon: const Icon(Icons.edit, size: 18),
+                          label: const Text('Editar'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2C3E5A),
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF25D366), Color(0xFF128C7E)],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF25D366).withOpacity(0.3),
+                              spreadRadius: 1,
+                              blurRadius: 6,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              Navigator.pop(context);
+                              _navigateToAthleteProfile(record);
+                            },
+                            borderRadius: BorderRadius.circular(12),
                             child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(
-                                    Icons.visibility,
+                                const Icon(Icons.person,
+                                    color: Colors.white, size: 20),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Enviar Mensagem',
+                                  style: TextStyle(
                                     color: Colors.white,
-                                    size: 24,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                                const SizedBox(width: 12),
-                                const Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Ver Comprovante',
-                                        style: TextStyle(
-                                          color: Color(0xFF1565C0),
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Clique para visualizar',
-                                        style: TextStyle(
-                                          color: Color(0xFF42A5F5),
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF2C3E5A), Color(0xFF4A6FA5)],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF2C3E5A).withOpacity(0.3),
+                              spreadRadius: 1,
+                              blurRadius: 6,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => Navigator.pop(context),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.close,
+                                    color: Colors.white, size: 20),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Fechar',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                                Icon(Icons.chevron_right,
-                                    color: const Color(0xFF1976D2)),
                               ],
                             ),
                           ),
@@ -2395,11 +2651,10 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 24),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
