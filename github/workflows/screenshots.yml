@@ -1,0 +1,44 @@
+name: Capturar Screenshots iOS
+
+on:
+  workflow_dispatch: # Permite rodar manualmente pelo botão no GitHub
+  push:
+    branches: [ main ]
+
+jobs:
+  ios-screenshots:
+    runs-on: macos-latest # ✅ Isso aqui é o que você precisa: um Mac na nuvem!
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: Run Integration Test & Capture Screenshots
+        run: flutter drive --driver=test_driver/integration_test.dart --target=integration/login_test.dart -d iPhone-15-Pro
+        # Nota: O driver acima é uma configuração padrão.
+        # Se não tiver o arquivo driver, o comando abaixo é mais simples para testes:
+        
+      - name: Run Test (Método Simplificado)
+        run: flutter test integration_test/login_test.dart
+
+      - name: Upload Screenshots
+        uses: actions/upload-artifact@v3
+        with:
+          name: screenshots-ios
+          path: integration_test/screenshots/ # Onde o takeScreenshot salva por padrão
+          # Se não salvar na pasta específica, use path: ./
