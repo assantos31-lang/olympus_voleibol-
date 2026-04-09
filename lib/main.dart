@@ -12,11 +12,9 @@ import 'firebase_options.dart';
 import 'pages/admin_home_page.dart';
 import 'pages/athlete_dashboard_page.dart';
 import 'pages/chat_rooms_page.dart';
-import 'pages/coach_dashboard_page.dart';
 import 'pages/complete_profile_page.dart';
 import 'pages/dashboard_router_page.dart';
 import 'pages/login_page.dart';
-import 'pages/member_dashboard_page.dart';
 import 'pages/profiles_page.dart';
 import 'services/auth_service.dart';
 
@@ -147,8 +145,6 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const LoginPage(),
         '/profiles': (context) => const AdminOnlyProfilesRoute(),
         '/athlete-dashboard': (context) => const AthleteDashboardPage(),
-        '/coach-dashboard': (context) => const CoachDashboardPage(),
-        '/member-dashboard': (context) => const MemberDashboardPage(),
         '/complete-profile': (context) => const CompleteProfilePage(),
         '/dashboard': (context) => const DashboardRouterPage(),
         '/admin-home': (context) => const AdminHomePage(),

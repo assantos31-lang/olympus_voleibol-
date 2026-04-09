@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart';
 import 'athlete_dashboard_page.dart';
-import 'coach_dashboard_page.dart';
-import 'member_dashboard_page.dart';
 import 'complete_profile_page.dart';
 import 'admin_home_page.dart';
 
@@ -100,20 +98,14 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
 
       Widget dashboard;
       switch (userType) {
-        case 'athlete':
-          dashboard = const AthleteDashboardPage();
-          break;
-        case 'coach':
-          dashboard = const CoachDashboardPage();
-          break;
-        case 'member':
-          dashboard = const MemberDashboardPage();
-          break;
         case 'admin':
           dashboard = const AdminHomePage();
           break;
+        case 'athlete':
+        case 'coach':
+        case 'member':
         default:
-          dashboard = const MemberDashboardPage();
+          dashboard = const AthleteDashboardPage();
       }
 
       if (!mounted) return;
@@ -126,7 +118,7 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
       debugPrint('Erro ao carregar dashboard: $e');
       if (!mounted) return;
       setState(() {
-        _dashboardWidget = const MemberDashboardPage();
+        _dashboardWidget = const AthleteDashboardPage();
         _isLoading = false;
       });
     }

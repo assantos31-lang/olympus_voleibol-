@@ -95,18 +95,38 @@ class AuthService {
   Future<Map<String, dynamic>> deleteMyAccount() async {
     try {
       final user = supabase.auth.currentUser;
-
       if (user == null) {
         return {'success': false, 'error': 'Usuário não autenticado'};
       }
 
-      await supabase.from('user_push_tokens').delete().eq('user_id', user.id);
-      await supabase.from('profiles').delete().eq('id', user.id);
+      Session? session = supabase.auth.currentSession;
 
-      final response = await supabase.functions.invoke('delete-account');
+      try {
+        final refreshResponse = await supabase.auth.refreshSession();
+        session = refreshResponse.session ?? session;
+      } catch (_) {
+        // Mantém a sessão atual caso o refresh falhe
+      }
+
+      if (session == null) {
+        return {
+          'success': false,
+          'error': 'Sessão expirada. Faça login novamente.',
+        };
+      }
+
+      final response = await supabase.functions.invoke(
+        'delete-account',
+        headers: {
+          'Authorization': 'Bearer ${session.accessToken}',
+        },
+      );
 
       if (response.status != 200) {
-        return {'success': false, 'error': 'Falha ao excluir conta'};
+        return {
+          'success': false,
+          'error': response.data?['error'] ?? 'Falha ao excluir conta',
+        };
       }
 
       await supabase.auth.signOut();
