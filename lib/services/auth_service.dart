@@ -92,6 +92,33 @@ class AuthService {
     }
   }
 
+  Future<Map<String, dynamic>> deleteMyAccount() async {
+    try {
+      final user = supabase.auth.currentUser;
+
+      if (user == null) {
+        return {'success': false, 'error': 'Usuário não autenticado'};
+      }
+
+      await supabase.from('user_push_tokens').delete().eq('user_id', user.id);
+      await supabase.from('profiles').delete().eq('id', user.id);
+
+      final response = await supabase.functions.invoke('delete-account');
+
+      if (response.status != 200) {
+        return {'success': false, 'error': 'Falha ao excluir conta'};
+      }
+
+      await supabase.auth.signOut();
+
+      return {'success': true};
+    } on AuthException catch (e) {
+      return {'success': false, 'error': e.message};
+    } catch (e) {
+      return {'success': false, 'error': 'Erro ao excluir conta: $e'};
+    }
+  }
+
   Future<void> signOut() async {
     await supabase.auth.signOut();
   }

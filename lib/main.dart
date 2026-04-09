@@ -18,7 +18,6 @@ import 'pages/dashboard_router_page.dart';
 import 'pages/login_page.dart';
 import 'pages/member_dashboard_page.dart';
 import 'pages/profiles_page.dart';
-import 'pages/register_page.dart';
 import 'services/auth_service.dart';
 
 @pragma('vm:entry-point')
@@ -146,7 +145,6 @@ class MyApp extends StatelessWidget {
       routes: {
         '/': (context) => const AppBootstrapPage(),
         '/login': (context) => const LoginPage(),
-        '/register': (context) => const RegisterPage(),
         '/profiles': (context) => const AdminOnlyProfilesRoute(),
         '/athlete-dashboard': (context) => const AthleteDashboardPage(),
         '/coach-dashboard': (context) => const CoachDashboardPage(),
