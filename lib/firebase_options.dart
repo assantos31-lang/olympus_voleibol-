@@ -40,10 +40,10 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyDY9oU2CSUbBO77VAEKwIizIUkSLq0jqek',
-    appId: '1:130525975992:ios:dd6797a0a342de56f36b4d',
+    appId: '1:130525975992:ios:cd061a5426ddd67ff36b4d',
     messagingSenderId: '130525975992',
     projectId: 'olympus-voleibol',
     storageBucket: 'olympus-voleibol.firebasestorage.app',
-    iosBundleId: 'com.example.olympusVoleibol',
+    iosBundleId: 'com.olympus.voleibol', // ✅ CORRIGIDO
   );
 }

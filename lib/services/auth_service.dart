@@ -5,35 +5,41 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class AuthService {
   final supabase = Supabase.instance.client;
 
-  // ✅ CORRIGIDO AQUI
+  // 🔥 CORREÇÃO: nunca quebrar login por causa de push
   Future<void> _savePushTokenForCurrentUser() async {
     if (kIsWeb) return;
 
-    final user = supabase.auth.currentUser;
-    if (user == null) {
-      debugPrint('Sem usuário logado para salvar token push.');
-      return;
-    }
-
-    final token = await FirebaseMessaging.instance.getToken();
-    debugPrint('FCM TOKEN NO AUTH SERVICE: $token');
-
-    if (token == null || token.isEmpty) {
-      debugPrint('Token FCM vazio no AuthService.');
-      return;
-    }
-
     try {
+      final user = supabase.auth.currentUser;
+      if (user == null) {
+        debugPrint('Sem usuário logado para salvar token push.');
+        return;
+      }
+
+      final messaging = FirebaseMessaging.instance;
+
+      // 🔥 iOS precisa pedir permissão antes
+      await messaging.requestPermission();
+
+      final token = await messaging.getToken();
+      debugPrint('FCM TOKEN NO AUTH SERVICE: $token');
+
+      if (token == null || token.isEmpty) {
+        debugPrint('Token FCM vazio no AuthService.');
+        return;
+      }
+
       await supabase.from('user_push_tokens').upsert({
         'user_id': user.id,
         'device_token': token,
-        'platform': 'android',
+        'platform': 'ios', // 🔥 corrigido
         'updated_at': DateTime.now().toIso8601String(),
-      }, onConflict: 'user_id,device_token'); // 🔥 CORREÇÃO PRINCIPAL
+      }, onConflict: 'user_id,device_token');
 
       debugPrint('Token push salvo com sucesso pelo AuthService.');
     } catch (e) {
-      debugPrint('Erro ao salvar token push: $e');
+      // 🔥 NUNCA quebrar login
+      debugPrint('Erro ao salvar token push (IGNORADO): $e');
     }
   }
 
@@ -48,7 +54,8 @@ class AuthService {
         return {'success': false, 'error': 'Usuário não encontrado'};
       }
 
-      await _savePushTokenForCurrentUser();
+      // 🔥 NÃO BLOQUEIA LOGIN
+      _savePushTokenForCurrentUser();
 
       final profile = await getUserProfile(response.user!.id);
 
@@ -60,7 +67,7 @@ class AuthService {
     } on AuthException catch (e) {
       return {'success': false, 'error': e.message};
     } catch (e) {
-      return {'success': false, 'error': 'Erro ao fazer login: $e'};
+      return {'success': false, 'error': 'Erro ao fazer login'};
     }
   }
 
@@ -88,7 +95,7 @@ class AuthService {
     } on AuthException catch (e) {
       return {'success': false, 'error': e.message};
     } catch (e) {
-      return {'success': false, 'error': 'Erro ao registrar: $e'};
+      return {'success': false, 'error': 'Erro ao registrar'};
     }
   }
 
@@ -104,9 +111,7 @@ class AuthService {
       try {
         final refreshResponse = await supabase.auth.refreshSession();
         session = refreshResponse.session ?? session;
-      } catch (_) {
-        // Mantém a sessão atual caso o refresh falhe
-      }
+      } catch (_) {}
 
       if (session == null) {
         return {
@@ -135,7 +140,7 @@ class AuthService {
     } on AuthException catch (e) {
       return {'success': false, 'error': e.message};
     } catch (e) {
-      return {'success': false, 'error': 'Erro ao excluir conta: $e'};
+      return {'success': false, 'error': 'Erro ao excluir conta'};
     }
   }
 
