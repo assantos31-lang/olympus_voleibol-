@@ -9,7 +9,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.olympus.voleibol</string>
+	<string>com.andre.olympusvoleibol</string>
 	<key>PROJECT_ID</key>
 	<string>olympus-voleibol</string>
 	<key>STORAGE_BUCKET</key>
@@ -25,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:130525975992:ios:ee12f4d17d027a5af36b4d</string>
+	<string>1:130525975992:ios:cd061a5426ddd67ff36b4d</string>
 </dict>
 </plist>

@@ -44,6 +44,6 @@ class DefaultFirebaseOptions {
     messagingSenderId: '130525975992',
     projectId: 'olympus-voleibol',
     storageBucket: 'olympus-voleibol.firebasestorage.app',
-    iosBundleId: 'com.olympus.voleibol', // ✅ CORRIGIDO
+    iosBundleId: 'com.andre.olympusvoleibol', // ✅ CORRETO
   );
 }
