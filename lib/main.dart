@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -70,10 +71,12 @@ Future<void> _saveCurrentUserPushToken() async {
     return;
   }
 
+  final platform = Platform.isIOS ? 'ios' : 'android';
+
   await Supabase.instance.client.from('user_push_tokens').upsert({
     'user_id': user.id,
     'device_token': token,
-    'platform': 'android',
+    'platform': platform,
     'updated_at': DateTime.now().toIso8601String(),
   });
 
@@ -85,10 +88,21 @@ Future<void> _setupPushNotifications() async {
 
   final messaging = FirebaseMessaging.instance;
 
-  final settings = await messaging.requestPermission();
+  final settings = await messaging.requestPermission(
+    alert: true,
+    badge: true,
+    sound: true,
+    provisional: false,
+  );
   debugPrint('Permissão push: ${settings.authorizationStatus}');
 
   await messaging.setAutoInitEnabled(true);
+
+  await messaging.setForegroundNotificationPresentationOptions(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
 
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
     debugPrint('Push em foreground: ${message.notification?.title}');
@@ -103,10 +117,12 @@ Future<void> _setupPushNotifications() async {
 
     final currentUser = Supabase.instance.client.auth.currentUser;
     if (currentUser != null) {
+      final platform = Platform.isIOS ? 'ios' : 'android';
+
       await Supabase.instance.client.from('user_push_tokens').upsert({
         'user_id': currentUser.id,
         'device_token': newToken,
-        'platform': 'android',
+        'platform': platform,
         'updated_at': DateTime.now().toIso8601String(),
       });
 
