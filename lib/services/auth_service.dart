@@ -1,54 +1,10 @@
-import 'dart:io' show Platform;
-
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'push_token_service.dart';
+
 class AuthService {
   final supabase = Supabase.instance.client;
-
-  // 🔥 CORREÇÃO: nunca quebrar login por causa de push
-  Future<void> _savePushTokenForCurrentUser() async {
-    if (kIsWeb) return;
-
-    try {
-      final user = supabase.auth.currentUser;
-      if (user == null) {
-        debugPrint('Sem usuário logado para salvar token push.');
-        return;
-      }
-
-      final messaging = FirebaseMessaging.instance;
-
-      // 🔥 iOS precisa pedir permissão antes
-      await messaging.requestPermission();
-
-      final token = await messaging.getToken();
-      debugPrint('FCM TOKEN NO AUTH SERVICE: $token');
-
-      if (token == null || token.isEmpty) {
-        debugPrint('Token FCM vazio no AuthService.');
-        return;
-      }
-
-      debugPrint('🔥 AUTH SERVICE CHAMOU save token 🔥');
-      debugPrint('🔥 USER ID: ${user.id} 🔥');
-      debugPrint('🔥 TOKEN: $token 🔥');
-      debugPrint('🔥 SALVANDO TOKEN PUSH AGORA 🔥');
-
-      await supabase.from('user_push_tokens').upsert({
-        'user_id': user.id,
-        'device_token': token,
-        'platform': Platform.isIOS ? 'ios' : 'android',
-        'updated_at': DateTime.now().toIso8601String(),
-      }, onConflict: 'user_id,device_token');
-
-      debugPrint('Token push salvo com sucesso pelo AuthService.');
-    } catch (e) {
-      // 🔥 NUNCA quebrar login
-      debugPrint('Erro ao salvar token push (IGNORADO): $e');
-    }
-  }
 
   Future<Map<String, dynamic>> signIn(String email, String password) async {
     try {
@@ -61,7 +17,7 @@ class AuthService {
         return {'success': false, 'error': 'Usuário não encontrado'};
       }
 
-      await _savePushTokenForCurrentUser();
+      await PushTokenService.instance.syncAfterLogin();
 
       final profile = await getUserProfile(response.user!.id);
 
@@ -151,6 +107,12 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    try {
+      await PushTokenService.instance.clearUserOnLogout();
+    } catch (e) {
+      debugPrint('Erro ao limpar vínculo do push no logout: $e');
+    }
+
     await supabase.auth.signOut();
   }
 

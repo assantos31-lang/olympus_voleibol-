@@ -19,6 +19,7 @@ import 'pages/login_page.dart';
 import 'pages/profiles_page.dart';
 import 'services/auth_service.dart';
 import 'services/badge_service.dart';
+import 'services/push_token_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -55,35 +56,6 @@ Future<void> main() async {
   );
 }
 
-Future<void> _saveCurrentUserPushToken() async {
-  if (kIsWeb) return;
-
-  final user = Supabase.instance.client.auth.currentUser;
-  if (user == null) {
-    debugPrint('Sem usuário logado para salvar token push.');
-    return;
-  }
-
-  final token = await FirebaseMessaging.instance.getToken();
-  debugPrint('FCM TOKEN ATUAL: $token');
-
-  if (token == null || token.isEmpty) {
-    debugPrint('Token FCM vazio.');
-    return;
-  }
-
-  final platform = Platform.isIOS ? 'ios' : 'android';
-
-  await Supabase.instance.client.from('user_push_tokens').upsert({
-    'user_id': user.id,
-    'device_token': token,
-    'platform': platform,
-    'updated_at': DateTime.now().toIso8601String(),
-  });
-
-  debugPrint('Token salvo com sucesso no Supabase.');
-}
-
 Future<void> _setupPushNotifications() async {
   if (kIsWeb) return;
 
@@ -115,25 +87,7 @@ Future<void> _setupPushNotifications() async {
     await BadgeService.updateBadge();
   });
 
-  FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
-    debugPrint('FCM TOKEN REFRESH: $newToken');
-
-    final currentUser = Supabase.instance.client.auth.currentUser;
-    if (currentUser != null) {
-      final platform = Platform.isIOS ? 'ios' : 'android';
-
-      await Supabase.instance.client.from('user_push_tokens').upsert({
-        'user_id': currentUser.id,
-        'device_token': newToken,
-        'platform': platform,
-        'updated_at': DateTime.now().toIso8601String(),
-      });
-
-      debugPrint('Token refresh salvo no Supabase.');
-    }
-  });
-
-  await _saveCurrentUserPushToken();
+  await PushTokenService.instance.init();
 }
 
 class MyApp extends StatelessWidget {
@@ -377,7 +331,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
         if (hasSession) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            _saveCurrentUserPushToken();
+            PushTokenService.instance.syncCurrentUserTokenIfPossible();
             BadgeService.updateBadge();
           });
           return const DashboardRouterPage();
