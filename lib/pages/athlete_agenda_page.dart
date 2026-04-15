@@ -541,6 +541,30 @@ enable_ride_logistics
       }).toList();
     }
 
+    eventosFiltrados.sort((a, b) {
+      DateTime parseEvento(Map<String, dynamic> evento) {
+        try {
+          final data = (evento['event_date'] ?? '').toString().trim();
+          final hora = (evento['event_time'] ?? '').toString().trim();
+          final dp = data.split('/');
+          final tp = hora.split(':');
+
+          if (dp.length == 3 && tp.length >= 2) {
+            return DateTime(
+              int.parse(dp[2]),
+              int.parse(dp[1]),
+              int.parse(dp[0]),
+              int.parse(tp[0]),
+              int.parse(tp[1]),
+            );
+          }
+        } catch (_) {}
+        return DateTime(9999);
+      }
+
+      return parseEvento(a).compareTo(parseEvento(b));
+    });
+
     _eventosFiltrados = eventosFiltrados;
     _atualizarResumoPorTipo();
   }

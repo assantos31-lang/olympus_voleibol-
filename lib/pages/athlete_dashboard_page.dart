@@ -30,6 +30,9 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   bool _isLoading = true;
   bool _isBackgroundReady = false;
   int _pendingCount = 0;
+  int _pendingTrainingCount = 0;
+  int _pendingFriendlyCount = 0;
+  int _pendingCompetitionCount = 0;
   int _overdueFinancialCount = 0;
   Map<int, int> _overdueByMonth = {};
   List<Map<String, dynamic>> _weekEvents = [];
@@ -43,6 +46,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   List<Map<String, dynamic>> _genderRanking = [];
   List<Map<String, dynamic>> _monthlyHistory = [];
   bool _isRankingExpanded = false;
+  bool _isRankingRulesExpanded = false;
   bool _isMonthlyHistoryExpanded = false;
   DateTime? _lastCompetitionsViewedAt;
   RealtimeChannel? _messagesRealtimeChannel;
@@ -536,14 +540,47 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     try {
       final user = supabase.auth.currentUser;
       if (user != null) {
-        final response = await supabase
-            .from('convocations')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('status', 'pending');
+        final response = await supabase.from('convocations').select('''
+status,
+events!$_eventsEmbedFk (
+id,
+event_type
+)
+''').eq('user_id', user.id).eq('status', 'pending');
+
+        int pendingTraining = 0;
+        int pendingFriendly = 0;
+        int pendingCompetition = 0;
+
+        for (final item in List<Map<String, dynamic>>.from(response)) {
+          final event = item['events'];
+          if (event == null) continue;
+
+          final eventMap = Map<String, dynamic>.from(event);
+          final eventType =
+              (eventMap['event_type'] ?? '').toString().toLowerCase().trim();
+
+          if (eventType == 'treino') {
+            pendingTraining++;
+            continue;
+          }
+
+          if (eventType == 'amistoso') {
+            pendingFriendly++;
+            continue;
+          }
+
+          if (eventType.contains('liga') || eventType.contains('campeonato')) {
+            pendingCompetition++;
+          }
+        }
+
         if (mounted) {
           setState(() {
             _pendingCount = response.length;
+            _pendingTrainingCount = pendingTraining;
+            _pendingFriendlyCount = pendingFriendly;
+            _pendingCompetitionCount = pendingCompetition;
           });
         }
       }
@@ -621,6 +658,69 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     return '🔥 $_currentStreak treinos seguidos';
   }
 
+  Map<String, dynamic>? _getNextTrainingEvent() {
+    final now = DateTime.now();
+    final upcomingTrainings = _weekEvents.where((event) {
+      final eventType =
+          (event['event_type'] ?? '').toString().toLowerCase().trim();
+      final eventDateTime = event['event_datetime'];
+      return eventType == 'treino' &&
+          eventDateTime is DateTime &&
+          !eventDateTime.isBefore(now);
+    }).toList()
+      ..sort(
+        (a, b) => (a['event_datetime'] as DateTime)
+            .compareTo(b['event_datetime'] as DateTime),
+      );
+
+    if (upcomingTrainings.isEmpty) return null;
+    return upcomingTrainings.first;
+  }
+
+  DateTime? _parseCheckInDateTime(dynamic rawValue) {
+    if (rawValue == null) return null;
+    final raw = rawValue.toString().trim();
+    if (raw.isEmpty) return null;
+    return DateTime.tryParse(raw)?.toLocal();
+  }
+
+  bool _isCheckInWithinRankingWindow(
+    DateTime eventDateTime,
+    DateTime checkInDateTime,
+  ) {
+    final openTime = eventDateTime.subtract(const Duration(minutes: 10));
+    final closeTime = eventDateTime.add(const Duration(minutes: 30));
+    return !checkInDateTime.isBefore(openTime) &&
+        !checkInDateTime.isAfter(closeTime);
+  }
+
+  int _calculateRankingPoints(
+    DateTime eventDateTime,
+    DateTime checkInDateTime,
+  ) {
+    if (!_isCheckInWithinRankingWindow(eventDateTime, checkInDateTime)) {
+      return 0;
+    }
+
+    final premiumLimit = eventDateTime.add(const Duration(minutes: 10));
+    if (!checkInDateTime.isAfter(premiumLimit)) {
+      return 2;
+    }
+
+    return 1;
+  }
+
+  String _getRankingScoreSummary(Map<String, dynamic> athlete) {
+    final totalPoints = ((athlete['total_points'] ?? 0) as num).toInt();
+    final presenceCount = ((athlete['presence_count'] ?? 0) as num).toInt();
+    final firstCheckins = ((athlete['first_checkins'] ?? 0) as num).toInt();
+
+    final firstCheckinsLabel =
+        firstCheckins == 1 ? '1 chegada #1' : '$firstCheckins chegadas #1';
+
+    return '$totalPoints pts • $presenceCount treinos • $firstCheckinsLabel';
+  }
+
   Future<void> _loadGenderRanking(Map<String, dynamic>? profile) async {
     try {
       final user = supabase.auth.currentUser;
@@ -677,8 +777,9 @@ event_time
       final month = now.month;
       final year = now.year;
 
-      final Map<String, List<String>> athleteEventIds = {};
+      final Map<String, Set<String>> athleteEventIds = {};
       final Set<String> trainingEventIds = {};
+      final Map<String, DateTime> eventDateTimeById = {};
 
       for (final row in List<Map<String, dynamic>>.from(convocationsResponse)) {
         final event = row['events'];
@@ -700,37 +801,86 @@ event_time
         final eventId = (row['event_id'] ?? '').toString();
         if (athleteId.isEmpty || eventId.isEmpty) continue;
 
-        athleteEventIds.putIfAbsent(athleteId, () => []).add(eventId);
+        athleteEventIds.putIfAbsent(athleteId, () => <String>{}).add(eventId);
         trainingEventIds.add(eventId);
+        eventDateTimeById[eventId] = eventDate;
       }
 
       final checkinsResponse = trainingEventIds.isEmpty
           ? <dynamic>[]
           : await supabase
               .from('checkins')
-              .select('user_id, event_id, check_in_status')
+              .select('user_id, event_id, check_in_status, created_at')
               .inFilter('user_id', athleteIds)
               .inFilter('event_id', trainingEventIds.toList());
 
       final Map<String, int> presenceByAthlete = {
         for (final athleteId in athleteIds) athleteId: 0,
       };
+      final Map<String, int> pointsByAthlete = {
+        for (final athleteId in athleteIds) athleteId: 0,
+      };
+      final Map<String, int> firstCheckinsByAthlete = {
+        for (final athleteId in athleteIds) athleteId: 0,
+      };
+      final Map<String, Map<String, DateTime>> validCheckinsByEvent = {};
 
-      final Set<String> countedPairs = {};
-      for (final row in checkinsResponse) {
+      for (final row in List<Map<String, dynamic>>.from(checkinsResponse)) {
         final athleteId = (row['user_id'] ?? '').toString();
         final eventId = (row['event_id'] ?? '').toString();
         if (athleteId.isEmpty || eventId.isEmpty) continue;
         if (!_isCheckInRealizado(row['check_in_status'])) continue;
 
-        final validEvents = athleteEventIds[athleteId] ?? const <String>[];
+        final validEvents = athleteEventIds[athleteId] ?? const <String>{};
         if (!validEvents.contains(eventId)) continue;
 
-        final pairKey = '$athleteId|$eventId';
-        if (countedPairs.contains(pairKey)) continue;
-        countedPairs.add(pairKey);
+        final eventDateTime = eventDateTimeById[eventId];
+        if (eventDateTime == null) continue;
 
-        presenceByAthlete[athleteId] = (presenceByAthlete[athleteId] ?? 0) + 1;
+        final checkInDateTime = _parseCheckInDateTime(row['created_at']);
+        if (checkInDateTime == null) continue;
+        if (!_isCheckInWithinRankingWindow(eventDateTime, checkInDateTime)) {
+          continue;
+        }
+
+        final eventCheckins = validCheckinsByEvent.putIfAbsent(
+          eventId,
+          () => <String, DateTime>{},
+        );
+
+        final existing = eventCheckins[athleteId];
+        if (existing == null || checkInDateTime.isBefore(existing)) {
+          eventCheckins[athleteId] = checkInDateTime;
+        }
+      }
+
+      for (final entry in validCheckinsByEvent.entries) {
+        final eventId = entry.key;
+        final eventDateTime = eventDateTimeById[eventId];
+        if (eventDateTime == null) continue;
+
+        final sortedCheckins = entry.value.entries.toList()
+          ..sort((a, b) => a.value.compareTo(b.value));
+
+        for (int i = 0; i < sortedCheckins.length; i++) {
+          final athleteId = sortedCheckins[i].key;
+          final checkInDateTime = sortedCheckins[i].value;
+          final points =
+              _calculateRankingPoints(eventDateTime, checkInDateTime);
+
+          if (points <= 0) continue;
+
+          presenceByAthlete[athleteId] =
+              (presenceByAthlete[athleteId] ?? 0) + 1;
+          pointsByAthlete[athleteId] =
+              (pointsByAthlete[athleteId] ?? 0) + points;
+
+          if (i == 0) {
+            pointsByAthlete[athleteId] = (pointsByAthlete[athleteId] ?? 0) + 1;
+            firstCheckinsByAthlete[athleteId] =
+                (firstCheckinsByAthlete[athleteId] ?? 0) + 1;
+          }
+        }
       }
 
       final ranking = athletes.map((athlete) {
@@ -745,12 +895,23 @@ event_time
           'first_name': firstName,
           'avatar_url': (athlete['avatar_url'] ?? '').toString().trim(),
           'presence_count': presenceByAthlete[athleteId] ?? 0,
+          'total_points': pointsByAthlete[athleteId] ?? 0,
+          'first_checkins': firstCheckinsByAthlete[athleteId] ?? 0,
         };
       }).toList()
         ..sort((a, b) {
-          final cmp = (b['presence_count'] as int)
+          final pointsCmp =
+              (b['total_points'] as int).compareTo(a['total_points'] as int);
+          if (pointsCmp != 0) return pointsCmp;
+
+          final presenceCmp = (b['presence_count'] as int)
               .compareTo(a['presence_count'] as int);
-          if (cmp != 0) return cmp;
+          if (presenceCmp != 0) return presenceCmp;
+
+          final firstCheckinCmp = (b['first_checkins'] as int)
+              .compareTo(a['first_checkins'] as int);
+          if (firstCheckinCmp != 0) return firstCheckinCmp;
+
           return (a['name'] as String).toLowerCase().compareTo(
                 (b['name'] as String).toLowerCase(),
               );
@@ -1081,6 +1242,24 @@ event_time
               TextButton(
                 onPressed: () {
                   setState(() {
+                    _isRankingRulesExpanded = !_isRankingRulesExpanded;
+                  });
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: olympusBlue,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                ),
+                child: Text(
+                  _isRankingRulesExpanded ? 'Ocultar regras' : 'Ver regras',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() {
                     _isRankingExpanded = !_isRankingExpanded;
                   });
                 },
@@ -1098,6 +1277,10 @@ event_time
               ),
             ],
           ),
+          if (_isRankingRulesExpanded) ...[
+            const SizedBox(height: 8),
+            _buildRankingRulesCard(),
+          ],
           if (_isRankingExpanded && _genderRanking.isNotEmpty) ...[
             const SizedBox(height: 8),
             ..._genderRanking.map((athlete) {
@@ -1169,11 +1352,15 @@ event_time
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      '$presenceCount treinos',
+                      _getRankingScoreSummary(athlete),
+                      maxLines: 2,
+                      textAlign: TextAlign.right,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: Colors.grey[700],
+                        height: 1.2,
                       ),
                     ),
                   ],
@@ -1356,6 +1543,93 @@ event_time
     );
   }
 
+  Widget _buildRankingRulesCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: olympusBlue.withOpacity(0.04),
+        border: Border.all(
+          color: olympusBlue.withOpacity(0.08),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.rule_rounded,
+                color: olympusBlue,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Regras do ranking',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: olympusBlue.withOpacity(0.90),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '• Check-in liberado 10 min antes do treino e aceito até 30 min após o início.',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: olympusBlue.withOpacity(0.78),
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '• Check-in feito até 10 min após o início vale 2 pontos.',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: olympusBlue.withOpacity(0.78),
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '• Check-in feito entre 11 e 30 min após o início vale 1 ponto.',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: olympusBlue.withOpacity(0.78),
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '• O primeiro check-in válido de cada treino ganha +1 ponto de bônus.',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: olympusBlue.withOpacity(0.78),
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '• O ranking ordena por pontos, depois por treinos válidos, depois por chegadas em 1º e por fim por nome.',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: olympusBlue.withOpacity(0.78),
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _loadMonthlyHistory() async {
     try {
       final user = supabase.auth.currentUser;
@@ -1377,8 +1651,11 @@ event_time
         final year = ((item['reference_year'] ?? 0) as num).toInt();
         final month = ((item['reference_month'] ?? 0) as num).toInt();
 
+        if (year == now.year && month == 3) return false;
+        if (year == now.year && month == 4) return false;
         if (year > now.year) return true;
-        if (year == now.year && month >= now.month) return true;
+        if (year == now.year && month > now.month) return true;
+        if (year < now.year) return true;
         return false;
       }).toList();
 
@@ -2720,7 +2997,7 @@ event_time
                                   ],
                                 ),
                               ),
-                              if (_weekEvents.isNotEmpty) ...[
+                              if (_getNextTrainingEvent() != null) ...[
                                 const SizedBox(height: 8),
                                 _buildCompactWeekEventsPreview(),
                                 const SizedBox(height: 8),
@@ -2765,79 +3042,34 @@ event_time
   }
 
   Widget _buildCompactWeekEventsPreview() {
-    final nextEvent = _weekEvents.first;
-    final eventDate = nextEvent['event_datetime'] as DateTime;
+    final nextTraining = _getNextTrainingEvent();
+    if (nextTraining == null) return const SizedBox.shrink();
+
+    final eventDate = nextTraining['event_datetime'] as DateTime;
     final weekday = DateFormat('EEEE', 'pt_BR').format(eventDate).toUpperCase();
-    final cleanWeekday = weekday.replaceAll('-FEIRA', '');
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFF0E2440),
-            Color(0xFF122B4A),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.white.withOpacity(0.05),
         border: Border.all(
-          color: const Color(0xFF2D4561),
-          width: 1.2,
+          color: Colors.amber,
+          width: 1.5,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.22),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
       ),
       child: Row(
         children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: Colors.white.withOpacity(0.06),
-              border: Border.all(color: Colors.white.withOpacity(0.12)),
-            ),
-            child: const Icon(
-              Icons.calendar_today_outlined,
-              size: 15,
-              color: Colors.white70,
-            ),
-          ),
-          const SizedBox(width: 8),
+          const Icon(Icons.calendar_today, color: Colors.white70, size: 18),
+          const SizedBox(width: 10),
           Expanded(
-            child: RichText(
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: '$cleanWeekday\n',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  TextSpan(
-                    text:
-                        '${DateFormat('dd/MM').format(eventDate)} • ${DateFormat('HH:mm').format(eventDate)} • ${(nextEvent['event_name'] ?? 'Evento').toString()}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      height: 1.2,
-                    ),
-                  ),
-                ],
+            child: Text(
+              '${nextTraining['event_name']} • ${DateFormat('dd/MM • HH:mm').format(eventDate)}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -3329,7 +3561,7 @@ event_time
                 child: _buildPresenceMetric(
                   icon: Icons.schedule,
                   label: 'Pendente',
-                  value: _pendingCount,
+                  value: _pendingTrainingCount,
                   color: Colors.orange,
                 ),
               ),
@@ -3391,6 +3623,7 @@ event_time
     required Color color,
     required VoidCallback onTap,
     int? badgeCount,
+    List<_DashboardBadgeData>? badges,
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -3409,6 +3642,9 @@ event_time
         final arrowSize = isCompact ? 16.0 : 18.0;
         final badgeTop = isCompact ? 10.0 : 12.0;
         final badgeRight = isCompact ? 10.0 : 12.0;
+        final visibleBadges = (badges ?? const <_DashboardBadgeData>[])
+            .where((b) => b.count > 0)
+            .toList();
 
         return Container(
           margin: EdgeInsets.symmetric(
@@ -3556,41 +3792,34 @@ event_time
                             ],
                           ),
                         ),
-                        if (badgeCount != null && badgeCount > 0)
+                        if (visibleBadges.isNotEmpty)
                           Positioned(
                             right: badgeRight,
                             top: badgeTop,
-                            child: Container(
-                              constraints: BoxConstraints(
-                                minWidth: isCompact ? 24 : 26,
-                              ),
-                              padding: EdgeInsets.symmetric(
-                                horizontal: isCompact ? 7 : 9,
-                                vertical: isCompact ? 4 : 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                borderRadius: BorderRadius.circular(999),
-                                border:
-                                    Border.all(color: Colors.white, width: 1.8),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.red.withOpacity(0.38),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Text(
-                                badgeCount.toString(),
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: isCompact ? 11.5 : 12.5,
-                                  fontWeight: FontWeight.w800,
-                                  height: 1,
-                                ),
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: visibleBadges
+                                  .map(
+                                    (badge) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: _buildDashboardBadge(
+                                        count: badge.count,
+                                        color: badge.color,
+                                        isCompact: isCompact,
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          )
+                        else if (badgeCount != null && badgeCount > 0)
+                          Positioned(
+                            right: badgeRight,
+                            top: badgeTop,
+                            child: _buildDashboardBadge(
+                              count: badgeCount,
+                              color: Colors.red,
+                              isCompact: isCompact,
                             ),
                           ),
                       ],
@@ -3602,6 +3831,44 @@ event_time
           ),
         );
       },
+    );
+  }
+
+  Widget _buildDashboardBadge({
+    required int count,
+    required Color color,
+    required bool isCompact,
+  }) {
+    return Container(
+      constraints: BoxConstraints(
+        minWidth: isCompact ? 24 : 26,
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: isCompact ? 7 : 9,
+        vertical: isCompact ? 4 : 5,
+      ),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white, width: 1.8),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.38),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(
+        count.toString(),
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: isCompact ? 11.5 : 12.5,
+          fontWeight: FontWeight.w800,
+          height: 1,
+        ),
+      ),
     );
   }
 
@@ -3953,7 +4220,20 @@ event_time
                     subtitle: _getAgendaSubtitle(),
                     color: olympusGold,
                     onTap: _navigateToAgenda,
-                    badgeCount: _pendingCount > 0 ? _pendingCount : null,
+                    badges: [
+                      _DashboardBadgeData(
+                        count: _pendingCompetitionCount,
+                        color: Colors.red,
+                      ),
+                      _DashboardBadgeData(
+                        count: _pendingTrainingCount,
+                        color: Colors.orange,
+                      ),
+                      _DashboardBadgeData(
+                        count: _pendingFriendlyCount,
+                        color: Colors.green,
+                      ),
+                    ],
                   ),
                   _buildDashboardCard(
                     icon: Icons.mark_chat_unread_rounded,
@@ -3991,6 +4271,16 @@ event_time
       ),
     );
   }
+}
+
+class _DashboardBadgeData {
+  final int count;
+  final Color color;
+
+  const _DashboardBadgeData({
+    required this.count,
+    required this.color,
+  });
 }
 
 enum _MiniChartType {
