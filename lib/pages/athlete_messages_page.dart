@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/badge_service.dart';
 
 class AthleteMessagesPage extends StatefulWidget {
   const AthleteMessagesPage({super.key});
@@ -227,6 +228,7 @@ class _AthleteMessagesPageState extends State<AthleteMessagesPage> {
               'Participantes encontrados, mas nenhuma thread retornou da app_message_threads.';
         }
       });
+      await BadgeService.updateBadge();
     } catch (e) {
       _showSnack('Erro ao carregar mensagens: $e');
       if (mounted) {
@@ -772,6 +774,8 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
         })
         .eq('thread_id', widget.threadId)
         .eq('user_id', user.id);
+
+    await BadgeService.updateBadge();
   }
 
   Future<void> _loadMessages() async {
@@ -892,6 +896,7 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
       _replyController.clear();
       await _markThreadAsRead();
       await _loadMessages();
+      await BadgeService.updateBadge();
     } catch (e) {
       _showSnack('Erro ao enviar resposta: $e');
     } finally {

@@ -43,6 +43,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   int _messageUnreadCount = 0;
   int _competitionNewCount = 0;
   int? _currentUserRankingPosition;
+  String? _currentUserRankingMovement;
   List<Map<String, dynamic>> _genderRanking = [];
   List<Map<String, dynamic>> _monthlyHistory = [];
   bool _isRankingExpanded = false;
@@ -732,6 +733,7 @@ event_type
           setState(() {
             _genderRanking = [];
             _currentUserRankingPosition = null;
+            _currentUserRankingMovement = null;
           });
         }
         return;
@@ -749,6 +751,7 @@ event_type
           setState(() {
             _genderRanking = [];
             _currentUserRankingPosition = null;
+            _currentUserRankingMovement = null;
           });
         }
         return;
@@ -776,6 +779,24 @@ event_time
       final now = DateTime.now();
       final month = now.month;
       final year = now.year;
+      final previousMonth = month == 1 ? 12 : month - 1;
+      final previousYear = month == 1 ? year - 1 : year;
+
+      final previousHistoryResponse = await supabase
+          .from('athlete_monthly_history')
+          .select('user_id, ranking_position')
+          .eq('reference_month', previousMonth)
+          .eq('reference_year', previousYear)
+          .inFilter('user_id', athleteIds);
+
+      final Map<String, int> previousPositions = {};
+      for (final row
+          in List<Map<String, dynamic>>.from(previousHistoryResponse)) {
+        final athleteId = (row['user_id'] ?? '').toString();
+        final rankingPosition = ((row['ranking_position'] ?? 0) as num).toInt();
+        if (athleteId.isEmpty || rankingPosition <= 0) continue;
+        previousPositions[athleteId] = rankingPosition;
+      }
 
       final Map<String, Set<String>> athleteEventIds = {};
       final Set<String> trainingEventIds = {};
@@ -918,10 +939,30 @@ event_time
         });
 
       int? currentPosition;
+      String? currentMovement;
       for (int i = 0; i < ranking.length; i++) {
-        ranking[i]['position'] = i + 1;
-        if ((ranking[i]['id'] ?? '').toString() == user.id) {
-          currentPosition = i + 1;
+        final athleteId = (ranking[i]['id'] ?? '').toString();
+        final position = i + 1;
+        final previousPosition = previousPositions[athleteId];
+
+        String movement = '➖';
+        if (previousPosition == null) {
+          movement = '🆕';
+        } else {
+          final diff = previousPosition - position;
+          if (diff > 0) {
+            movement = '🔼 $diff';
+          } else if (diff < 0) {
+            movement = '🔽 ${diff.abs()}';
+          }
+        }
+
+        ranking[i]['position'] = position;
+        ranking[i]['movement'] = movement;
+
+        if (athleteId == user.id) {
+          currentPosition = position;
+          currentMovement = movement;
         }
       }
 
@@ -929,6 +970,7 @@ event_time
         setState(() {
           _genderRanking = ranking.take(5).toList();
           _currentUserRankingPosition = currentPosition;
+          _currentUserRankingMovement = currentMovement;
         });
       }
     } catch (e) {
@@ -953,6 +995,20 @@ event_time
       default:
         return '${position}º';
     }
+  }
+
+  String _getRankingMovementLabel(dynamic value) {
+    final movement = (value ?? '').toString().trim();
+    if (movement.isEmpty) return '';
+    return movement;
+  }
+
+  Color _getRankingMovementColor(dynamic value) {
+    final movement = (value ?? '').toString().trim();
+    if (movement.startsWith('🔼')) return Colors.green;
+    if (movement.startsWith('🔽')) return Colors.red;
+    if (movement.startsWith('🆕')) return olympusGold;
+    return Colors.grey;
   }
 
   String _getRetrospectiveHeadline(Map<String, dynamic> item) {
@@ -1230,7 +1286,7 @@ event_time
               Expanded(
                 child: Text(
                   _currentUserRankingPosition != null
-                      ? 'Sua posição atual: ${_currentUserRankingPosition}º'
+                      ? 'Sua posição atual: ${_currentUserRankingPosition}º ${_getRankingMovementLabel(_currentUserRankingMovement)}'
                       : 'Sua posição atual: -',
                   style: TextStyle(
                     fontSize: 11,
@@ -1351,17 +1407,32 @@ event_time
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      _getRankingScoreSummary(athlete),
-                      maxLines: 2,
-                      textAlign: TextAlign.right,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.grey[700],
-                        height: 1.2,
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          _getRankingScoreSummary(athlete),
+                          maxLines: 2,
+                          textAlign: TextAlign.right,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey[700],
+                            height: 1.2,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _getRankingMovementLabel(athlete['movement']),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color:
+                                _getRankingMovementColor(athlete['movement']),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

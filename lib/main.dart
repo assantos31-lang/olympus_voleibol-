@@ -18,6 +18,7 @@ import 'pages/dashboard_router_page.dart';
 import 'pages/login_page.dart';
 import 'pages/profiles_page.dart';
 import 'services/auth_service.dart';
+import 'services/badge_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -104,12 +105,14 @@ Future<void> _setupPushNotifications() async {
     sound: true,
   );
 
-  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
     debugPrint('Push em foreground: ${message.notification?.title}');
+    await BadgeService.updateBadge();
   });
 
-  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
     debugPrint('Push aberto pelo usuário: ${message.messageId}');
+    await BadgeService.updateBadge();
   });
 
   FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
@@ -375,6 +378,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         if (hasSession) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _saveCurrentUserPushToken();
+            BadgeService.updateBadge();
           });
           return const DashboardRouterPage();
         }
