@@ -1,4 +1,4 @@
-import 'package:flutter_app_badger/flutter_app_badger.dart';
+import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class BadgeService {
@@ -17,16 +17,26 @@ class BadgeService {
       int total = 0;
 
       for (final row in response) {
-        total += (row['unread_count'] ?? 0) as int;
+        total += ((row['unread_count'] ?? 0) as num).toInt();
       }
 
-      if (total > 0) {
-        FlutterAppBadger.updateBadgeCount(total);
-      } else {
-        FlutterAppBadger.removeBadge();
-      }
+      final supported = await AppBadgePlus.isSupported();
+      if (!supported) return;
+
+      await AppBadgePlus.updateBadge(total);
     } catch (e) {
       print('Erro ao atualizar badge: $e');
+    }
+  }
+
+  static Future<void> clearBadge() async {
+    try {
+      final supported = await AppBadgePlus.isSupported();
+      if (!supported) return;
+
+      await AppBadgePlus.updateBadge(0);
+    } catch (e) {
+      print('Erro ao limpar badge: $e');
     }
   }
 }
