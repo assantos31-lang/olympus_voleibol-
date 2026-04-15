@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -37,7 +39,7 @@ class AuthService {
       await supabase.from('user_push_tokens').upsert({
         'user_id': user.id,
         'device_token': token,
-        'platform': 'ios', // 🔥 corrigido
+        'platform': Platform.isIOS ? 'ios' : 'android',
         'updated_at': DateTime.now().toIso8601String(),
       }, onConflict: 'user_id,device_token');
 
@@ -59,8 +61,7 @@ class AuthService {
         return {'success': false, 'error': 'Usuário não encontrado'};
       }
 
-      // 🔥 NÃO BLOQUEIA LOGIN
-      _savePushTokenForCurrentUser();
+      await _savePushTokenForCurrentUser();
 
       final profile = await getUserProfile(response.user!.id);
 
