@@ -32,6 +32,23 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     'rejected': 0,
     'pending': 0,
   };
+  Map<String, Map<String, int>> _typeStatusCounts = {
+    'treino': {
+      'accepted': 0,
+      'rejected': 0,
+      'pending': 0,
+    },
+    'amistoso': {
+      'accepted': 0,
+      'rejected': 0,
+      'pending': 0,
+    },
+    'campeonato': {
+      'accepted': 0,
+      'rejected': 0,
+      'pending': 0,
+    },
+  };
 
   // ✅ NOVO: Variáveis de controle de permissão
   bool _hasPermission = false;
@@ -238,17 +255,149 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     }
   }
 
-  void _calcularStatusCounts() {
+  String _normalizarTipoResumo(Map<String, dynamic> evento) {
+    final tipo = (evento['event_type'] ?? '').toString().toLowerCase().trim();
+
+    // Mantém exatamente a mesma origem do código original:
+    // - treino vem de event_type == 'treino'
+    // - amistoso vem de event_type == 'amistoso'
+    // - liga/campeonatos vem de event_type == 'campeonato'
+    // championship_name continua sendo apenas exibição no card.
+    if (tipo == 'treino') {
+      return 'treino';
+    }
+
+    if (tipo == 'amistoso') {
+      return 'amistoso';
+    }
+
+    if (tipo == 'campeonato') {
+      return 'campeonato';
+    }
+
+    return '';
+  }
+
+  String _normalizarConvocationStatus(dynamic status) {
+    final value = (status ?? '').toString().toLowerCase().trim();
+    switch (value) {
+      case 'accepted':
+      case 'rejected':
+      case 'pending':
+        return value;
+      default:
+        return 'pending';
+    }
+  }
+
+  int _statusPriority(String status) {
+    switch (_normalizarConvocationStatus(status)) {
+      case 'accepted':
+        return 3;
+      case 'rejected':
+        return 2;
+      default:
+        return 1;
+    }
+  }
+
+  String _resolverStatusConvocacao(String atual, String novo) {
+    return _statusPriority(novo) >= _statusPriority(atual) ? novo : atual;
+  }
+
+  List<Map<String, dynamic>> _getEventosDoMesAtual() {
+    if (_filtroMes.isEmpty) return List<Map<String, dynamic>>.from(_eventos);
+    return _eventos.where((evento) {
+      final dataEvento = (evento['event_date'] ?? '').toString();
+      if (dataEvento.length >= 7) {
+        final mesAnoEvento = dataEvento.substring(3);
+        return mesAnoEvento == _filtroMes;
+      }
+      return false;
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _getEventosBaseFiltro() {
+    if (_filtroMes.isEmpty) return List<Map<String, dynamic>>.from(_eventos);
+    return _getEventosDoMesAtual();
+  }
+
+  bool get _isVisaoGeral => _filtroMes.isEmpty;
+
+  String _getMesAtual() {
+    final now = DateTime.now();
+    return '${now.month.toString().padLeft(2, '0')}/${now.year}';
+  }
+
+  void _alternarVisaoGeral() {
+    setState(() {
+      if (_isVisaoGeral) {
+        _filtroMes = _getMesAtual();
+      } else {
+        _filtroMes = '';
+      }
+      _filtroTipo = 'todos';
+      _filtroStatus = 'todos';
+      _aplicarFiltros();
+    });
+  }
+
+  void _selecionarMes(String mes) {
+    setState(() {
+      _filtroMes = mes;
+      _filtroTipo = 'todos';
+      _filtroStatus = 'todos';
+      _aplicarFiltros();
+    });
+  }
+
+  void _atualizarResumoPorTipo() {
     final counts = {'accepted': 0, 'rejected': 0, 'pending': 0};
-    for (var evento in _eventos) {
+    final typeCounts = {
+      'treino': {'accepted': 0, 'rejected': 0, 'pending': 0},
+      'amistoso': {'accepted': 0, 'rejected': 0, 'pending': 0},
+      'campeonato': {'accepted': 0, 'rejected': 0, 'pending': 0},
+    };
+
+    // Mantém a lógica do código original para os totais de status:
+    // os contadores são calculados sobre _eventos inteiro, não apenas pelo mês.
+    // O filtro de mês afeta a lista quando nenhum status está selecionado.
+    for (final evento in _getEventosBaseFiltro()) {
       final status =
           (evento['convocation_status'] ?? 'pending').toString().toLowerCase();
       if (counts.containsKey(status)) {
         counts[status] = counts[status]! + 1;
       }
+
+      final tipoResumo = _normalizarTipoResumo(evento);
+      if (tipoResumo.isNotEmpty && typeCounts.containsKey(tipoResumo)) {
+        typeCounts[tipoResumo]![status] =
+            (typeCounts[tipoResumo]![status] ?? 0) + 1;
+      }
     }
+
+    _statusCounts = counts;
+    _typeStatusCounts = typeCounts;
+  }
+
+  void _selecionarResumo(String tipo, String status) {
+    final filtroAtivo = _filtroTipo == tipo && _filtroStatus == status;
+
     setState(() {
-      _statusCounts = counts;
+      if (filtroAtivo) {
+        _filtroTipo = 'todos';
+        _filtroStatus = 'todos';
+      } else {
+        _filtroTipo = tipo;
+        _filtroStatus = status;
+      }
+      _aplicarFiltros();
+    });
+  }
+
+  void _calcularStatusCounts() {
+    setState(() {
+      _atualizarResumoPorTipo();
     });
   }
 
@@ -325,8 +474,7 @@ enable_ride_logistics
       final statusMap = <String, Map<String, String>>{};
       for (final item in response) {
         final eventData = item['events'];
-        final status =
-            (item['status'] ?? 'pending').toString().toLowerCase().trim();
+        final status = _normalizarConvocationStatus(item['status']);
         if (eventData != null) {
           final mapEvento = Map<String, dynamic>.from(eventData);
           final eid = (mapEvento['id'] ?? '').toString();
@@ -342,42 +490,9 @@ enable_ride_logistics
         final id = e['id'].toString();
         e['check_in_status'] = _normalizarCheckInStatus(checkinMap[id]);
       }
-      final idsParaAtualizar = <String>{};
-      for (final evento in eventosList) {
-        final status = (evento['convocation_status'] ?? 'pending')
-            .toString()
-            .toLowerCase();
-        if (status == 'pending') {
-          if (!_podeEditar(evento)) {
-            final eid = evento['id'].toString();
-            evento['convocation_status'] = 'rejected';
-            statusMap[eid] = {'status': 'rejected'};
-            idsParaAtualizar.add(eid);
-          }
-        }
-      }
-      for (final evento in eventosList) {
-        final status = (evento['convocation_status'] ?? 'pending')
-            .toString()
-            .toLowerCase();
-        final checkinStatus =
-            (evento['check_in_status'] ?? '').toString().trim();
-        if (status == 'accepted' && checkinStatus.isEmpty) {
-          if (_janelaCheckInEncerrada(evento)) {
-            final eid = evento['id'].toString();
-            evento['convocation_status'] = 'rejected';
-            statusMap[eid] = {'status': 'rejected'};
-            idsParaAtualizar.add(eid);
-          }
-        }
-      }
-      if (idsParaAtualizar.isNotEmpty) {
-        await Future.wait(idsParaAtualizar.map((eid) => _supabase
-            .from('convocations')
-            .update({'status': 'rejected', 'justification': 'Prazo expirado'})
-            .eq('event_id', eid)
-            .eq('user_id', user.id)));
-      }
+      // Mantém o status real vindo da tabela convocations para o usuário logado.
+      // Não reclassifica pendente para recusado durante o carregamento da tela,
+      // porque isso escondia pendências legítimas de Liga/Campeonatos.
       eventosList.sort((a, b) {
         final dateA = (a['event_date'] ?? '').toString();
         final dateB = (b['event_date'] ?? '').toString();
@@ -407,26 +522,16 @@ enable_ride_logistics
   }
 
   void _aplicarFiltros() {
-    var eventosFiltrados = _eventos;
-    final aplicarFiltroMes = _showMonthFilter && _filtroStatus == 'todos';
-    if (_filtroMes.isNotEmpty && aplicarFiltroMes) {
-      eventosFiltrados = eventosFiltrados.where((evento) {
-        final dataEvento = (evento['event_date'] ?? '').toString();
-        if (dataEvento.length >= 7) {
-          final mesAnoEvento = dataEvento.substring(3);
-          return mesAnoEvento == _filtroMes;
-        }
-        return false;
-      }).toList();
-    }
+    var eventosFiltrados = _getEventosBaseFiltro();
+
     if (_filtroTipo != 'todos') {
       eventosFiltrados = eventosFiltrados.where((evento) {
-        final tipo =
-            (evento['event_type'] ?? '').toString().toLowerCase().trim();
+        final tipo = _normalizarTipoResumo(evento);
         return tipo == _filtroTipo;
       }).toList();
     }
-    if (_filtroStatus != 'todos' && _showStatusFilter) {
+
+    if (_filtroStatus != 'todos') {
       eventosFiltrados = eventosFiltrados.where((evento) {
         final status = (evento['convocation_status'] ?? 'pending')
             .toString()
@@ -435,7 +540,9 @@ enable_ride_logistics
         return status == _filtroStatus;
       }).toList();
     }
+
     _eventosFiltrados = eventosFiltrados;
+    _atualizarResumoPorTipo();
   }
 
   Future<void> _refreshEventos() async {
@@ -507,6 +614,188 @@ enable_ride_logistics
       default:
         return 'Pendente';
     }
+  }
+
+  String _getResumoTipoLabel(String tipo) {
+    switch (tipo) {
+      case 'treino':
+        return 'Treinos';
+      case 'amistoso':
+        return 'Amistosos';
+      case 'campeonato':
+        return 'Liga / Campeonatos';
+      default:
+        return tipo;
+    }
+  }
+
+  IconData _getResumoTipoIcon(String tipo) {
+    switch (tipo) {
+      case 'treino':
+        return Icons.fitness_center;
+      case 'amistoso':
+        return Icons.sports_volleyball;
+      case 'campeonato':
+        return Icons.emoji_events;
+      default:
+        return Icons.event;
+    }
+  }
+
+  Widget _buildResumoStatusChip({
+    required String tipo,
+    required String status,
+    required String label,
+    required int count,
+    required Color color,
+  }) {
+    final selected = _filtroTipo == tipo && _filtroStatus == status;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => _selecionarResumo(tipo, status),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        constraints: const BoxConstraints(minWidth: 84),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? color.withOpacity(0.18) : color.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? color : color.withOpacity(0.24),
+            width: selected ? 1.2 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '$label: $count',
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (selected) ...[
+              const SizedBox(height: 1),
+              const Text(
+                'Selecionado',
+                style: TextStyle(
+                  color: olympusBlue,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResumoPorTipoSection() {
+    final base = _getEventosBaseFiltro();
+
+    final tiposDisponiveis = ['treino', 'amistoso', 'campeonato'].where((tipo) {
+      return base.any((evento) => _normalizarTipoResumo(evento) == tipo);
+    }).toList();
+
+    final tipos = _filtroTipo != 'todos' ? [_filtroTipo] : tiposDisponiveis;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Column(
+        children: tipos.map((tipo) {
+          final counts = _typeStatusCounts[tipo] ??
+              const {
+                'accepted': 0,
+                'rejected': 0,
+                'pending': 0,
+              };
+          final colorBase = _getCorTipoEvento(tipo);
+
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.96),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: colorBase.withOpacity(0.22)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: colorBase.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        _getResumoTipoIcon(tipo),
+                        color: colorBase,
+                        size: 15,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _getResumoTipoLabel(tipo),
+                        style: const TextStyle(
+                          color: olympusBlue,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _buildResumoStatusChip(
+                      tipo: tipo,
+                      status: 'accepted',
+                      label: 'Aceitou',
+                      count: counts['accepted'] ?? 0,
+                      color: Colors.green,
+                    ),
+                    _buildResumoStatusChip(
+                      tipo: tipo,
+                      status: 'rejected',
+                      label: 'Recusou',
+                      count: counts['rejected'] ?? 0,
+                      color: Colors.red,
+                    ),
+                    _buildResumoStatusChip(
+                      tipo: tipo,
+                      status: 'pending',
+                      label: 'Pendentes',
+                      count: counts['pending'] ?? 0,
+                      color: Colors.orange,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
   }
 
   bool _podeEditar(Map<String, dynamic> evento) {
@@ -1287,7 +1576,8 @@ enable_ride_logistics
       final bm = int.tryParse(bp[0]) ?? 0;
       return am.compareTo(bm);
     });
-    return list.isEmpty ? <String>[_filtroMes] : list;
+    if (list.isEmpty) return <String>[];
+    return list;
   }
 
   String _formatarNomeMes(String mesAno) {
@@ -1524,8 +1814,9 @@ enable_ride_logistics
                 ),
                 child: Column(
                   children: [
-                    // ✅ Filtro de Mês (condicional)
-                    if (_showMonthFilter && _filtroStatus == 'todos') ...[
+                    if (_showMonthFilter) ...[
+                      _buildVisaoGeralButton(),
+                      const SizedBox(height: 10),
                       _buildModernDropdown(
                         icon: Icons.calendar_month,
                         value: _filtroMes.isEmpty ? null : _filtroMes,
@@ -1548,72 +1839,15 @@ enable_ride_logistics
                         }).toList(),
                         onChanged: (valor) {
                           if (valor != null) {
-                            setState(() {
-                              _filtroMes = valor;
-                              _aplicarFiltros();
-                            });
+                            _selecionarMes(valor.toString());
                           }
                         },
                       ),
-                      const SizedBox(height: 8),
                     ],
-                    // ✅ Filtro de Tipo (filtrado por permissão)
-                    _buildModernChipFilter(
-                      label: 'Tipo de Evento',
-                      icon: Icons.category_outlined,
-                      options: [
-                        {'value': 'todos', 'label': 'Todos'},
-                        if (_allowedEventTypes.contains('treino'))
-                          {'value': 'treino', 'label': 'Treino'},
-                        if (_allowedEventTypes.contains('amistoso'))
-                          {'value': 'amistoso', 'label': 'Amistoso'},
-                        if (_allowedEventTypes.contains('campeonato'))
-                          {'value': 'campeonato', 'label': 'Campeonatos'},
-                      ],
-                      selectedValue: _filtroTipo,
-                      onSelected: (value) {
-                        setState(() {
-                          _filtroTipo = value;
-                          _aplicarFiltros();
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    // ✅ Filtro de Status (condicional)
-                    if (_showStatusFilter)
-                      _buildModernChipFilter(
-                        label: 'Status da Convocação',
-                        icon: Icons.visibility_outlined,
-                        options: [
-                          {'value': 'todos', 'label': 'Todos'},
-                          {
-                            'value': 'accepted',
-                            'label': 'Aceitou',
-                            'count': _statusCounts['accepted'] ?? 0
-                          },
-                          {
-                            'value': 'rejected',
-                            'label': 'Recusou',
-                            'count': _statusCounts['rejected'] ?? 0
-                          },
-                          {
-                            'value': 'pending',
-                            'label': 'Pendentes',
-                            'count': _statusCounts['pending'] ?? 0
-                          },
-                        ],
-                        selectedValue: _filtroStatus,
-                        onSelected: (value) {
-                          setState(() {
-                            _filtroStatus = value;
-                            _aplicarFiltros();
-                          });
-                        },
-                        showBadges: true,
-                      ),
                   ],
                 ),
               ),
+              _buildResumoPorTipoSection(),
               Expanded(
                 child: _loading
                     ? const Center(
@@ -2174,6 +2408,37 @@ enable_ride_logistics
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildVisaoGeralButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: _alternarVisaoGeral,
+        icon: Icon(
+          _isVisaoGeral
+              ? Icons.calendar_month_rounded
+              : Icons.dashboard_customize_rounded,
+          size: 18,
+        ),
+        label: Text(
+          _isVisaoGeral ? 'Voltar para o mês atual' : 'Ativar visão geral',
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _isVisaoGeral ? olympusGold : Colors.white,
+          foregroundColor: olympusBlue,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
       ),
     );
   }
