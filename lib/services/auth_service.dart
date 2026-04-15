@@ -29,6 +29,11 @@ class AuthService {
         return;
       }
 
+      debugPrint('🔥 AUTH SERVICE CHAMOU save token 🔥');
+      debugPrint('🔥 USER ID: ${user.id} 🔥');
+      debugPrint('🔥 TOKEN: $token 🔥');
+      debugPrint('🔥 SALVANDO TOKEN PUSH AGORA 🔥');
+
       await supabase.from('user_push_tokens').upsert({
         'user_id': user.id,
         'device_token': token,
