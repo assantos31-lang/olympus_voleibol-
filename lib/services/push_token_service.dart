@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class PushTokenService {
   PushTokenService._();
@@ -40,7 +41,7 @@ class PushTokenService {
         badge: true,
         sound: true,
       );
-      debugPrint('[PushTokenService] iOS foreground presentation configurado');
+      debugPrint('[PushTokenService] iOS foreground OK');
     }
   }
 
@@ -48,11 +49,11 @@ class PushTokenService {
     _tokenRefreshSub?.cancel();
 
     _tokenRefreshSub = _messaging.onTokenRefresh.listen((token) async {
-      debugPrint('[PushTokenService] onTokenRefresh disparou');
+      debugPrint('[PushTokenService] 🔁 token refresh');
       try {
         await _upsertToken(token);
       } catch (e, st) {
-        debugPrint('[PushTokenService] erro no onTokenRefresh: $e');
+        debugPrint('[PushTokenService] ERRO refresh: $e');
         debugPrintStack(stackTrace: st);
       }
     });
@@ -60,13 +61,16 @@ class PushTokenService {
 
   Future<String> _getOrCreateInstallationId() async {
     final existing = await _storage.read(key: _installationIdKey);
+
     if (existing != null && existing.isNotEmpty) {
       return existing;
     }
 
     final newId = _uuid.v4();
     await _storage.write(key: _installationIdKey, value: newId);
+
     debugPrint('[PushTokenService] installation_id criado: $newId');
+
     return newId;
   }
 
@@ -79,7 +83,7 @@ class PushTokenService {
     );
 
     debugPrint(
-      '[PushTokenService] authorizationStatus: ${settings.authorizationStatus}',
+      '[PushTokenService] permission: ${settings.authorizationStatus}',
     );
 
     return settings;
@@ -92,7 +96,7 @@ class PushTokenService {
         final fcmToken = await _messaging.getToken();
 
         debugPrint(
-          '[PushTokenService] tentativa iOS $attempt | apnsToken=${apnsToken != null} | fcmToken=${fcmToken != null && fcmToken.isNotEmpty}',
+          '[PushTokenService] iOS tentativa $attempt | apns=${apnsToken != null} | fcm=${fcmToken != null}',
         );
 
         if (apnsToken != null && fcmToken != null && fcmToken.isNotEmpty) {
@@ -106,24 +110,29 @@ class PushTokenService {
     }
 
     final token = await _messaging.getToken();
+
     debugPrint(
-      '[PushTokenService] token Android obtido: ${token != null && token.isNotEmpty}',
+      '[PushTokenService] Android token obtido: ${token != null}',
     );
+
     return token;
   }
 
   Future<void> syncCurrentUserTokenIfPossible() async {
     final user = _supabase.auth.currentUser;
+
     if (user == null) {
-      debugPrint('[PushTokenService] sem usuário logado, sync ignorado');
+      debugPrint('[PushTokenService] sem user');
       return;
     }
+
+    debugPrint('[PushTokenService] sync user=${user.id}');
 
     final permission = await requestPermissionIfNeeded();
     final token = await _obtainTokenRobustly();
 
     if (token == null || token.isEmpty) {
-      debugPrint('[PushTokenService] token indisponível, nada a salvar');
+      debugPrint('[PushTokenService] token NULL ❌');
       return;
     }
 
@@ -138,13 +147,17 @@ class PushTokenService {
     String? permissionStatus,
   }) async {
     final user = _supabase.auth.currentUser;
+
     if (user == null) {
-      debugPrint('[PushTokenService] _upsertToken abortado: sem usuário');
+      debugPrint('[PushTokenService] sem user no upsert ❌');
       return;
     }
 
     final installationId = await _getOrCreateInstallationId();
     final now = DateTime.now().toUtc().toIso8601String();
+
+    final packageInfo = await PackageInfo.fromPlatform();
+    final version = '${packageInfo.version}+${packageInfo.buildNumber}';
 
     final payload = {
       'installation_id': installationId,
@@ -154,22 +167,26 @@ class PushTokenService {
       'permission_status': permissionStatus,
       'last_seen_at': now,
       'updated_at': now,
+      'app_version': version,
     };
 
-    debugPrint('[PushTokenService] salvando token...');
-    debugPrint('[PushTokenService] user_id=${user.id}');
-    debugPrint('[PushTokenService] installation_id=$installationId');
-    debugPrint('[PushTokenService] platform=${payload['platform']}');
+    debugPrint('[PushTokenService] UPSERT...');
+    debugPrint(payload.toString());
 
-    await _supabase
-        .from('user_push_tokens')
-        .upsert(payload, onConflict: 'installation_id');
+    try {
+      await _supabase
+          .from('user_push_tokens')
+          .upsert(payload, onConflict: 'installation_id');
 
-    debugPrint('[PushTokenService] token salvo com sucesso');
+      debugPrint('[PushTokenService] ✅ salvo');
+    } catch (e, st) {
+      debugPrint('[PushTokenService] ❌ erro upsert: $e');
+      debugPrintStack(stackTrace: st);
+    }
   }
 
   Future<void> syncAfterLogin() async {
-    debugPrint('[PushTokenService] syncAfterLogin()');
+    debugPrint('[PushTokenService] syncAfterLogin');
     await syncCurrentUserTokenIfPossible();
   }
 
@@ -184,10 +201,45 @@ class PushTokenService {
         'last_seen_at': now,
       }).eq('installation_id', installationId);
 
-      debugPrint('[PushTokenService] instalação desvinculada no logout');
+      debugPrint('[PushTokenService] logout OK');
     } catch (e, st) {
-      debugPrint('[PushTokenService] erro no logout: $e');
+      debugPrint('[PushTokenService] erro logout: $e');
       debugPrintStack(stackTrace: st);
+    }
+  }
+
+  /// 🔍 DEBUG COMPLETO
+  Future<Map<String, dynamic>> getDebugInfo() async {
+    final user = _supabase.auth.currentUser;
+    final installationId = await _getOrCreateInstallationId();
+    final permission = await _messaging.getNotificationSettings();
+    final fcmToken = await _messaging.getToken();
+
+    String? apnsToken;
+    if (Platform.isIOS) {
+      apnsToken = await _messaging.getAPNSToken();
+    }
+
+    return {
+      'user_id': user?.id,
+      'platform': Platform.isIOS ? 'ios' : 'android',
+      'installation_id': installationId,
+      'permission': permission.authorizationStatus.name,
+      'fcm_token': fcmToken,
+      'fcm_token_exists': fcmToken != null,
+      'apns_token_exists': apnsToken != null,
+    };
+  }
+
+  /// 🔥 FORÇA SYNC MANUAL
+  Future<String> forceSyncForDebug() async {
+    try {
+      await syncCurrentUserTokenIfPossible();
+      return 'SYNC_OK';
+    } catch (e, st) {
+      debugPrint('[PushTokenService] erro debug: $e');
+      debugPrintStack(stackTrace: st);
+      return 'SYNC_ERROR: $e';
     }
   }
 

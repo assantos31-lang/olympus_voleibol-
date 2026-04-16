@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui';
 import '../services/auth_service.dart';
+import '../services/push_token_service.dart';
 import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
 import 'athlete_messages_page.dart';
@@ -2465,6 +2466,47 @@ event_time
     );
   }
 
+  Future<void> _debugPushToken() async {
+    final info = await PushTokenService.instance.getDebugInfo();
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Push Debug'),
+        content: SingleChildScrollView(
+          child: Text(info.toString()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              final result =
+                  await PushTokenService.instance.forceSyncForDebug();
+
+              if (!mounted) return;
+
+              Navigator.pop(context);
+
+              showDialog(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text('Force Sync'),
+                  content: Text(result),
+                ),
+              );
+            },
+            child: const Text('FORÇAR SYNC'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('FECHAR'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _redirectToLogin() async {
     await supabase.auth.signOut();
     if (mounted) {
@@ -4251,6 +4293,11 @@ event_time
               backgroundColor: olympusBlue,
               foregroundColor: Colors.white,
               actions: [
+                IconButton(
+                  icon: const Icon(Icons.bug_report),
+                  tooltip: 'Debug Push',
+                  onPressed: _debugPushToken,
+                ),
                 IconButton(
                   icon: const Icon(Icons.person, color: Colors.white),
                   tooltip: 'Perfil',
