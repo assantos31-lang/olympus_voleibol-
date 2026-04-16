@@ -4324,6 +4324,13 @@ event_time
               foregroundColor: Colors.white,
               actions: [
                 IconButton(
+                  icon: const Icon(Icons.bug_report),
+                  tooltip: 'Debug Push',
+                  onPressed: () {
+                    _debugPushToken();
+                  },
+                ),
+                IconButton(
                   icon: const Icon(Icons.person, color: Colors.white),
                   tooltip: 'Perfil',
                   onPressed: _navigateToProfilePage,
