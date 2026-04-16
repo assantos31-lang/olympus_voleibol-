@@ -843,7 +843,7 @@ enable_ride_logistics
       int horasLimite;
       switch (tipo) {
         case 'treino':
-          horasLimite = 3;
+          horasLimite = 0;
           break;
         case 'amistoso':
           horasLimite = 12;
