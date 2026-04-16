@@ -2467,44 +2467,74 @@ event_time
   }
 
   Future<void> _debugPushToken() async {
-    final info = await PushTokenService.instance.getDebugInfo();
-
     if (!mounted) return;
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Push Debug'),
-        content: SingleChildScrollView(
-          child: Text(info.toString()),
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        title: Text('Push Debug'),
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(
+              child: Text('Carregando diagnóstico...'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              final result =
-                  await PushTokenService.instance.forceSyncForDebug();
-
-              if (!mounted) return;
-
-              Navigator.pop(context);
-
-              showDialog(
-                context: context,
-                builder: (_) => AlertDialog(
-                  title: const Text('Force Sync'),
-                  content: Text(result),
-                ),
-              );
-            },
-            child: const Text('FORÇAR SYNC'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('FECHAR'),
-          ),
-        ],
       ),
     );
+
+    try {
+      final info = await PushTokenService.instance.getDebugInfo();
+      final result = await PushTokenService.instance.forceSyncForDebug();
+
+      if (!mounted) return;
+
+      Navigator.of(context, rootNavigator: true).pop();
+
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Push Debug'),
+          content: SingleChildScrollView(
+            child: Text(
+              'INFO:\n${info.toString()}\n\nRESULTADO:\n$result',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('FECHAR'),
+            ),
+          ],
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('ERRO _debugPushToken: $e');
+      debugPrintStack(stackTrace: st);
+
+      if (!mounted) return;
+
+      Navigator.of(context, rootNavigator: true).pop();
+
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Erro Debug Push'),
+          content: SingleChildScrollView(
+            child: Text(e.toString()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('FECHAR'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Future<void> _redirectToLogin() async {
@@ -4293,11 +4323,6 @@ event_time
               backgroundColor: olympusBlue,
               foregroundColor: Colors.white,
               actions: [
-                IconButton(
-                  icon: const Icon(Icons.bug_report),
-                  tooltip: 'Debug Push',
-                  onPressed: _debugPushToken,
-                ),
                 IconButton(
                   icon: const Icon(Icons.person, color: Colors.white),
                   tooltip: 'Perfil',
