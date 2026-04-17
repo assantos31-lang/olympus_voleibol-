@@ -91,16 +91,23 @@ class PushTokenService {
 
   Future<String?> _obtainTokenRobustly() async {
     if (Platform.isIOS) {
-      for (int attempt = 1; attempt <= 8; attempt++) {
+      for (int attempt = 1; attempt <= 12; attempt++) {
         final apnsToken = await _messaging.getAPNSToken();
-        final fcmToken = await _messaging.getToken();
 
         debugPrint(
-          '[PushTokenService] iOS tentativa $attempt | apns=${apnsToken != null} | fcm=${fcmToken != null}',
+          '[PushTokenService] iOS tentativa $attempt | apns=${apnsToken != null}',
         );
 
-        if (apnsToken != null && fcmToken != null && fcmToken.isNotEmpty) {
-          return fcmToken;
+        if (apnsToken != null && apnsToken.isNotEmpty) {
+          final fcmToken = await _messaging.getToken();
+
+          debugPrint(
+            '[PushTokenService] iOS tentativa $attempt | fcm=${fcmToken != null}',
+          );
+
+          if (fcmToken != null && fcmToken.isNotEmpty) {
+            return fcmToken;
+          }
         }
 
         await Future.delayed(const Duration(seconds: 2));
@@ -213,11 +220,29 @@ class PushTokenService {
     final user = _supabase.auth.currentUser;
     final installationId = await _getOrCreateInstallationId();
     final permission = await _messaging.getNotificationSettings();
-    final fcmToken = await _messaging.getToken();
 
     String? apnsToken;
+    String? fcmToken;
+    String? tokenError;
+
     if (Platform.isIOS) {
       apnsToken = await _messaging.getAPNSToken();
+
+      if (apnsToken != null && apnsToken.isNotEmpty) {
+        try {
+          fcmToken = await _messaging.getToken();
+        } catch (e) {
+          tokenError = e.toString();
+        }
+      } else {
+        tokenError = 'APNS token ainda não disponível no device';
+      }
+    } else {
+      try {
+        fcmToken = await _messaging.getToken();
+      } catch (e) {
+        tokenError = e.toString();
+      }
     }
 
     return {
@@ -228,6 +253,7 @@ class PushTokenService {
       'fcm_token': fcmToken,
       'fcm_token_exists': fcmToken != null,
       'apns_token_exists': apnsToken != null,
+      'token_error': tokenError,
     };
   }
 
