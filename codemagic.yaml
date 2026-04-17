@@ -1,0 +1,38 @@
+workflows:
+  ios-release:
+    name: iOS Release
+    max_build_duration: 60
+    instance_type: mac_mini_m1
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.andre.olympusvoleibol
+      vars:
+        BUNDLE_ID: "com.andre.olympusvoleibol"
+    scripts:
+      - name: Setup Flutter
+        script: |
+          flutter pub get
+          flutter packages pub get
+      
+      - name: Build iOS
+        script: |
+          flutter build ios --release --no-codesign --build-name=2.0.3 --build-number=16
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    ios:
+      # AQUI ESTÁ A MÁGICA: Habilita as permissões que faltam
+      capabilities:
+        - push_notifications: true
+        - background_modes:
+            - remote_notifications
+      auto_submit: false
+    publishing:
+      app_store_connect:
+        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
+        submit_to_testflight: true
+        beta_groups:
+          - Testadores Internos
