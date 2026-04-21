@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 
 class PushTokenService {
   PushTokenService._();
@@ -19,6 +19,7 @@ class PushTokenService {
   final Uuid _uuid = const Uuid();
 
   StreamSubscription<String>? _tokenRefreshSub;
+  StreamSubscription<AuthState>? _authStateSub;
   bool _initialized = false;
 
   static const String _installationIdKey = 'push_installation_id';
@@ -30,6 +31,7 @@ class PushTokenService {
     debugPrint('[PushTokenService] init()');
 
     await _configureForegroundPresentation();
+    _listenAuthChanges();
     _listenTokenRefresh();
     await syncCurrentUserTokenIfPossible();
   }
@@ -45,6 +47,33 @@ class PushTokenService {
     }
   }
 
+  void _listenAuthChanges() {
+    _authStateSub?.cancel();
+
+    _authStateSub = _supabase.auth.onAuthStateChange.listen((data) async {
+      final event = data.event;
+      final session = data.session;
+
+      debugPrint(
+        '[PushTokenService] auth change | event=$event | user=${session?.user.id}',
+      );
+
+      try {
+        if (session?.user != null) {
+          await syncCurrentUserTokenIfPossible();
+          return;
+        }
+
+        if (event == AuthChangeEvent.signedOut) {
+          await clearUserOnLogout();
+        }
+      } catch (e, st) {
+        debugPrint('[PushTokenService] ERRO auth listener: $e');
+        debugPrintStack(stackTrace: st);
+      }
+    });
+  }
+
   void _listenTokenRefresh() {
     _tokenRefreshSub?.cancel();
 
@@ -52,7 +81,6 @@ class PushTokenService {
       debugPrint('[PushTokenService] 🔁 token refresh');
 
       try {
-        // 🔥 BLOQUEIO CRÍTICO PARA iOS
         if (Platform.isIOS) {
           final apns = await _messaging.getAPNSToken();
 
@@ -62,7 +90,18 @@ class PushTokenService {
           }
         }
 
-        await _upsertToken(token);
+        final user = _supabase.auth.currentUser;
+        if (user == null) {
+          debugPrint('[PushTokenService] ❌ refresh ignorado (sem user)');
+          return;
+        }
+
+        final permission = await _messaging.getNotificationSettings();
+
+        await _upsertToken(
+          token,
+          permissionStatus: permission.authorizationStatus.name,
+        );
       } catch (e, st) {
         debugPrint('[PushTokenService] ERRO refresh: $e');
         debugPrintStack(stackTrace: st);
@@ -106,14 +145,14 @@ class PushTokenService {
         final apnsToken = await _messaging.getAPNSToken();
 
         debugPrint(
-          '[PushTokenService] iOS tentativa $attempt | apns=${apnsToken != null}',
+          '[PushTokenService] iOS tentativa $attempt | apns=${apnsToken != null && apnsToken.isNotEmpty}',
         );
 
         if (apnsToken != null && apnsToken.isNotEmpty) {
           final fcmToken = await _messaging.getToken();
 
           debugPrint(
-            '[PushTokenService] iOS tentativa $attempt | fcm=${fcmToken != null}',
+            '[PushTokenService] iOS tentativa $attempt | fcm=${fcmToken != null && fcmToken.isNotEmpty}',
           );
 
           if (fcmToken != null && fcmToken.isNotEmpty) {
@@ -129,15 +168,15 @@ class PushTokenService {
 
     final token = await _messaging.getToken();
 
-    debugPrint(
-      '[PushTokenService] Android token obtido: ${token != null}',
-    );
+    debugPrint('[PushTokenService] Android token obtido: ${token != null}');
 
     return token;
   }
 
   Future<void> syncCurrentUserTokenIfPossible() async {
     final user = _supabase.auth.currentUser;
+
+    debugPrint('[PushTokenService] USER: ${user?.id}');
 
     if (user == null) {
       debugPrint('[PushTokenService] sem user');
@@ -147,7 +186,12 @@ class PushTokenService {
     debugPrint('[PushTokenService] sync user=${user.id}');
 
     final permission = await requestPermissionIfNeeded();
+    debugPrint(
+      '[PushTokenService] PERMISSION: ${permission.authorizationStatus}',
+    );
+
     final token = await _obtainTokenRobustly();
+    debugPrint('[PushTokenService] TOKEN: $token');
 
     if (token == null || token.isEmpty) {
       debugPrint('[PushTokenService] token NULL ❌');
@@ -188,6 +232,8 @@ class PushTokenService {
       'app_version': version,
     };
 
+    debugPrint('[PushTokenService] 🔥 VAI SALVAR TOKEN: $token');
+    debugPrint('[PushTokenService] 🔥 USER NO UPSERT: ${user.id}');
     debugPrint('[PushTokenService] UPSERT...');
     debugPrint(payload.toString());
 
@@ -280,7 +326,9 @@ class PushTokenService {
 
   Future<void> dispose() async {
     await _tokenRefreshSub?.cancel();
+    await _authStateSub?.cancel();
     _tokenRefreshSub = null;
+    _authStateSub = null;
     _initialized = false;
   }
 }
