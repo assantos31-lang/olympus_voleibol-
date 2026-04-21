@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
+import '../services/push_token_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -260,6 +261,14 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     if (!mounted) return;
 
     if (result['success'] == true) {
+      try {
+        await PushTokenService.instance.syncAfterLogin();
+      } catch (e) {
+        debugPrint('ERRO AO SINCRONIZAR PUSH: $e');
+      }
+
+      if (!mounted) return;
+
       Navigator.pushNamedAndRemoveUntil(
         context,
         '/dashboard',
