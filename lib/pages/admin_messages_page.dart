@@ -16,6 +16,8 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
   bool _loadingSchedules = false;
   bool _showScheduledSection = false;
   bool _showSentSection = false;
+  String _scheduledMonthFilter = 'Todos';
+  String _sentMonthFilter = 'Todos';
 
   List<Map<String, dynamic>> _sentThreads = [];
   List<Map<String, dynamic>> _scheduledMessages = [];
@@ -66,6 +68,9 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
           (id) =>
               !_sentThreads.any((item) => (item['id'] ?? '').toString() == id),
         );
+        if (!_sentMonthOptions().contains(_sentMonthFilter)) {
+          _sentMonthFilter = 'Todos';
+        }
       });
     } catch (e) {
       _showSnack('Erro ao carregar histórico: $e');
@@ -112,6 +117,9 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
       if (!mounted) return;
       setState(() {
         _scheduledMessages = List<Map<String, dynamic>>.from(response);
+        if (!_scheduleMonthOptions().contains(_scheduledMonthFilter)) {
+          _scheduledMonthFilter = 'Todos';
+        }
       });
     } catch (e) {
       _showSnack('Erro ao carregar agendamentos: $e');
@@ -307,8 +315,8 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
   }
 
   bool get _allThreadsSelected =>
-      _sentThreads.isNotEmpty &&
-      _selectedThreadIds.length == _sentThreads.length;
+      _visibleSentThreads.isNotEmpty &&
+      _selectedThreadIds.length == _visibleSentThreads.length;
 
   void _toggleSelectAllThreads() {
     setState(() {
@@ -318,7 +326,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
         _selectedThreadIds
           ..clear()
           ..addAll(
-            _sentThreads
+            _visibleSentThreads
                 .map((item) => (item['id'] ?? '').toString())
                 .where((id) => id.isNotEmpty),
           );
@@ -700,35 +708,266 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
     required VoidCallback onTap,
     Widget? trailing,
   }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              ),
-            ),
-            if (trailing != null) trailing,
-            Icon(expanded ? Icons.expand_less : Icons.expand_more),
+    final isScheduled = title.toLowerCase().contains('programadas');
+    final accentColor =
+        isScheduled ? const Color(0xFF8FE8FF) : const Color(0xFFFF4F93);
+    final accentGlow =
+        isScheduled ? const Color(0x338FE8FF) : const Color(0x33FF4F93);
+    final panelColor =
+        isScheduled ? const Color(0x804F5F66) : const Color(0x80664B5E);
+    final iconData =
+        isScheduled ? Icons.calendar_month_outlined : Icons.cake_outlined;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.22)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            panelColor,
+            Colors.white.withOpacity(0.08),
           ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.22),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: accentGlow,
+                    border: Border.all(color: accentColor.withOpacity(0.55)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accentGlow,
+                        blurRadius: 16,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    iconData,
+                    color: accentColor,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    isScheduled
+                        ? 'Mensagens programadas'
+                        : 'Mensagens enviadas',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                if (trailing != null)
+                  IconTheme(
+                    data: const IconThemeData(color: Colors.white70),
+                    child: trailing,
+                  ),
+                Icon(
+                  expanded ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.white70,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildCollapsedInfo(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6, bottom: 8),
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.24),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.14)),
+      ),
       child: Text(
         text,
-        style: Theme.of(context).textTheme.bodySmall,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Colors.white,
+            ),
       ),
+    );
+  }
+
+  String _monthKeyFromDate(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    return '${date.year}-$month';
+  }
+
+  String _monthLabel(String key) {
+    if (key == 'Todos') return 'Todos';
+    final parts = key.split('-');
+    if (parts.length != 2) return key;
+
+    const names = {
+      '01': 'Jan',
+      '02': 'Fev',
+      '03': 'Mar',
+      '04': 'Abr',
+      '05': 'Mai',
+      '06': 'Jun',
+      '07': 'Jul',
+      '08': 'Ago',
+      '09': 'Set',
+      '10': 'Out',
+      '11': 'Nov',
+      '12': 'Dez',
+    };
+
+    return '${names[parts[1]] ?? parts[1]}/${parts[0]}';
+  }
+
+  List<String> _scheduleMonthOptions() {
+    final values = <String>{'Todos'};
+    for (final item in _scheduledMessages) {
+      final raw = (item['scheduled_for'] ??
+              item['next_run_at'] ??
+              item['created_at'] ??
+              '')
+          .toString();
+      final date = DateTime.tryParse(raw)?.toLocal();
+      if (date != null) {
+        values.add(_monthKeyFromDate(date));
+      }
+    }
+    final months = values.where((e) => e != 'Todos').toList()
+      ..sort((a, b) => b.compareTo(a));
+    return ['Todos', ...months];
+  }
+
+  List<String> _sentMonthOptions() {
+    final values = <String>{'Todos'};
+    for (final item in _sentThreads) {
+      final raw =
+          ((item['last_message_at'] ?? item['created_at']) ?? '').toString();
+      final date = DateTime.tryParse(raw)?.toLocal();
+      if (date != null) {
+        values.add(_monthKeyFromDate(date));
+      }
+    }
+    final months = values.where((e) => e != 'Todos').toList()
+      ..sort((a, b) => b.compareTo(a));
+    return ['Todos', ...months];
+  }
+
+  List<Map<String, dynamic>> get _visibleScheduledMessages {
+    if (_scheduledMonthFilter == 'Todos') return _scheduledMessages;
+    return _scheduledMessages.where((item) {
+      final raw = (item['scheduled_for'] ??
+              item['next_run_at'] ??
+              item['created_at'] ??
+              '')
+          .toString();
+      final date = DateTime.tryParse(raw)?.toLocal();
+      return date != null && _monthKeyFromDate(date) == _scheduledMonthFilter;
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> get _visibleSentThreads {
+    if (_sentMonthFilter == 'Todos') return _sentThreads;
+    return _sentThreads.where((item) {
+      final raw =
+          ((item['last_message_at'] ?? item['created_at']) ?? '').toString();
+      final date = DateTime.tryParse(raw)?.toLocal();
+      return date != null && _monthKeyFromDate(date) == _sentMonthFilter;
+    }).toList();
+  }
+
+  Widget _buildMonthFilter({
+    required List<String> options,
+    required String value,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      dropdownColor: Colors.grey.shade900,
+      value: options.contains(value) ? value : 'Todos',
+      isDense: true,
+      style: const TextStyle(color: Colors.white, fontSize: 16),
+      decoration: const InputDecoration(
+        labelText: 'Mês',
+        labelStyle: TextStyle(color: Colors.white),
+        border: OutlineInputBorder(),
+        enabledBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: Colors.white70),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: Colors.white),
+        ),
+        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      ),
+      iconEnabledColor: Colors.white,
+      items: options
+          .map(
+            (item) => DropdownMenuItem<String>(
+              value: item,
+              child: Text(
+                _monthLabel(item),
+                style: const TextStyle(color: Colors.white),
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _buildExpandedSectionPanel({
+    required bool isScheduled,
+    required Widget child,
+  }) {
+    final panelColor =
+        isScheduled ? const Color(0x664F5F66) : const Color(0x66664B5E);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.18)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            panelColor,
+            Colors.white.withOpacity(0.06),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.20),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: child,
     );
   }
 
@@ -764,34 +1003,48 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
             _buildCollapsedInfo(
               _scheduledMessages.isEmpty
                   ? 'Nenhuma mensagem programada.'
-                  : '${_scheduledMessages.length} agendamento(s). Toque para visualizar.',
+                  : '${_visibleScheduledMessages.length} de ${_scheduledMessages.length} agendamento(s). Toque para visualizar.',
             )
-          else ...[
-            const SizedBox(height: 8),
-            if (_loadingSchedules && _scheduledMessages.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_scheduledMessages.isEmpty)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    children: const [
-                      Icon(Icons.schedule_send_outlined, size: 48),
-                      SizedBox(height: 12),
-                      Text(
-                        'Nenhuma mensagem programada até o momento.',
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+          else
+            _buildExpandedSectionPanel(
+              isScheduled: true,
+              child: Column(
+                children: [
+                  _buildMonthFilter(
+                    options: _scheduleMonthOptions(),
+                    value: _scheduledMonthFilter,
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _scheduledMonthFilter = value);
+                    },
                   ),
-                ),
-              )
-            else
-              ..._scheduledMessages.map(_buildScheduleCard),
-          ],
+                  const SizedBox(height: 10),
+                  if (_loadingSchedules && _scheduledMessages.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (_visibleScheduledMessages.isEmpty)
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          children: const [
+                            Icon(Icons.schedule_send_outlined, size: 48),
+                            SizedBox(height: 12),
+                            Text(
+                              'Nenhuma mensagem programada até o momento.',
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    ..._visibleScheduledMessages.map(_buildScheduleCard),
+                ],
+              ),
+            ),
           const SizedBox(height: 12),
           _buildSectionToggle(
             title: 'Mensagens enviadas',
@@ -806,7 +1059,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
               children: [
                 if (!_isSelectingThreads && _showSentSection)
                   TextButton.icon(
-                    onPressed: _sentThreads.isEmpty
+                    onPressed: _visibleSentThreads.isEmpty
                         ? null
                         : () {
                             final firstId =
@@ -817,6 +1070,9 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
                           },
                     icon: const Icon(Icons.checklist),
                     label: const Text('Selecionar'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                    ),
                   ),
                 IconButton(
                   tooltip: 'Atualizar histórico',
@@ -830,40 +1086,54 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
             _buildCollapsedInfo(
               _sentThreads.isEmpty
                   ? 'Nenhuma mensagem enviada.'
-                  : '${_sentThreads.length} mensagem(ns) enviada(s). Toque para visualizar.',
+                  : '${_visibleSentThreads.length} de ${_sentThreads.length} mensagem(ns) enviada(s). Toque para visualizar.',
             )
-          else ...[
-            const SizedBox(height: 8),
-            if (_loadingHistory && _sentThreads.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_sentThreads.isEmpty)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    children: [
-                      const Icon(Icons.mark_chat_read_outlined, size: 48),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Nenhuma mensagem enviada até o momento.',
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton.icon(
-                        onPressed: _openCreatePage,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Criar primeira mensagem'),
-                      ),
-                    ],
+          else
+            _buildExpandedSectionPanel(
+              isScheduled: false,
+              child: Column(
+                children: [
+                  _buildMonthFilter(
+                    options: _sentMonthOptions(),
+                    value: _sentMonthFilter,
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _sentMonthFilter = value);
+                    },
                   ),
-                ),
-              )
-            else
-              ..._sentThreads.map(_buildThreadCard),
-          ],
+                  const SizedBox(height: 10),
+                  if (_loadingHistory && _sentThreads.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (_visibleSentThreads.isEmpty)
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          children: [
+                            const Icon(Icons.mark_chat_read_outlined, size: 48),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Nenhuma mensagem enviada até o momento.',
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 12),
+                            FilledButton.icon(
+                              onPressed: _openCreatePage,
+                              icon: const Icon(Icons.add),
+                              label: const Text('Criar primeira mensagem'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    ..._visibleSentThreads.map(_buildThreadCard),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -900,7 +1170,31 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
             ),
         ],
       ),
-      body: _buildBody(),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/monte_olimpo_v2.png',
+              fit: BoxFit.cover,
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.45),
+                    Colors.black.withOpacity(0.65),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          _buildBody(),
+        ],
+      ),
     );
   }
 }
@@ -1766,6 +2060,8 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
           'user_id': admin.id,
           'is_admin_sender': true,
           'unread_count': 0,
+          'is_read': true,
+          'viewed_at': now,
           'created_at': now,
         },
         ...recipients.map(
@@ -1774,6 +2070,8 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
             'user_id': user['id'],
             'is_admin_sender': false,
             'unread_count': 1,
+            'is_read': false,
+            'viewed_at': null,
             'created_at': now,
           },
         ),
@@ -2373,7 +2671,10 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
 
   bool _loading = true;
   bool _sending = false;
+  bool _loadingParticipants = false;
+  bool _participantsExpanded = true;
   List<Map<String, dynamic>> _messages = [];
+  List<Map<String, dynamic>> _participants = [];
   RealtimeChannel? _threadChannel;
 
   @override
@@ -2383,7 +2684,10 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
   }
 
   Future<void> _bootstrap() async {
-    await _loadMessages();
+    await Future.wait([
+      _loadMessages(),
+      _loadParticipantsStatus(),
+    ]);
     _setupRealtime();
   }
 
@@ -2409,7 +2713,10 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
           value: widget.threadId,
         ),
         callback: (_) async {
-          await _loadMessages();
+          await Future.wait([
+            _loadMessages(),
+            _loadParticipantsStatus(),
+          ]);
         },
       )
       ..subscribe();
@@ -2439,6 +2746,80 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  Future<void> _loadParticipantsStatus() async {
+    final adminId = supabase.auth.currentUser?.id;
+    if (adminId == null) return;
+
+    if (mounted) setState(() => _loadingParticipants = true);
+
+    try {
+      final participantsResponse = await supabase
+          .from('app_message_participants')
+          .select('user_id, unread_count, is_read, viewed_at, is_admin_sender')
+          .eq('thread_id', widget.threadId);
+
+      final participantRows =
+          List<Map<String, dynamic>>.from(participantsResponse).where((row) {
+        final userId = (row['user_id'] ?? '').toString();
+        return userId.isNotEmpty && userId != adminId;
+      }).toList();
+
+      final userIds = participantRows
+          .map((row) => (row['user_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      Map<String, Map<String, dynamic>> profileMap = {};
+
+      if (userIds.isNotEmpty) {
+        final profilesResponse = await supabase
+            .from('profiles')
+            .select('id, full_name, user_type')
+            .inFilter('id', userIds);
+
+        for (final item in List<Map<String, dynamic>>.from(profilesResponse)) {
+          final id = (item['id'] ?? '').toString();
+          if (id.isNotEmpty) {
+            profileMap[id] = item;
+          }
+        }
+      }
+
+      final merged = participantRows.map((row) {
+        final userId = (row['user_id'] ?? '').toString();
+        final profile = profileMap[userId] ?? const <String, dynamic>{};
+
+        return {
+          'user_id': userId,
+          'full_name': (profile['full_name'] ?? 'Usuário').toString(),
+          'user_type': (profile['user_type'] ?? '').toString(),
+          'unread_count': row['unread_count'] ?? 0,
+          'is_read': row['is_read'] == true,
+          'viewed_at': row['viewed_at'],
+        };
+      }).toList()
+        ..sort((a, b) => (a['full_name'] ?? '')
+            .toString()
+            .toLowerCase()
+            .compareTo((b['full_name'] ?? '').toString().toLowerCase()));
+
+      if (!mounted) return;
+      setState(() {
+        _participants = merged;
+      });
+    } catch (e) {
+      _showSnack('Erro ao carregar status de visualização: $e');
+    } finally {
+      if (mounted) setState(() => _loadingParticipants = false);
+    }
+  }
+
+  List<Map<String, dynamic>> get _readParticipants =>
+      _participants.where((item) => item['is_read'] == true).toList();
+
+  List<Map<String, dynamic>> get _pendingParticipants =>
+      _participants.where((item) => item['is_read'] != true).toList();
 
   Future<Map<String, dynamic>?> _loadSenderProfile(String userId) async {
     try {
@@ -2524,7 +2905,11 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
 
         await supabase
             .from('app_message_participants')
-            .update({'unread_count': currentUnread + 1})
+            .update({
+              'unread_count': currentUnread + 1,
+              'is_read': false,
+              'viewed_at': null,
+            })
             .eq('thread_id', widget.threadId)
             .eq('user_id', participantId);
       }
@@ -2548,7 +2933,10 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
       }
 
       _replyController.clear();
-      await _loadMessages();
+      await Future.wait([
+        _loadMessages(),
+        _loadParticipantsStatus(),
+      ]);
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -2571,7 +2959,9 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
   }
 
   String _formatDateTime(dynamic value) {
-    final date = DateTime.tryParse((value ?? '').toString())?.toLocal();
+    final date = value is DateTime
+        ? value.toLocal()
+        : DateTime.tryParse((value ?? '').toString())?.toLocal();
     if (date == null) return '';
     final day = date.day.toString().padLeft(2, '0');
     final month = date.month.toString().padLeft(2, '0');
@@ -2587,6 +2977,175 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
     );
   }
 
+  Widget _buildStatusChip({
+    required String label,
+    required int count,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.22)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 17, color: color),
+          const SizedBox(width: 6),
+          Text(
+            '$label ($count)',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildParticipantRow(Map<String, dynamic> item, {required bool read}) {
+    final name = (item['full_name'] ?? 'Usuário').toString();
+    final viewedAt = item['viewed_at'];
+    final formattedViewedAt = read ? _formatDateTime(viewedAt) : '';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            read ? Icons.visibility_outlined : Icons.schedule_outlined,
+            size: 18,
+            color: read ? Colors.green.shade700 : Colors.orange.shade700,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              read && formattedViewedAt.isNotEmpty
+                  ? '$name • $formattedViewedAt'
+                  : name,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildParticipantsCard() {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                setState(() {
+                  _participantsExpanded = !_participantsExpanded;
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.remove_red_eye_outlined),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Status de visualização',
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                      ),
+                    ),
+                    if (_loadingParticipants)
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else ...[
+                      _buildStatusChip(
+                        label: 'Visualizaram',
+                        count: _readParticipants.length,
+                        color: Colors.green.shade700,
+                        icon: Icons.check_circle_outline,
+                      ),
+                      const SizedBox(width: 8),
+                      _buildStatusChip(
+                        label: 'Pendentes',
+                        count: _pendingParticipants.length,
+                        color: Colors.orange.shade700,
+                        icon: Icons.hourglass_bottom_outlined,
+                      ),
+                    ],
+                    const SizedBox(width: 8),
+                    Icon(
+                      _participantsExpanded
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_participantsExpanded) ...[
+              const SizedBox(height: 12),
+              if (_loadingParticipants)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_participants.isEmpty)
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Nenhum destinatário encontrado nesta conversa.'),
+                )
+              else
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Visualizaram (${_readParticipants.length})',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    if (_readParticipants.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: Text('Ninguém visualizou ainda.'),
+                      )
+                    else
+                      ..._readParticipants.map(
+                        (item) => _buildParticipantRow(item, read: true),
+                      ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Pendentes (${_pendingParticipants.length})',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    if (_pendingParticipants.isEmpty)
+                      const Text('Todos visualizaram.')
+                    else
+                      ..._pendingParticipants.map(
+                        (item) => _buildParticipantRow(item, read: false),
+                      ),
+                  ],
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -2595,6 +3154,7 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
       ),
       body: Column(
         children: [
+          _buildParticipantsCard(),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())

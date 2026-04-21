@@ -1,6 +1,6 @@
 workflows:
   ios-release:
-    name: iOS Release
+    name: iOS Release (Com Push)
     max_build_duration: 60
     instance_type: mac_mini_m1
     environment:
@@ -13,21 +13,21 @@ workflows:
       - name: Setup Flutter
         script: |
           flutter pub get
-          flutter packages pub get
       
-      - name: Build iOS
+      - name: Build iOS IPA
         script: |
-          flutter build ios --release --no-codesign --build-name=2.0.3 --build-number=16
+          flutter build ipa --release --build-name=2.0.3 --build-number=16
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+    
+    # O SEGREDO ESTÁ AQUI
     ios:
-      # AQUI ESTÁ A MÁGICA: Habilita as permissões que faltam
       capabilities:
         - push_notifications: true
         - background_modes:
             - remote_notifications
-      auto_submit: false
+    
     publishing:
       app_store_connect:
         api_key: $APP_STORE_CONNECT_PRIVATE_KEY

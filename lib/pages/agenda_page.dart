@@ -19,6 +19,13 @@ class _AgendaPageState extends State<AgendaPage> {
   // ✅ NOVO: Variáveis de controle de permissão
   bool _hasPermission = true;
   bool _checkingPermission = true;
+  Map<String, bool> _agendaActionPermissions = const {
+    'edit_event': true,
+    'insert_score': true,
+    'view_called_up': true,
+    'export_game_data': true,
+    'delete_event': true,
+  };
 
   List<Map<String, dynamic>> _eventos = [];
   List<Map<String, dynamic>> _eventosFiltrados = [];
@@ -74,16 +81,26 @@ class _AgendaPageState extends State<AgendaPage> {
         setState(() {
           _hasPermission = true;
           _checkingPermission = false;
+          _agendaActionPermissions = const {
+            'edit_event': true,
+            'insert_score': true,
+            'view_called_up': true,
+            'export_game_data': true,
+            'delete_event': true,
+          };
         });
         return;
       }
 
       // Verifica permissão na tabela page_permissions
       final hasAccess = await _permissionService.hasAccess(user.id, 'agenda');
+      final actionPermissions =
+          await _permissionService.getAgendaActionPermissions(user.id);
 
       setState(() {
         _hasPermission = hasAccess;
         _checkingPermission = false;
+        _agendaActionPermissions = actionPermissions;
       });
     } catch (e) {
       print('❌ Erro ao verificar permissão da Agenda: $e');
@@ -91,6 +108,13 @@ class _AgendaPageState extends State<AgendaPage> {
       setState(() {
         _hasPermission = true;
         _checkingPermission = false;
+        _agendaActionPermissions = const {
+          'edit_event': true,
+          'insert_score': true,
+          'view_called_up': true,
+          'export_game_data': true,
+          'delete_event': true,
+        };
       });
     }
   }
@@ -98,6 +122,10 @@ class _AgendaPageState extends State<AgendaPage> {
   void _setMesAtual() {
     final now = DateTime.now();
     _filtroMes = '${now.month.toString().padLeft(2, '0')}/${now.year}';
+  }
+
+  bool _canUseAgendaAction(String actionKey) {
+    return _agendaActionPermissions[actionKey] ?? true;
   }
 
   Future<void> _buscarEventos() async {
@@ -2010,139 +2038,183 @@ class _AgendaPageState extends State<AgendaPage> {
                                                 ),
                                               ),
                                             const SizedBox(width: 8),
-                                            PopupMenuButton<String>(
-                                              icon: Icon(
-                                                Icons.more_vert,
-                                                color: Colors.grey[600],
+                                            if (_canUseAgendaAction(
+                                                    'edit_event') ||
+                                                _canUseAgendaAction(
+                                                    'insert_score') ||
+                                                _canUseAgendaAction(
+                                                    'view_called_up') ||
+                                                _canUseAgendaAction(
+                                                    'export_game_data') ||
+                                                _canUseAgendaAction(
+                                                    'delete_event'))
+                                              PopupMenuButton<String>(
+                                                icon: Icon(
+                                                  Icons.more_vert,
+                                                  color: Colors.grey[600],
+                                                ),
+                                                onSelected: (value) {
+                                                  if (value == 'editar' &&
+                                                      _canUseAgendaAction(
+                                                          'edit_event')) {
+                                                    _editarEvento(evento);
+                                                  } else if (value ==
+                                                          'placar' &&
+                                                      _canUseAgendaAction(
+                                                          'insert_score')) {
+                                                    _inserirPlacar(evento);
+                                                  } else if (value ==
+                                                          'checkin' &&
+                                                      _canUseAgendaAction(
+                                                          'view_called_up')) {
+                                                    _mostrarCheckinDetalhes(
+                                                        evento);
+                                                  } else if (value ==
+                                                          'status_checkin' &&
+                                                      _canUseAgendaAction(
+                                                          'view_called_up')) {
+                                                    _mostrarStatusCheckin(
+                                                        evento);
+                                                  } else if (value ==
+                                                          'exportar' &&
+                                                      _canUseAgendaAction(
+                                                          'export_game_data')) {
+                                                    _exportarConvocados(evento);
+                                                  } else if (value ==
+                                                          'excluir' &&
+                                                      _canUseAgendaAction(
+                                                          'delete_event')) {
+                                                    _excluirEvento(evento);
+                                                  }
+                                                },
+                                                itemBuilder: (context) {
+                                                  final items =
+                                                      <PopupMenuItem<String>>[];
+                                                  if (_canUseAgendaAction(
+                                                      'edit_event')) {
+                                                    items.add(
+                                                        const PopupMenuItem(
+                                                      value: 'editar',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons.edit,
+                                                            size: 18,
+                                                            color: Colors.blue,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Text('Editar evento'),
+                                                        ],
+                                                      ),
+                                                    ));
+                                                  }
+                                                  if ((eventType ==
+                                                              'amistoso' ||
+                                                          eventType ==
+                                                              'campeonato') &&
+                                                      _canUseAgendaAction(
+                                                          'insert_score')) {
+                                                    items.add(PopupMenuItem(
+                                                      value: 'placar',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons.score,
+                                                            size: 18,
+                                                            color: olympusGold,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Text(hasPlacar
+                                                              ? 'Editar placar'
+                                                              : 'Inserir placar'),
+                                                        ],
+                                                      ),
+                                                    ));
+                                                  }
+                                                  if (showVerConvocados &&
+                                                      _canUseAgendaAction(
+                                                          'view_called_up')) {
+                                                    items.add(PopupMenuItem(
+                                                      value: 'checkin',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons
+                                                                .people_outline,
+                                                            size: 18,
+                                                            color: Colors.green,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Text(
+                                                              'Ver convocados'),
+                                                        ],
+                                                      ),
+                                                    ));
+                                                  }
+                                                  if (allowCheckin &&
+                                                      _canUseAgendaAction(
+                                                          'view_called_up')) {
+                                                    items.add(PopupMenuItem(
+                                                      value: 'status_checkin',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons
+                                                                .check_circle_outline,
+                                                            size: 18,
+                                                            color: olympusGold,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Text(
+                                                              'Ver status check-in'),
+                                                        ],
+                                                      ),
+                                                    ));
+                                                  }
+                                                  if (_canUseAgendaAction(
+                                                      'export_game_data')) {
+                                                    items.add(PopupMenuItem(
+                                                      value: 'exportar',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons.file_download,
+                                                            size: 18,
+                                                            color: Colors.green,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Text(
+                                                              '📋 Exportar dados do jogo'),
+                                                        ],
+                                                      ),
+                                                    ));
+                                                  }
+                                                  if (_canUseAgendaAction(
+                                                      'delete_event')) {
+                                                    items.add(PopupMenuItem(
+                                                      value: 'excluir',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons
+                                                                .delete_outline,
+                                                            size: 18,
+                                                            color: Colors.red,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Text(
+                                                            'Excluir evento',
+                                                            style: TextStyle(
+                                                                color:
+                                                                    Colors.red),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ));
+                                                  }
+                                                  return items;
+                                                },
                                               ),
-                                              onSelected: (value) {
-                                                if (value == 'editar') {
-                                                  _editarEvento(evento);
-                                                } else if (value == 'placar') {
-                                                  _inserirPlacar(evento);
-                                                } else if (value == 'checkin') {
-                                                  _mostrarCheckinDetalhes(
-                                                      evento);
-                                                } else if (value ==
-                                                    'status_checkin') {
-                                                  _mostrarStatusCheckin(evento);
-                                                } else if (value ==
-                                                    'exportar') {
-                                                  // ✅ NOVO: Exportar convocados para Excel
-                                                  _exportarConvocados(evento);
-                                                } else if (value == 'excluir') {
-                                                  // ✅ NOVO: Opção excluir
-                                                  _excluirEvento(evento);
-                                                }
-                                              },
-                                              itemBuilder: (context) {
-                                                final items =
-                                                    <PopupMenuItem<String>>[];
-                                                items.add(const PopupMenuItem(
-                                                  value: 'editar',
-                                                  child: Row(
-                                                    children: [
-                                                      Icon(
-                                                        Icons.edit,
-                                                        size: 18,
-                                                        color: Colors.blue,
-                                                      ),
-                                                      SizedBox(width: 8),
-                                                      Text('Editar evento'),
-                                                    ],
-                                                  ),
-                                                ));
-                                                if (eventType == 'amistoso' ||
-                                                    eventType == 'campeonato') {
-                                                  items.add(PopupMenuItem(
-                                                    value: 'placar',
-                                                    child: Row(
-                                                      children: [
-                                                        Icon(
-                                                          Icons.score,
-                                                          size: 18,
-                                                          color: olympusGold,
-                                                        ),
-                                                        SizedBox(width: 8),
-                                                        Text(hasPlacar
-                                                            ? 'Editar placar'
-                                                            : 'Inserir placar'),
-                                                      ],
-                                                    ),
-                                                  ));
-                                                }
-                                                if (showVerConvocados) {
-                                                  items.add(PopupMenuItem(
-                                                    value: 'checkin',
-                                                    child: Row(
-                                                      children: [
-                                                        Icon(
-                                                          Icons.people_outline,
-                                                          size: 18,
-                                                          color: Colors.green,
-                                                        ),
-                                                        SizedBox(width: 8),
-                                                        Text('Ver convocados'),
-                                                      ],
-                                                    ),
-                                                  ));
-                                                }
-                                                if (allowCheckin) {
-                                                  items.add(PopupMenuItem(
-                                                    value: 'status_checkin',
-                                                    child: Row(
-                                                      children: [
-                                                        Icon(
-                                                          Icons
-                                                              .check_circle_outline,
-                                                          size: 18,
-                                                          color: olympusGold,
-                                                        ),
-                                                        SizedBox(width: 8),
-                                                        Text(
-                                                            'Ver status check-in'),
-                                                      ],
-                                                    ),
-                                                  ));
-                                                }
-                                                // ✅ NOVO: Opção exportar para Excel
-                                                items.add(PopupMenuItem(
-                                                  value: 'exportar',
-                                                  child: Row(
-                                                    children: [
-                                                      Icon(
-                                                        Icons.file_download,
-                                                        size: 18,
-                                                        color: Colors.green,
-                                                      ),
-                                                      SizedBox(width: 8),
-                                                      Text(
-                                                          '📋 Exportar dados do jogo'),
-                                                    ],
-                                                  ),
-                                                ));
-                                                // ✅ NOVO: Opção excluir no menu
-                                                items.add(PopupMenuItem(
-                                                  value: 'excluir',
-                                                  child: Row(
-                                                    children: [
-                                                      Icon(
-                                                        Icons.delete_outline,
-                                                        size: 18,
-                                                        color: Colors.red,
-                                                      ),
-                                                      SizedBox(width: 8),
-                                                      Text(
-                                                        'Excluir evento',
-                                                        style: TextStyle(
-                                                            color: Colors.red),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ));
-                                                return items;
-                                              },
-                                            ),
                                           ],
                                         ),
                                         const SizedBox(height: 12),

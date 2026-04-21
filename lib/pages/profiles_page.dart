@@ -272,6 +272,11 @@ class _ProfilesPageState extends State<ProfilesPage> {
         'title': 'Acesso ao Perfil',
         'subtitle': 'Permitir visualizar e editar o perfil',
       },
+      {
+        'pageName': 'birthdays',
+        'title': 'Acesso aos Aniversariantes',
+        'subtitle': 'Permitir visualizar a página de aniversários',
+      },
     ];
 
     final permissionValues = <String, bool>{
@@ -290,6 +295,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
       agendaFilters['allowed_convocation_statuses'] ??
           ['accepted', 'rejected', 'pending'],
     );
+    bool verConvocados = agendaFilters['ver_convocados'] == true;
+    bool exportarDadosJogo = agendaFilters['exportar_dados_jogo'] == true;
     final allowedFinancialTypes = List<String>.from(
       financialFilters['allowed_financial_types'] ??
           ['monthly', 'games', 'maintenance', 'other'],
@@ -309,6 +316,14 @@ class _ProfilesPageState extends State<ProfilesPage> {
       await (_permissionService as dynamic).updateFinancialFilters(
         userId: userId,
         allowedFinancialTypes: allowedFinancialTypes,
+      );
+    }
+
+    Future<void> saveAgendaActionPermissions() async {
+      await _permissionService.updateAgendaActionPermissions(
+        userId: userId,
+        verConvocados: verConvocados,
+        exportarDadosJogo: exportarDadosJogo,
       );
     }
 
@@ -632,6 +647,97 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         }).toList(),
                       ),
                     ],
+                  ],
+                  if (permissionValues['agenda'] == true) ...[
+                    const SizedBox(height: 16),
+                    Divider(color: Colors.grey[300]),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Opções dos 3 pontinhos na Agenda:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Ver convocados'),
+                      subtitle: const Text(
+                        'Mostrar a opção Ver convocados no perfil do usuário',
+                      ),
+                      value: verConvocados,
+                      activeColor: olympusGold,
+                      onChanged: (value) async {
+                        try {
+                          setDialogState(() {
+                            verConvocados = value;
+                          });
+                          await saveAgendaActionPermissions();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Opção Ver convocados ${value ? 'habilitada' : 'desabilitada'} com sucesso!',
+                                ),
+                                backgroundColor:
+                                    value ? Colors.green : Colors.orange,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Erro ao atualizar opção Ver convocados: $e',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Exportar dados do jogo'),
+                      subtitle: const Text(
+                        'Mostrar a opção Exportar dados do jogo no perfil do usuário',
+                      ),
+                      value: exportarDadosJogo,
+                      activeColor: olympusGold,
+                      onChanged: (value) async {
+                        try {
+                          setDialogState(() {
+                            exportarDadosJogo = value;
+                          });
+                          await saveAgendaActionPermissions();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Opção Exportar dados do jogo ${value ? 'habilitada' : 'desabilitada'} com sucesso!',
+                                ),
+                                backgroundColor:
+                                    value ? Colors.green : Colors.orange,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Erro ao atualizar opção Exportar dados do jogo: $e',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    ),
                   ],
                   if (permissionValues['financeiro'] == true) ...[
                     const SizedBox(height: 16),

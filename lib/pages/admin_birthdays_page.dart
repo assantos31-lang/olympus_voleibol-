@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/permission_service.dart';
 
 class AdminBirthdaysPage extends StatefulWidget {
   const AdminBirthdaysPage({super.key});
@@ -11,9 +13,12 @@ class AdminBirthdaysPage extends StatefulWidget {
 
 class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
   final supabase = Supabase.instance.client;
+  final PermissionService _permissionService = PermissionService();
 
   List<Map<String, dynamic>> users = [];
   bool isLoading = true;
+  bool _checkingPermission = true;
+  bool _hasPermission = false;
 
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
@@ -22,7 +27,31 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
   @override
   void initState() {
     super.initState();
-    fetchUsers();
+    _checkPermission();
+  }
+
+  Future<void> _checkPermission() async {
+    final user = supabase.auth.currentUser;
+
+    if (user == null) {
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      }
+      return;
+    }
+
+    final hasAccess = await _permissionService.hasAccess(user.id, 'birthdays');
+
+    if (!mounted) return;
+
+    setState(() {
+      _hasPermission = hasAccess;
+      _checkingPermission = false;
+    });
+
+    if (hasAccess) {
+      fetchUsers();
+    }
   }
 
   Future<void> fetchUsers() async {
@@ -31,7 +60,7 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
 
       final response = await supabase
           .from('profiles')
-          .select('full_name, birth_date, avatar_url, court_position')
+          .select('full_name, birth_date, avatar_url, court_position, gender')
           .not('birth_date', 'is', null);
 
       final fetchedUsers = List<Map<String, dynamic>>.from(response);
@@ -184,6 +213,33 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
     return olympusGold.withOpacity(0.18);
   }
 
+  Color _baseCardColorByGender(String? gender) {
+    final normalized = (gender ?? '').trim().toLowerCase();
+    if (normalized == 'masculino') {
+      return const Color(0xFF243F56);
+    }
+    if (normalized == 'feminino') {
+      return const Color(0xFF624154);
+    }
+    return Colors.white;
+  }
+
+  Color _cardTextColorByGender(String? gender) {
+    final normalized = (gender ?? '').trim().toLowerCase();
+    if (normalized == 'masculino' || normalized == 'feminino') {
+      return Colors.white;
+    }
+    return olympusBlue;
+  }
+
+  Color _cardSubtleTextColorByGender(String? gender) {
+    final normalized = (gender ?? '').trim().toLowerCase();
+    if (normalized == 'masculino' || normalized == 'feminino') {
+      return Colors.white.withOpacity(0.88);
+    }
+    return Colors.grey[700]!;
+  }
+
   Widget _buildAvatar(String? avatarUrl, String fullName) {
     final hasAvatar = avatarUrl != null && avatarUrl.trim().isNotEmpty;
 
@@ -212,73 +268,86 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
     final String birthdayLabel = (user['birthday_label'] ?? '').toString();
     final String positionLabel =
         (user['position_label'] ?? 'Não informado').toString();
+    final String gender = (user['gender'] ?? '').toString();
+
+    final baseColor = _baseCardColorByGender(gender);
+    final titleColor = _cardTextColorByGender(gender);
+    final bodyColor = _cardSubtleTextColorByGender(gender);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(
-        color: _cardBackgroundColor(birthDate),
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: _cardBorderColor(birthDate),
-          width: 1.1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        leading: _buildAvatar(avatarUrl, fullName),
-        title: Text(
-          fullName,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            color: olympusBlue,
-            fontSize: 16,
-          ),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Aniversário: $birthdayLabel',
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            decoration: BoxDecoration(
+              color: baseColor.withOpacity(0.35),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: _cardBorderColor(birthDate),
+                width: 1.1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              leading: _buildAvatar(avatarUrl, fullName),
+              title: Text(
+                fullName,
                 style: TextStyle(
-                  color: Colors.grey[800],
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
+                  color: titleColor,
+                  fontSize: 16,
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                isBirthdayToday(birthDate)
-                    ? 'Idade: $age - Hoje é dia de comemorar a vida!'
-                    : 'Idade: $age - ${days == 1 ? 'Falta 1 dia para comemorar a vida!' : 'Faltam $days dias para comemorar a vida!'}',
-                style: TextStyle(
-                  color: isBirthdayToday(birthDate)
-                      ? Colors.green[700]
-                      : isBirthdayThisWeek(birthDate)
-                          ? Colors.orange[800]
-                          : Colors.grey[700],
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Aniversário: $birthdayLabel',
+                      style: TextStyle(
+                        color: bodyColor,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isBirthdayToday(birthDate)
+                          ? 'Idade: $age - Hoje é dia de comemorar a vida!'
+                          : 'Idade: $age - ${days == 1 ? 'Falta 1 dia para comemorar a vida!' : 'Faltam $days dias para comemorar a vida!'}',
+                      style: TextStyle(
+                        color: isBirthdayToday(birthDate)
+                            ? Colors.green[100]
+                            : isBirthdayThisWeek(birthDate)
+                                ? const Color(0xFFFFE0B2)
+                                : bodyColor,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Posição: $positionLabel',
+                      style: TextStyle(
+                        color: bodyColor,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                'Posição: $positionLabel',
-                style: TextStyle(
-                  color: Colors.grey[700],
-                  fontSize: 13.5,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -293,14 +362,14 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
           child: Row(
             children: [
-              const Icon(Icons.cake_outlined, color: olympusGold, size: 20),
+              const Icon(Icons.cake_outlined, color: Colors.white, size: 20),
               const SizedBox(width: 8),
               Text(
                 getMonthName(month),
                 style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
-                  color: olympusBlue,
+                  color: Colors.white,
                 ),
               ),
             ],
@@ -311,8 +380,115 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
     );
   }
 
+  Widget _buildPremiumBackground() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(color: const Color(0xFF102845));
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            color: Colors.black.withOpacity(0.14),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  olympusBlue.withOpacity(0.56),
+                  olympusLightBlue.withOpacity(0.26),
+                  Colors.black.withOpacity(0.62),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0, -0.78),
+                radius: 1.08,
+                colors: [
+                  olympusGold.withOpacity(0.12),
+                  Colors.transparent,
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccessDeniedScreen() {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Aniversariantes'),
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildPremiumBackground()),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.16),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.22),
+                      ),
+                    ),
+                    child: Text(
+                      'Você não tem permissão para acessar esta página.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_checkingPermission) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!_hasPermission) {
+      return _buildAccessDeniedScreen();
+    }
+
     final grouped = groupByMonth();
 
     return Scaffold(
@@ -327,29 +503,51 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
           ),
         ],
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : grouped.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      'Nenhum aniversariante com data cadastrada.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey[700],
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildPremiumBackground()),
+          isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : grouped.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                            child: Container(
+                              padding: const EdgeInsets.all(24),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.16),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.22),
+                                ),
+                              ),
+                              child: const Text(
+                                'Nenhum aniversariante com data cadastrada.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.only(bottom: 20),
+                      children: grouped.entries
+                          .map((entry) =>
+                              _buildMonthSection(entry.key, entry.value))
+                          .toList(),
                     ),
-                  ),
-                )
-              : ListView(
-                  padding: const EdgeInsets.only(bottom: 20),
-                  children: grouped.entries
-                      .map(
-                          (entry) => _buildMonthSection(entry.key, entry.value))
-                      .toList(),
-                ),
+        ],
+      ),
     );
   }
 }

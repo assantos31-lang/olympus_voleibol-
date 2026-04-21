@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'dart:convert';
 import 'dart:math' show sin, cos, sqrt, asin;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
@@ -50,16 +51,15 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     },
   };
 
-  // ✅ NOVO: Variáveis de controle de permissão
   bool _hasPermission = false;
   bool _checkingPermission = true;
 
-  // ✅ NOVO: Variáveis de filtros permitidos
   bool _showMonthFilter = true;
   bool _showStatusFilter = true;
   List<String> _allowedEventTypes = ['treino', 'amistoso', 'campeonato'];
+  bool _canViewConvocados = false;
+  bool _canExportDadosJogo = false;
 
-  // Cores do logo Olympus Voleibol
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
@@ -72,7 +72,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     _checkPermission();
   }
 
-  // ✅ NOVO: Método para verificar permissão de acesso à agenda
   Future<void> _checkPermission() async {
     final user = _supabase.auth.currentUser;
     if (user == null) {
@@ -82,7 +81,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       return;
     }
 
-    // Verifica se usuário tem acesso à página 'agenda'
     final hasAccess = await _permissionService.hasAccess(user.id, 'agenda');
 
     if (!mounted) return;
@@ -92,13 +90,11 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       _checkingPermission = false;
     });
 
-    // Se tiver permissão, carrega os filtros e eventos
     if (hasAccess) {
       _loadAgendaFilters();
     }
   }
 
-  // ✅ NOVO: Carregar filtros permitidos
   Future<void> _loadAgendaFilters() async {
     final user = _supabase.auth.currentUser;
     if (user == null) return;
@@ -112,6 +108,8 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       _allowedEventTypes = filters['allowed_event_types'] != null
           ? List<String>.from(filters['allowed_event_types'])
           : ['treino', 'amistoso', 'campeonato'];
+      _canViewConvocados = filters['ver_convocados'] == true;
+      _canExportDadosJogo = filters['exportar_dados_jogo'] == true;
     });
 
     _setMesAtual();
@@ -258,11 +256,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   String _normalizarTipoResumo(Map<String, dynamic> evento) {
     final tipo = (evento['event_type'] ?? '').toString().toLowerCase().trim();
 
-    // Mantém exatamente a mesma origem do código original:
-    // - treino vem de event_type == 'treino'
-    // - amistoso vem de event_type == 'amistoso'
-    // - liga/campeonatos vem de event_type == 'campeonato'
-    // championship_name continua sendo apenas exibição no card.
     if (tipo == 'treino') {
       return 'treino';
     }
@@ -359,9 +352,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       'campeonato': {'accepted': 0, 'rejected': 0, 'pending': 0},
     };
 
-    // Mantém a lógica do código original para os totais de status:
-    // os contadores são calculados sobre _eventos inteiro, não apenas pelo mês.
-    // O filtro de mês afeta a lista quando nenhum status está selecionado.
     for (final evento in _getEventosBaseFiltro()) {
       final status =
           (evento['convocation_status'] ?? 'pending').toString().toLowerCase();
@@ -490,9 +480,6 @@ enable_ride_logistics
         final id = e['id'].toString();
         e['check_in_status'] = _normalizarCheckInStatus(checkinMap[id]);
       }
-      // Mantém o status real vindo da tabela convocations para o usuário logado.
-      // Não reclassifica pendente para recusado durante o carregamento da tela,
-      // porque isso escondia pendências legítimas de Liga/Campeonatos.
       eventosList.sort((a, b) {
         final dateA = (a['event_date'] ?? '').toString();
         final dateB = (b['event_date'] ?? '').toString();
@@ -1036,6 +1023,413 @@ enable_ride_logistics
     } catch (e) {
       if (!mounted) return;
       _showError('Erro: $e');
+    }
+  }
+
+  Future<void> _mostrarConvocadosDoEvento(Map<String, dynamic> evento) async {
+    final eventIdRaw = evento['id'];
+    if (eventIdRaw == null) return;
+
+    try {
+      final response = await _supabase.rpc(
+        'get_agenda_event_convocados',
+        params: {'p_event_id': eventIdRaw},
+      );
+
+      final participantes = (response as List<dynamic>)
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+
+      String formatBirthDate(dynamic rawDate) {
+        if (rawDate == null || rawDate.toString().trim().isEmpty) return '-';
+        try {
+          final date = DateTime.parse(rawDate.toString());
+          return '${date.day.toString().padLeft(2, '0')}/'
+              '${date.month.toString().padLeft(2, '0')}/'
+              '${date.year}';
+        } catch (_) {
+          return rawDate.toString();
+        }
+      }
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.75,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.people_outline,
+                      color: olympusGold,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Convocados: ${(evento['event_name'] ?? '').toString()}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: olympusBlue,
+                            ),
+                          ),
+                          Text(
+                            '${participantes.where((p) => (p['status'] ?? '').toString() == 'accepted').length} aceitaram de ${participantes.length}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const Divider(height: 32),
+                if (participantes.isEmpty)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Text(
+                        'Nenhum participante convocado',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  )
+                else
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: participantes.map((participante) {
+                          final status =
+                              (participante['status'] ?? 'pending').toString();
+                          final isAceitou = status == 'accepted';
+                          final isRecusou = status == 'rejected';
+                          final isAtleta =
+                              (participante['user_type'] ?? '').toString() ==
+                                  'athlete';
+                          final labelStatus = isAceitou
+                              ? 'Aceitou'
+                              : (isRecusou ? 'Recusou' : 'Pendente');
+                          final colorStatus = isAceitou
+                              ? Colors.green[700]
+                              : (isRecusou
+                                  ? Colors.red[700]
+                                  : Colors.grey[600]);
+                          final birthDate =
+                              formatBirthDate(participante['birth_date']);
+                          final rg = (participante['rg'] ?? '-').toString();
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isAceitou
+                                  ? Colors.green[50]
+                                  : (isRecusou
+                                      ? Colors.red[50]
+                                      : Colors.grey[100]),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isAceitou
+                                    ? Colors.green[300]!
+                                    : (isRecusou
+                                        ? Colors.red[300]!
+                                        : Colors.grey[300]!),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      isAceitou
+                                          ? Icons.check_circle
+                                          : (isRecusou
+                                              ? Icons.cancel
+                                              : Icons.hourglass_empty),
+                                      color: colorStatus,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            (participante['full_name'] ??
+                                                    'Sem nome')
+                                                .toString(),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                          Text(
+                                            isAtleta ? 'Atleta' : 'Técnico',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Text(
+                                      labelStatus,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: colorStatus,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Data de nascimento: $birthDate',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[800],
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'RG: $rg',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[800],
+                                  ),
+                                ),
+                                if (isRecusou &&
+                                    (participante['justification'] ?? '')
+                                        .toString()
+                                        .trim()
+                                        .isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Justificativa: ${participante['justification']}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.red[700],
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: olympusBlue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Fechar'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao carregar convocações: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _exportarDadosDoJogo(Map<String, dynamic> evento) async {
+    final eventIdRaw = evento['id'];
+    if (eventIdRaw == null) return;
+
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📋 Preparando dados do jogo para copiar...'),
+            backgroundColor: Colors.blue,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      final response = await _supabase.rpc(
+        'get_agenda_event_convocados',
+        params: {'p_event_id': eventIdRaw},
+      );
+
+      final convocados = (response as List<dynamic>)
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+
+      String formatBirthDate(dynamic rawDate) {
+        if (rawDate == null || rawDate.toString().trim().isEmpty) return '-';
+        try {
+          final date = DateTime.parse(rawDate.toString());
+          return '${date.day.toString().padLeft(2, '0')}/'
+              '${date.month.toString().padLeft(2, '0')}/'
+              '${date.year}';
+        } catch (_) {
+          return rawDate.toString();
+        }
+      }
+
+      final championshipName =
+          (evento['championship_name'] ?? '-').toString().trim().isEmpty
+              ? '-'
+              : (evento['championship_name'] ?? '-').toString().trim();
+      final dataJogo = (evento['event_date'] ?? '-').toString().trim();
+      final horarioJogo = (evento['event_time'] ?? '-').toString().trim();
+      final nomeJogo = (evento['event_name'] ?? '-').toString().trim();
+      final street = (evento['street'] ?? '').toString().trim();
+      final number = (evento['street_number'] ?? '').toString().trim();
+      final neighborhood = (evento['neighborhood'] ?? '').toString().trim();
+      final city = (evento['city'] ?? '').toString().trim();
+      final state = (evento['state'] ?? '').toString().trim();
+
+      final endereco = street.isEmpty
+          ? '-'
+          : '$street'
+              '${number.isNotEmpty ? ', $number' : ''}'
+              '${neighborhood.isNotEmpty ? ' - $neighborhood' : ''}'
+              '${city.isNotEmpty ? ' - $city' : ''}'
+              '${state.isNotEmpty ? '/$state' : ''}';
+
+      final aceitosLines = <String>[
+        'CAMPEONATO/LIGA: $championshipName',
+        'DATA: $dataJogo - HORÁRIO: $horarioJogo',
+        nomeJogo,
+        'ENDEREÇO: $endereco',
+        '',
+        'ACEITARAM',
+        '',
+      ];
+
+      final pendentesLines = <String>[
+        '',
+        'PENDENTES',
+        '',
+      ];
+
+      final recusadosLines = <String>[
+        '',
+        'RECUSARAM',
+        '',
+      ];
+
+      convocados.sort((a, b) {
+        final nomeA = (a['full_name'] ?? '').toString().toLowerCase();
+        final nomeB = (b['full_name'] ?? '').toString().toLowerCase();
+        return nomeA.compareTo(nomeB);
+      });
+
+      for (final convocado in convocados) {
+        final nome = (convocado['full_name'] ?? '-').toString();
+        final dataNascimento = formatBirthDate(convocado['birth_date']);
+        final rg = (convocado['rg'] ?? '-').toString();
+        final userType = (convocado['user_type'] ?? '').toString();
+        final cargo = userType == 'coach'
+            ? 'Técnico'
+            : userType == 'athlete'
+                ? 'Atleta'
+                : userType;
+        final status = (convocado['status'] ?? 'pending').toString();
+
+        if (status == 'accepted') {
+          aceitosLines.add(
+            'Nome: $nome\n'
+            'Tipo: ${cargo.isEmpty ? '-' : cargo}\n'
+            'Data de nascimento: $dataNascimento\n'
+            'RG: $rg\n'
+            'Status: Aceitou\n',
+          );
+        } else if (status == 'rejected') {
+          final justificativa =
+              (convocado['justification'] ?? '-').toString().trim();
+
+          recusadosLines.add(
+            'Nome: $nome\n'
+            'Tipo: ${cargo.isEmpty ? '-' : cargo}\n'
+            'Data de nascimento: $dataNascimento\n'
+            'RG: $rg\n'
+            'Status: Recusou\n'
+            'Justificativa: ${justificativa.isEmpty ? '-' : justificativa}\n',
+          );
+        } else {
+          pendentesLines.add(
+            'Nome: $nome\n'
+            'Tipo: ${cargo.isEmpty ? '-' : cargo}\n'
+            'Data de nascimento: $dataNascimento\n'
+            'RG: $rg\n'
+            'Status: Pendente\n',
+          );
+        }
+      }
+
+      final lines = <String>[
+        ...aceitosLines,
+        ...pendentesLines,
+        ...recusadosLines,
+      ];
+
+      final formattedContent = lines.join('\n');
+
+      await Clipboard.setData(ClipboardData(text: formattedContent));
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Dados do jogo copiados! Agora é só colar'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Erro ao exportar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -1665,7 +2059,6 @@ enable_ride_logistics
     );
   }
 
-  // ✅ NOVO: Widget para tela de acesso negado
   Widget _buildAccessDeniedScreen() {
     return Scaffold(
       appBar: AppBar(
@@ -1748,7 +2141,6 @@ enable_ride_logistics
     );
   }
 
-  // ✅ NOVO: Widget para tela de verificação de permissão
   Widget _buildPermissionCheckingScreen() {
     return Scaffold(
       body: Stack(
@@ -1782,17 +2174,14 @@ enable_ride_logistics
 
   @override
   Widget build(BuildContext context) {
-    // ✅ NOVO: Verificar se está checando permissão
     if (_checkingPermission) {
       return _buildPermissionCheckingScreen();
     }
 
-    // ✅ NOVO: Verificar se não tem permissão
     if (!_hasPermission) {
       return _buildAccessDeniedScreen();
     }
 
-    // ✅ Restante do código original do build (quando tem permissão)
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -2092,6 +2481,80 @@ enable_ride_logistics
                                                     ),
                                                   ),
                                                 ),
+                                                if (_canViewConvocados ||
+                                                    _canExportDadosJogo) ...[
+                                                  const SizedBox(width: 4),
+                                                  PopupMenuButton<String>(
+                                                    icon: Icon(
+                                                      Icons.more_vert,
+                                                      color: Colors.grey[700],
+                                                      size: 20,
+                                                    ),
+                                                    onSelected: (value) {
+                                                      if (value ==
+                                                          'ver_convocados') {
+                                                        _mostrarConvocadosDoEvento(
+                                                            evento);
+                                                      } else if (value ==
+                                                          'exportar_dados_jogo') {
+                                                        _exportarDadosDoJogo(
+                                                            evento);
+                                                      }
+                                                    },
+                                                    itemBuilder: (context) {
+                                                      final items =
+                                                          <PopupMenuItem<
+                                                              String>>[];
+                                                      if (_canViewConvocados) {
+                                                        items.add(
+                                                          const PopupMenuItem(
+                                                            value:
+                                                                'ver_convocados',
+                                                            child: Row(
+                                                              children: [
+                                                                Icon(
+                                                                  Icons
+                                                                      .people_outline,
+                                                                  size: 18,
+                                                                  color: Colors
+                                                                      .green,
+                                                                ),
+                                                                SizedBox(
+                                                                    width: 8),
+                                                                Text(
+                                                                    'Ver convocados'),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                        );
+                                                      }
+                                                      if (_canExportDadosJogo) {
+                                                        items.add(
+                                                          const PopupMenuItem(
+                                                            value:
+                                                                'exportar_dados_jogo',
+                                                            child: Row(
+                                                              children: [
+                                                                Icon(
+                                                                  Icons
+                                                                      .file_download,
+                                                                  size: 18,
+                                                                  color: Colors
+                                                                      .green,
+                                                                ),
+                                                                SizedBox(
+                                                                    width: 8),
+                                                                Text(
+                                                                    'Exportar dados do jogo'),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                        );
+                                                      }
+                                                      return items;
+                                                    },
+                                                  ),
+                                                ],
                                               ],
                                             ),
                                             const SizedBox(height: 8),

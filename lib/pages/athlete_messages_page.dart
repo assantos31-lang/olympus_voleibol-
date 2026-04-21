@@ -766,11 +766,15 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
     final user = _currentUser();
     if (user == null) return;
 
+    final now = DateTime.now().toUtc().toIso8601String();
+
     await supabase
         .from('app_message_participants')
         .update({
           'unread_count': 0,
-          'last_read_at': DateTime.now().toIso8601String(),
+          'last_read_at': now,
+          'is_read': true,
+          'viewed_at': now,
         })
         .eq('thread_id', widget.threadId)
         .eq('user_id', user.id);
@@ -859,7 +863,7 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
 
       final senderName = (profile?['full_name'] ?? 'Usuário').toString();
       final senderType = (profile?['user_type'] ?? 'athlete').toString();
-      final now = DateTime.now().toIso8601String();
+      final now = DateTime.now().toUtc().toIso8601String();
 
       await supabase.from('app_messages').insert({
         'thread_id': widget.threadId,
@@ -882,13 +886,31 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
 
       for (final row in List<Map<String, dynamic>>.from(participants)) {
         final participantId = (row['user_id'] ?? '').toString();
-        if (participantId.isEmpty || participantId == user.id) continue;
+        if (participantId.isEmpty) continue;
+
+        if (participantId == user.id) {
+          await supabase
+              .from('app_message_participants')
+              .update({
+                'unread_count': 0,
+                'last_read_at': now,
+                'is_read': true,
+                'viewed_at': now,
+              })
+              .eq('thread_id', widget.threadId)
+              .eq('user_id', participantId);
+          continue;
+        }
 
         final currentUnread = (row['unread_count'] ?? 0) as int;
 
         await supabase
             .from('app_message_participants')
-            .update({'unread_count': currentUnread + 1})
+            .update({
+              'unread_count': currentUnread + 1,
+              'is_read': false,
+              'viewed_at': null,
+            })
             .eq('thread_id', widget.threadId)
             .eq('user_id', participantId);
       }

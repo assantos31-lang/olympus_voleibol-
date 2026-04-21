@@ -9,11 +9,13 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui';
 import '../services/auth_service.dart';
+import '../services/permission_service.dart';
 import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
 import 'athlete_messages_page.dart';
 import 'chat_rooms_page.dart';
 import 'admin_competitions_page.dart';
+import 'admin_birthdays_page.dart';
 
 class AthleteDashboardPage extends StatefulWidget {
   const AthleteDashboardPage({super.key});
@@ -26,6 +28,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final supabase = Supabase.instance.client;
   final _authService = AuthService();
+  final PermissionService _permissionService = PermissionService();
   Map<String, dynamic>? _profile;
   bool _isLoading = true;
   bool _isBackgroundReady = false;
@@ -64,6 +67,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   int _currentStreak = 0;
   double _monthlyPresencePercent = 0;
   bool _showingLevelUpDialog = false;
+  bool _canAccessBirthdays = false;
 
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
@@ -115,6 +119,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     await Future.wait([
       _loadProfile(),
       _loadTodayBirthdays(),
+      _loadBirthdaysPermission(),
     ]);
   }
 
@@ -123,6 +128,35 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     if (state == AppLifecycleState.resumed) {
       _refreshDashboard();
     }
+  }
+
+  Future<void> _loadBirthdaysPermission() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final hasAccess =
+          await _permissionService.hasAccess(user.id, 'birthdays');
+      if (!mounted) return;
+      setState(() {
+        _canAccessBirthdays = hasAccess;
+      });
+    } catch (e) {
+      debugPrint('Erro ao carregar permissão de aniversariantes: $e');
+      if (!mounted) return;
+      setState(() {
+        _canAccessBirthdays = false;
+      });
+    }
+  }
+
+  void _navigateToBirthdays() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AdminBirthdaysPage(),
+      ),
+    );
   }
 
   Future<void> _loadProfile() async {
@@ -4325,6 +4359,14 @@ event_time
                         ? _overdueFinancialCount
                         : null,
                   ),
+                  if (_canAccessBirthdays)
+                    _buildDashboardCard(
+                      icon: Icons.cake_outlined,
+                      title: 'Aniversariantes',
+                      subtitle: 'Veja e acompanhe os aniversários',
+                      color: Colors.pink,
+                      onTap: _navigateToBirthdays,
+                    ),
                   _buildDashboardCard(
                     icon: Icons.emoji_events_outlined,
                     title: 'Competições',
@@ -4419,6 +4461,7 @@ class AthleteProfilePage extends StatefulWidget {
 class _AthleteProfilePageState extends State<AthleteProfilePage> {
   final supabase = Supabase.instance.client;
   final _authService = AuthService();
+  final PermissionService _permissionService = PermissionService();
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);

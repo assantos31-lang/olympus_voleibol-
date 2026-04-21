@@ -151,6 +151,8 @@ class PermissionService {
         'allowed_event_types': ['treino', 'amistoso', 'campeonato'],
         'show_status_filter': true,
         'allowed_convocation_statuses': ['accepted', 'rejected', 'pending'],
+        'ver_convocados': false,
+        'exportar_dados_jogo': false,
       };
 
       if (response == null || response['allowed_filters'] == null) {
@@ -184,6 +186,8 @@ class PermissionService {
           filters['allowed_convocation_statuses'],
           ['accepted', 'rejected', 'pending'],
         ),
+        'ver_convocados': filters['ver_convocados'] == true,
+        'exportar_dados_jogo': filters['exportar_dados_jogo'] == true,
       };
     } catch (e) {
       print('❌ Erro ao buscar filtros: $e');
@@ -192,6 +196,8 @@ class PermissionService {
         'allowed_event_types': ['treino', 'amistoso', 'campeonato'],
         'show_status_filter': true,
         'allowed_convocation_statuses': ['accepted', 'rejected', 'pending'],
+        'ver_convocados': false,
+        'exportar_dados_jogo': false,
       };
     }
   }
@@ -214,6 +220,85 @@ class PermissionService {
       userId: userId,
       pageName: 'agenda',
       canAccess: true,
+      allowedFilters: filters,
+    );
+  }
+
+  Future<Map<String, bool>> getAgendaActionPermissions(String userId) async {
+    try {
+      final response = await _supabase
+          .from('page_permissions')
+          .select('allowed_filters')
+          .eq('user_id', userId)
+          .eq('page_name', 'agenda')
+          .maybeSingle();
+
+      if (response == null || response['allowed_filters'] == null) {
+        return {
+          'ver_convocados': false,
+          'exportar_dados_jogo': false,
+        };
+      }
+
+      final raw = response['allowed_filters'];
+      Map<String, dynamic> filters;
+
+      if (raw is String) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) {
+          filters = decoded;
+        } else {
+          return {
+            'ver_convocados': false,
+            'exportar_dados_jogo': false,
+          };
+        }
+      } else if (raw is Map) {
+        filters = Map<String, dynamic>.from(raw);
+      } else {
+        return {
+          'ver_convocados': false,
+          'exportar_dados_jogo': false,
+        };
+      }
+
+      return {
+        'ver_convocados': filters['ver_convocados'] == true,
+        'exportar_dados_jogo': filters['exportar_dados_jogo'] == true,
+      };
+    } catch (e) {
+      print('❌ Erro ao buscar ações da agenda: $e');
+      return {
+        'ver_convocados': false,
+        'exportar_dados_jogo': false,
+      };
+    }
+  }
+
+  Future<void> updateAgendaActionPermissions({
+    required String userId,
+    required bool verConvocados,
+    required bool exportarDadosJogo,
+  }) async {
+    final currentFilters = await getAgendaFilters(userId);
+    final currentAccess = await hasAccess(userId, 'agenda');
+
+    final filters = {
+      'show_month_filter': currentFilters['show_month_filter'] ?? true,
+      'allowed_event_types': currentFilters['allowed_event_types'] ??
+          ['treino', 'amistoso', 'campeonato'],
+      'show_status_filter': currentFilters['show_status_filter'] ?? true,
+      'allowed_convocation_statuses':
+          currentFilters['allowed_convocation_statuses'] ??
+              ['accepted', 'rejected', 'pending'],
+      'ver_convocados': verConvocados,
+      'exportar_dados_jogo': exportarDadosJogo,
+    };
+
+    await updatePermission(
+      userId: userId,
+      pageName: 'agenda',
+      canAccess: currentAccess,
       allowedFilters: filters,
     );
   }

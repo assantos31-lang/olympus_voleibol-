@@ -46,6 +46,46 @@ class _MessageThreadPageState extends State<MessageThreadPage> {
       appBar: AppBar(title: const Text("Chat")),
       body: Column(
         children: [
+          Theme(
+            data: Theme.of(context).copyWith(
+              dividerColor: Colors.transparent,
+            ),
+            child: Card(
+              margin: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+              child: ExpansionTile(
+                tilePadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                leading: const Icon(Icons.visibility_outlined),
+                title: const Text(
+                  'Status de visualização',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text('Toque para visualizar'),
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: const [
+                      Chip(
+                        label: Text('Visualizaram (0)'),
+                      ),
+                      Chip(
+                        label: Text('Pendentes (1)'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Nenhum detalhe de visualização disponível ainda.',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           Expanded(
             child: StreamBuilder(
               stream: _service.streamMessages(widget.roomId),
