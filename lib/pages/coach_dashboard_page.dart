@@ -163,6 +163,24 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     ).then((_) => _loadCompetitionNewCount());
   }
 
+  void _navigateToTrainingPlanner() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CoachTrainingSessionsPage(),
+      ),
+    );
+  }
+
+  void _navigateToAthleteEvaluations() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CoachAthleteEvaluationsPage(),
+      ),
+    );
+  }
+
   Widget _buildPremiumDashboardBackground() {
     return Stack(
       children: [
@@ -406,7 +424,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                             ),
                           ),
                           child: Text(
-                            'Gerencie competições e acompanhe as novidades do painel.',
+                            'Gerencie treinos, avaliações e acompanhe as novidades do painel.',
                             style: TextStyle(
                               color: Colors.white.withOpacity(0.88),
                               fontSize: 11,
@@ -695,6 +713,20 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                 children: [
                   _buildCoachInfoCard(),
                   _buildDashboardCard(
+                    icon: Icons.calendar_month_outlined,
+                    title: 'Planejamento de treinos',
+                    subtitle: 'Organize blocos por horário e tipo de treino',
+                    color: const Color(0xFF3B82F6),
+                    onTap: _navigateToTrainingPlanner,
+                  ),
+                  _buildDashboardCard(
+                    icon: Icons.assignment_turned_in_outlined,
+                    title: 'Avaliação das atletas',
+                    subtitle: 'Avaliação rápida e completa por ciclo',
+                    color: const Color(0xFF8B5CF6),
+                    onTap: _navigateToAthleteEvaluations,
+                  ),
+                  _buildDashboardCard(
                     icon: Icons.emoji_events_outlined,
                     title: 'Competições',
                     subtitle: 'Veja ligas, campeonatos e amistosos',
@@ -711,4 +743,1249 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       ),
     );
   }
+}
+
+class CoachTrainingSessionsPage extends StatefulWidget {
+  const CoachTrainingSessionsPage({super.key});
+
+  @override
+  State<CoachTrainingSessionsPage> createState() =>
+      _CoachTrainingSessionsPageState();
+}
+
+class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
+  final List<TrainingBlockModel> _blocks = [
+    TrainingBlockModel(
+      type: 'Aquecimento',
+      title: 'Mobilidade + corrida leve',
+      start: const TimeOfDay(hour: 18, minute: 30),
+      end: const TimeOfDay(hour: 18, minute: 45),
+      intensity: 'Leve',
+    ),
+    TrainingBlockModel(
+      type: 'Fundamento',
+      title: 'Saque',
+      start: const TimeOfDay(hour: 18, minute: 45),
+      end: const TimeOfDay(hour: 19, minute: 00),
+      intensity: 'Médio',
+    ),
+    TrainingBlockModel(
+      type: 'Fundamento',
+      title: 'Toque',
+      start: const TimeOfDay(hour: 19, minute: 00),
+      end: const TimeOfDay(hour: 19, minute: 30),
+      intensity: 'Médio',
+    ),
+    TrainingBlockModel(
+      type: 'Jogo',
+      title: 'Simulação de jogo',
+      start: const TimeOfDay(hour: 19, minute: 30),
+      end: const TimeOfDay(hour: 20, minute: 30),
+      intensity: 'Alto',
+    ),
+  ];
+
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+
+  String get _trainingTitle => 'Treino Feminino - Segunda';
+  String get _trainingSchedule => '18:30 às 20:30';
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Planejamento do treino'),
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openAddBlockDialog,
+        backgroundColor: olympusGold,
+        foregroundColor: const Color(0xFF1E3A5F),
+        icon: const Icon(Icons.add),
+        label: const Text('Adicionar bloco'),
+      ),
+      body: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEEF4FA),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFD9E6F2)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _trainingTitle,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1E3A5F),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _trainingSchedule,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF4B6580),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildTag('Tipo: Fundamentos'),
+                    _buildTag('4 blocos'),
+                    _buildTag('Timeline do treino'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ReorderableListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+              itemCount: _blocks.length,
+              onReorder: (oldIndex, newIndex) {
+                setState(() {
+                  if (newIndex > oldIndex) newIndex -= 1;
+                  final item = _blocks.removeAt(oldIndex);
+                  _blocks.insert(newIndex, item);
+                });
+              },
+              itemBuilder: (context, index) {
+                final block = _blocks[index];
+                return Container(
+                  key: ValueKey('${block.title}-$index'),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: Dismissible(
+                    key: ValueKey('dismiss-${block.title}-$index'),
+                    background: _buildSwipeAction(
+                      alignment: Alignment.centerLeft,
+                      color: const Color(0xFF2563EB),
+                      icon: Icons.copy_outlined,
+                      label: 'Duplicar',
+                    ),
+                    secondaryBackground: _buildSwipeAction(
+                      alignment: Alignment.centerRight,
+                      color: Colors.red,
+                      icon: Icons.delete_outline,
+                      label: 'Excluir',
+                    ),
+                    confirmDismiss: (direction) async {
+                      if (direction == DismissDirection.startToEnd) {
+                        setState(() {
+                          _blocks.insert(index + 1, block.copy());
+                        });
+                        return false;
+                      }
+                      return true;
+                    },
+                    onDismissed: (_) {
+                      setState(() {
+                        _blocks.removeAt(index);
+                      });
+                    },
+                    child: _TrainingBlockCard(
+                      block: block,
+                      indexLabel: '${index + 1}',
+                      onTap: () => _openEditBlockDialog(index),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTag(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFD7E3EE)),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF35506C),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSwipeAction({
+    required Alignment alignment,
+    required Color color,
+    required IconData icon,
+    required String label,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      alignment: alignment,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        mainAxisAlignment: alignment == Alignment.centerLeft
+            ? MainAxisAlignment.start
+            : MainAxisAlignment.end,
+        children: [
+          Icon(icon, color: Colors.white),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openAddBlockDialog() async {
+    final nextStart = _blocks.isNotEmpty
+        ? _blocks.last.end
+        : const TimeOfDay(hour: 18, minute: 30);
+
+    final result = await showModalBottomSheet<TrainingBlockModel>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => TrainingBlockFormSheet(
+        initialBlock: TrainingBlockModel(
+          type: 'Fundamento',
+          title: '',
+          start: nextStart,
+          end: _addMinutes(nextStart, 15),
+          intensity: 'Médio',
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        _blocks.add(result);
+      });
+    }
+  }
+
+  Future<void> _openEditBlockDialog(int index) async {
+    final result = await showModalBottomSheet<TrainingBlockModel>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => TrainingBlockFormSheet(
+        initialBlock: _blocks[index],
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        _blocks[index] = result;
+      });
+    }
+  }
+
+  TimeOfDay _addMinutes(TimeOfDay time, int minutesToAdd) {
+    final totalMinutes = time.hour * 60 + time.minute + minutesToAdd;
+    return TimeOfDay(
+      hour: (totalMinutes ~/ 60) % 24,
+      minute: totalMinutes % 60,
+    );
+  }
+}
+
+class CoachAthleteEvaluationsPage extends StatefulWidget {
+  const CoachAthleteEvaluationsPage({super.key});
+
+  @override
+  State<CoachAthleteEvaluationsPage> createState() =>
+      _CoachAthleteEvaluationsPageState();
+}
+
+class _CoachAthleteEvaluationsPageState
+    extends State<CoachAthleteEvaluationsPage> {
+  final List<AthleteEvaluationStatus> _athletes = [
+    AthleteEvaluationStatus(
+      athleteName: 'Maria',
+      generalEvolution: 'Melhorando',
+      mainFocus: 'Recepção',
+      evaluationsSinceLastFull: 2,
+      isPresent: true,
+    ),
+    AthleteEvaluationStatus(
+      athleteName: 'Joana',
+      generalEvolution: 'Estável',
+      mainFocus: 'Saque',
+      evaluationsSinceLastFull: 1,
+      isPresent: true,
+    ),
+    AthleteEvaluationStatus(
+      athleteName: 'Ana',
+      generalEvolution: 'Precisa de atenção',
+      mainFocus: 'Defesa',
+      evaluationsSinceLastFull: 0,
+      isPresent: true,
+    ),
+  ];
+
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Avaliação das atletas'),
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+      ),
+      body: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F3E8),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFE8DBB2)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'Regra ativa de avaliação',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF5C4721),
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  '2 avaliações rápidas seguidas + 1 avaliação completa obrigatória por atleta.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF715C35),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              itemCount: _athletes.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final athlete = _athletes[index];
+                return _AthleteEvaluationCard(
+                  athlete: athlete,
+                  onTap: () => _openEvaluationFlow(index),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openEvaluationFlow(int index) async {
+    final athlete = _athletes[index];
+    final requiresFull = athlete.requiresCompleteEvaluation;
+
+    final result = await Navigator.push<EvaluationSubmissionResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AthleteEvaluationFormPage(
+          athleteName: athlete.athleteName,
+          isCompleteMode: requiresFull,
+          currentFocus: athlete.mainFocus,
+        ),
+      ),
+    );
+
+    if (result == null) return;
+
+    setState(() {
+      _athletes[index] = athlete.copyWith(
+        generalEvolution: result.generalEvolution,
+        mainFocus: result.mainFocus,
+        evaluationsSinceLastFull:
+            result.isComplete ? 0 : athlete.evaluationsSinceLastFull + 1,
+      );
+    });
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.isComplete
+              ? 'Avaliação completa salva para ${athlete.athleteName}.'
+              : 'Avaliação rápida salva para ${athlete.athleteName}.',
+        ),
+      ),
+    );
+  }
+}
+
+class _TrainingBlockCard extends StatelessWidget {
+  const _TrainingBlockCard({
+    required this.block,
+    required this.indexLabel,
+    required this.onTap,
+  });
+
+  final TrainingBlockModel block;
+  final String indexLabel;
+  final VoidCallback onTap;
+
+  Color _colorByType() {
+    switch (block.type) {
+      case 'Aquecimento':
+        return const Color(0xFF3B82F6);
+      case 'Jogo':
+        return const Color(0xFFF97316);
+      case 'Tático':
+        return const Color(0xFF8B5CF6);
+      case 'Físico':
+        return const Color(0xFFEF4444);
+      default:
+        return const Color(0xFF10B981);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _colorByType();
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFE4EDF5)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  indexLabel,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: accent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${_formatTime(block.start)} - ${_formatTime(block.end)}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF53657B),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      block.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF17324D),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _infoChip(block.type, accent),
+                        _infoChip('Intensidade: ${block.intensity}',
+                            const Color(0xFF1E3A5F)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Icon(Icons.drag_handle_rounded, color: Color(0xFF90A4B8)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  String _formatTime(TimeOfDay time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+}
+
+class _AthleteEvaluationCard extends StatelessWidget {
+  const _AthleteEvaluationCard({
+    required this.athlete,
+    required this.onTap,
+  });
+
+  final AthleteEvaluationStatus athlete;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final requiresComplete = athlete.requiresCompleteEvaluation;
+    final chipColor =
+        requiresComplete ? const Color(0xFFB45309) : const Color(0xFF2563EB);
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFE4EDF5)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: const Color(0xFF1E3A5F),
+                child: Text(
+                  athlete.athleteName.substring(0, 1),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      athlete.athleteName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF17324D),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Evolução geral: ${athlete.generalEvolution}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF53657B),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Principal foco: ${athlete.mainFocus}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF6A7E94),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: chipColor.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        requiresComplete
+                            ? 'Completa obrigatória'
+                            : 'Avaliação rápida',
+                        style: TextStyle(
+                          color: chipColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Icon(Icons.arrow_forward_ios_rounded, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class TrainingBlockFormSheet extends StatefulWidget {
+  const TrainingBlockFormSheet({
+    super.key,
+    required this.initialBlock,
+  });
+
+  final TrainingBlockModel initialBlock;
+
+  @override
+  State<TrainingBlockFormSheet> createState() => _TrainingBlockFormSheetState();
+}
+
+class _TrainingBlockFormSheetState extends State<TrainingBlockFormSheet> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _notesController;
+  late String _selectedType;
+  late String _selectedIntensity;
+  late TimeOfDay _start;
+  late TimeOfDay _end;
+
+  final _types = const [
+    'Aquecimento',
+    'Fundamento',
+    'Jogo',
+    'Físico',
+    'Tático'
+  ];
+  final _intensities = const ['Leve', 'Médio', 'Alto'];
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.initialBlock.title);
+    _notesController = TextEditingController(text: widget.initialBlock.notes);
+    _selectedType = widget.initialBlock.type;
+    _selectedIntensity = widget.initialBlock.intensity;
+    _start = widget.initialBlock.start;
+    _end = widget.initialBlock.end;
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, bottomInset + 16),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 48,
+              height: 5,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFD4DCE4),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const Text(
+              'Bloco do treino',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF17324D),
+              ),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _selectedType,
+              decoration: const InputDecoration(labelText: 'Tipo'),
+              items: _types
+                  .map(
+                    (type) => DropdownMenuItem(
+                      value: type,
+                      child: Text(type),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _selectedType = value);
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(
+                labelText: 'Nome do bloco',
+                hintText: 'Ex: Saque, Toque, Simulação de jogo',
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _timeField(
+                    label: 'Hora início',
+                    value: _start,
+                    onTap: () async {
+                      final result = await showTimePicker(
+                        context: context,
+                        initialTime: _start,
+                      );
+                      if (result != null) {
+                        setState(() => _start = result);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _timeField(
+                    label: 'Hora fim',
+                    value: _end,
+                    onTap: () async {
+                      final result = await showTimePicker(
+                        context: context,
+                        initialTime: _end,
+                      );
+                      if (result != null) {
+                        setState(() => _end = result);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _selectedIntensity,
+              decoration: const InputDecoration(labelText: 'Intensidade'),
+              items: _intensities
+                  .map(
+                    (item) => DropdownMenuItem(
+                      value: item,
+                      child: Text(item),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _selectedIntensity = value);
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _notesController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Observações',
+                hintText: 'Opcional',
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancelar'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _save,
+                    child: const Text('Salvar'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _timeField({
+    required String label,
+    required TimeOfDay value,
+    required VoidCallback onTap,
+  }) {
+    final formatted =
+        '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: InputDecorator(
+        decoration: InputDecoration(labelText: label),
+        child: Text(
+          formatted,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _save() {
+    if (_titleController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Informe o nome do bloco.')),
+      );
+      return;
+    }
+
+    final startMinutes = _start.hour * 60 + _start.minute;
+    final endMinutes = _end.hour * 60 + _end.minute;
+
+    if (endMinutes <= startMinutes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('A hora final precisa ser maior que a inicial.')),
+      );
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      TrainingBlockModel(
+        type: _selectedType,
+        title: _titleController.text.trim(),
+        start: _start,
+        end: _end,
+        intensity: _selectedIntensity,
+        notes: _notesController.text.trim(),
+      ),
+    );
+  }
+}
+
+class AthleteEvaluationFormPage extends StatefulWidget {
+  const AthleteEvaluationFormPage({
+    super.key,
+    required this.athleteName,
+    required this.isCompleteMode,
+    required this.currentFocus,
+  });
+
+  final String athleteName;
+  final bool isCompleteMode;
+  final String currentFocus;
+
+  @override
+  State<AthleteEvaluationFormPage> createState() =>
+      _AthleteEvaluationFormPageState();
+}
+
+class _AthleteEvaluationFormPageState extends State<AthleteEvaluationFormPage> {
+  final TextEditingController _strengthController = TextEditingController();
+  final TextEditingController _focusController = TextEditingController();
+  final TextEditingController _generalNotesController = TextEditingController();
+
+  String _generalEvolution = 'Melhorando';
+  String _priority = 'Média';
+
+  late final List<FundamentEvaluationModel> _fundamentals;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusController.text = widget.currentFocus;
+
+    _fundamentals = [
+      FundamentEvaluationModel(name: 'Saque'),
+      FundamentEvaluationModel(name: 'Recepção'),
+      FundamentEvaluationModel(name: 'Toque'),
+      FundamentEvaluationModel(name: 'Ataque'),
+      FundamentEvaluationModel(name: 'Bloqueio'),
+      FundamentEvaluationModel(name: 'Defesa'),
+      FundamentEvaluationModel(name: 'Condicionamento'),
+      FundamentEvaluationModel(name: 'Postura tática'),
+    ];
+  }
+
+  @override
+  void dispose() {
+    _strengthController.dispose();
+    _focusController.dispose();
+    _generalNotesController.dispose();
+    for (final item in _fundamentals) {
+      item.notesController.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const olympusBlue = Color(0xFF1E3A5F);
+    final pageTitle =
+        widget.isCompleteMode ? 'Avaliação completa' : 'Avaliação rápida';
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('$pageTitle - ${widget.athleteName}'),
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        children: [
+          if (widget.isCompleteMode)
+            Container(
+              padding: const EdgeInsets.all(14),
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7E8),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFF1D38B)),
+              ),
+              child: const Text(
+                'Avaliação completa obrigatória para esta atleta. O modo rápido foi bloqueado neste ciclo.',
+                style: TextStyle(
+                  color: Color(0xFF815A00),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          DropdownButtonFormField<String>(
+            value: _generalEvolution,
+            decoration: const InputDecoration(labelText: 'Evolução geral'),
+            items: const [
+              DropdownMenuItem(value: 'Melhorando', child: Text('Melhorando')),
+              DropdownMenuItem(value: 'Estável', child: Text('Estável')),
+              DropdownMenuItem(
+                value: 'Precisa de atenção',
+                child: Text('Precisa de atenção'),
+              ),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _generalEvolution = value);
+            },
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _strengthController,
+            decoration: const InputDecoration(
+              labelText: 'Ponto forte',
+              hintText: 'Ex: saque, liderança, defesa',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _focusController,
+            decoration: const InputDecoration(
+              labelText: 'Principal ponto a melhorar',
+              hintText: 'Ex: recepção, posicionamento',
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (widget.isCompleteMode) ...[
+            DropdownButtonFormField<String>(
+              value: _priority,
+              decoration: const InputDecoration(labelText: 'Prioridade'),
+              items: const [
+                DropdownMenuItem(value: 'Baixa', child: Text('Baixa')),
+                DropdownMenuItem(value: 'Média', child: Text('Média')),
+                DropdownMenuItem(value: 'Alta', child: Text('Alta')),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _priority = value);
+              },
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Fundamentos',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF17324D),
+              ),
+            ),
+            const SizedBox(height: 10),
+            ..._fundamentals.map(_buildFundamentCard),
+            const SizedBox(height: 12),
+          ],
+          TextField(
+            controller: _generalNotesController,
+            maxLines: widget.isCompleteMode ? 4 : 2,
+            decoration: const InputDecoration(
+              labelText: 'Observação do técnico',
+              hintText: 'Resumo do treino para esta atleta',
+            ),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: _submit,
+            icon: const Icon(Icons.save_outlined),
+            label: Text(
+              widget.isCompleteMode
+                  ? 'Salvar avaliação completa'
+                  : 'Salvar avaliação rápida',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFundamentCard(FundamentEvaluationModel item) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE4EDF5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            item.name,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF17324D),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: item.score,
+                  decoration: const InputDecoration(labelText: 'Nota'),
+                  items: List.generate(
+                    5,
+                    (index) => DropdownMenuItem(
+                      value: index + 1,
+                      child: Text('${index + 1}'),
+                    ),
+                  ),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => item.score = value);
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: item.trend,
+                  decoration: const InputDecoration(labelText: 'Tendência'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'Melhorando',
+                      child: Text('Melhorando'),
+                    ),
+                    DropdownMenuItem(value: 'Estável', child: Text('Estável')),
+                    DropdownMenuItem(value: 'Piorou', child: Text('Piorou')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => item.trend = value);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: item.notesController,
+            maxLines: 2,
+            decoration: const InputDecoration(
+              labelText: 'Observação',
+              hintText: 'Observação curta deste fundamento',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _submit() {
+    if (_focusController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Informe o principal ponto a melhorar.')),
+      );
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      EvaluationSubmissionResult(
+        isComplete: widget.isCompleteMode,
+        generalEvolution: _generalEvolution,
+        mainFocus: _focusController.text.trim(),
+      ),
+    );
+  }
+}
+
+class TrainingBlockModel {
+  TrainingBlockModel({
+    required this.type,
+    required this.title,
+    required this.start,
+    required this.end,
+    required this.intensity,
+    this.notes = '',
+  });
+
+  final String type;
+  final String title;
+  final TimeOfDay start;
+  final TimeOfDay end;
+  final String intensity;
+  final String notes;
+
+  TrainingBlockModel copy() {
+    return TrainingBlockModel(
+      type: type,
+      title: title,
+      start: start,
+      end: end,
+      intensity: intensity,
+      notes: notes,
+    );
+  }
+}
+
+class AthleteEvaluationStatus {
+  AthleteEvaluationStatus({
+    required this.athleteName,
+    required this.generalEvolution,
+    required this.mainFocus,
+    required this.evaluationsSinceLastFull,
+    required this.isPresent,
+  });
+
+  final String athleteName;
+  final String generalEvolution;
+  final String mainFocus;
+  final int evaluationsSinceLastFull;
+  final bool isPresent;
+
+  bool get requiresCompleteEvaluation => evaluationsSinceLastFull >= 2;
+
+  AthleteEvaluationStatus copyWith({
+    String? athleteName,
+    String? generalEvolution,
+    String? mainFocus,
+    int? evaluationsSinceLastFull,
+    bool? isPresent,
+  }) {
+    return AthleteEvaluationStatus(
+      athleteName: athleteName ?? this.athleteName,
+      generalEvolution: generalEvolution ?? this.generalEvolution,
+      mainFocus: mainFocus ?? this.mainFocus,
+      evaluationsSinceLastFull:
+          evaluationsSinceLastFull ?? this.evaluationsSinceLastFull,
+      isPresent: isPresent ?? this.isPresent,
+    );
+  }
+}
+
+class EvaluationSubmissionResult {
+  EvaluationSubmissionResult({
+    required this.isComplete,
+    required this.generalEvolution,
+    required this.mainFocus,
+  });
+
+  final bool isComplete;
+  final String generalEvolution;
+  final String mainFocus;
+}
+
+class FundamentEvaluationModel {
+  FundamentEvaluationModel({
+    required this.name,
+    this.score = 3,
+    this.trend = 'Estável',
+  }) : notesController = TextEditingController();
+
+  final String name;
+  int score;
+  String trend;
+  final TextEditingController notesController;
 }

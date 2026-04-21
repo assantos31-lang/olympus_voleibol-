@@ -251,6 +251,23 @@ class PushTokenService {
 
   Future<void> syncAfterLogin() async {
     debugPrint('[PushTokenService] syncAfterLogin');
+
+    int attempts = 0;
+
+    while (_supabase.auth.currentUser == null && attempts < 15) {
+      await Future.delayed(const Duration(milliseconds: 400));
+      attempts++;
+    }
+
+    final user = _supabase.auth.currentUser;
+
+    if (user == null) {
+      debugPrint('[PushTokenService] ❌ USER AINDA NULL');
+      return;
+    }
+
+    debugPrint('[PushTokenService] ✅ USER OK: ${user.id}');
+
     await syncCurrentUserTokenIfPossible();
   }
 
