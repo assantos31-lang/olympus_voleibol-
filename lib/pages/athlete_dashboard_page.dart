@@ -60,6 +60,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   RealtimeChannel? _checkinsRealtimeChannel;
 
   int _confirmedPresenceCount = 0;
+  int _acceptedButAbsentCount = 0;
   int _rejectedPresenceCount = 0;
   int _monthlyTrainingTotal = 0;
   int _monthlyPresenceCount = 0;
@@ -2046,9 +2047,8 @@ event_time
       final year = now.year;
 
       final List<Map<String, dynamic>> trainingEvents = [];
-      final List<String> trainingEventIds = [];
+      final Set<String> trainingEventIds = <String>{};
 
-      int confirmedPresence = 0;
       int rejectedPresence = 0;
 
       for (final item in response) {
@@ -2092,19 +2092,35 @@ event_time
           ? <dynamic>[]
           : await supabase
               .from('checkins')
-              .select('event_id, check_in_status')
+              .select('event_id, user_id, check_in_status, created_at')
               .eq('user_id', user.id)
-              .inFilter('event_id', trainingEventIds);
+              .inFilter('event_id', trainingEventIds.toList());
 
-      final Map<String, String> checkinMap = {};
+      final Map<String, bool> eventHasValidCheckin = {};
+      final Map<String, DateTime?> eventLatestCheckinAt = {};
+
       for (final row in checkins) {
         final eventId = (row['event_id'] ?? '').toString();
         if (eventId.isEmpty) continue;
-        checkinMap[eventId] = _normalizarCheckInStatus(row['check_in_status']);
+
+        final normalized = _normalizarCheckInStatus(row['check_in_status']);
+        final isRealizado = normalized == 'realizado';
+        final createdAt = _parseCheckInDateTime(row['created_at']);
+
+        eventHasValidCheckin[eventId] =
+            (eventHasValidCheckin[eventId] ?? false) || isRealizado;
+
+        final currentLatest = eventLatestCheckinAt[eventId];
+        if (createdAt != null &&
+            (currentLatest == null || createdAt.isAfter(currentLatest))) {
+          eventLatestCheckinAt[eventId] = createdAt;
+        }
       }
 
       int monthlyPresence = 0;
       int monthlyAbsence = 0;
+      int acceptedButAbsent = 0;
+      int confirmedPresence = 0;
 
       trainingEvents.sort(
         (a, b) => (a['event_datetime'] as DateTime)
@@ -2116,10 +2132,10 @@ event_time
         final status = (event['status'] ?? '').toString().toLowerCase().trim();
         final justification =
             (event['justification'] ?? '').toString().toLowerCase().trim();
-        final checkinStatus = _normalizarCheckInStatus(checkinMap[eventId]);
         final eventDate = event['event_datetime'] as DateTime;
+        final hasValidCheckin = eventHasValidCheckin[eventId] ?? false;
 
-        if (_isCheckInRealizado(checkinStatus)) {
+        if (hasValidCheckin) {
           monthlyPresence++;
           confirmedPresence++;
           continue;
@@ -2128,11 +2144,17 @@ event_time
         final checkinExpired =
             now.isAfter(eventDate.add(const Duration(minutes: 30)));
 
-        final isAbsence = checkinExpired &&
-            ((status == 'accepted' && !_isCheckInRealizado(checkinStatus)) ||
-                (status == 'rejected' && justification == 'prazo expirado'));
+        final isAcceptedButAbsent = checkinExpired && status == 'accepted';
+        final isExpiredRejectedAbsence =
+            status == 'rejected' && justification == 'prazo expirado';
 
-        if (isAbsence) {
+        if (isAcceptedButAbsent) {
+          acceptedButAbsent++;
+          monthlyAbsence++;
+          continue;
+        }
+
+        if (isExpiredRejectedAbsence) {
           monthlyAbsence++;
         }
       }
@@ -2158,9 +2180,9 @@ event_time
 
       for (final event in completedTrainings) {
         final eventId = (event['id'] ?? '').toString();
-        final checkinStatus = _normalizarCheckInStatus(checkinMap[eventId]);
+        final hasValidCheckin = eventHasValidCheckin[eventId] ?? false;
 
-        if (_isCheckInRealizado(checkinStatus)) {
+        if (hasValidCheckin) {
           currentStreak++;
         } else {
           break;
@@ -2170,6 +2192,7 @@ event_time
       if (mounted) {
         setState(() {
           _confirmedPresenceCount = confirmedPresence;
+          _acceptedButAbsentCount = acceptedButAbsent;
           _rejectedPresenceCount = rejectedPresence;
           _monthlyTrainingTotal = totalTrainings;
           _monthlyPresenceCount = monthlyPresence;
@@ -3648,6 +3671,7 @@ event_time
           ),
           const SizedBox(height: 10),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: _buildPresenceMetric(
@@ -3659,7 +3683,7 @@ event_time
               ),
               Container(
                 width: 1,
-                height: 42,
+                height: 48,
                 color: Colors.grey.withOpacity(0.18),
               ),
               Expanded(
@@ -3672,7 +3696,20 @@ event_time
               ),
               Container(
                 width: 1,
-                height: 42,
+                height: 48,
+                color: Colors.grey.withOpacity(0.18),
+              ),
+              Expanded(
+                child: _buildPresenceMetric(
+                  icon: Icons.person_off_rounded,
+                  label: 'Ausência após aceite',
+                  value: _acceptedButAbsentCount,
+                  color: Colors.red,
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 48,
                 color: Colors.grey.withOpacity(0.18),
               ),
               Expanded(
@@ -3712,7 +3749,7 @@ event_time
         Text(
           label,
           style: TextStyle(
-            fontSize: 11,
+            fontSize: 10,
             color: Colors.grey[700],
             fontWeight: FontWeight.w600,
           ),
