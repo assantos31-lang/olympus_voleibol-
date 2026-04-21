@@ -50,7 +50,18 @@ class PushTokenService {
 
     _tokenRefreshSub = _messaging.onTokenRefresh.listen((token) async {
       debugPrint('[PushTokenService] 🔁 token refresh');
+
       try {
+        // 🔥 BLOQUEIO CRÍTICO PARA iOS
+        if (Platform.isIOS) {
+          final apns = await _messaging.getAPNSToken();
+
+          if (apns == null || apns.isEmpty) {
+            debugPrint('[PushTokenService] ❌ refresh ignorado (sem APNS)');
+            return;
+          }
+        }
+
         await _upsertToken(token);
       } catch (e, st) {
         debugPrint('[PushTokenService] ERRO refresh: $e');
@@ -215,7 +226,6 @@ class PushTokenService {
     }
   }
 
-  /// 🔍 DEBUG COMPLETO
   Future<Map<String, dynamic>> getDebugInfo() async {
     final user = _supabase.auth.currentUser;
     final installationId = await _getOrCreateInstallationId();
@@ -257,7 +267,6 @@ class PushTokenService {
     };
   }
 
-  /// 🔥 FORÇA SYNC MANUAL
   Future<String> forceSyncForDebug() async {
     try {
       await syncCurrentUserTokenIfPossible();
