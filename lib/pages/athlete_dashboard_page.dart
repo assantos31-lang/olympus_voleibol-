@@ -48,8 +48,10 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   int? _currentUserRankingPosition;
   String? _currentUserRankingMovement;
   List<Map<String, dynamic>> _genderRanking = [];
+  List<Map<String, dynamic>> _fullGenderRanking = [];
   List<Map<String, dynamic>> _monthlyHistory = [];
   bool _isRankingExpanded = false;
+  bool _isFullRankingExpanded = false;
   bool _isRankingRulesExpanded = false;
   bool _isMonthlyHistoryExpanded = false;
   DateTime? _lastCompetitionsViewedAt;
@@ -751,8 +753,9 @@ event_type
     final presenceCount = ((athlete['presence_count'] ?? 0) as num).toInt();
     final firstCheckins = ((athlete['first_checkins'] ?? 0) as num).toInt();
 
-    final firstCheckinsLabel =
-        firstCheckins == 1 ? '1 chegada #1' : '$firstCheckins chegadas #1';
+    final firstCheckinsLabel = firstCheckins == 1
+        ? '1 primeira chegada'
+        : '$firstCheckins primeiras chegadas';
 
     return '$totalPoints pts • $presenceCount treinos • $firstCheckinsLabel';
   }
@@ -767,250 +770,158 @@ event_type
         if (mounted) {
           setState(() {
             _genderRanking = [];
+            _fullGenderRanking = [];
             _currentUserRankingPosition = null;
             _currentUserRankingMovement = null;
           });
         }
         return;
       }
-
-      final athletesResponse = await supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url, gender, user_type')
-          .eq('gender', gender)
-          .eq('user_type', 'athlete');
-
-      final athletes = List<Map<String, dynamic>>.from(athletesResponse);
-      if (athletes.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _genderRanking = [];
-            _currentUserRankingPosition = null;
-            _currentUserRankingMovement = null;
-          });
-        }
-        return;
-      }
-
-      final athleteIds = athletes
-          .map((a) => (a['id'] ?? '').toString())
-          .where((id) => id.isNotEmpty)
-          .toList();
-
-      if (athleteIds.isEmpty) return;
-
-      final convocationsResponse =
-          await supabase.from('convocations').select('''
-user_id,
-event_id,
-events!$_eventsEmbedFk (
-id,
-event_type,
-event_date,
-event_time
-)
-''').inFilter('user_id', athleteIds);
 
       final now = DateTime.now();
-      final month = now.month;
-      final year = now.year;
-      final previousMonth = month == 1 ? 12 : month - 1;
-      final previousYear = month == 1 ? year - 1 : year;
+      final previousMonth = now.month == 1 ? 12 : now.month - 1;
+      final previousYear = now.month == 1 ? now.year - 1 : now.year;
 
-      final previousHistoryResponse = await supabase
-          .from('athlete_monthly_history')
-          .select('user_id, ranking_position')
-          .eq('reference_month', previousMonth)
-          .eq('reference_year', previousYear)
-          .inFilter('user_id', athleteIds);
+      final response = await supabase.rpc(
+        'get_monthly_gender_ranking',
+        params: {
+          'p_gender': gender,
+          'p_reference_month': now.month,
+          'p_reference_year': now.year,
+          'p_previous_month': previousMonth,
+          'p_previous_year': previousYear,
+        },
+      );
 
-      final Map<String, int> previousPositions = {};
-      for (final row
-          in List<Map<String, dynamic>>.from(previousHistoryResponse)) {
-        final athleteId = (row['user_id'] ?? '').toString();
-        final rankingPosition = ((row['ranking_position'] ?? 0) as num).toInt();
-        if (athleteId.isEmpty || rankingPosition <= 0) continue;
-        previousPositions[athleteId] = rankingPosition;
-      }
-
-      final Map<String, Set<String>> athleteEventIds = {};
-      final Set<String> trainingEventIds = {};
-      final Map<String, DateTime> eventDateTimeById = {};
-
-      for (final row in List<Map<String, dynamic>>.from(convocationsResponse)) {
-        final event = row['events'];
-        if (event == null) continue;
-
-        final eventMap = Map<String, dynamic>.from(event);
-        final eventType =
-            (eventMap['event_type'] ?? '').toString().toLowerCase().trim();
-        if (eventType != 'treino') continue;
-
-        final eventDate = _parseEventDateTime(
-          (eventMap['event_date'] ?? '').toString(),
-          (eventMap['event_time'] ?? '').toString(),
-        );
-        if (eventDate == null) continue;
-        if (eventDate.month != month || eventDate.year != year) continue;
-
-        final athleteId = (row['user_id'] ?? '').toString();
-        final eventId = (row['event_id'] ?? '').toString();
-        if (athleteId.isEmpty || eventId.isEmpty) continue;
-
-        athleteEventIds.putIfAbsent(athleteId, () => <String>{}).add(eventId);
-        trainingEventIds.add(eventId);
-        eventDateTimeById[eventId] = eventDate;
-      }
-
-      final checkinsResponse = trainingEventIds.isEmpty
-          ? <dynamic>[]
-          : await supabase
-              .from('checkins')
-              .select('user_id, event_id, check_in_status, created_at')
-              .inFilter('user_id', athleteIds)
-              .inFilter('event_id', trainingEventIds.toList());
-
-      final Map<String, int> presenceByAthlete = {
-        for (final athleteId in athleteIds) athleteId: 0,
-      };
-      final Map<String, int> pointsByAthlete = {
-        for (final athleteId in athleteIds) athleteId: 0,
-      };
-      final Map<String, int> firstCheckinsByAthlete = {
-        for (final athleteId in athleteIds) athleteId: 0,
-      };
-      final Map<String, Map<String, DateTime>> validCheckinsByEvent = {};
-
-      for (final row in List<Map<String, dynamic>>.from(checkinsResponse)) {
-        final athleteId = (row['user_id'] ?? '').toString();
-        final eventId = (row['event_id'] ?? '').toString();
-        if (athleteId.isEmpty || eventId.isEmpty) continue;
-        if (!_isCheckInRealizado(row['check_in_status'])) continue;
-
-        final validEvents = athleteEventIds[athleteId] ?? const <String>{};
-        if (!validEvents.contains(eventId)) continue;
-
-        final eventDateTime = eventDateTimeById[eventId];
-        if (eventDateTime == null) continue;
-
-        final checkInDateTime = _parseCheckInDateTime(row['created_at']);
-        if (checkInDateTime == null) continue;
-        if (!_isCheckInWithinRankingWindow(eventDateTime, checkInDateTime)) {
-          continue;
-        }
-
-        final eventCheckins = validCheckinsByEvent.putIfAbsent(
-          eventId,
-          () => <String, DateTime>{},
-        );
-
-        final existing = eventCheckins[athleteId];
-        if (existing == null || checkInDateTime.isBefore(existing)) {
-          eventCheckins[athleteId] = checkInDateTime;
-        }
-      }
-
-      for (final entry in validCheckinsByEvent.entries) {
-        final eventId = entry.key;
-        final eventDateTime = eventDateTimeById[eventId];
-        if (eventDateTime == null) continue;
-
-        final sortedCheckins = entry.value.entries.toList()
-          ..sort((a, b) => a.value.compareTo(b.value));
-
-        for (int i = 0; i < sortedCheckins.length; i++) {
-          final athleteId = sortedCheckins[i].key;
-          final checkInDateTime = sortedCheckins[i].value;
-          final points =
-              _calculateRankingPoints(eventDateTime, checkInDateTime);
-
-          if (points <= 0) continue;
-
-          presenceByAthlete[athleteId] =
-              (presenceByAthlete[athleteId] ?? 0) + 1;
-          pointsByAthlete[athleteId] =
-              (pointsByAthlete[athleteId] ?? 0) + points;
-
-          if (i == 0) {
-            pointsByAthlete[athleteId] = (pointsByAthlete[athleteId] ?? 0) + 1;
-            firstCheckinsByAthlete[athleteId] =
-                (firstCheckinsByAthlete[athleteId] ?? 0) + 1;
-          }
-        }
-      }
-
-      final ranking = athletes.map((athlete) {
-        final athleteId = (athlete['id'] ?? '').toString();
-        final fullName = (athlete['full_name'] ?? 'Atleta').toString().trim();
-        final firstName =
-            fullName.isEmpty ? 'Atleta' : fullName.split(' ').first;
-
-        return {
-          'id': athleteId,
-          'name': fullName,
-          'first_name': firstName,
-          'avatar_url': (athlete['avatar_url'] ?? '').toString().trim(),
-          'presence_count': presenceByAthlete[athleteId] ?? 0,
-          'total_points': pointsByAthlete[athleteId] ?? 0,
-          'first_checkins': firstCheckinsByAthlete[athleteId] ?? 0,
-        };
-      }).toList()
-        ..sort((a, b) {
-          final pointsCmp =
-              (b['total_points'] as int).compareTo(a['total_points'] as int);
-          if (pointsCmp != 0) return pointsCmp;
-
-          final presenceCmp = (b['presence_count'] as int)
-              .compareTo(a['presence_count'] as int);
-          if (presenceCmp != 0) return presenceCmp;
-
-          final firstCheckinCmp = (b['first_checkins'] as int)
-              .compareTo(a['first_checkins'] as int);
-          if (firstCheckinCmp != 0) return firstCheckinCmp;
-
-          return (a['name'] as String).toLowerCase().compareTo(
-                (b['name'] as String).toLowerCase(),
-              );
-        });
+      final rankingRows = List<Map<String, dynamic>>.from(response);
 
       int? currentPosition;
       String? currentMovement;
-      for (int i = 0; i < ranking.length; i++) {
-        final athleteId = (ranking[i]['id'] ?? '').toString();
-        final position = i + 1;
-        final previousPosition = previousPositions[athleteId];
 
-        String movement = '➖';
-        if (previousPosition == null) {
-          movement = '🆕';
-        } else {
-          final diff = previousPosition - position;
-          if (diff > 0) {
-            movement = '🔼 $diff';
-          } else if (diff < 0) {
-            movement = '🔽 ${diff.abs()}';
-          }
-        }
-
-        ranking[i]['position'] = position;
-        ranking[i]['movement'] = movement;
-
+      for (final row in rankingRows) {
+        final athleteId = (row['id'] ?? '').toString();
         if (athleteId == user.id) {
-          currentPosition = position;
-          currentMovement = movement;
+          currentPosition = ((row['ranking_position'] ?? 0) as num).toInt();
+          currentMovement = (row['movement'] ?? '').toString();
+          break;
         }
       }
 
       if (mounted) {
         setState(() {
-          _genderRanking = ranking.take(5).toList();
+          _fullGenderRanking = rankingRows;
+          _genderRanking = rankingRows.take(5).toList();
           _currentUserRankingPosition = currentPosition;
           _currentUserRankingMovement = currentMovement;
         });
       }
     } catch (e) {
       debugPrint('Erro ao carregar ranking por gênero: $e');
+      if (mounted) {
+        setState(() {
+          _genderRanking = [];
+          _fullGenderRanking = [];
+          _currentUserRankingPosition = null;
+          _currentUserRankingMovement = null;
+        });
+      }
     }
+  }
+
+  Widget _buildRankingAthleteTile(
+      Map<String, dynamic> athlete, String? userId) {
+    final isMe = (athlete['id'] ?? '').toString() == userId;
+    final position = ((athlete['ranking_position'] ?? 0) as num).toInt();
+    final avatarUrl = (athlete['avatar_url'] ?? '').toString().trim();
+    final firstName = (athlete['first_name'] ?? 'Atleta').toString();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: isMe
+            ? olympusGold.withOpacity(0.12)
+            : olympusBlue.withOpacity(0.04),
+        border: Border.all(
+          color: isMe
+              ? olympusGold.withOpacity(0.40)
+              : olympusBlue.withOpacity(0.08),
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 34,
+            child: Text(
+              _getRankingMedal(position),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: position <= 3 ? 18 : 13,
+                fontWeight: FontWeight.w800,
+                color: olympusBlue,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: olympusBlue.withOpacity(0.12),
+            backgroundImage:
+                avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+            child: avatarUrl.isEmpty
+                ? Text(
+                    firstName.isNotEmpty ? firstName[0].toUpperCase() : '?',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: olympusBlue,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              isMe ? '$firstName (você)' : firstName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: olympusBlue,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                _getRankingScoreSummary(athlete),
+                maxLines: 2,
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey[700],
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                _getRankingMovementLabel(athlete['movement']),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: _getRankingMovementColor(athlete['movement']),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   String _getRankingGenderTitle() {
@@ -1288,6 +1199,10 @@ event_time
     final currentUserInTop = _genderRanking.any(
       (athlete) => (athlete['id'] ?? '').toString() == userId,
     );
+    final hasMoreRanking = _fullGenderRanking.length > 5;
+    final remainingRanking = hasMoreRanking
+        ? _fullGenderRanking.skip(5).toList()
+        : <Map<String, dynamic>>[];
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -1352,6 +1267,9 @@ event_time
                 onPressed: () {
                   setState(() {
                     _isRankingExpanded = !_isRankingExpanded;
+                    if (!_isRankingExpanded) {
+                      _isFullRankingExpanded = false;
+                    }
                   });
                 },
                 style: TextButton.styleFrom(
@@ -1374,105 +1292,40 @@ event_time
           ],
           if (_isRankingExpanded && _genderRanking.isNotEmpty) ...[
             const SizedBox(height: 8),
-            ..._genderRanking.map((athlete) {
-              final isMe = (athlete['id'] ?? '').toString() == userId;
-              final position = (athlete['position'] ?? 0) as int;
-              final presenceCount = (athlete['presence_count'] ?? 0) as int;
-              final avatarUrl = (athlete['avatar_url'] ?? '').toString().trim();
-              final firstName = (athlete['first_name'] ?? 'Atleta').toString();
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: isMe
-                      ? olympusGold.withOpacity(0.12)
-                      : olympusBlue.withOpacity(0.04),
-                  border: Border.all(
-                    color: isMe
-                        ? olympusGold.withOpacity(0.40)
-                        : olympusBlue.withOpacity(0.08),
+            ..._genderRanking.map(
+              (athlete) => _buildRankingAthleteTile(athlete, userId),
+            ),
+            if (hasMoreRanking) ...[
+              const SizedBox(height: 4),
+              Center(
+                child: TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _isFullRankingExpanded = !_isFullRankingExpanded;
+                    });
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: olympusGold,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                  ),
+                  child: Text(
+                    _isFullRankingExpanded
+                        ? 'Ocultar restante do ranking'
+                        : 'Expandir ranking completo',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 34,
-                      child: Text(
-                        _getRankingMedal(position),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: position <= 3 ? 18 : 13,
-                          fontWeight: FontWeight.w800,
-                          color: olympusBlue,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundColor: olympusBlue.withOpacity(0.12),
-                      backgroundImage:
-                          avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-                      child: avatarUrl.isEmpty
-                          ? Text(
-                              firstName.isNotEmpty
-                                  ? firstName[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: olympusBlue,
-                              ),
-                            )
-                          : null,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        isMe ? '$firstName (você)' : firstName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: olympusBlue,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          _getRankingScoreSummary(athlete),
-                          maxLines: 2,
-                          textAlign: TextAlign.right,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.grey[700],
-                            height: 1.2,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          _getRankingMovementLabel(athlete['movement']),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            color:
-                                _getRankingMovementColor(athlete['movement']),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              );
-            }),
+              ),
+            ],
+            if (_isFullRankingExpanded && remainingRanking.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              ...remainingRanking.map(
+                (athlete) => _buildRankingAthleteTile(athlete, userId),
+              ),
+            ],
             if (_currentUserRankingPosition != null && !currentUserInTop) ...[
               const SizedBox(height: 4),
               Text(
