@@ -190,6 +190,28 @@ class PushTokenService {
       '[PushTokenService] PERMISSION: ${permission.authorizationStatus}',
     );
 
+    if (Platform.isIOS) {
+      String? apns;
+
+      for (int i = 1; i <= 10; i++) {
+        apns = await _messaging.getAPNSToken();
+
+        debugPrint('[PushTokenService] aguardando APNS tentativa $i');
+
+        if (apns != null && apns.isNotEmpty) {
+          debugPrint('[PushTokenService] APNS OK');
+          break;
+        }
+
+        await Future.delayed(const Duration(seconds: 1));
+      }
+
+      if (apns == null || apns.isEmpty) {
+        debugPrint('[PushTokenService] ❌ APNS NÃO DISPONÍVEL - abortando sync');
+        return;
+      }
+    }
+
     final token = await _obtainTokenRobustly();
     debugPrint('[PushTokenService] TOKEN: $token');
 
