@@ -363,6 +363,112 @@ class PushTokenService {
     }
   }
 
+  Future<String> runDebugSyncReport() async {
+    final buffer = StringBuffer();
+
+    buffer.writeln('[PushTokenService] syncAfterLogin');
+
+    int attempts = 0;
+    while (_supabase.auth.currentUser == null && attempts < 15) {
+      await Future.delayed(const Duration(milliseconds: 400));
+      attempts++;
+    }
+
+    final user = _supabase.auth.currentUser;
+    buffer.writeln('[PushTokenService] USER: ${user?.id}');
+
+    if (user == null) {
+      buffer.writeln('[PushTokenService] ❌ USER AINDA NULL');
+      return buffer.toString();
+    }
+
+    final permission = await requestPermissionIfNeeded();
+    buffer.writeln(
+      '[PushTokenService] PERMISSION: ${permission.authorizationStatus}',
+    );
+
+    if (Platform.isIOS) {
+      String? apns;
+
+      for (int i = 1; i <= 10; i++) {
+        apns = await _messaging.getAPNSToken();
+        if (apns != null && apns.isNotEmpty) {
+          buffer.writeln('[PushTokenService] APNS OK');
+          break;
+        }
+        await Future.delayed(const Duration(seconds: 1));
+      }
+
+      if (apns == null || apns.isEmpty) {
+        buffer.writeln('[PushTokenService] ❌ APNS NÃO DISPONÍVEL');
+        return buffer.toString();
+      }
+    } else {
+      buffer.writeln('[PushTokenService] APNS OK (não se aplica fora do iOS)');
+    }
+
+    final token = await _obtainTokenRobustly();
+    buffer.writeln('[PushTokenService] TOKEN: $token');
+
+    if (token == null || token.isEmpty) {
+      buffer.writeln('[PushTokenService] token NULL ❌');
+      return buffer.toString();
+    }
+
+    final upsertResult = await _upsertTokenForDebug(
+      token,
+      permissionStatus: permission.authorizationStatus.name,
+    );
+    buffer.writeln(upsertResult);
+
+    return buffer.toString();
+  }
+
+  Future<String> _upsertTokenForDebug(
+    String token, {
+    String? permissionStatus,
+  }) async {
+    final user = _supabase.auth.currentUser;
+
+    if (user == null) {
+      return '[PushTokenService] sem user no upsert ❌';
+    }
+
+    final installationId = await _getOrCreateInstallationId();
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    final packageInfo = await PackageInfo.fromPlatform();
+    final version = '${packageInfo.version}+${packageInfo.buildNumber}';
+
+    final payload = {
+      'installation_id': installationId,
+      'user_id': user.id,
+      'device_token': token,
+      'platform': Platform.isIOS ? 'ios' : 'android',
+      'permission_status': permissionStatus,
+      'last_seen_at': now,
+      'updated_at': now,
+      'app_version': version,
+    };
+
+    debugPrint('[PushTokenService] 🔥 VAI SALVAR TOKEN: $token');
+    debugPrint('[PushTokenService] 🔥 USER NO UPSERT: ${user.id}');
+    debugPrint('[PushTokenService] UPSERT...');
+    debugPrint(payload.toString());
+
+    try {
+      await _supabase
+          .from('user_push_tokens')
+          .upsert(payload, onConflict: 'installation_id');
+
+      return '[PushTokenService] ✅ salvo';
+    } catch (e, st) {
+      debugPrint('[PushTokenService] ❌ erro upsert: $e');
+      debugPrintStack(stackTrace: st);
+      return '[PushTokenService] ❌ erro upsert: $e';
+    }
+  }
+
   Future<void> dispose() async {
     await _tokenRefreshSub?.cancel();
     await _authStateSub?.cancel();

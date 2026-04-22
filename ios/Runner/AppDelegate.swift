@@ -10,8 +10,6 @@ import FirebaseMessaging
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    FirebaseApp.configure()
-
     UNUserNotificationCenter.current().delegate = self
     Messaging.messaging().delegate = self
     application.registerForRemoteNotifications()
@@ -35,11 +33,11 @@ import FirebaseMessaging
     _ application: UIApplication,
     didFailToRegisterForRemoteNotificationsWithError error: Error
   ) {
-    print("APNS registration failed: \(error.localizedDescription)")
+    print("APNS registration failed: \\(error.localizedDescription)")
     super.application(application, didFailToRegisterForRemoteNotificationsWithError: error)
   }
 
   func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
-    print("FCM registration token: \(String(describing: fcmToken))")
+    print("FCM registration token: \\(String(describing: fcmToken))")
   }
 }
