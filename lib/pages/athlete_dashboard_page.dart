@@ -10,7 +10,6 @@ import 'dart:typed_data';
 import 'dart:ui';
 import '../services/auth_service.dart';
 import '../services/permission_service.dart';
-import '../services/push_token_service.dart';
 import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
 import 'athlete_messages_page.dart';
@@ -72,8 +71,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   double _monthlyPresencePercent = 0;
   bool _showingLevelUpDialog = false;
   bool _canAccessBirthdays = false;
-  bool _isRunningPushDebug = false;
-  String? _lastPushDebugOutput;
 
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
@@ -2378,80 +2375,6 @@ event_time
     );
   }
 
-  Future<void> _runPushDebug() async {
-    if (_isRunningPushDebug) return;
-
-    setState(() {
-      _isRunningPushDebug = true;
-    });
-
-    try {
-      final output = await PushTokenService.instance.runDebugSyncReport();
-
-      if (!mounted) return;
-
-      setState(() {
-        _lastPushDebugOutput = output;
-      });
-
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Debug Push iOS'),
-          content: SingleChildScrollView(
-            child: SelectableText(output),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: output));
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Log copiado'),
-                  ),
-                );
-              },
-              child: const Text('Copiar'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Fechar'),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      final output = '[PushTokenService] ❌ erro debug: $e';
-
-      setState(() {
-        _lastPushDebugOutput = output;
-      });
-
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Debug Push iOS'),
-          content: SelectableText(output),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Fechar'),
-            ),
-          ],
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isRunningPushDebug = false;
-        });
-      }
-    }
-  }
-
   Future<void> _redirectToLogin() async {
     await supabase.auth.signOut();
     if (mounted) {
@@ -4258,21 +4181,6 @@ event_time
                   onPressed: _navigateToProfilePage,
                 ),
                 IconButton(
-                  icon: _isRunningPushDebug
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : const Icon(Icons.bug_report_outlined),
-                  tooltip: 'Debug Push',
-                  onPressed: _isRunningPushDebug ? null : _runPushDebug,
-                ),
-                IconButton(
                   icon: const Icon(Icons.logout),
                   tooltip: 'Sair',
                   onPressed: _redirectToLogin,
@@ -4300,62 +4208,6 @@ event_time
                   _buildFinancialAlertCard(),
                   _buildPresenceSummaryCard(),
                   _buildGenderRankingCard(),
-                  if (_lastPushDebugOutput != null)
-                    Container(
-                      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.94),
-                        borderRadius: BorderRadius.circular(18),
-                        border:
-                            Border.all(color: Colors.white.withOpacity(0.74)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: olympusBlue.withOpacity(0.08),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.bug_report_outlined,
-                                color: olympusBlue,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  'Último debug do push',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: olympusBlue,
-                                  ),
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: _runPushDebug,
-                                child: const Text('Rodar novamente'),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          SelectableText(
-                            _lastPushDebugOutput!,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF2C3E5A),
-                              height: 1.4,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   _buildWeekEventsSectionCard(),
                   _buildDashboardCard(
                     icon: Icons.calendar_today,
