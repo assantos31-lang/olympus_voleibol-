@@ -5,27 +5,42 @@
 	<dict>
 		<key>CADisableMinimumFrameDurationOnPhone</key>
 		<true/>
+
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
+
 		<key>CFBundleDisplayName</key>
 		<string>Olympus Voleibol</string>
+
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
+
 		<key>CFBundleIdentifier</key>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
 		<key>CFBundleInfoDictionaryVersion</key>
 		<string>6.0</string>
+
 		<key>CFBundleName</key>
 		<string>OlympusVoleibol</string>
+
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
+
 		<key>CFBundleShortVersionString</key>
 		<string>$(FLUTTER_BUILD_NAME)</string>
+
 		<key>CFBundleSignature</key>
 		<string>????</string>
+
 		<key>CFBundleVersion</key>
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
+
 		<key>LSRequiresIPhoneOS</key>
+		<true/>
+
+		<!-- 🔥 ESSA É A LINHA QUE FALTAVA -->
+		<key>FirebaseAppDelegateProxyEnabled</key>
 		<true/>
 
 		<key>UIApplicationSceneManifest</key>
@@ -64,7 +79,7 @@
 		<key>UIMainStoryboardFile</key>
 		<string>Main</string>
 
-		<!-- ✅ PERMISSÕES DE LOCALIZAÇÃO (CORRETO) -->
+		<!-- Permissões de localização -->
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>Precisamos da sua localização para realizar o check-in nos eventos.</string>
 

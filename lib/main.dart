@@ -147,13 +147,13 @@ class _AppBootstrapPageState extends State<AppBootstrapPage> {
 
   Future<void> _bootstrap() async {
     try {
-      if (mounted) {
-        setState(() {
-          _isReady = true;
-        });
-      }
+      await _setupPushNotifications();
 
-      unawaited(_setupPushNotifications());
+      if (!mounted) return;
+
+      setState(() {
+        _isReady = true;
+      });
     } catch (e) {
       debugPrint('Erro no bootstrap do app: $e');
 
