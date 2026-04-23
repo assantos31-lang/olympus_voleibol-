@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'admin_competitions_page.dart';
+import 'coach_training_sessions_page.dart';
+import 'coach_ranking_page.dart';
 
 class CoachDashboardPage extends StatefulWidget {
   const CoachDashboardPage({super.key});
@@ -168,6 +170,15 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       context,
       MaterialPageRoute(
         builder: (context) => const CoachTrainingSessionsPage(),
+      ),
+    );
+  }
+
+  void _navigateToRanking() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CoachRankingPage(),
       ),
     );
   }
@@ -715,7 +726,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                   _buildDashboardCard(
                     icon: Icons.calendar_month_outlined,
                     title: 'Planejamento de treinos',
-                    subtitle: 'Organize blocos por horário e tipo de treino',
+                    subtitle:
+                        'Planejamento e avaliação rápida dos treinos marcados',
                     color: const Color(0xFF3B82F6),
                     onTap: _navigateToTrainingPlanner,
                   ),
@@ -725,6 +737,13 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                     subtitle: 'Avaliação rápida e completa por ciclo',
                     color: const Color(0xFF8B5CF6),
                     onTap: _navigateToAthleteEvaluations,
+                  ),
+                  _buildDashboardCard(
+                    icon: Icons.bar_chart_rounded,
+                    title: 'Ranking dos atletas',
+                    subtitle: 'Desempenho com base nas avaliações salvas',
+                    color: const Color(0xFF0EA5A4),
+                    onTap: _navigateToRanking,
                   ),
                   _buildDashboardCard(
                     icon: Icons.emoji_events_outlined,
@@ -741,272 +760,6 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
             ),
         ],
       ),
-    );
-  }
-}
-
-class CoachTrainingSessionsPage extends StatefulWidget {
-  const CoachTrainingSessionsPage({super.key});
-
-  @override
-  State<CoachTrainingSessionsPage> createState() =>
-      _CoachTrainingSessionsPageState();
-}
-
-class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
-  final List<TrainingBlockModel> _blocks = [
-    TrainingBlockModel(
-      type: 'Aquecimento',
-      title: 'Mobilidade + corrida leve',
-      start: const TimeOfDay(hour: 18, minute: 30),
-      end: const TimeOfDay(hour: 18, minute: 45),
-      intensity: 'Leve',
-    ),
-    TrainingBlockModel(
-      type: 'Fundamento',
-      title: 'Saque',
-      start: const TimeOfDay(hour: 18, minute: 45),
-      end: const TimeOfDay(hour: 19, minute: 00),
-      intensity: 'Médio',
-    ),
-    TrainingBlockModel(
-      type: 'Fundamento',
-      title: 'Toque',
-      start: const TimeOfDay(hour: 19, minute: 00),
-      end: const TimeOfDay(hour: 19, minute: 30),
-      intensity: 'Médio',
-    ),
-    TrainingBlockModel(
-      type: 'Jogo',
-      title: 'Simulação de jogo',
-      start: const TimeOfDay(hour: 19, minute: 30),
-      end: const TimeOfDay(hour: 20, minute: 30),
-      intensity: 'Alto',
-    ),
-  ];
-
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-
-  String get _trainingTitle => 'Treino Feminino - Segunda';
-  String get _trainingSchedule => '18:30 às 20:30';
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Planejamento do treino'),
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openAddBlockDialog,
-        backgroundColor: olympusGold,
-        foregroundColor: const Color(0xFF1E3A5F),
-        icon: const Icon(Icons.add),
-        label: const Text('Adicionar bloco'),
-      ),
-      body: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEEF4FA),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFD9E6F2)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _trainingTitle,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF1E3A5F),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _trainingSchedule,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF4B6580),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _buildTag('Tipo: Fundamentos'),
-                    _buildTag('4 blocos'),
-                    _buildTag('Timeline do treino'),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ReorderableListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-              itemCount: _blocks.length,
-              onReorder: (oldIndex, newIndex) {
-                setState(() {
-                  if (newIndex > oldIndex) newIndex -= 1;
-                  final item = _blocks.removeAt(oldIndex);
-                  _blocks.insert(newIndex, item);
-                });
-              },
-              itemBuilder: (context, index) {
-                final block = _blocks[index];
-                return Container(
-                  key: ValueKey('${block.title}-$index'),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: Dismissible(
-                    key: ValueKey('dismiss-${block.title}-$index'),
-                    background: _buildSwipeAction(
-                      alignment: Alignment.centerLeft,
-                      color: const Color(0xFF2563EB),
-                      icon: Icons.copy_outlined,
-                      label: 'Duplicar',
-                    ),
-                    secondaryBackground: _buildSwipeAction(
-                      alignment: Alignment.centerRight,
-                      color: Colors.red,
-                      icon: Icons.delete_outline,
-                      label: 'Excluir',
-                    ),
-                    confirmDismiss: (direction) async {
-                      if (direction == DismissDirection.startToEnd) {
-                        setState(() {
-                          _blocks.insert(index + 1, block.copy());
-                        });
-                        return false;
-                      }
-                      return true;
-                    },
-                    onDismissed: (_) {
-                      setState(() {
-                        _blocks.removeAt(index);
-                      });
-                    },
-                    child: _TrainingBlockCard(
-                      block: block,
-                      indexLabel: '${index + 1}',
-                      onTap: () => _openEditBlockDialog(index),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTag(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFD7E3EE)),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF35506C),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSwipeAction({
-    required Alignment alignment,
-    required Color color,
-    required IconData icon,
-    required String label,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      alignment: alignment,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        mainAxisAlignment: alignment == Alignment.centerLeft
-            ? MainAxisAlignment.start
-            : MainAxisAlignment.end,
-        children: [
-          Icon(icon, color: Colors.white),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _openAddBlockDialog() async {
-    final nextStart = _blocks.isNotEmpty
-        ? _blocks.last.end
-        : const TimeOfDay(hour: 18, minute: 30);
-
-    final result = await showModalBottomSheet<TrainingBlockModel>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => TrainingBlockFormSheet(
-        initialBlock: TrainingBlockModel(
-          type: 'Fundamento',
-          title: '',
-          start: nextStart,
-          end: _addMinutes(nextStart, 15),
-          intensity: 'Médio',
-        ),
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        _blocks.add(result);
-      });
-    }
-  }
-
-  Future<void> _openEditBlockDialog(int index) async {
-    final result = await showModalBottomSheet<TrainingBlockModel>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => TrainingBlockFormSheet(
-        initialBlock: _blocks[index],
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        _blocks[index] = result;
-      });
-    }
-  }
-
-  TimeOfDay _addMinutes(TimeOfDay time, int minutesToAdd) {
-    final totalMinutes = time.hour * 60 + time.minute + minutesToAdd;
-    return TimeOfDay(
-      hour: (totalMinutes ~/ 60) % 24,
-      minute: totalMinutes % 60,
     );
   }
 }
@@ -1046,7 +799,6 @@ class _CoachAthleteEvaluationsPageState
   ];
 
   static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
 
   @override
   Widget build(BuildContext context) {
@@ -1067,9 +819,9 @@ class _CoachAthleteEvaluationsPageState
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: const Color(0xFFE8DBB2)),
             ),
-            child: Column(
+            child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Text(
                   'Regra ativa de avaliação',
                   style: TextStyle(
@@ -1145,142 +897,6 @@ class _CoachAthleteEvaluationsPageState
         ),
       ),
     );
-  }
-}
-
-class _TrainingBlockCard extends StatelessWidget {
-  const _TrainingBlockCard({
-    required this.block,
-    required this.indexLabel,
-    required this.onTap,
-  });
-
-  final TrainingBlockModel block;
-  final String indexLabel;
-  final VoidCallback onTap;
-
-  Color _colorByType() {
-    switch (block.type) {
-      case 'Aquecimento':
-        return const Color(0xFF3B82F6);
-      case 'Jogo':
-        return const Color(0xFFF97316);
-      case 'Tático':
-        return const Color(0xFF8B5CF6);
-      case 'Físico':
-        return const Color(0xFFEF4444);
-      default:
-        return const Color(0xFF10B981);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = _colorByType();
-
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFE4EDF5)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: accent.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  indexLabel,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: accent,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${_formatTime(block.start)} - ${_formatTime(block.end)}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF53657B),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      block.title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF17324D),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _infoChip(block.type, accent),
-                        _infoChip('Intensidade: ${block.intensity}',
-                            const Color(0xFF1E3A5F)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Icon(Icons.drag_handle_rounded, color: Color(0xFF90A4B8)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _infoChip(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  String _formatTime(TimeOfDay time) {
-    final hour = time.hour.toString().padLeft(2, '0');
-    final minute = time.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
   }
 }
 
@@ -1391,248 +1007,6 @@ class _AthleteEvaluationCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class TrainingBlockFormSheet extends StatefulWidget {
-  const TrainingBlockFormSheet({
-    super.key,
-    required this.initialBlock,
-  });
-
-  final TrainingBlockModel initialBlock;
-
-  @override
-  State<TrainingBlockFormSheet> createState() => _TrainingBlockFormSheetState();
-}
-
-class _TrainingBlockFormSheetState extends State<TrainingBlockFormSheet> {
-  late final TextEditingController _titleController;
-  late final TextEditingController _notesController;
-  late String _selectedType;
-  late String _selectedIntensity;
-  late TimeOfDay _start;
-  late TimeOfDay _end;
-
-  final _types = const [
-    'Aquecimento',
-    'Fundamento',
-    'Jogo',
-    'Físico',
-    'Tático'
-  ];
-  final _intensities = const ['Leve', 'Médio', 'Alto'];
-
-  @override
-  void initState() {
-    super.initState();
-    _titleController = TextEditingController(text: widget.initialBlock.title);
-    _notesController = TextEditingController(text: widget.initialBlock.notes);
-    _selectedType = widget.initialBlock.type;
-    _selectedIntensity = widget.initialBlock.intensity;
-    _start = widget.initialBlock.start;
-    _end = widget.initialBlock.end;
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _notesController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(16, 16, 16, bottomInset + 16),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 48,
-              height: 5,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFD4DCE4),
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            const Text(
-              'Bloco do treino',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF17324D),
-              ),
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _selectedType,
-              decoration: const InputDecoration(labelText: 'Tipo'),
-              items: _types
-                  .map(
-                    (type) => DropdownMenuItem(
-                      value: type,
-                      child: Text(type),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() => _selectedType = value);
-              },
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: 'Nome do bloco',
-                hintText: 'Ex: Saque, Toque, Simulação de jogo',
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _timeField(
-                    label: 'Hora início',
-                    value: _start,
-                    onTap: () async {
-                      final result = await showTimePicker(
-                        context: context,
-                        initialTime: _start,
-                      );
-                      if (result != null) {
-                        setState(() => _start = result);
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _timeField(
-                    label: 'Hora fim',
-                    value: _end,
-                    onTap: () async {
-                      final result = await showTimePicker(
-                        context: context,
-                        initialTime: _end,
-                      );
-                      if (result != null) {
-                        setState(() => _end = result);
-                      }
-                    },
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _selectedIntensity,
-              decoration: const InputDecoration(labelText: 'Intensidade'),
-              items: _intensities
-                  .map(
-                    (item) => DropdownMenuItem(
-                      value: item,
-                      child: Text(item),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() => _selectedIntensity = value);
-              },
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _notesController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Observações',
-                hintText: 'Opcional',
-              ),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancelar'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _save,
-                    child: const Text('Salvar'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _timeField({
-    required String label,
-    required TimeOfDay value,
-    required VoidCallback onTap,
-  }) {
-    final formatted =
-        '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: InputDecorator(
-        decoration: InputDecoration(labelText: label),
-        child: Text(
-          formatted,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _save() {
-    if (_titleController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Informe o nome do bloco.')),
-      );
-      return;
-    }
-
-    final startMinutes = _start.hour * 60 + _start.minute;
-    final endMinutes = _end.hour * 60 + _end.minute;
-
-    if (endMinutes <= startMinutes) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('A hora final precisa ser maior que a inicial.')),
-      );
-      return;
-    }
-
-    Navigator.pop(
-      context,
-      TrainingBlockModel(
-        type: _selectedType,
-        title: _titleController.text.trim(),
-        start: _start,
-        end: _end,
-        intensity: _selectedIntensity,
-        notes: _notesController.text.trim(),
       ),
     );
   }
@@ -1897,35 +1271,6 @@ class _AthleteEvaluationFormPageState extends State<AthleteEvaluationFormPage> {
         generalEvolution: _generalEvolution,
         mainFocus: _focusController.text.trim(),
       ),
-    );
-  }
-}
-
-class TrainingBlockModel {
-  TrainingBlockModel({
-    required this.type,
-    required this.title,
-    required this.start,
-    required this.end,
-    required this.intensity,
-    this.notes = '',
-  });
-
-  final String type;
-  final String title;
-  final TimeOfDay start;
-  final TimeOfDay end;
-  final String intensity;
-  final String notes;
-
-  TrainingBlockModel copy() {
-    return TrainingBlockModel(
-      type: type,
-      title: title,
-      start: start,
-      end: end,
-      intensity: intensity,
-      notes: notes,
     );
   }
 }

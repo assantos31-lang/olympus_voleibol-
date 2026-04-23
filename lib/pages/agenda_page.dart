@@ -351,6 +351,268 @@ class _AgendaPageState extends State<AgendaPage> {
     return Colors.white;
   }
 
+  void _mostrarPlanejamentoTreino(Map<String, dynamic> evento) {
+    final dynamic rawBlocks = evento['training_blocks'] ??
+        evento['planning_blocks'] ??
+        evento['blocks'] ??
+        evento['training_plan'] ??
+        evento['planning'];
+
+    List<Map<String, dynamic>> blocos = [];
+
+    if (rawBlocks is List) {
+      blocos = rawBlocks
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+    } else if (rawBlocks is Map) {
+      final map = Map<String, dynamic>.from(rawBlocks);
+      final nestedBlocks = map['blocks'];
+      if (nestedBlocks is List) {
+        blocos = nestedBlocks
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+      }
+    }
+
+    blocos.sort((a, b) {
+      final aStart =
+          (a['start_time'] ?? a['start'] ?? a['hora_inicio'] ?? '').toString();
+      final bStart =
+          (b['start_time'] ?? b['start'] ?? b['hora_inicio'] ?? '').toString();
+      return aStart.compareTo(bStart);
+    });
+
+    final planningType = (evento['training_type'] ??
+            evento['plan_type'] ??
+            evento['planning_type'] ??
+            evento['tipo_treino'] ??
+            'Não informado')
+        .toString();
+
+    final planningNotes = (evento['training_notes'] ??
+            evento['planning_notes'] ??
+            evento['plan_notes'] ??
+            evento['observacoes_treino'] ??
+            '')
+        .toString();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Planejamento do treino',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: olympusBlue,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  (evento['event_name'] ?? 'Treino').toString(),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: olympusBlue.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: olympusBlue.withOpacity(0.10)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Tipo do treino: $planningType',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: olympusBlue,
+                        ),
+                      ),
+                      if (planningNotes.trim().isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          planningNotes,
+                          style: TextStyle(
+                            color: Colors.grey[700],
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (blocos.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.orange[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.orange[200]!),
+                    ),
+                    child: const Text(
+                      'Nenhum planejamento vinculado a este treino.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: blocos.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final bloco = blocos[index];
+                        final titulo = (bloco['title'] ??
+                                bloco['nome'] ??
+                                bloco['activity'] ??
+                                bloco['descricao'] ??
+                                'Bloco ${index + 1}')
+                            .toString();
+                        final tipo = (bloco['type'] ??
+                                bloco['tipo'] ??
+                                bloco['category'] ??
+                                'Bloco')
+                            .toString();
+                        final inicio = (bloco['start_time'] ??
+                                bloco['start'] ??
+                                bloco['hora_inicio'] ??
+                                '')
+                            .toString();
+                        final fim = (bloco['end_time'] ??
+                                bloco['end'] ??
+                                bloco['hora_fim'] ??
+                                '')
+                            .toString();
+                        final intensidade =
+                            (bloco['intensity'] ?? bloco['intensidade'] ?? '')
+                                .toString();
+                        final observacao = (bloco['notes'] ??
+                                bloco['observacao'] ??
+                                bloco['observações'] ??
+                                '')
+                            .toString();
+
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey[200]!),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 28,
+                                    height: 28,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: olympusBlue.withOpacity(0.10),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      '${index + 1}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: olympusBlue,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      titulo,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                        color: olympusBlue,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '$tipo${inicio.isNotEmpty || fim.isNotEmpty ? ' • $inicio${fim.isNotEmpty ? ' às $fim' : ''}' : ''}${intensidade.isNotEmpty ? ' • $intensidade' : ''}',
+                                style: TextStyle(
+                                  color: Colors.grey[700],
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (observacao.trim().isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  observacao,
+                                  style: TextStyle(
+                                    color: Colors.grey[700],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: olympusBlue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: const Text('Fechar'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _navegarParaCadastroEvento() async {
     final result = await Navigator.push(
       context,
@@ -2400,6 +2662,33 @@ class _AgendaPageState extends State<AgendaPage> {
                                                 ),
                                               ),
                                             ],
+                                          ),
+                                        ],
+                                        if (normalizedEventType ==
+                                            'treino') ...[
+                                          const SizedBox(height: 12),
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: OutlinedButton.icon(
+                                              onPressed: () =>
+                                                  _mostrarPlanejamentoTreino(
+                                                      evento),
+                                              icon: const Icon(
+                                                  Icons.menu_book_outlined),
+                                              label: const Text(
+                                                  'Ver planejamento'),
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: olympusBlue,
+                                                side: BorderSide(
+                                                  color: olympusBlue
+                                                      .withOpacity(0.35),
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  vertical: 12,
+                                                ),
+                                              ),
+                                            ),
                                           ),
                                         ],
                                         if (hasPlacar) ...[

@@ -6,6 +6,7 @@ import '../main.dart';
 import 'athlete_dashboard_page.dart';
 import 'complete_profile_page.dart';
 import 'admin_home_page.dart';
+import 'coach_dashboard_page.dart';
 
 class DashboardRouterPage extends StatefulWidget {
   const DashboardRouterPage({super.key});
@@ -47,17 +48,19 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
       User? user = supabase.auth.currentUser;
 
       if (session == null || user == null) {
-        await Future.delayed(const Duration(milliseconds: 1200));
-        session = supabase.auth.currentSession;
-        user = supabase.auth.currentUser;
+        final response = await supabase.auth.refreshSession();
+        session = response.session;
+        user = response.user;
       }
 
       if (session == null || user == null) {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _dashboardWidget = null;
-          });
+        if (mounted && !_isRedirecting) {
+          _isRedirecting = true;
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/login',
+            (route) => false,
+          );
         }
         return;
       }
@@ -66,8 +69,7 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
           .from('profiles')
           .select('user_type, full_name, cpf, phone')
           .eq('id', user.id)
-          .maybeSingle()
-          .timeout(const Duration(seconds: 10));
+          .maybeSingle();
 
       if (!mounted) return;
 
@@ -101,9 +103,9 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
         case 'admin':
           dashboard = const AdminHomePage();
           break;
-        case 'athlete':
         case 'coach':
-        case 'member':
+          dashboard = const CoachDashboardPage();
+          break;
         default:
           dashboard = const AthleteDashboardPage();
       }
@@ -115,8 +117,8 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
         _isLoading = false;
       });
     } catch (e) {
-      debugPrint('Erro ao carregar dashboard: $e');
       if (!mounted) return;
+
       setState(() {
         _dashboardWidget = const AthleteDashboardPage();
         _isLoading = false;
