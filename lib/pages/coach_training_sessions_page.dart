@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/permission_service.dart';
 
 class CoachTrainingSessionsPage extends StatefulWidget {
   const CoachTrainingSessionsPage({super.key});
@@ -20,6 +21,16 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  static const Color olympusBg = Color(0xFFF4F7FB);
+  static const Color olympusCard = Colors.white;
+  static const Color olympusText = Color(0xFF17324D);
+  static const Color olympusMuted = Color(0xFF53657B);
+  static const Color olympusSubtle = Color(0xFF6A7E94);
+  static const Color olympusBorder = Color(0xFFE4EDF5);
+  static const Color olympusSuccess = Color(0xFF16A34A);
+  static const Color olympusWarning = Color(0xFFF59E0B);
+  static const Color olympusDanger = Color(0xFFDC2626);
+  static const Color olympusPurple = Color(0xFF7C3AED);
   static const String _geocodeAccessKey = 'pk.5a7a05184e41c916429dceb50cf02718';
 
   bool _loading = true;
@@ -51,6 +62,36 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
     return MediaQuery.of(context).size.width < 600;
   }
 
+  Widget _responsiveActionRow({
+    required List<Widget> children,
+    double spacing = 10,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stackVertically = constraints.maxWidth < 360;
+        if (stackVertically) {
+          return Column(
+            children: [
+              for (int i = 0; i < children.length; i++) ...[
+                SizedBox(width: double.infinity, child: children[i]),
+                if (i < children.length - 1) SizedBox(height: spacing),
+              ],
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            for (int i = 0; i < children.length; i++) ...[
+              Expanded(child: children[i]),
+              if (i < children.length - 1) SizedBox(width: spacing),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -62,7 +103,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
             Expanded(child: Text(message)),
           ],
         ),
-        backgroundColor: Colors.red.shade700,
+        backgroundColor: olympusDanger,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 4),
       ),
@@ -80,7 +121,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
             Expanded(child: Text(message)),
           ],
         ),
-        backgroundColor: Colors.green.shade700,
+        backgroundColor: olympusSuccess,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
       ),
@@ -1397,19 +1438,19 @@ events!convocations_event_id_fkey (
                   status: 'accepted',
                   label: 'Aceitou',
                   count: _statusCounts['accepted'] ?? 0,
-                  color: Colors.green,
+                  color: olympusSuccess,
                 ),
                 _buildResumoStatusChip(
                   status: 'rejected',
                   label: 'Recusou',
                   count: _statusCounts['rejected'] ?? 0,
-                  color: Colors.red,
+                  color: olympusDanger,
                 ),
                 _buildResumoStatusChip(
                   status: 'pending',
                   label: 'Pendentes',
                   count: _statusCounts['pending'] ?? 0,
-                  color: Colors.orange,
+                  color: olympusWarning,
                 ),
               ],
             ),
@@ -1507,15 +1548,15 @@ events!convocations_event_id_fkey (
 
     switch (status) {
       case 'accepted':
-        statusColor = Colors.green;
+        statusColor = olympusSuccess;
         statusLabel = 'Aceitou';
         break;
       case 'rejected':
-        statusColor = Colors.red;
+        statusColor = olympusDanger;
         statusLabel = 'Recusou';
         break;
       default:
-        statusColor = Colors.orange;
+        statusColor = olympusWarning;
         statusLabel = 'Pendente';
     }
 
@@ -1529,7 +1570,7 @@ events!convocations_event_id_fkey (
           padding: EdgeInsets.all(isMobile ? 14 : 16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFE4EDF5)),
+            border: Border.all(color: olympusBorder),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.04),
@@ -1589,7 +1630,7 @@ events!convocations_event_id_fkey (
               Text(
                 (treino['event_name'] ?? 'Treino').toString(),
                 style: TextStyle(
-                  color: const Color(0xFF17324D),
+                  color: olympusText,
                   fontSize: isMobile ? 16 : 17,
                   fontWeight: FontWeight.w800,
                 ),
@@ -1598,7 +1639,7 @@ events!convocations_event_id_fkey (
               Text(
                 _formatarDataHora(treino),
                 style: TextStyle(
-                  color: const Color(0xFF53657B),
+                  color: olympusMuted,
                   fontSize: isMobile ? 12 : 13,
                   fontWeight: FontWeight.w700,
                 ),
@@ -1608,7 +1649,7 @@ events!convocations_event_id_fkey (
                 Text(
                   endereco,
                   style: TextStyle(
-                    color: const Color(0xFF6A7E94),
+                    color: olympusSubtle,
                     fontSize: isMobile ? 12 : 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1619,7 +1660,7 @@ events!convocations_event_id_fkey (
                 Text(
                   'Categoria/Gênero: $genero',
                   style: TextStyle(
-                    color: const Color(0xFF6A7E94),
+                    color: olympusSubtle,
                     fontSize: isMobile ? 12 : 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1650,40 +1691,35 @@ events!convocations_event_id_fkey (
               ],
               const SizedBox(height: 14),
               if (status == 'pending') ...[
-                Row(
+                _responsiveActionRow(
                   children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: podeEditar
-                            ? () => _responderConvocacao(treino, false)
-                            : null,
-                        icon: const Icon(Icons.close, size: 16),
-                        label: const Text('Recusar'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              podeEditar ? Colors.red : Colors.grey,
-                          foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(
-                            vertical: isMobile ? 11 : 12,
-                          ),
+                    ElevatedButton.icon(
+                      onPressed: podeEditar
+                          ? () => _responderConvocacao(treino, false)
+                          : null,
+                      icon: const Icon(Icons.close, size: 16),
+                      label: const Text('Recusar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            podeEditar ? olympusDanger : Colors.grey,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(
+                          vertical: isMobile ? 11 : 12,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: podeEditar
-                            ? () => _responderConvocacao(treino, true)
-                            : null,
-                        icon: const Icon(Icons.check, size: 16),
-                        label: const Text('Aceitar'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              podeEditar ? Colors.green : Colors.grey,
-                          foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(
-                            vertical: isMobile ? 11 : 12,
-                          ),
+                    ElevatedButton.icon(
+                      onPressed: podeEditar
+                          ? () => _responderConvocacao(treino, true)
+                          : null,
+                      icon: const Icon(Icons.check, size: 16),
+                      label: const Text('Aceitar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            podeEditar ? olympusSuccess : Colors.grey,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(
+                          vertical: isMobile ? 11 : 12,
                         ),
                       ),
                     ),
@@ -1700,8 +1736,7 @@ events!convocations_event_id_fkey (
                     icon: const Icon(Icons.edit, size: 16),
                     label: const Text('Editar resposta'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          podeEditar ? Colors.deepPurple : Colors.grey,
+                      backgroundColor: podeEditar ? olympusPurple : Colors.grey,
                       foregroundColor: Colors.white,
                       padding: EdgeInsets.symmetric(
                         vertical: isMobile ? 11 : 12,
@@ -1725,7 +1760,8 @@ events!convocations_event_id_fkey (
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.verified, color: Colors.green, size: 18),
+                      const Icon(Icons.verified,
+                          color: olympusSuccess, size: 18),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -1733,7 +1769,7 @@ events!convocations_event_id_fkey (
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: isMobile ? 11 : 12,
-                            color: Colors.green,
+                            color: olympusSuccess,
                           ),
                         ),
                       ),
@@ -1763,7 +1799,7 @@ events!convocations_event_id_fkey (
                       backgroundColor: status == 'accepted' &&
                               allowCheckin &&
                               janelaCheckIn['disponivel'] == true
-                          ? Colors.green
+                          ? olympusSuccess
                           : Colors.grey,
                       foregroundColor: Colors.white,
                       padding: EdgeInsets.symmetric(
@@ -1815,7 +1851,7 @@ events!convocations_event_id_fkey (
                   icon: const Icon(Icons.fact_check_outlined),
                   label: const Text('Avaliação rápida'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.deepPurple,
+                    backgroundColor: olympusPurple,
                     foregroundColor: Colors.white,
                     padding: EdgeInsets.symmetric(
                       vertical: isMobile ? 11 : 12,
@@ -1849,7 +1885,7 @@ events!convocations_event_id_fkey (
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
+      backgroundColor: olympusBg,
       appBar: AppBar(
         title: const Text('Planejamento de treinos'),
         backgroundColor: olympusBlue,
@@ -1875,7 +1911,7 @@ events!convocations_event_id_fkey (
                             _error!,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
-                              color: Colors.red,
+                              color: olympusDanger,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -1931,6 +1967,14 @@ class CoachTrainingPlanDetailPage extends StatefulWidget {
 class _CoachTrainingPlanDetailPageState
     extends State<CoachTrainingPlanDetailPage> {
   static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusBg = Color(0xFFF4F7FB);
+  static const Color olympusCard = Colors.white;
+  static const Color olympusText = Color(0xFF17324D);
+  static const Color olympusMuted = Color(0xFF53657B);
+  static const Color olympusSubtle = Color(0xFF6A7E94);
+  static const Color olympusBorder = Color(0xFFE4EDF5);
+  static const Color olympusDanger = Color(0xFFDC2626);
 
   static final Map<String, List<Map<String, dynamic>>> _cacheBlocos = {};
   static final Map<String, String> _cacheObservacoes = {};
@@ -2005,6 +2049,36 @@ class _CoachTrainingPlanDetailPageState
 
   bool _isMobile(BuildContext context) {
     return MediaQuery.of(context).size.width < 600;
+  }
+
+  Widget _responsiveActionRow({
+    required List<Widget> children,
+    double spacing = 10,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stackVertically = constraints.maxWidth < 360;
+        if (stackVertically) {
+          return Column(
+            children: [
+              for (int i = 0; i < children.length; i++) ...[
+                SizedBox(width: double.infinity, child: children[i]),
+                if (i < children.length - 1) SizedBox(height: spacing),
+              ],
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            for (int i = 0; i < children.length; i++) ...[
+              Expanded(child: children[i]),
+              if (i < children.length - 1) SizedBox(width: spacing),
+            ],
+          ],
+        );
+      },
+    );
   }
 
   DateTime? _parseHorario(String value) {
@@ -2154,14 +2228,12 @@ class _CoachTrainingPlanDetailPageState
                 selectedColor: const Color(0xFFD4AF37),
                 backgroundColor: Colors.white,
                 labelStyle: TextStyle(
-                  color: selected ? olympusBlue : const Color(0xFF53657B),
+                  color: selected ? olympusBlue : olympusMuted,
                   fontWeight: FontWeight.w700,
                   fontSize: 12,
                 ),
                 side: BorderSide(
-                  color: selected
-                      ? const Color(0xFFD4AF37)
-                      : const Color(0xFFE4EDF5),
+                  color: selected ? const Color(0xFFD4AF37) : olympusBorder,
                 ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(999),
@@ -2182,12 +2254,12 @@ class _CoachTrainingPlanDetailPageState
                 selectedColor: olympusBlue,
                 backgroundColor: Colors.white,
                 labelStyle: TextStyle(
-                  color: selected ? Colors.white : const Color(0xFF53657B),
+                  color: selected ? Colors.white : olympusMuted,
                   fontWeight: FontWeight.w700,
                   fontSize: 12,
                 ),
                 side: BorderSide(
-                  color: selected ? olympusBlue : const Color(0xFFE4EDF5),
+                  color: selected ? olympusBlue : olympusBorder,
                 ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(999),
@@ -2460,7 +2532,7 @@ class _CoachTrainingPlanDetailPageState
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE4EDF5)),
+        border: Border.all(color: olympusBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2505,7 +2577,7 @@ class _CoachTrainingPlanDetailPageState
                 onPressed:
                     _blocos.length > 1 ? () => _removerBloco(index) : null,
                 icon: const Icon(Icons.delete_outline),
-                color: Colors.red,
+                color: olympusDanger,
                 tooltip: 'Remover',
               ),
             ],
@@ -2515,7 +2587,7 @@ class _CoachTrainingPlanDetailPageState
             Text(
               categoria,
               style: TextStyle(
-                color: const Color(0xFF53657B),
+                color: olympusMuted,
                 fontSize: isMobile ? 11 : 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -2524,7 +2596,7 @@ class _CoachTrainingPlanDetailPageState
           Text(
             '${inicio.isEmpty ? '--:--' : inicio} às ${fim.isEmpty ? '--:--' : fim}',
             style: TextStyle(
-              color: const Color(0xFF53657B),
+              color: olympusMuted,
               fontSize: isMobile ? 12 : 13,
               fontWeight: FontWeight.w700,
             ),
@@ -2534,7 +2606,7 @@ class _CoachTrainingPlanDetailPageState
             Text(
               observacao,
               style: TextStyle(
-                color: const Color(0xFF6A7E94),
+                color: olympusSubtle,
                 fontSize: isMobile ? 12 : 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -2550,7 +2622,7 @@ class _CoachTrainingPlanDetailPageState
     final isMobile = _isMobile(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
+      backgroundColor: olympusBg,
       appBar: AppBar(
         title: const Text('Planejamento do treino'),
         backgroundColor: olympusBlue,
@@ -2577,7 +2649,7 @@ class _CoachTrainingPlanDetailPageState
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFE4EDF5)),
+              border: Border.all(color: olympusBorder),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2594,7 +2666,7 @@ class _CoachTrainingPlanDetailPageState
                 Text(
                   'Data: ${(widget.treino['event_date'] ?? '').toString()}',
                   style: TextStyle(
-                    color: const Color(0xFF53657B),
+                    color: olympusMuted,
                     fontSize: isMobile ? 12 : 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -2603,7 +2675,7 @@ class _CoachTrainingPlanDetailPageState
                 Text(
                   'Horário: ${(widget.treino['event_time'] ?? '').toString()}',
                   style: TextStyle(
-                    color: const Color(0xFF53657B),
+                    color: olympusMuted,
                     fontSize: isMobile ? 12 : 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -2616,7 +2688,7 @@ class _CoachTrainingPlanDetailPageState
                   Text(
                     'Categoria/Gênero: ${(widget.treino['gender'] ?? '').toString()}',
                     style: TextStyle(
-                      color: const Color(0xFF53657B),
+                      color: olympusMuted,
                       fontSize: isMobile ? 12 : 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -2631,7 +2703,7 @@ class _CoachTrainingPlanDetailPageState
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFE4EDF5)),
+              border: Border.all(color: olympusBorder),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2648,7 +2720,7 @@ class _CoachTrainingPlanDetailPageState
                 Text(
                   'Preencha um bloco para habilitar o próximo.',
                   style: TextStyle(
-                    color: const Color(0xFF53657B),
+                    color: olympusMuted,
                     fontSize: isMobile ? 12 : 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -2667,7 +2739,7 @@ class _CoachTrainingPlanDetailPageState
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFE4EDF5)),
+              border: Border.all(color: olympusBorder),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2717,7 +2789,18 @@ class CoachQuickAthleteEvaluationPage extends StatefulWidget {
 class _CoachQuickAthleteEvaluationPageState
     extends State<CoachQuickAthleteEvaluationPage> {
   static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusBg = Color(0xFFF4F7FB);
+  static const Color olympusCard = Colors.white;
+  static const Color olympusText = Color(0xFF17324D);
+  static const Color olympusMuted = Color(0xFF53657B);
+  static const Color olympusSubtle = Color(0xFF6A7E94);
+  static const Color olympusBorder = Color(0xFFE4EDF5);
+  static const Color olympusSuccess = Color(0xFF16A34A);
+  static const Color olympusWarning = Color(0xFFF59E0B);
+  static const Color olympusDanger = Color(0xFFDC2626);
   final SupabaseClient _supabase = Supabase.instance.client;
+  final PermissionService _permissionService = PermissionService();
 
   bool _loadingAthletes = true;
   String? _athletesError;
@@ -2767,6 +2850,36 @@ class _CoachQuickAthleteEvaluationPageState
 
   bool _isMobile(BuildContext context) {
     return MediaQuery.of(context).size.width < 600;
+  }
+
+  Widget _responsiveActionRow({
+    required List<Widget> children,
+    double spacing = 10,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stackVertically = constraints.maxWidth < 360;
+        if (stackVertically) {
+          return Column(
+            children: [
+              for (int i = 0; i < children.length; i++) ...[
+                SizedBox(width: double.infinity, child: children[i]),
+                if (i < children.length - 1) SizedBox(height: spacing),
+              ],
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            for (int i = 0; i < children.length; i++) ...[
+              Expanded(child: children[i]),
+              if (i < children.length - 1) SizedBox(width: spacing),
+            ],
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -2877,9 +2990,12 @@ class _CoachQuickAthleteEvaluationPageState
 
       final rpcRows = List<Map<String, dynamic>>.from(response as List);
 
+      final visibleEvaluationIds =
+          await _permissionService.getVisibleUserIdsForPage('avaliacoes');
+
       final userIds = rpcRows
           .map((row) => (row['user_id'] ?? '').toString())
-          .where((id) => id.isNotEmpty)
+          .where((id) => id.isNotEmpty && visibleEvaluationIds.contains(id))
           .toList();
 
       final avatarsByUser = <String, String>{};
@@ -2897,6 +3013,10 @@ class _CoachQuickAthleteEvaluationPageState
       }
 
       final atletas = rpcRows
+          .where((row) {
+            final userId = (row['user_id'] ?? '').toString();
+            return userId.isNotEmpty && visibleEvaluationIds.contains(userId);
+          })
           .map<Map<String, dynamic>>(
             (row) => {
               'user_id': row['user_id'],
@@ -3126,50 +3246,68 @@ class _CoachQuickAthleteEvaluationPageState
                           ),
                         ),
                         const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () => Navigator.pop(context, null),
-                                icon: const Icon(Icons.clear),
-                                label: const Text('Limpar'),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  if (selecionado == null ||
-                                      motivo == null ||
-                                      motivo!.trim().isEmpty ||
-                                      fundamento == null ||
-                                      fundamento!.trim().isEmpty) {
-                                    return;
-                                  }
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final isNarrow = constraints.maxWidth < 340;
+                            final clearButton = OutlinedButton.icon(
+                              onPressed: () => Navigator.pop(context, null),
+                              icon: const Icon(Icons.clear),
+                              label: const Text('Limpar'),
+                            );
+                            final saveButton = ElevatedButton(
+                              onPressed: () {
+                                if (selecionado == null ||
+                                    motivo == null ||
+                                    motivo!.trim().isEmpty ||
+                                    fundamento == null ||
+                                    fundamento!.trim().isEmpty) {
+                                  return;
+                                }
 
-                                  Navigator.pop(
-                                    context,
-                                    {
-                                      'user_id': selecionado!['user_id'],
-                                      'nome': selecionado!['nome'],
-                                      'avatar_url': selecionado!['avatar_url'],
-                                      'motivo': motivo,
-                                      'fundamento': fundamento,
-                                      'observacao':
-                                          observacaoController.text.trim(),
-                                    },
-                                  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: olympusBlue,
-                                  foregroundColor: Colors.white,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
-                                ),
-                                child: const Text('Salvar'),
+                                Navigator.pop(
+                                  context,
+                                  {
+                                    'user_id': selecionado!['user_id'],
+                                    'nome': selecionado!['nome'],
+                                    'avatar_url': selecionado!['avatar_url'],
+                                    'motivo': motivo,
+                                    'fundamento': fundamento,
+                                    'observacao':
+                                        observacaoController.text.trim(),
+                                  },
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: olympusBlue,
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
                               ),
-                            ),
-                          ],
+                              child: const Text('Salvar'),
+                            );
+
+                            if (isNarrow) {
+                              return Column(
+                                children: [
+                                  SizedBox(
+                                      width: double.infinity,
+                                      child: clearButton),
+                                  const SizedBox(height: 10),
+                                  SizedBox(
+                                      width: double.infinity,
+                                      child: saveButton),
+                                ],
+                              );
+                            }
+
+                            return Row(
+                              children: [
+                                Expanded(child: clearButton),
+                                const SizedBox(width: 10),
+                                Expanded(child: saveButton),
+                              ],
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -3234,7 +3372,7 @@ class _CoachQuickAthleteEvaluationPageState
             padding: EdgeInsets.all(isMobile ? 14 : 16),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFE4EDF5)),
+              border: Border.all(color: olympusBorder),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3282,7 +3420,7 @@ class _CoachQuickAthleteEvaluationPageState
                       Text(
                         subtitle,
                         style: TextStyle(
-                          color: const Color(0xFF6A7E94),
+                          color: olympusSubtle,
                           fontSize: isMobile ? 11 : 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -3291,9 +3429,7 @@ class _CoachQuickAthleteEvaluationPageState
                       Text(
                         nome,
                         style: TextStyle(
-                          color: atleta == null
-                              ? const Color(0xFF53657B)
-                              : accentColor,
+                          color: atleta == null ? olympusMuted : accentColor,
                           fontSize: isMobile ? 12 : 13,
                           fontWeight: FontWeight.w700,
                         ),
@@ -3303,7 +3439,7 @@ class _CoachQuickAthleteEvaluationPageState
                         Text(
                           motivo,
                           style: TextStyle(
-                            color: const Color(0xFF53657B),
+                            color: olympusMuted,
                             fontSize: isMobile ? 11 : 12,
                             fontWeight: FontWeight.w700,
                           ),
@@ -3314,7 +3450,7 @@ class _CoachQuickAthleteEvaluationPageState
                         Text(
                           fundamento,
                           style: TextStyle(
-                            color: const Color(0xFF6A7E94),
+                            color: olympusSubtle,
                             fontSize: isMobile ? 11 : 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -3325,7 +3461,7 @@ class _CoachQuickAthleteEvaluationPageState
                         Text(
                           observacao,
                           style: TextStyle(
-                            color: const Color(0xFF6A7E94),
+                            color: olympusSubtle,
                             fontSize: isMobile ? 11 : 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -3351,7 +3487,7 @@ class _CoachQuickAthleteEvaluationPageState
     final isMobile = _isMobile(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
+      backgroundColor: olympusBg,
       appBar: AppBar(
         title: const Text('Avaliação rápida'),
         backgroundColor: olympusBlue,
@@ -3371,7 +3507,7 @@ class _CoachQuickAthleteEvaluationPageState
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFE4EDF5)),
+              border: Border.all(color: olympusBorder),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3388,7 +3524,7 @@ class _CoachQuickAthleteEvaluationPageState
                 Text(
                   'Data: ${(widget.treino['event_date'] ?? '').toString()}',
                   style: TextStyle(
-                    color: const Color(0xFF53657B),
+                    color: olympusMuted,
                     fontSize: isMobile ? 12 : 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -3397,7 +3533,7 @@ class _CoachQuickAthleteEvaluationPageState
                 Text(
                   'Horário: ${(widget.treino['event_time'] ?? '').toString()}',
                   style: TextStyle(
-                    color: const Color(0xFF53657B),
+                    color: olympusMuted,
                     fontSize: isMobile ? 12 : 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -3420,7 +3556,7 @@ class _CoachQuickAthleteEvaluationPageState
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFE4EDF5)),
+              border: Border.all(color: olympusBorder),
             ),
             child: _loadingAthletes
                 ? const Padding(
@@ -3433,7 +3569,7 @@ class _CoachQuickAthleteEvaluationPageState
                         child: Text(
                           _athletesError!,
                           style: const TextStyle(
-                            color: Colors.red,
+                            color: olympusDanger,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -3442,7 +3578,7 @@ class _CoachQuickAthleteEvaluationPageState
                         ? const Padding(
                             padding: EdgeInsets.all(8),
                             child: Text(
-                              'Nenhum atleta com check-in realizado neste treino.',
+                              'Nenhum atleta visível com check-in realizado neste treino.',
                               style: TextStyle(
                                 color: Color(0xFF53657B),
                                 fontWeight: FontWeight.w600,
@@ -3464,7 +3600,7 @@ class _CoachQuickAthleteEvaluationPageState
                               Text(
                                 'Escolha 2 destaques e 3 pontos de atenção com motivo.',
                                 style: TextStyle(
-                                  color: const Color(0xFF53657B),
+                                  color: olympusMuted,
                                   fontSize: isMobile ? 12 : 13,
                                   fontWeight: FontWeight.w600,
                                 ),

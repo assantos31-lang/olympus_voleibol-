@@ -367,4 +367,75 @@ class PermissionService {
       allowedFilters: filters,
     );
   }
+
+  Future<Map<String, bool>> getRankingEvaluationVisibility(
+      String userId) async {
+    try {
+      final response = await _supabase
+          .from('page_permissions')
+          .select('page_name, can_access')
+          .eq('user_id', userId)
+          .inFilter('page_name', ['ranking', 'avaliacoes']);
+
+      final result = {
+        'show_in_ranking': false,
+        'show_in_evaluations': false,
+      };
+
+      for (final item in response) {
+        final pageName = (item['page_name'] ?? '').toString();
+        final canAccess = item['can_access'] == true;
+
+        if (pageName == 'ranking') {
+          result['show_in_ranking'] = canAccess;
+        } else if (pageName == 'avaliacoes') {
+          result['show_in_evaluations'] = canAccess;
+        }
+      }
+
+      return result;
+    } catch (e) {
+      print('❌ Erro ao buscar visibilidade de ranking/avaliações: $e');
+      return {
+        'show_in_ranking': false,
+        'show_in_evaluations': false,
+      };
+    }
+  }
+
+  Future<void> updateRankingEvaluationVisibility({
+    required String userId,
+    required bool showInRanking,
+    required bool showInEvaluations,
+  }) async {
+    await updatePermission(
+      userId: userId,
+      pageName: 'ranking',
+      canAccess: showInRanking,
+    );
+
+    await updatePermission(
+      userId: userId,
+      pageName: 'avaliacoes',
+      canAccess: showInEvaluations,
+    );
+  }
+
+  Future<List<String>> getVisibleUserIdsForPage(String pageName) async {
+    try {
+      final response = await _supabase
+          .from('page_permissions')
+          .select('user_id')
+          .eq('page_name', pageName)
+          .eq('can_access', true);
+
+      return List<Map<String, dynamic>>.from(response as List)
+          .map((row) => (row['user_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+    } catch (e) {
+      print('❌ Erro ao buscar usuários visíveis para $pageName: $e');
+      return [];
+    }
+  }
 }

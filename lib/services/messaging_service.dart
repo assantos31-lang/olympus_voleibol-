@@ -22,7 +22,8 @@ class MessagingService {
           'type': 'chat',
           'room_id': roomId,
           'sender_id': senderId,
-          'content': content,
+          'content': 'Nova mensagem',
+          'preview': content,
         },
       );
     } catch (e) {

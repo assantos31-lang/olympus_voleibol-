@@ -224,12 +224,143 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
   }
 
+  Future<void> _showResetPasswordDialog(Map<String, dynamic> profile) async {
+    final emailCtrl = TextEditingController(
+      text: (profile['email'] ?? profile['email_address'] ?? '').toString(),
+    );
+    bool isSubmitting = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.lock_reset, color: olympusGold),
+              const SizedBox(width: 8),
+              const Text('Resetar senha'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                profile['full_name'] ?? 'Usuário',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: olympusBlue,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: emailCtrl,
+                enabled: !isSubmitting,
+                keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  labelText: 'E-mail do usuário',
+                  prefixIcon: const Icon(Icons.email, color: olympusGold),
+                  border: const OutlineInputBorder(),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: olympusGold, width: 2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'O Supabase enviará um link de recuperação para este e-mail.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed:
+                  isSubmitting ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton.icon(
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      final email = emailCtrl.text.trim();
+                      if (email.isEmpty || !email.contains('@')) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Informe um e-mail válido.'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                        return;
+                      }
+
+                      setDialogState(() {
+                        isSubmitting = true;
+                      });
+
+                      try {
+                        await supabase.auth.resetPasswordForEmail(email);
+
+                        if (!mounted) return;
+                        Navigator.pop(dialogContext);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                                'Link de reset de senha enviado para $email'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } catch (e) {
+                        debugPrint('❌ Erro ao resetar senha: $e');
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Erro ao resetar senha: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      } finally {
+                        if (mounted) {
+                          setDialogState(() {
+                            isSubmitting = false;
+                          });
+                        }
+                      }
+                    },
+              icon: isSubmitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(olympusBlue),
+                      ),
+                    )
+                  : const Icon(Icons.send),
+              label: Text(isSubmitting ? 'Enviando...' : 'Enviar link'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: olympusGold,
+                foregroundColor: olympusBlue,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    emailCtrl.dispose();
+  }
+
   Future<void> _showPermissionsDialog(Map<String, dynamic> profile) async {
     final userId = profile['id'];
     final userName = profile['full_name'] ?? 'Usuário';
 
     final currentPermissions =
         await _permissionService.getUserPermissions(userId);
+    final visibilityPermissions =
+        await _permissionService.getRankingEvaluationVisibility(userId);
     final agendaFilters = await _permissionService.getAgendaFilters(userId);
 
     Map<String, dynamic> financialFilters = {};
@@ -285,6 +416,12 @@ class _ProfilesPageState extends State<ProfilesPage> {
             currentPermissions[item['pageName']] ?? true,
     };
 
+    bool showInRanking = visibilityPermissions['show_in_ranking'] ?? false;
+    bool showInEvaluations =
+        visibilityPermissions['show_in_evaluations'] ?? false;
+    final isAthleteProfile =
+        (profile['user_type'] ?? '').toString().trim() == 'athlete';
+
     bool showMonthFilter = agendaFilters['show_month_filter'] ?? true;
     bool showStatusFilter = agendaFilters['show_status_filter'] ?? true;
     final allowedEventTypes = List<String>.from(
@@ -324,6 +461,14 @@ class _ProfilesPageState extends State<ProfilesPage> {
         userId: userId,
         verConvocados: verConvocados,
         exportarDadosJogo: exportarDadosJogo,
+      );
+    }
+
+    Future<void> saveRankingEvaluationVisibility() async {
+      await _permissionService.updateRankingEvaluationVisibility(
+        userId: userId,
+        showInRanking: showInRanking,
+        showInEvaluations: showInEvaluations,
       );
     }
 
@@ -408,6 +553,97 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       },
                     );
                   }).toList(),
+                  if (isAthleteProfile) ...[
+                    const SizedBox(height: 16),
+                    Divider(color: Colors.grey[300]),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Visibilidade do Atleta:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Mostrar no ranking'),
+                      subtitle: const Text(
+                        'Permitir que este atleta apareça no ranking dos atletas',
+                      ),
+                      value: showInRanking,
+                      activeColor: olympusGold,
+                      onChanged: (value) async {
+                        try {
+                          setDialogState(() {
+                            showInRanking = value;
+                          });
+                          await saveRankingEvaluationVisibility();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Visibilidade no ranking ${value ? 'habilitada' : 'desabilitada'} com sucesso!',
+                                ),
+                                backgroundColor:
+                                    value ? Colors.green : Colors.orange,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Erro ao atualizar visibilidade no ranking: $e',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Mostrar nas avaliações'),
+                      subtitle: const Text(
+                        'Permitir que este atleta apareça na seleção de avaliações',
+                      ),
+                      value: showInEvaluations,
+                      activeColor: olympusGold,
+                      onChanged: (value) async {
+                        try {
+                          setDialogState(() {
+                            showInEvaluations = value;
+                          });
+                          await saveRankingEvaluationVisibility();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Visibilidade nas avaliações ${value ? 'habilitada' : 'desabilitada'} com sucesso!',
+                                ),
+                                backgroundColor:
+                                    value ? Colors.green : Colors.orange,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Erro ao atualizar visibilidade nas avaliações: $e',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ],
                   if (permissionValues['agenda'] == true) ...[
                     const SizedBox(height: 16),
                     Divider(color: Colors.grey[300]),
@@ -1618,6 +1854,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           _confirmDelete(profile['id']);
                         } else if (value == 'permissions') {
                           _showPermissionsDialog(profile);
+                        } else if (value == 'reset_password') {
+                          _showResetPasswordDialog(profile);
                         }
                       },
                       itemBuilder: (context) => const [
@@ -1632,6 +1870,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         PopupMenuItem(
                           value: 'permissions',
                           child: Text('Permissões'),
+                        ),
+                        PopupMenuItem(
+                          value: 'reset_password',
+                          child: Text('Resetar senha'),
                         ),
                       ],
                     ),

@@ -6,6 +6,73 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'admin_competitions_page.dart';
 import 'coach_training_sessions_page.dart';
 import 'coach_ranking_page.dart';
+import 'coach_smart_dashboard_page.dart';
+import '../services/permission_service.dart';
+
+Future<void> sendEvaluationMessageToAthlete({
+  required SupabaseClient supabase,
+  required String athleteId,
+  required String title,
+  required String body,
+}) async {
+  Object? lastError;
+
+  final attempts = <Map<String, dynamic>>[
+    {
+      'table': 'app_messages',
+      'data': {
+        'recipient_id': athleteId,
+        'title': title,
+        'body': body,
+        'message_type': 'evaluation',
+        'created_at': DateTime.now().toIso8601String(),
+      },
+    },
+    {
+      'table': 'app_messages',
+      'data': {
+        'user_id': athleteId,
+        'title': title,
+        'message': body,
+        'type': 'evaluation',
+        'created_at': DateTime.now().toIso8601String(),
+      },
+    },
+    {
+      'table': 'user_messages',
+      'data': {
+        'user_id': athleteId,
+        'title': title,
+        'body': body,
+        'created_at': DateTime.now().toIso8601String(),
+      },
+    },
+    {
+      'table': 'user_messages',
+      'data': {
+        'recipient_id': athleteId,
+        'subject': title,
+        'content': body,
+        'created_at': DateTime.now().toIso8601String(),
+      },
+    },
+  ];
+
+  for (final attempt in attempts) {
+    try {
+      await supabase
+          .from(attempt['table'] as String)
+          .insert(Map<String, dynamic>.from(attempt['data'] as Map));
+      return;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  throw Exception(
+    'Avaliação salva, mas não foi possível enviar para a atleta: $lastError',
+  );
+}
 
 class CoachDashboardPage extends StatefulWidget {
   const CoachDashboardPage({super.key});
@@ -179,6 +246,15 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       context,
       MaterialPageRoute(
         builder: (context) => const CoachRankingPage(),
+      ),
+    );
+  }
+
+  void _navigateToSmartDashboard() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CoachSmartDashboardPage(),
       ),
     );
   }
@@ -724,6 +800,13 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                 children: [
                   _buildCoachInfoCard(),
                   _buildDashboardCard(
+                    icon: Icons.insights_rounded,
+                    title: 'Smart Dashboard',
+                    subtitle: 'Insights inteligentes da equipe',
+                    color: const Color(0xFFF59E0B),
+                    onTap: _navigateToSmartDashboard,
+                  ),
+                  _buildDashboardCard(
                     icon: Icons.calendar_month_outlined,
                     title: 'Planejamento de treinos',
                     subtitle:
@@ -733,7 +816,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                   ),
                   _buildDashboardCard(
                     icon: Icons.assignment_turned_in_outlined,
-                    title: 'Avaliação das atletas',
+                    title: 'Avaliação de Atletas',
                     subtitle: 'Avaliação rápida e completa por ciclo',
                     color: const Color(0xFF8B5CF6),
                     onTap: _navigateToAthleteEvaluations,
@@ -774,86 +857,435 @@ class CoachAthleteEvaluationsPage extends StatefulWidget {
 
 class _CoachAthleteEvaluationsPageState
     extends State<CoachAthleteEvaluationsPage> {
-  final List<AthleteEvaluationStatus> _athletes = [
-    AthleteEvaluationStatus(
-      athleteName: 'Maria',
-      generalEvolution: 'Melhorando',
-      mainFocus: 'Recepção',
-      evaluationsSinceLastFull: 2,
-      isPresent: true,
-    ),
-    AthleteEvaluationStatus(
-      athleteName: 'Joana',
-      generalEvolution: 'Estável',
-      mainFocus: 'Saque',
-      evaluationsSinceLastFull: 1,
-      isPresent: true,
-    ),
-    AthleteEvaluationStatus(
-      athleteName: 'Ana',
-      generalEvolution: 'Precisa de atenção',
-      mainFocus: 'Defesa',
-      evaluationsSinceLastFull: 0,
-      isPresent: true,
-    ),
-  ];
+  final SupabaseClient _supabase = Supabase.instance.client;
+  final PermissionService _permissionService = PermissionService();
 
   static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusPurple = Color(0xFF7C3AED);
+  static const Color olympusSuccess = Color(0xFF16A34A);
+  static const Color olympusWarning = Color(0xFFF59E0B);
+  static const Color olympusDanger = Color(0xFFDC2626);
+  static const Color olympusBorder = Color(0xFFE4EDF5);
+  static const Color olympusMuted = Color(0xFF53657B);
+
+  bool _loading = true;
+  String? _error;
+  String _genderFilter = 'Todos';
+  DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+
+  List<AthleteEvaluationStatus> _athletes = [];
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Avaliação das atletas'),
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
-      ),
-      body: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF7F3E8),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFE8DBB2)),
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Regra ativa de avaliação',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF5C4721),
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  '2 avaliações rápidas seguidas + 1 avaliação completa obrigatória por atleta.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF715C35),
-                  ),
-                ),
-              ],
-            ),
+  void initState() {
+    super.initState();
+    _carregarAtletasVisiveis();
+  }
+
+  DateTime get _monthStart =>
+      DateTime(_selectedMonth.year, _selectedMonth.month, 1);
+
+  DateTime get _monthEnd =>
+      DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1);
+
+  bool get _isCurrentMonth {
+    final now = DateTime.now();
+    return _selectedMonth.year == now.year && _selectedMonth.month == now.month;
+  }
+
+  bool get _isLastFourDaysOfMonth {
+    final now = DateTime.now();
+    final lastDay = DateTime(now.year, now.month + 1, 0).day;
+    return now.day >= lastDay - 3;
+  }
+
+  bool get _canCompleteMonthly => _isCurrentMonth && _isLastFourDaysOfMonth;
+
+  int get _pendingMonthlyCount =>
+      _athletes.where((a) => !a.hasMonthlyComplete).length;
+
+  List<AthleteEvaluationStatus> get _filteredAthletes {
+    if (_genderFilter == 'Todos') return _athletes;
+
+    final filter = _genderFilter.toLowerCase();
+    return _athletes.where((athlete) {
+      final gender = athlete.gender.toLowerCase().trim();
+
+      if (filter == 'feminino') {
+        return gender == 'feminino' || gender == 'female' || gender == 'f';
+      }
+
+      if (filter == 'masculino') {
+        return gender == 'masculino' || gender == 'male' || gender == 'm';
+      }
+
+      return true;
+    }).toList();
+  }
+
+  List<DateTime> _monthOptions() {
+    final now = DateTime.now();
+    final months = List.generate(
+      12,
+      (index) => DateTime(now.year, now.month - index, 1),
+    );
+
+    months.sort((a, b) {
+      final yearCompare = a.year.compareTo(b.year);
+      if (yearCompare != 0) return yearCompare;
+      return a.month.compareTo(b.month);
+    });
+
+    return months;
+  }
+
+  String _monthLabel(DateTime date) {
+    const names = [
+      'Janeiro',
+      'Fevereiro',
+      'Março',
+      'Abril',
+      'Maio',
+      'Junho',
+      'Julho',
+      'Agosto',
+      'Setembro',
+      'Outubro',
+      'Novembro',
+      'Dezembro',
+    ];
+
+    return '${names[date.month - 1]}/${date.year}';
+  }
+
+  Future<void> _carregarAtletasVisiveis() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final visibleIds =
+          await _permissionService.getVisibleUserIdsForPage('avaliacoes');
+
+      if (visibleIds.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _athletes = [];
+          _loading = false;
+        });
+        return;
+      }
+
+      final profilesResponse = await _supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, gender, user_type')
+          .inFilter('id', visibleIds)
+          .eq('user_type', 'athlete')
+          .order('full_name', ascending: true);
+
+      final profiles =
+          List<Map<String, dynamic>>.from(profilesResponse as List);
+
+      final athleteIds = profiles
+          .map((profile) => (profile['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      if (athleteIds.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _athletes = [];
+          _loading = false;
+        });
+        return;
+      }
+
+      final evaluationsResponse = await _supabase
+          .from('training_evaluations')
+          .select(
+            'athlete_id, tipo, fundamento, motivo, observacao, created_at, score',
+          )
+          .inFilter('athlete_id', athleteIds)
+          .order('created_at', ascending: false);
+
+      final evaluations =
+          List<Map<String, dynamic>>.from(evaluationsResponse as List);
+
+      final evaluationsByAthlete = <String, List<Map<String, dynamic>>>{};
+      for (final row in evaluations) {
+        final athleteId = (row['athlete_id'] ?? '').toString();
+        if (athleteId.isEmpty) continue;
+        evaluationsByAthlete.putIfAbsent(athleteId, () => []);
+        evaluationsByAthlete[athleteId]!.add(row);
+      }
+
+      final list = profiles.map((profile) {
+        final athleteId = (profile['id'] ?? '').toString();
+        final athleteEvaluations =
+            evaluationsByAthlete[athleteId] ?? <Map<String, dynamic>>[];
+
+        int destaques = 0;
+        int atencoes = 0;
+        int totalAvaliacoesMes = 0;
+        bool hasMonthlyComplete = false;
+        DateTime? lastEvaluationDate;
+        final attentionFundamentCount = <String, int>{};
+
+        for (final evaluation in athleteEvaluations) {
+          final tipo = (evaluation['tipo'] ?? '').toString().toLowerCase();
+          final fundamento = (evaluation['fundamento'] ?? '').toString().trim();
+          final createdAt = DateTime.tryParse(
+            (evaluation['created_at'] ?? '').toString(),
+          )?.toLocal();
+
+          if (createdAt != null &&
+              (lastEvaluationDate == null ||
+                  createdAt.isAfter(lastEvaluationDate!))) {
+            lastEvaluationDate = createdAt;
+          }
+
+          final isInSelectedMonth = createdAt != null &&
+              !createdAt.isBefore(_monthStart) &&
+              createdAt.isBefore(_monthEnd);
+
+          if (tipo == 'completa' && isInSelectedMonth) {
+            hasMonthlyComplete = true;
+          }
+
+          if (!isInSelectedMonth) continue;
+
+          if (tipo == 'destaque' ||
+              tipo == 'atencao' ||
+              tipo == 'atenção' ||
+              tipo == 'rapida') {
+            totalAvaliacoesMes++;
+          }
+
+          if (tipo == 'destaque') {
+            destaques++;
+          } else if (tipo == 'atencao' || tipo == 'atenção') {
+            atencoes++;
+            if (fundamento.isNotEmpty) {
+              attentionFundamentCount[fundamento] =
+                  (attentionFundamentCount[fundamento] ?? 0) + 1;
+            }
+          }
+        }
+
+        String mainFocus = 'A definir';
+        if (attentionFundamentCount.isNotEmpty) {
+          final sorted = attentionFundamentCount.entries.toList()
+            ..sort((a, b) => b.value.compareTo(a.value));
+          mainFocus = sorted.first.key;
+        } else {
+          final lastFundamento = athleteEvaluations
+              .map((e) => (e['fundamento'] ?? '').toString().trim())
+              .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+          if (lastFundamento.isNotEmpty) {
+            mainFocus = lastFundamento;
+          }
+        }
+
+        String generalEvolution = 'Sem histórico no mês';
+        if (totalAvaliacoesMes > 0) {
+          if (destaques > atencoes) {
+            generalEvolution = 'Melhorando';
+          } else if (atencoes > destaques) {
+            generalEvolution = 'Precisa de atenção';
+          } else {
+            generalEvolution = 'Estável';
+          }
+        }
+
+        return AthleteEvaluationStatus(
+          athleteId: athleteId,
+          athleteName: (profile['full_name'] ?? 'Atleta').toString(),
+          avatarUrl: (profile['avatar_url'] ?? '').toString(),
+          gender: (profile['gender'] ?? '').toString(),
+          generalEvolution: generalEvolution,
+          mainFocus: mainFocus,
+          evaluationsSinceLastFull: totalAvaliacoesMes % 3,
+          isPresent: true,
+          totalEvaluations: totalAvaliacoesMes,
+          destaques: destaques,
+          atencoes: atencoes,
+          hasMonthlyComplete: hasMonthlyComplete,
+          lastEvaluationAt: lastEvaluationDate,
+        );
+      }).toList();
+
+      if (!mounted) return;
+      setState(() {
+        _athletes = list;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Erro ao carregar atletas visíveis: $e';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _salvarAvaliacaoRapida(
+    AthleteEvaluationStatus athlete,
+    EvaluationSubmissionResult result,
+  ) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      throw Exception('Usuário não autenticado');
+    }
+
+    final tipo = result.generalEvolution == 'Melhorando'
+        ? 'destaque'
+        : result.generalEvolution == 'Precisa de atenção'
+            ? 'atencao'
+            : 'rapida';
+
+    await _supabase.from('training_evaluations').insert({
+      'coach_id': user.id,
+      'athlete_id': athlete.athleteId,
+      'tipo': tipo,
+      'slot': 'avaliacao_rapida',
+      'motivo': result.generalEvolution,
+      'fundamento': result.mainFocus,
+      'observacao': result.messageToAthlete.trim().isEmpty
+          ? 'Avaliação rápida registrada pelo técnico.'
+          : result.messageToAthlete.trim(),
+      'score': tipo == 'destaque'
+          ? 2
+          : tipo == 'atencao'
+              ? -1
+              : 0,
+    });
+
+    if (result.sendToAthlete) {
+      await sendEvaluationMessageToAthlete(
+        supabase: _supabase,
+        athleteId: athlete.athleteId,
+        title: 'Avaliação rápida',
+        body: result.messageToAthlete.trim().isEmpty
+            ? 'Sua avaliação rápida foi registrada. Evolução: ${result.generalEvolution}. Foco: ${result.mainFocus}.'
+            : result.messageToAthlete.trim(),
+      );
+    }
+  }
+
+  Widget _buildEvaluationBackground() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
           ),
+        ),
+        Positioned.fill(
+          child: Container(color: Colors.black.withOpacity(0.35)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFilters() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.96),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: olympusBorder),
+      ),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final screenWidth = MediaQuery.of(context).size.width;
+              final fieldWidth = screenWidth < 390 ? double.infinity : 172.0;
+
+              return SizedBox(
+                width: fieldWidth,
+                child: DropdownButtonFormField<DateTime>(
+                  value: DateTime(_selectedMonth.year, _selectedMonth.month, 1),
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Mês',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _monthOptions().map((month) {
+                    return DropdownMenuItem<DateTime>(
+                      value: month,
+                      child: Text(
+                        _monthLabel(month),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _selectedMonth = value);
+                    _carregarAtletasVisiveis();
+                  },
+                ),
+              );
+            },
+          ),
+          ...['Todos', 'Feminino', 'Masculino'].map((gender) {
+            final selected = _genderFilter == gender;
+            return ChoiceChip(
+              label: Text(gender),
+              selected: selected,
+              showCheckmark: false,
+              selectedColor: olympusBlue,
+              backgroundColor: Colors.white,
+              side: BorderSide(
+                color: selected ? olympusBlue : olympusBorder,
+              ),
+              labelStyle: TextStyle(
+                color: selected ? Colors.white : olympusBlue,
+                fontWeight: FontWeight.w800,
+              ),
+              onSelected: (_) => setState(() => _genderFilter = gender),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMonthlyReminder() {
+    if (!_isCurrentMonth ||
+        !_isLastFourDaysOfMonth ||
+        _pendingMonthlyCount == 0) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: olympusWarning.withOpacity(0.96),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.38)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.notifications_active_outlined, color: olympusBlue),
+          const SizedBox(width: 10),
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              itemCount: _athletes.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final athlete = _athletes[index];
-                return _AthleteEvaluationCard(
-                  athlete: athlete,
-                  onTap: () => _openEvaluationFlow(index),
-                );
-              },
+            child: Text(
+              'Fechamento mensal: $_pendingMonthlyCount atleta(s) ainda sem avaliação completa.',
+              style: const TextStyle(
+                color: olympusBlue,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
         ],
@@ -861,40 +1293,185 @@ class _CoachAthleteEvaluationsPageState
     );
   }
 
-  Future<void> _openEvaluationFlow(int index) async {
-    final athlete = _athletes[index];
-    final requiresFull = athlete.requiresCompleteEvaluation;
-
+  Future<void> _openQuickEvaluation(AthleteEvaluationStatus athlete) async {
     final result = await Navigator.push<EvaluationSubmissionResult>(
       context,
       MaterialPageRoute(
         builder: (_) => AthleteEvaluationFormPage(
           athleteName: athlete.athleteName,
-          isCompleteMode: requiresFull,
-          currentFocus: athlete.mainFocus,
+          isCompleteMode: false,
+          currentFocus:
+              athlete.mainFocus == 'A definir' ? '' : athlete.mainFocus,
         ),
       ),
     );
 
     if (result == null) return;
 
-    setState(() {
-      _athletes[index] = athlete.copyWith(
-        generalEvolution: result.generalEvolution,
-        mainFocus: result.mainFocus,
-        evaluationsSinceLastFull:
-            result.isComplete ? 0 : athlete.evaluationsSinceLastFull + 1,
-      );
-    });
+    try {
+      await _salvarAvaliacaoRapida(athlete, result);
+      await _carregarAtletasVisiveis();
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          result.isComplete
-              ? 'Avaliação completa salva para ${athlete.athleteName}.'
-              : 'Avaliação rápida salva para ${athlete.athleteName}.',
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Avaliação rápida salva para ${athlete.athleteName}.'),
+          backgroundColor: olympusSuccess,
         ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao salvar avaliação rápida: $e'),
+          backgroundColor: olympusDanger,
+        ),
+      );
+    }
+  }
+
+  Future<void> _openCompleteEvaluation(AthleteEvaluationStatus athlete) async {
+    if (!_canCompleteMonthly) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Avaliação completa liberada apenas nos últimos 4 dias do mês atual.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CoachCompleteMonthlyEvaluationPage(
+          athletes: [athlete],
+        ),
+      ),
+    );
+
+    await _carregarAtletasVisiveis();
+  }
+
+  Future<void> _viewAthleteEvaluations(AthleteEvaluationStatus athlete) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AthleteEvaluationsHistoryPage(
+          athlete: athlete,
+          selectedMonth: _selectedMonth,
+          canEdit: false,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editAthleteEvaluations(AthleteEvaluationStatus athlete) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AthleteEvaluationsHistoryPage(
+          athlete: athlete,
+          selectedMonth: _selectedMonth,
+          canEdit: true,
+        ),
+      ),
+    );
+
+    await _carregarAtletasVisiveis();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _filteredAthletes;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Avaliação de Atletas'),
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            onPressed: _carregarAtletasVisiveis,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildEvaluationBackground()),
+          Column(
+            children: [
+              _buildFilters(),
+              _buildMonthlyReminder(),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                _error!,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          )
+                        : filtered.isEmpty
+                            ? const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Text(
+                                    'Nenhuma atleta visível para avaliações.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : RefreshIndicator(
+                                onRefresh: _carregarAtletasVisiveis,
+                                child: ListView.separated(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                                  itemCount: filtered.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 12),
+                                  itemBuilder: (context, index) {
+                                    final athlete = filtered[index];
+
+                                    return _AthleteEvaluationCard(
+                                      athlete: athlete,
+                                      completeEnabled: _canCompleteMonthly &&
+                                          !athlete.hasMonthlyComplete,
+                                      completeStatus: athlete.hasMonthlyComplete
+                                          ? 'Concluída'
+                                          : _canCompleteMonthly
+                                              ? 'Pendente'
+                                              : 'Bloqueada',
+                                      onQuickTap: () =>
+                                          _openQuickEvaluation(athlete),
+                                      onCompleteTap: () =>
+                                          _openCompleteEvaluation(athlete),
+                                      onViewTap: () =>
+                                          _viewAthleteEvaluations(athlete),
+                                      onEditTap: () =>
+                                          _editAthleteEvaluations(athlete),
+                                    );
+                                  },
+                                ),
+                              ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -903,110 +1480,978 @@ class _CoachAthleteEvaluationsPageState
 class _AthleteEvaluationCard extends StatelessWidget {
   const _AthleteEvaluationCard({
     required this.athlete,
-    required this.onTap,
+    required this.completeEnabled,
+    required this.completeStatus,
+    required this.onQuickTap,
+    required this.onCompleteTap,
+    required this.onViewTap,
+    required this.onEditTap,
   });
 
   final AthleteEvaluationStatus athlete;
-  final VoidCallback onTap;
+  final bool completeEnabled;
+  final String completeStatus;
+  final VoidCallback onQuickTap;
+  final VoidCallback onCompleteTap;
+  final VoidCallback onViewTap;
+  final VoidCallback onEditTap;
+
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusPurple = Color(0xFF7C3AED);
+  static const Color olympusSuccess = Color(0xFF16A34A);
+  static const Color olympusWarning = Color(0xFFF59E0B);
 
   @override
   Widget build(BuildContext context) {
-    final requiresComplete = athlete.requiresCompleteEvaluation;
-    final chipColor =
-        requiresComplete ? const Color(0xFFB45309) : const Color(0xFF2563EB);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final compact = screenWidth < 390;
+    final tablet = screenWidth >= 700;
 
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFE4EDF5)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
-              ),
-            ],
+    final avatarUrl = athlete.avatarUrl.trim();
+    final cardPadding = compact
+        ? 14.0
+        : tablet
+            ? 18.0
+            : 16.0;
+    final avatarRadius = compact
+        ? 23.0
+        : tablet
+            ? 28.0
+            : 26.0;
+    final titleSize = compact
+        ? 15.0
+        : tablet
+            ? 18.0
+            : 16.0;
+    final bodySize = compact
+        ? 11.5
+        : tablet
+            ? 13.5
+            : 12.5;
+
+    Widget avatar() {
+      return CircleAvatar(
+        radius: avatarRadius,
+        backgroundColor: olympusBlue,
+        backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+        child: avatarUrl.isEmpty
+            ? Text(
+                athlete.athleteName.isNotEmpty
+                    ? athlete.athleteName.substring(0, 1)
+                    : '?',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: compact ? 14 : 16,
+                ),
+              )
+            : null,
+      );
+    }
+
+    Widget statusChip() {
+      final done = athlete.hasMonthlyComplete;
+      return Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 8 : 10,
+          vertical: compact ? 6 : 7,
+        ),
+        decoration: BoxDecoration(
+          color: (done ? olympusSuccess : olympusWarning).withOpacity(0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: (done ? olympusSuccess : olympusWarning).withOpacity(0.24),
           ),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: const Color(0xFF1E3A5F),
-                child: Text(
-                  athlete.athleteName.substring(0, 1),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                  ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              done ? Icons.check_circle_outline : Icons.warning_amber_rounded,
+              size: compact ? 14 : 15,
+              color: done ? olympusSuccess : olympusWarning,
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                done ? 'Mensal concluída' : 'Mensal pendente',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: done ? olympusSuccess : olympusWarning,
+                  fontSize: bodySize,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget buttons() {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final stackButtons = constraints.maxWidth < 320;
+
+          final quickButton = SizedBox(
+            height: 48,
+            child: ElevatedButton.icon(
+              onPressed: onQuickTap,
+              icon: const Icon(Icons.fact_check_outlined, size: 16),
+              label: const Text(
+                'Rápida',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: olympusPurple,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: TextStyle(
+                  fontSize: compact ? 12 : 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          );
+
+          final completeButton = SizedBox(
+            height: 48,
+            child: ElevatedButton.icon(
+              onPressed: completeEnabled ? onCompleteTap : null,
+              icon: const Icon(Icons.assignment_turned_in_outlined, size: 16),
+              label: Text(
+                stackButtons ? 'Completa • $completeStatus' : 'Completa',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: olympusGold,
+                foregroundColor: olympusBlue,
+                disabledBackgroundColor: Colors.grey.withOpacity(0.28),
+                disabledForegroundColor: Colors.grey.shade600,
+                elevation: 0,
+                padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: TextStyle(
+                  fontSize: compact ? 12 : 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          );
+
+          final viewButton = SizedBox(
+            height: 46,
+            child: OutlinedButton.icon(
+              onPressed: onViewTap,
+              icon: const Icon(Icons.visibility_outlined, size: 16),
+              label: const Text(
+                'Visualizar',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: olympusBlue,
+                side: const BorderSide(color: Color(0xFFE4EDF5)),
+                padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: TextStyle(
+                  fontSize: compact ? 12 : 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          );
+
+          final editButton = SizedBox(
+            height: 46,
+            child: OutlinedButton.icon(
+              onPressed: onEditTap,
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text(
+                'Editar',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: olympusPurple,
+                side: BorderSide(color: olympusPurple.withOpacity(0.35)),
+                padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: TextStyle(
+                  fontSize: compact ? 12 : 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          );
+
+          if (stackButtons) {
+            return Column(
+              children: [
+                SizedBox(width: double.infinity, child: quickButton),
+                const SizedBox(height: 8),
+                SizedBox(width: double.infinity, child: completeButton),
+                const SizedBox(height: 8),
+                SizedBox(width: double.infinity, child: viewButton),
+                const SizedBox(height: 8),
+                SizedBox(width: double.infinity, child: editButton),
+              ],
+            );
+          }
+
+          return Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(child: quickButton),
+                  const SizedBox(width: 8),
+                  Expanded(child: completeButton),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(child: viewButton),
+                  const SizedBox(width: 8),
+                  Expanded(child: editButton),
+                ],
+              ),
+            ],
+          );
+        },
+      );
+    }
+
+    Widget details() {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            athlete.athleteName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: titleSize,
+              fontWeight: FontWeight.w900,
+              color: const Color(0xFF17324D),
+              height: 1.08,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Evolução: ${athlete.generalEvolution}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: bodySize,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF53657B),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            'Foco: ${athlete.mainFocus}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: bodySize,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF6A7E94),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            'Mês: ${athlete.destaques} destaque(s) • ${athlete.atencoes} atenção • ${athlete.totalEvaluations} avaliação(ões)',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: bodySize,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF6A7E94),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            'Última: ${athlete.lastEvaluationLabel}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: bodySize,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF6A7E94),
+            ),
+          ),
+          const SizedBox(height: 8),
+          statusChip(),
+          const SizedBox(height: 12),
+          buttons(),
+        ],
+      );
+    }
+
+    return Material(
+      color: Colors.white.withOpacity(0.97),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: EdgeInsets.all(cardPadding),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE4EDF5)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.10),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: compact
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      avatar(),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          athlete.athleteName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: titleSize,
+                            fontWeight: FontWeight.w900,
+                            color: const Color(0xFF17324D),
+                            height: 1.08,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Evolução: ${athlete.generalEvolution}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: bodySize,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF53657B),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Foco: ${athlete.mainFocus}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: bodySize,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF6A7E94),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Mês: ${athlete.destaques} destaque(s) • ${athlete.atencoes} atenção • ${athlete.totalEvaluations} avaliação(ões)',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: bodySize,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF6A7E94),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Última: ${athlete.lastEvaluationLabel}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: bodySize,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF6A7E94),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  statusChip(),
+                  const SizedBox(height: 12),
+                  buttons(),
+                ],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  avatar(),
+                  const SizedBox(width: 14),
+                  Expanded(child: details()),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class AthleteEvaluationsHistoryPage extends StatefulWidget {
+  const AthleteEvaluationsHistoryPage({
+    super.key,
+    required this.athlete,
+    required this.selectedMonth,
+    required this.canEdit,
+  });
+
+  final AthleteEvaluationStatus athlete;
+  final DateTime selectedMonth;
+  final bool canEdit;
+
+  @override
+  State<AthleteEvaluationsHistoryPage> createState() =>
+      _AthleteEvaluationsHistoryPageState();
+}
+
+class _AthleteEvaluationsHistoryPageState
+    extends State<AthleteEvaluationsHistoryPage> {
+  final SupabaseClient _supabase = Supabase.instance.client;
+
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusPurple = Color(0xFF7C3AED);
+  static const Color olympusBg = Color(0xFFF4F7FB);
+  static const Color olympusMuted = Color(0xFF53657B);
+  static const Color olympusBorder = Color(0xFFE4EDF5);
+  static const Color olympusDanger = Color(0xFFDC2626);
+  static const Color olympusSuccess = Color(0xFF16A34A);
+
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _evaluations = [];
+
+  DateTime get _monthStart =>
+      DateTime(widget.selectedMonth.year, widget.selectedMonth.month, 1);
+
+  DateTime get _monthEnd =>
+      DateTime(widget.selectedMonth.year, widget.selectedMonth.month + 1, 1);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEvaluations();
+  }
+
+  String _monthLabel() {
+    const names = [
+      'Janeiro',
+      'Fevereiro',
+      'Março',
+      'Abril',
+      'Maio',
+      'Junho',
+      'Julho',
+      'Agosto',
+      'Setembro',
+      'Outubro',
+      'Novembro',
+      'Dezembro',
+    ];
+    return '${names[widget.selectedMonth.month - 1]}/${widget.selectedMonth.year}';
+  }
+
+  Future<void> _loadEvaluations() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final rows = await _supabase
+          .from('training_evaluations')
+          .select(
+            'id, event_id, coach_id, athlete_id, tipo, slot, motivo, fundamento, observacao, created_at, event_name, event_date, score',
+          )
+          .eq('athlete_id', widget.athlete.athleteId)
+          .gte('created_at', _monthStart.toIso8601String())
+          .lt('created_at', _monthEnd.toIso8601String())
+          .order('created_at', ascending: false);
+
+      if (!mounted) return;
+      setState(() {
+        _evaluations = List<Map<String, dynamic>>.from(rows as List);
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Erro ao carregar avaliações: $e';
+        _loading = false;
+      });
+    }
+  }
+
+  String _formatDate(dynamic value) {
+    final parsed = DateTime.tryParse((value ?? '').toString())?.toLocal();
+    if (parsed == null) return 'Sem data';
+    return '${parsed.day.toString().padLeft(2, '0')}/${parsed.month.toString().padLeft(2, '0')}/${parsed.year}';
+  }
+
+  Color _typeColor(String tipo) {
+    final normalized = tipo.toLowerCase();
+    if (normalized == 'destaque') return olympusSuccess;
+    if (normalized == 'atencao' || normalized == 'atenção') {
+      return const Color(0xFFF59E0B);
+    }
+    if (normalized == 'completa') return olympusGold;
+    return olympusBlue;
+  }
+
+  Future<void> _editEvaluation(Map<String, dynamic> evaluation) async {
+    final motivoController = TextEditingController(
+      text: (evaluation['motivo'] ?? '').toString(),
+    );
+    final fundamentoController = TextEditingController(
+      text: (evaluation['fundamento'] ?? '').toString(),
+    );
+    final observacaoController = TextEditingController(
+      text: (evaluation['observacao'] ?? '').toString(),
+    );
+    final scoreController = TextEditingController(
+      text: (evaluation['score'] ?? '').toString(),
+    );
+
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      athlete.athleteName,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF17324D),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Evolução geral: ${athlete.generalEvolution}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF53657B),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Principal foco: ${athlete.mainFocus}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF6A7E94),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: chipColor.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        requiresComplete
-                            ? 'Completa obrigatória'
-                            : 'Avaliação rápida',
-                        style: TextStyle(
-                          color: chipColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
+                    Center(
+                      child: Container(
+                        width: 46,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(999),
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Editar avaliação',
+                      style: TextStyle(
+                        color: olympusBlue,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: motivoController,
+                      decoration: const InputDecoration(
+                        labelText: 'Motivo / tendência',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: fundamentoController,
+                      decoration: const InputDecoration(
+                        labelText: 'Fundamento',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: scoreController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Score / nota',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: observacaoController,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        labelText: 'Observação',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => Navigator.pop(context, false),
+                            icon: const Icon(Icons.close),
+                            label: const Text('Cancelar'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              final id = (evaluation['id'] ?? '').toString();
+                              if (id.isEmpty) return;
+
+                              await _supabase
+                                  .from('training_evaluations')
+                                  .update({
+                                'motivo': motivoController.text.trim(),
+                                'fundamento': fundamentoController.text.trim(),
+                                'observacao': observacaoController.text.trim(),
+                                'score':
+                                    int.tryParse(scoreController.text.trim()),
+                              }).eq('id', id);
+
+                              if (context.mounted) {
+                                Navigator.pop(context, true);
+                              }
+                            },
+                            icon: const Icon(Icons.save_outlined),
+                            label: const Text('Salvar'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: olympusBlue,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
-              const Icon(Icons.arrow_forward_ios_rounded, size: 18),
+            ),
+          ),
+        );
+      },
+    );
+
+    motivoController.dispose();
+    fundamentoController.dispose();
+    observacaoController.dispose();
+    scoreController.dispose();
+
+    if (saved == true) {
+      await _loadEvaluations();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Avaliação atualizada.'),
+          backgroundColor: olympusSuccess,
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteEvaluation(Map<String, dynamic> evaluation) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir avaliação?'),
+        content: const Text('Essa ação não pode ser desfeita.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: olympusDanger),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final id = (evaluation['id'] ?? '').toString();
+    if (id.isEmpty) return;
+
+    await _supabase.from('training_evaluations').delete().eq('id', id);
+    await _loadEvaluations();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Avaliação excluída.'),
+        backgroundColor: olympusDanger,
+      ),
+    );
+  }
+
+  Widget _evaluationCard(Map<String, dynamic> evaluation) {
+    final tipo = (evaluation['tipo'] ?? 'avaliação').toString();
+    final color = _typeColor(tipo);
+    final motivo = (evaluation['motivo'] ?? '').toString();
+    final fundamento = (evaluation['fundamento'] ?? '').toString();
+    final observacao = (evaluation['observacao'] ?? '').toString();
+    final slot = (evaluation['slot'] ?? '').toString();
+    final score = (evaluation['score'] ?? '').toString();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.97),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: olympusBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.07),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  tipo.toUpperCase(),
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                _formatDate(evaluation['created_at']),
+                style: const TextStyle(
+                  color: olympusMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
-        ),
+          const SizedBox(height: 10),
+          if (slot.isNotEmpty)
+            Text(
+              'Slot: $slot',
+              style: const TextStyle(
+                color: olympusMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          if (fundamento.isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(
+              'Fundamento: $fundamento',
+              style: const TextStyle(
+                color: olympusBlue,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+          if (motivo.isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(
+              'Motivo: $motivo',
+              style: const TextStyle(
+                color: olympusMuted,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          if (score.isNotEmpty && score != 'null') ...[
+            const SizedBox(height: 5),
+            Text(
+              'Score/nota: $score',
+              style: const TextStyle(
+                color: olympusMuted,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          if (observacao.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              observacao,
+              style: const TextStyle(
+                color: Color(0xFF6A7E94),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+          ],
+          if (widget.canEdit) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _editEvaluation(evaluation),
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('Editar'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: olympusPurple,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _deleteEvaluation(evaluation),
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    label: const Text('Excluir'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: olympusDanger,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = widget.canEdit ? 'Editar avaliações' : 'Avaliações';
+
+    return Scaffold(
+      backgroundColor: olympusBg,
+      appBar: AppBar(
+        title: Text(title),
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            onPressed: _loadEvaluations,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/monte_olimpo_v2.png',
+              fit: BoxFit.cover,
+            ),
+          ),
+          Positioned.fill(
+            child: Container(color: Colors.black.withOpacity(0.35)),
+          ),
+          SafeArea(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            margin: const EdgeInsets.only(bottom: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.97),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: olympusBorder),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  widget.athlete.athleteName,
+                                  style: const TextStyle(
+                                    color: olympusBlue,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Período: ${_monthLabel()}',
+                                  style: const TextStyle(
+                                    color: olympusMuted,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (_evaluations.isEmpty)
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.97),
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(color: olympusBorder),
+                              ),
+                              child: const Text(
+                                'Nenhuma avaliação registrada neste mês.',
+                                style: TextStyle(
+                                  color: olympusMuted,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            )
+                          else
+                            ..._evaluations.map(_evaluationCard),
+                        ],
+                      ),
+          ),
+        ],
       ),
     );
   }
@@ -1030,78 +2475,65 @@ class AthleteEvaluationFormPage extends StatefulWidget {
 }
 
 class _AthleteEvaluationFormPageState extends State<AthleteEvaluationFormPage> {
-  final TextEditingController _strengthController = TextEditingController();
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+
   final TextEditingController _focusController = TextEditingController();
-  final TextEditingController _generalNotesController = TextEditingController();
+  final TextEditingController _notesController = TextEditingController();
 
+  bool _sendToAthlete = false;
   String _generalEvolution = 'Melhorando';
-  String _priority = 'Média';
-
-  late final List<FundamentEvaluationModel> _fundamentals;
 
   @override
   void initState() {
     super.initState();
     _focusController.text = widget.currentFocus;
-
-    _fundamentals = [
-      FundamentEvaluationModel(name: 'Saque'),
-      FundamentEvaluationModel(name: 'Recepção'),
-      FundamentEvaluationModel(name: 'Toque'),
-      FundamentEvaluationModel(name: 'Ataque'),
-      FundamentEvaluationModel(name: 'Bloqueio'),
-      FundamentEvaluationModel(name: 'Defesa'),
-      FundamentEvaluationModel(name: 'Condicionamento'),
-      FundamentEvaluationModel(name: 'Postura tática'),
-    ];
   }
 
   @override
   void dispose() {
-    _strengthController.dispose();
     _focusController.dispose();
-    _generalNotesController.dispose();
-    for (final item in _fundamentals) {
-      item.notesController.dispose();
-    }
+    _notesController.dispose();
     super.dispose();
+  }
+
+  void _submit() {
+    if (_focusController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Informe o principal foco da atleta.')),
+      );
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      EvaluationSubmissionResult(
+        isComplete: false,
+        generalEvolution: _generalEvolution,
+        mainFocus: _focusController.text.trim(),
+        sendToAthlete: _sendToAthlete,
+        messageToAthlete: _notesController.text.trim(),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    const olympusBlue = Color(0xFF1E3A5F);
-    final pageTitle =
-        widget.isCompleteMode ? 'Avaliação completa' : 'Avaliação rápida';
-
     return Scaffold(
+      backgroundColor: const Color(0xFFF4F7FB),
       appBar: AppBar(
-        title: Text('$pageTitle - ${widget.athleteName}'),
+        title: Text('Avaliação rápida - ${widget.athleteName}'),
         backgroundColor: olympusBlue,
         foregroundColor: Colors.white,
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        padding: const EdgeInsets.all(16),
         children: [
-          if (widget.isCompleteMode)
-            Container(
-              padding: const EdgeInsets.all(14),
-              margin: const EdgeInsets.only(bottom: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF7E8),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFF1D38B)),
-              ),
-              child: const Text(
-                'Avaliação completa obrigatória para esta atleta. O modo rápido foi bloqueado neste ciclo.',
-                style: TextStyle(
-                  color: Color(0xFF815A00),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
           DropdownButtonFormField<String>(
             value: _generalEvolution,
-            decoration: const InputDecoration(labelText: 'Evolução geral'),
+            decoration: const InputDecoration(
+              labelText: 'Evolução geral',
+              border: OutlineInputBorder(),
+            ),
             items: const [
               DropdownMenuItem(value: 'Melhorando', child: Text('Melhorando')),
               DropdownMenuItem(value: 'Estável', child: Text('Estável')),
@@ -1117,159 +2549,905 @@ class _AthleteEvaluationFormPageState extends State<AthleteEvaluationFormPage> {
           ),
           const SizedBox(height: 12),
           TextField(
-            controller: _strengthController,
-            decoration: const InputDecoration(
-              labelText: 'Ponto forte',
-              hintText: 'Ex: saque, liderança, defesa',
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
             controller: _focusController,
             decoration: const InputDecoration(
-              labelText: 'Principal ponto a melhorar',
-              hintText: 'Ex: recepção, posicionamento',
+              labelText: 'Principal foco',
+              hintText: 'Ex: saque, recepção, posicionamento',
+              border: OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 12),
-          if (widget.isCompleteMode) ...[
-            DropdownButtonFormField<String>(
-              value: _priority,
-              decoration: const InputDecoration(labelText: 'Prioridade'),
-              items: const [
-                DropdownMenuItem(value: 'Baixa', child: Text('Baixa')),
-                DropdownMenuItem(value: 'Média', child: Text('Média')),
-                DropdownMenuItem(value: 'Alta', child: Text('Alta')),
-              ],
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE4EDF5)),
+            ),
+            child: SwitchListTile(
+              value: _sendToAthlete,
+              contentPadding: EdgeInsets.zero,
+              activeColor: olympusBlue,
+              secondary: const Icon(
+                Icons.send_outlined,
+                color: olympusBlue,
+              ),
+              title: const Text(
+                'Enviar para atleta',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: const Text(
+                'Ao salvar, a atleta receberá a mensagem abaixo.',
+              ),
               onChanged: (value) {
-                if (value == null) return;
-                setState(() => _priority = value);
+                setState(() => _sendToAthlete = value);
               },
             ),
-            const SizedBox(height: 16),
-            const Text(
-              'Fundamentos',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF17324D),
-              ),
-            ),
-            const SizedBox(height: 10),
-            ..._fundamentals.map(_buildFundamentCard),
-            const SizedBox(height: 12),
-          ],
-          TextField(
-            controller: _generalNotesController,
-            maxLines: widget.isCompleteMode ? 4 : 2,
-            decoration: const InputDecoration(
-              labelText: 'Observação do técnico',
-              hintText: 'Resumo do treino para esta atleta',
-            ),
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton.icon(
-            onPressed: _submit,
-            icon: const Icon(Icons.save_outlined),
-            label: Text(
-              widget.isCompleteMode
-                  ? 'Salvar avaliação completa'
-                  : 'Salvar avaliação rápida',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFundamentCard(FundamentEvaluationModel item) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE4EDF5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            item.name,
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF17324D),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<int>(
-                  value: item.score,
-                  decoration: const InputDecoration(labelText: 'Nota'),
-                  items: List.generate(
-                    5,
-                    (index) => DropdownMenuItem(
-                      value: index + 1,
-                      child: Text('${index + 1}'),
-                    ),
-                  ),
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() => item.score = value);
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: item.trend,
-                  decoration: const InputDecoration(labelText: 'Tendência'),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'Melhorando',
-                      child: Text('Melhorando'),
-                    ),
-                    DropdownMenuItem(value: 'Estável', child: Text('Estável')),
-                    DropdownMenuItem(value: 'Piorou', child: Text('Piorou')),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() => item.trend = value);
-                  },
-                ),
-              ),
-            ],
           ),
           const SizedBox(height: 12),
           TextField(
-            controller: item.notesController,
-            maxLines: 2,
-            decoration: const InputDecoration(
-              labelText: 'Observação',
-              hintText: 'Observação curta deste fundamento',
+            controller: _notesController,
+            maxLines: 4,
+            decoration: InputDecoration(
+              labelText: _sendToAthlete
+                  ? 'Mensagem para atleta'
+                  : 'Observação do técnico',
+              hintText: _sendToAthlete
+                  ? 'Escreva o feedback que será enviado para a atleta.'
+                  : 'Observação interna da avaliação rápida.',
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _submit,
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('Salvar avaliação rápida'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: olympusBlue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
             ),
           ),
         ],
       ),
     );
   }
+}
 
-  void _submit() {
-    if (_focusController.text.trim().isEmpty) {
+class CoachCompleteMonthlyEvaluationPage extends StatefulWidget {
+  const CoachCompleteMonthlyEvaluationPage({
+    super.key,
+    required this.athletes,
+  });
+
+  final List<AthleteEvaluationStatus> athletes;
+
+  @override
+  State<CoachCompleteMonthlyEvaluationPage> createState() =>
+      _CoachCompleteMonthlyEvaluationPageState();
+}
+
+class _CoachCompleteMonthlyEvaluationPageState
+    extends State<CoachCompleteMonthlyEvaluationPage> {
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusBg = Color(0xFFF4F7FB);
+  static const Color olympusCard = Colors.white;
+  static const Color olympusText = Color(0xFF17324D);
+  static const Color olympusMuted = Color(0xFF53657B);
+  static const Color olympusSubtle = Color(0xFF6A7E94);
+  static const Color olympusBorder = Color(0xFFE4EDF5);
+  static const Color olympusSuccess = Color(0xFF16A34A);
+  static const Color olympusWarning = Color(0xFFF59E0B);
+  static const Color olympusDanger = Color(0xFFDC2626);
+
+  final SupabaseClient _supabase = Supabase.instance.client;
+
+  bool _saving = false;
+  bool _sendToAthlete = false;
+  String? _selectedAthleteId;
+
+  final TextEditingController _mensagemAtletaController =
+      TextEditingController();
+  final TextEditingController _observacaoGeralController =
+      TextEditingController();
+  final TextEditingController _pontoForteController = TextEditingController();
+  final TextEditingController _pontoMelhorarController =
+      TextEditingController();
+
+  String _evolucaoGeral = 'Estável';
+  String _prioridade = 'Média';
+
+  final List<String> _fundamentos = const [
+    'Saque',
+    'Recepção',
+    'Toque',
+    'Ataque',
+    'Bloqueio',
+    'Defesa',
+    'Posicionamento tático',
+    'Condicionamento físico',
+  ];
+
+  final Map<String, int> _notas = {};
+  final Map<String, String> _tendencias = {};
+  final Map<String, TextEditingController> _observacoesPorFundamento = {};
+
+  @override
+  void initState() {
+    super.initState();
+
+    _selectedAthleteId =
+        widget.athletes.isNotEmpty ? widget.athletes.first.athleteId : null;
+
+    for (final fundamento in _fundamentos) {
+      _notas[fundamento] = 3;
+      _tendencias[fundamento] = 'Estável';
+      _observacoesPorFundamento[fundamento] = TextEditingController();
+    }
+
+    if (_selectedAthleteId != null) {
+      _carregarAvaliacaoExistente(_selectedAthleteId!);
+    }
+  }
+
+  @override
+  void dispose() {
+    _mensagemAtletaController.dispose();
+    _observacaoGeralController.dispose();
+    _pontoForteController.dispose();
+    _pontoMelhorarController.dispose();
+
+    for (final controller in _observacoesPorFundamento.values) {
+      controller.dispose();
+    }
+
+    super.dispose();
+  }
+
+  bool _isMobile(BuildContext context) {
+    return MediaQuery.of(context).size.width < 600;
+  }
+
+  bool get _isLastFourDaysOfMonth {
+    final now = DateTime.now();
+    final lastDay = DateTime(now.year, now.month + 1, 0).day;
+    return now.day >= lastDay - 3;
+  }
+
+  String get _janelaAvaliacaoLabel {
+    final now = DateTime.now();
+    final lastDay = DateTime(now.year, now.month + 1, 0).day;
+    final startDay = lastDay - 3;
+    return '$startDay ao $lastDay';
+  }
+
+  AthleteEvaluationStatus? get _selectedAthlete {
+    if (_selectedAthleteId == null) return null;
+
+    for (final athlete in widget.athletes) {
+      if (athlete.athleteId == _selectedAthleteId) return athlete;
+    }
+
+    return null;
+  }
+
+  Future<void> _carregarAvaliacaoExistente(String athleteId) async {
+    try {
+      final now = DateTime.now();
+      final start = DateTime(now.year, now.month, 1);
+      final end = DateTime(now.year, now.month + 1, 1);
+
+      final rows = await _supabase
+          .from('training_evaluations')
+          .select('slot, fundamento, motivo, observacao, score, created_at')
+          .eq('athlete_id', athleteId)
+          .eq('tipo', 'completa')
+          .gte('created_at', start.toIso8601String())
+          .lt('created_at', end.toIso8601String())
+          .order('created_at', ascending: false);
+
+      _limparFormulario(manterAtleta: true);
+
+      final list = List<Map<String, dynamic>>.from(rows as List);
+      if (list.isEmpty) return;
+
+      for (final row in list) {
+        final slot = (row['slot'] ?? '').toString();
+
+        if (slot == 'resumo_mensal') {
+          final motivo = (row['motivo'] ?? '').toString();
+          final parts = motivo.split('|').map((e) => e.trim()).toList();
+
+          if (parts.isNotEmpty && parts[0].isNotEmpty) {
+            _evolucaoGeral = parts[0];
+          }
+          if (parts.length > 1 && parts[1].isNotEmpty) {
+            _prioridade = parts[1];
+          }
+          if (parts.length > 2) {
+            _pontoForteController.text = parts[2];
+          }
+          if (parts.length > 3) {
+            _pontoMelhorarController.text = parts[3];
+          }
+
+          _observacaoGeralController.text =
+              (row['observacao'] ?? '').toString();
+          continue;
+        }
+
+        final fundamento = (row['fundamento'] ?? '').toString();
+        if (!_fundamentos.contains(fundamento)) continue;
+
+        final score = row['score'];
+        if (score is int) {
+          _notas[fundamento] = score.clamp(1, 5);
+        } else if (score is num) {
+          _notas[fundamento] = score.toInt().clamp(1, 5);
+        }
+
+        final motivo = (row['motivo'] ?? '').toString();
+        if (['Melhorando', 'Estável', 'Piorou'].contains(motivo)) {
+          _tendencias[fundamento] = motivo;
+        }
+
+        _observacoesPorFundamento[fundamento]?.text =
+            (row['observacao'] ?? '').toString();
+      }
+
+      if (mounted) setState(() {});
+    } catch (_) {
+      // Se não carregar histórico, mantém formulário disponível.
+    }
+  }
+
+  void _limparFormulario({bool manterAtleta = false}) {
+    _mensagemAtletaController.clear();
+    _observacaoGeralController.clear();
+    _pontoForteController.clear();
+    _pontoMelhorarController.clear();
+    _evolucaoGeral = 'Estável';
+    _prioridade = 'Média';
+
+    for (final fundamento in _fundamentos) {
+      _notas[fundamento] = 3;
+      _tendencias[fundamento] = 'Estável';
+      _observacoesPorFundamento[fundamento]?.clear();
+    }
+
+    if (!manterAtleta) _selectedAthleteId = null;
+
+    if (mounted) setState(() {});
+  }
+
+  int _mediaNotasArredondada() {
+    if (_notas.isEmpty) return 3;
+    final total = _notas.values.fold<int>(0, (sum, value) => sum + value);
+    return (total / _notas.length).round().clamp(1, 5);
+  }
+
+  Future<void> _salvarAvaliacaoCompleta() async {
+    if (!_isLastFourDaysOfMonth) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'A avaliação completa só pode ser feita nos últimos 4 dias do mês ($_janelaAvaliacaoLabel).',
+          ),
+          backgroundColor: olympusWarning,
+        ),
+      );
+      return;
+    }
+
+    final user = _supabase.auth.currentUser;
+    final athlete = _selectedAthlete;
+
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Usuário não autenticado.')),
+      );
+      return;
+    }
+
+    if (athlete == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecione uma atleta.')),
+      );
+      return;
+    }
+
+    if (_pontoMelhorarController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Informe o principal ponto a melhorar.')),
       );
       return;
     }
 
-    Navigator.pop(
-      context,
-      EvaluationSubmissionResult(
-        isComplete: widget.isCompleteMode,
-        generalEvolution: _generalEvolution,
-        mainFocus: _focusController.text.trim(),
+    setState(() => _saving = true);
+
+    try {
+      final athleteId = athlete.athleteId;
+      final now = DateTime.now();
+      final start = DateTime(now.year, now.month, 1);
+      final end = DateTime(now.year, now.month + 1, 1);
+
+      final existing = await _supabase
+          .from('training_evaluations')
+          .select('id')
+          .eq('athlete_id', athleteId)
+          .eq('tipo', 'completa')
+          .gte('created_at', start.toIso8601String())
+          .lt('created_at', end.toIso8601String());
+
+      final existingIds = List<Map<String, dynamic>>.from(existing as List)
+          .map((row) => (row['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      if (existingIds.isNotEmpty) {
+        await _supabase
+            .from('training_evaluations')
+            .delete()
+            .inFilter('id', existingIds);
+      }
+
+      final rows = <Map<String, dynamic>>[];
+
+      rows.add({
+        'coach_id': user.id,
+        'athlete_id': athleteId,
+        'tipo': 'completa',
+        'slot': 'resumo_mensal',
+        'motivo':
+            '$_evolucaoGeral | $_prioridade | ${_pontoForteController.text.trim()} | ${_pontoMelhorarController.text.trim()}',
+        'fundamento': 'Resumo mensal',
+        'observacao': _observacaoGeralController.text.trim(),
+        'score': _mediaNotasArredondada(),
+      });
+
+      for (final fundamento in _fundamentos) {
+        rows.add({
+          'coach_id': user.id,
+          'athlete_id': athleteId,
+          'tipo': 'completa',
+          'slot': 'completa_${fundamento.toLowerCase().replaceAll(' ', '_')}',
+          'motivo': _tendencias[fundamento] ?? 'Estável',
+          'fundamento': fundamento,
+          'observacao':
+              _observacoesPorFundamento[fundamento]?.text.trim() ?? '',
+          'score': _notas[fundamento] ?? 3,
+        });
+      }
+
+      await _supabase.from('training_evaluations').insert(rows);
+
+      if (_sendToAthlete) {
+        final message = _mensagemAtletaController.text.trim().isEmpty
+            ? 'Sua avaliação completa mensal foi registrada. Evolução: $_evolucaoGeral. Prioridade: $_prioridade. Ponto principal: ${_pontoMelhorarController.text.trim()}.'
+            : _mensagemAtletaController.text.trim();
+
+        await sendEvaluationMessageToAthlete(
+          supabase: _supabase,
+          athleteId: athleteId,
+          title: 'Avaliação completa mensal',
+          body: message,
+        );
+      }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Avaliação completa salva para ${athlete.athleteName}.'),
+          backgroundColor: olympusSuccess,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao salvar avaliação completa: $e'),
+          backgroundColor: olympusDanger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Widget _buildBackground() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
+          ),
+        ),
+        Positioned.fill(
+          child: Container(color: Colors.black.withOpacity(0.35)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWindowInfo(bool isMobile) {
+    final opened = _isLastFourDaysOfMonth;
+
+    return Container(
+      padding: EdgeInsets.all(isMobile ? 12 : 14),
+      decoration: BoxDecoration(
+        color: opened
+            ? olympusSuccess.withOpacity(0.12)
+            : olympusWarning.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: opened
+              ? olympusSuccess.withOpacity(0.28)
+              : olympusWarning.withOpacity(0.35),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            opened ? Icons.check_circle_outline : Icons.lock_clock_rounded,
+            color: opened ? olympusSuccess : olympusWarning,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              opened
+                  ? 'Janela mensal aberta. Você pode preencher a avaliação completa.'
+                  : 'Liberada apenas nos últimos 4 dias do mês ($_janelaAvaliacaoLabel).',
+              style: TextStyle(
+                color: opened ? olympusSuccess : olympusBlue,
+                fontWeight: FontWeight.w900,
+                fontSize: isMobile ? 12 : 13,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCard({
+    required List<Widget> children,
+    EdgeInsetsGeometry? padding,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: padding ?? const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: olympusCard.withOpacity(0.96),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: olympusBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
+  }
+
+  Widget _buildHeader(bool isMobile) {
+    return _buildCard(
+      padding: EdgeInsets.all(isMobile ? 14 : 16),
+      children: [
+        Text(
+          'Avaliação completa mensal',
+          style: TextStyle(
+            color: olympusBlue,
+            fontSize: isMobile ? 19 : 21,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Avaliação aprofundada por atleta, feita no fechamento do mês.',
+          style: TextStyle(
+            color: olympusMuted,
+            fontSize: isMobile ? 12 : 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildWindowInfo(isMobile),
+      ],
+    );
+  }
+
+  Widget _buildAthleteSelector(bool isMobile) {
+    return _buildCard(
+      padding: EdgeInsets.all(isMobile ? 14 : 16),
+      children: [
+        Text(
+          'Atleta',
+          style: TextStyle(
+            color: olympusBlue,
+            fontSize: isMobile ? 15 : 16,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          value: _selectedAthleteId,
+          decoration: const InputDecoration(
+            labelText: 'Selecionar atleta',
+            border: OutlineInputBorder(),
+          ),
+          items: widget.athletes.map((athlete) {
+            return DropdownMenuItem<String>(
+              value: athlete.athleteId,
+              child: Text(athlete.athleteName),
+            );
+          }).toList(),
+          onChanged: _saving
+              ? null
+              : (value) async {
+                  setState(() => _selectedAthleteId = value);
+                  if (value != null) {
+                    await _carregarAvaliacaoExistente(value);
+                  }
+                },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryCard(bool isMobile) {
+    return _buildCard(
+      padding: EdgeInsets.all(isMobile ? 14 : 16),
+      children: [
+        Text(
+          'Resumo geral',
+          style: TextStyle(
+            color: olympusBlue,
+            fontSize: isMobile ? 15 : 16,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          value: _evolucaoGeral,
+          decoration: const InputDecoration(
+            labelText: 'Evolução geral',
+            border: OutlineInputBorder(),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'Melhorando', child: Text('Melhorando')),
+            DropdownMenuItem(value: 'Estável', child: Text('Estável')),
+            DropdownMenuItem(
+              value: 'Precisa de atenção',
+              child: Text('Precisa de atenção'),
+            ),
+          ],
+          onChanged: _saving
+              ? null
+              : (value) {
+                  if (value == null) return;
+                  setState(() => _evolucaoGeral = value);
+                },
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          value: _prioridade,
+          decoration: const InputDecoration(
+            labelText: 'Prioridade de acompanhamento',
+            border: OutlineInputBorder(),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'Baixa', child: Text('Baixa')),
+            DropdownMenuItem(value: 'Média', child: Text('Média')),
+            DropdownMenuItem(value: 'Alta', child: Text('Alta')),
+          ],
+          onChanged: _saving
+              ? null
+              : (value) {
+                  if (value == null) return;
+                  setState(() => _prioridade = value);
+                },
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _pontoForteController,
+          enabled: !_saving,
+          decoration: const InputDecoration(
+            labelText: 'Ponto forte',
+            hintText: 'Ex: liderança, saque, regularidade',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _pontoMelhorarController,
+          enabled: !_saving,
+          decoration: const InputDecoration(
+            labelText: 'Principal ponto a melhorar',
+            hintText: 'Ex: recepção, tomada de decisão',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _observacaoGeralController,
+          enabled: !_saving,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'Observação geral',
+            hintText: 'Resumo mensal da atleta',
+            border: OutlineInputBorder(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFundamentoCard(String fundamento, bool isMobile) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: EdgeInsets.all(isMobile ? 12 : 14),
+      decoration: BoxDecoration(
+        color: olympusCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: olympusBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            fundamento,
+            style: TextStyle(
+              color: olympusText,
+              fontSize: isMobile ? 14 : 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final narrow = constraints.maxWidth < 380;
+
+              final notaField = DropdownButtonFormField<int>(
+                value: _notas[fundamento],
+                decoration: const InputDecoration(
+                  labelText: 'Nota',
+                  border: OutlineInputBorder(),
+                ),
+                items: List.generate(
+                  5,
+                  (index) => DropdownMenuItem<int>(
+                    value: index + 1,
+                    child: Text('${index + 1}'),
+                  ),
+                ),
+                onChanged: _saving
+                    ? null
+                    : (value) {
+                        if (value == null) return;
+                        setState(() => _notas[fundamento] = value);
+                      },
+              );
+
+              final tendenciaField = DropdownButtonFormField<String>(
+                value: _tendencias[fundamento],
+                decoration: const InputDecoration(
+                  labelText: 'Tendência',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'Melhorando',
+                    child: Text('Melhorando'),
+                  ),
+                  DropdownMenuItem(value: 'Estável', child: Text('Estável')),
+                  DropdownMenuItem(value: 'Piorou', child: Text('Piorou')),
+                ],
+                onChanged: _saving
+                    ? null
+                    : (value) {
+                        if (value == null) return;
+                        setState(() => _tendencias[fundamento] = value);
+                      },
+              );
+
+              if (narrow) {
+                return Column(
+                  children: [
+                    notaField,
+                    const SizedBox(height: 10),
+                    tendenciaField,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: notaField),
+                  const SizedBox(width: 10),
+                  Expanded(child: tendenciaField),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _observacoesPorFundamento[fundamento],
+            enabled: !_saving,
+            maxLines: 2,
+            decoration: const InputDecoration(
+              labelText: 'Observação do fundamento',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSendToAthleteCard(bool isMobile) {
+    return _buildCard(
+      padding: EdgeInsets.all(isMobile ? 14 : 16),
+      children: [
+        SwitchListTile(
+          value: _sendToAthlete,
+          contentPadding: EdgeInsets.zero,
+          activeColor: olympusBlue,
+          secondary: const Icon(
+            Icons.send_outlined,
+            color: olympusBlue,
+          ),
+          title: const Text(
+            'Enviar para atleta',
+            style: TextStyle(
+              color: olympusBlue,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          subtitle: const Text(
+            'Ao salvar, a atleta receberá uma mensagem com o resumo mensal.',
+            style: TextStyle(
+              color: olympusMuted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          onChanged: _saving
+              ? null
+              : (value) {
+                  setState(() => _sendToAthlete = value);
+                },
+        ),
+        if (_sendToAthlete) ...[
+          const SizedBox(height: 12),
+          TextField(
+            controller: _mensagemAtletaController,
+            enabled: !_saving,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Mensagem para atleta',
+              hintText:
+                  'Ex: Parabéns pela evolução no saque. Para o próximo mês, o foco será recepção e tomada de decisão.',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildFundamentosSection(bool isMobile) {
+    return _buildCard(
+      padding: EdgeInsets.all(isMobile ? 14 : 16),
+      children: [
+        Text(
+          'Fundamentos',
+          style: TextStyle(
+            color: olympusBlue,
+            fontSize: isMobile ? 15 : 16,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Dê nota de 1 a 5 e registre a tendência de evolução.',
+          style: TextStyle(
+            color: olympusMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ..._fundamentos.map((item) => _buildFundamentoCard(item, isMobile)),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = _isMobile(context);
+
+    return Scaffold(
+      backgroundColor: olympusBg,
+      appBar: AppBar(
+        title: const Text('Avaliação completa'),
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildBackground()),
+          SafeArea(
+            child: widget.athletes.isEmpty
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'Nenhuma atleta visível para avaliação completa.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  )
+                : ListView(
+                    padding: EdgeInsets.all(isMobile ? 12 : 16),
+                    children: [
+                      _buildHeader(isMobile),
+                      const SizedBox(height: 14),
+                      _buildAthleteSelector(isMobile),
+                      const SizedBox(height: 14),
+                      _buildSendToAthleteCard(isMobile),
+                      const SizedBox(height: 14),
+                      _buildSummaryCard(isMobile),
+                      const SizedBox(height: 14),
+                      _buildFundamentosSection(isMobile),
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _saving || !_isLastFourDaysOfMonth
+                              ? null
+                              : _salvarAvaliacaoCompleta,
+                          icon: _saving
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : const Icon(Icons.save_outlined),
+                          label: Text(
+                            _saving
+                                ? 'Salvando...'
+                                : 'Salvar avaliação completa',
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: olympusBlue,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor:
+                                Colors.grey.withOpacity(0.35),
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                    ],
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -1277,35 +3455,73 @@ class _AthleteEvaluationFormPageState extends State<AthleteEvaluationFormPage> {
 
 class AthleteEvaluationStatus {
   AthleteEvaluationStatus({
+    required this.athleteId,
     required this.athleteName,
+    required this.avatarUrl,
+    required this.gender,
     required this.generalEvolution,
     required this.mainFocus,
     required this.evaluationsSinceLastFull,
     required this.isPresent,
+    required this.totalEvaluations,
+    required this.destaques,
+    required this.atencoes,
+    required this.hasMonthlyComplete,
+    required this.lastEvaluationAt,
   });
 
+  final String athleteId;
   final String athleteName;
+  final String avatarUrl;
+  final String gender;
   final String generalEvolution;
   final String mainFocus;
   final int evaluationsSinceLastFull;
   final bool isPresent;
+  final int totalEvaluations;
+  final int destaques;
+  final int atencoes;
+  final bool hasMonthlyComplete;
+  final DateTime? lastEvaluationAt;
+
+  String get lastEvaluationLabel {
+    if (lastEvaluationAt == null) return 'Sem avaliação registrada';
+    final d = lastEvaluationAt!.toLocal();
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
 
   bool get requiresCompleteEvaluation => evaluationsSinceLastFull >= 2;
 
   AthleteEvaluationStatus copyWith({
+    String? athleteId,
     String? athleteName,
+    String? avatarUrl,
+    String? gender,
     String? generalEvolution,
     String? mainFocus,
     int? evaluationsSinceLastFull,
     bool? isPresent,
+    int? totalEvaluations,
+    int? destaques,
+    int? atencoes,
+    bool? hasMonthlyComplete,
+    DateTime? lastEvaluationAt,
   }) {
     return AthleteEvaluationStatus(
+      athleteId: athleteId ?? this.athleteId,
       athleteName: athleteName ?? this.athleteName,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      gender: gender ?? this.gender,
       generalEvolution: generalEvolution ?? this.generalEvolution,
       mainFocus: mainFocus ?? this.mainFocus,
       evaluationsSinceLastFull:
           evaluationsSinceLastFull ?? this.evaluationsSinceLastFull,
       isPresent: isPresent ?? this.isPresent,
+      totalEvaluations: totalEvaluations ?? this.totalEvaluations,
+      destaques: destaques ?? this.destaques,
+      atencoes: atencoes ?? this.atencoes,
+      hasMonthlyComplete: hasMonthlyComplete ?? this.hasMonthlyComplete,
+      lastEvaluationAt: lastEvaluationAt ?? this.lastEvaluationAt,
     );
   }
 }
@@ -1315,11 +3531,15 @@ class EvaluationSubmissionResult {
     required this.isComplete,
     required this.generalEvolution,
     required this.mainFocus,
+    required this.sendToAthlete,
+    required this.messageToAthlete,
   });
 
   final bool isComplete;
   final String generalEvolution;
   final String mainFocus;
+  final bool sendToAthlete;
+  final String messageToAthlete;
 }
 
 class FundamentEvaluationModel {

@@ -420,6 +420,14 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
                         value: 'birthdays',
                         child: Text('Aniversariantes'),
                       ),
+                      DropdownMenuItem(
+                        value: 'ranking',
+                        child: Text('Visível no ranking'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'avaliacoes',
+                        child: Text('Visível nas avaliações'),
+                      ),
                     ],
                     onChanged: (value) {
                       if (value != null) {

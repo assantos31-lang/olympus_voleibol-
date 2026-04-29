@@ -708,6 +708,7 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
 
   bool _loading = true;
   bool _sending = false;
+  bool _hasShownReadConfirmation = false;
   List<Map<String, dynamic>> _messages = [];
   RealtimeChannel? _threadChannel;
 
@@ -768,6 +769,15 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
 
     final now = DateTime.now().toUtc().toIso8601String();
 
+    final current = await supabase
+        .from('app_message_participants')
+        .select('unread_count')
+        .eq('thread_id', widget.threadId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+    final hadUnread = ((current?['unread_count'] ?? 0) as num) > 0;
+
     await supabase
         .from('app_message_participants')
         .update({
@@ -780,6 +790,19 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
         .eq('user_id', user.id);
 
     await BadgeService.updateBadge();
+
+    if (hadUnread && !_hasShownReadConfirmation && mounted) {
+      _hasShownReadConfirmation = true;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            '✓ Mensagem visualizada. O administrador foi notificado.',
+          ),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   Future<void> _loadMessages() async {

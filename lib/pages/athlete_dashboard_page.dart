@@ -13,6 +13,7 @@ import '../services/permission_service.dart';
 import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
 import 'athlete_messages_page.dart';
+import 'athlete_statistics_page.dart';
 import 'chat_rooms_page.dart';
 import 'admin_competitions_page.dart';
 import 'admin_birthdays_page.dart';
@@ -37,6 +38,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   int _pendingFriendlyCount = 0;
   int _pendingCompetitionCount = 0;
   int _overdueFinancialCount = 0;
+  int _newFinancialCount = 0;
   Map<int, int> _overdueByMonth = {};
   List<Map<String, dynamic>> _weekEvents = [];
   List<Map<String, dynamic>> _todayBirthdays = [];
@@ -184,6 +186,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
       _checkAndShowLevelUp(profile);
       _loadPendingCount();
       _loadOverdueFinancialCount();
+      _loadNewFinancialCount();
       _loadWeekEvents();
       _loadAttendanceAndPerformance();
       _loadGenderRanking(profile);
@@ -488,6 +491,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
             ),
             callback: (_) {
               _loadOverdueFinancialCount();
+              _loadNewFinancialCount();
             },
           )
           ..subscribe();
@@ -662,6 +666,49 @@ event_type
       }
     } catch (e) {
       debugPrint('Erro ao carregar atrasos financeiros: $e');
+    }
+  }
+
+  DateTime? _getPersistedFinancialViewedAt() {
+    final user = supabase.auth.currentUser;
+    final raw = user?.userMetadata?['last_financial_viewed_at'];
+    if (raw == null) return null;
+    return DateTime.tryParse(raw.toString())?.toLocal();
+  }
+
+  Future<void> _loadNewFinancialCount() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final referenceDate = _getPersistedFinancialViewedAt() ??
+          DateTime.now().subtract(const Duration(days: 7));
+
+      final response = await supabase
+          .from('financial_records')
+          .select('id, created_at, status')
+          .eq('athlete_id', user.id);
+
+      int count = 0;
+      for (final row in List<Map<String, dynamic>>.from(response)) {
+        final status = (row['status'] ?? '').toString();
+        if (status == 'approved') continue;
+
+        final createdAt =
+            DateTime.tryParse((row['created_at'] ?? '').toString())?.toLocal();
+
+        if (createdAt != null && createdAt.isAfter(referenceDate)) {
+          count++;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _newFinancialCount = count;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar novos débitos financeiros: $e');
     }
   }
 
@@ -2409,12 +2456,30 @@ event_time
   }
 
   void _navigateToFinancial() {
+    final viewedAt = DateTime.now();
+
+    setState(() {
+      _newFinancialCount = 0;
+    });
+
+    supabase.auth.updateUser(
+      UserAttributes(
+        data: {
+          ...?supabase.auth.currentUser?.userMetadata,
+          'last_financial_viewed_at': viewedAt.toIso8601String(),
+        },
+      ),
+    );
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => const AthleteFinancialPage(),
       ),
-    ).then((_) => _loadOverdueFinancialCount());
+    ).then((_) {
+      _loadOverdueFinancialCount();
+      _loadNewFinancialCount();
+    });
   }
 
   void _navigateToMessages() {
@@ -2424,6 +2489,15 @@ event_time
         builder: (context) => const AthleteMessagesPage(),
       ),
     ).then((_) => _loadMessageUnreadCount());
+  }
+
+  void _navigateToStatistics() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AthleteStatisticsPage(),
+      ),
+    );
   }
 
   void _navigateToChat() {
@@ -4231,6 +4305,13 @@ event_time
                     ],
                   ),
                   _buildDashboardCard(
+                    icon: Icons.insights_rounded,
+                    title: 'Minhas Estatísticas',
+                    subtitle: 'Evolução, avaliações e feedbacks do técnico',
+                    color: olympusGold,
+                    onTap: _navigateToStatistics,
+                  ),
+                  _buildDashboardCard(
                     icon: Icons.mark_chat_unread_rounded,
                     title: 'Mensagens',
                     subtitle: 'Avisos e comunicados',
@@ -4245,9 +4326,16 @@ event_time
                     subtitle: 'Acompanhe seus pagamentos',
                     color: olympusBlue,
                     onTap: _navigateToFinancial,
-                    badgeCount: _overdueFinancialCount > 0
-                        ? _overdueFinancialCount
-                        : null,
+                    badges: [
+                      _DashboardBadgeData(
+                        count: _overdueFinancialCount,
+                        color: Colors.red,
+                      ),
+                      _DashboardBadgeData(
+                        count: _newFinancialCount,
+                        color: olympusGold,
+                      ),
+                    ],
                   ),
                   if (_canAccessBirthdays)
                     _buildDashboardCard(

@@ -36,7 +36,27 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   @override
   void initState() {
     super.initState();
+    _markFinancialAsViewed();
     _loadFinancialFilters();
+  }
+
+  Future<void> _markFinancialAsViewed() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final viewedAt = DateTime.now().toIso8601String();
+      await _supabase.auth.updateUser(
+        UserAttributes(
+          data: {
+            ...?user.userMetadata,
+            'last_financial_viewed_at': viewedAt,
+          },
+        ),
+      );
+    } catch (e) {
+      debugPrint('Erro ao marcar financeiro como visualizado: $e');
+    }
   }
 
   Future<void> _loadFinancialFilters() async {
@@ -105,10 +125,16 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
     final filteredRecords = allAllowedRecords.where((record) {
       final isSelectedMonthYear =
           record.month == _selectedMonth && record.year == _selectedYear;
-      final isPendingFinancialCard =
-          record.status != 'approved' && record.receiptUrl == null;
 
-      return isSelectedMonthYear || isPendingFinancialCard;
+      final dueDate = _getDueDate(record);
+      final now = DateTime.now();
+      final todayOnly = DateTime(now.year, now.month, now.day);
+      final dueDateOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
+
+      final isApproved = record.status == 'approved';
+      final isOverdue = !isApproved && todayOnly.isAfter(dueDateOnly);
+
+      return isSelectedMonthYear || isOverdue;
     }).toList();
 
     setState(() {

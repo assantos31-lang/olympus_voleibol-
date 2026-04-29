@@ -7,6 +7,7 @@ import 'admin_financial_page.dart';
 import 'admin_messages_page.dart';
 import 'admin_birthdays_page.dart';
 import 'admin_competitions_page.dart';
+import 'admin_notifications_page.dart';
 
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
@@ -20,11 +21,76 @@ class _AdminHomePageState extends State<AdminHomePage> {
 
   List<Map<String, dynamic>> monthBirthdays = [];
   bool isLoadingBirthdays = true;
+  bool _showAllMonthBirthdays = false;
+  int unreadNotificationsCount = 0;
+  RealtimeChannel? _adminNotificationsChannel;
 
   @override
   void initState() {
     super.initState();
     _fetchMonthBirthdays();
+    _fetchUnreadNotificationsCount();
+    _listenForAdminNotifications();
+  }
+
+  @override
+  void dispose() {
+    if (_adminNotificationsChannel != null) {
+      supabase.removeChannel(_adminNotificationsChannel!);
+    }
+    super.dispose();
+  }
+
+  Future<void> _fetchUnreadNotificationsCount() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final response = await supabase
+          .from('admin_notifications')
+          .select('id')
+          .eq('admin_id', user.id)
+          .eq('is_read', false);
+
+      if (mounted) {
+        setState(() {
+          unreadNotificationsCount = (response as List).length;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar notificações não lidas: $e');
+    }
+  }
+
+  void _listenForAdminNotifications() {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    _adminNotificationsChannel = supabase
+        .channel('admin_home_notifications_${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'admin_notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'admin_id',
+            value: user.id,
+          ),
+          callback: (_) => _fetchUnreadNotificationsCount(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'admin_notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'admin_id',
+            value: user.id,
+          ),
+          callback: (_) => _fetchUnreadNotificationsCount(),
+        )
+        .subscribe();
   }
 
   Future<void> _fetchMonthBirthdays() async {
@@ -114,6 +180,11 @@ class _AdminHomePageState extends State<AdminHomePage> {
     const goldenColor = Color(0xFFE4C050);
     const cyanColor = Color(0xFF8FE8FF);
 
+    final today = DateTime.now();
+    final visibleBirthdays = _showAllMonthBirthdays
+        ? monthBirthdays
+        : monthBirthdays.take(5).toList();
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -179,7 +250,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          _currentMonthLabel(),
+                          '${_currentMonthLabel()} • ${monthBirthdays.length} ${monthBirthdays.length == 1 ? "aniversariante" : "aniversariantes"}',
                           style: TextStyle(
                             color: cyanColor.withOpacity(0.92),
                             fontSize: 13,
@@ -225,39 +296,191 @@ class _AdminHomePageState extends State<AdminHomePage> {
                     ),
                   ),
                 )
-              else
-                Column(
-                  children: monthBirthdays.take(5).map((user) {
-                    final birthDate = user['birth'] as DateTime;
-                    final fullName =
-                        (user['full_name'] ?? 'Sem nome').toString();
-                    final position = _formatPosition(user['court_position']);
+              else ...[
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeInOut,
+                  constraints: BoxConstraints(
+                    maxHeight: _showAllMonthBirthdays ? 330 : 260,
+                  ),
+                  child: Scrollbar(
+                    thumbVisibility: _showAllMonthBirthdays,
+                    radius: const Radius.circular(999),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      physics: _showAllMonthBirthdays
+                          ? const BouncingScrollPhysics()
+                          : const NeverScrollableScrollPhysics(),
+                      itemCount: visibleBirthdays.length,
+                      itemBuilder: (context, index) {
+                        final user = visibleBirthdays[index];
+                        final birthDate = user['birth'] as DateTime;
+                        final fullName =
+                            (user['full_name'] ?? 'Sem nome').toString();
+                        final position =
+                            _formatPosition(user['court_position']);
+                        final isToday = birthDate.day == today.day &&
+                            birthDate.month == today.month;
 
-                    return Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 11,
-                      ),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        color: Colors.white.withOpacity(0.06),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.08),
-                        ),
-                      ),
-                      child: Text(
-                        '$fullName - ${_formatBirthDate(birthDate)} - $position',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.86),
-                          fontSize: 14,
-                          height: 1.3,
-                        ),
-                      ),
-                    );
-                  }).toList(),
+                        return Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 11,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            color: isToday
+                                ? goldenColor.withOpacity(0.18)
+                                : Colors.white.withOpacity(0.06),
+                            border: Border.all(
+                              color: isToday
+                                  ? goldenColor.withOpacity(0.65)
+                                  : Colors.white.withOpacity(0.08),
+                              width: isToday ? 1.4 : 1,
+                            ),
+                            boxShadow: isToday
+                                ? [
+                                    BoxShadow(
+                                      color: goldenColor.withOpacity(0.22),
+                                      blurRadius: 14,
+                                      spreadRadius: 0.5,
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: isToday
+                                      ? goldenColor.withOpacity(0.24)
+                                      : cyanColor.withOpacity(0.10),
+                                  border: Border.all(
+                                    color: isToday
+                                        ? goldenColor.withOpacity(0.65)
+                                        : cyanColor.withOpacity(0.22),
+                                  ),
+                                ),
+                                child: Icon(
+                                  isToday
+                                      ? Icons.celebration_rounded
+                                      : Icons.cake_outlined,
+                                  color: isToday ? goldenColor : cyanColor,
+                                  size: 18,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            fullName,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: Colors.white
+                                                  .withOpacity(0.92),
+                                              fontSize: 14,
+                                              fontWeight: isToday
+                                                  ? FontWeight.w800
+                                                  : FontWeight.w600,
+                                              height: 1.2,
+                                            ),
+                                          ),
+                                        ),
+                                        if (isToday) ...[
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                              color:
+                                                  goldenColor.withOpacity(0.22),
+                                              border: Border.all(
+                                                color: goldenColor
+                                                    .withOpacity(0.55),
+                                              ),
+                                            ),
+                                            child: const Text(
+                                              'Hoje 🎉',
+                                              style: TextStyle(
+                                                color: Color(0xFFE4C050),
+                                                fontSize: 10.5,
+                                                fontWeight: FontWeight.w800,
+                                                height: 1,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${_formatBirthDate(birthDate)} • $position',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: isToday
+                                            ? goldenColor.withOpacity(0.95)
+                                            : Colors.white.withOpacity(0.68),
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.2,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
+                if (monthBirthdays.length > 5) ...[
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _showAllMonthBirthdays = !_showAllMonthBirthdays;
+                        });
+                      },
+                      icon: Icon(
+                        _showAllMonthBirthdays
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        color: goldenColor,
+                      ),
+                      label: Text(
+                        _showAllMonthBirthdays
+                            ? 'Ver menos'
+                            : 'Ver mais ${monthBirthdays.length - 5}',
+                        style: const TextStyle(
+                          color: goldenColor,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ],
           ),
         ),
@@ -488,6 +711,24 @@ class _AdminHomePageState extends State<AdminHomePage> {
                             const SizedBox(height: 26),
                             _buildFuturisticButton(
                               context: context,
+                              label: 'Notificações',
+                              icon: Icons.notifications_active_outlined,
+                              accentColor: const Color(0xFFFFD166),
+                              badgeCount: unreadNotificationsCount,
+                              onTap: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const AdminNotificationsPage(),
+                                  ),
+                                );
+                                _fetchUnreadNotificationsCount();
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            _buildFuturisticButton(
+                              context: context,
                               label: 'Agenda',
                               icon: Icons.calendar_month_rounded,
                               accentColor: cyanColor,
@@ -540,6 +781,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                               label: 'Financeiro',
                               icon: Icons.attach_money_rounded,
                               accentColor: cyanColor,
+                              badgeCount: unreadNotificationsCount,
                               onTap: () {
                                 Navigator.push(
                                   context,
@@ -600,6 +842,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
     required VoidCallback onTap,
     bool isPrimary = false,
     bool isMuted = false,
+    int badgeCount = 0,
   }) {
     final Color baseTextColor = isMuted
         ? Colors.white.withOpacity(0.70)
@@ -662,6 +905,34 @@ class _AdminHomePageState extends State<AdminHomePage> {
               ),
             ),
           ),
+          if (badgeCount > 0)
+            Positioned(
+              top: 0,
+              right: 18,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white, width: 1.4),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.redAccent.withOpacity(0.45),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: Text(
+                  badgeCount > 99 ? '99+' : badgeCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
           ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: BackdropFilter(
