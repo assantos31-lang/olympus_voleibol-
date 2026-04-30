@@ -65,13 +65,38 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   List<Map<String, dynamic>> _messages = [];
   List<Map<String, dynamic>> _checkins = [];
   List<Map<String, dynamic>> _convocations = [];
+  List<Map<String, dynamic>> _trainingPlanBlocks = [];
 
   String _period = 'mes';
+  int? _selectedAnnualMonth;
+
+  final ScrollController _scrollController = ScrollController();
+  double _scrollOffset = 0;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_handleScroll);
     _loadData();
+  }
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients) return;
+
+    final nextOffset = _scrollController.offset;
+    if ((nextOffset - _scrollOffset).abs() < 1.5) return;
+
+    if (!mounted) return;
+    setState(() {
+      _scrollOffset = nextOffset;
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
+    super.dispose();
   }
 
   void _goBackToDashboard() {
@@ -362,6 +387,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     final raw = (value ?? '').toString().trim().toLowerCase();
 
     return raw == 'realizado' ||
+        raw == 'realizado com sucesso' ||
         raw == 'checked_in' ||
         raw == 'checkin_realizado' ||
         raw == 'ok' ||
@@ -463,6 +489,120 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     return messages;
   }
 
+  Future<List<Map<String, dynamic>>> _loadTrainingPlanBlocks() async {
+    try {
+      final rows = await _supabase.rpc(
+        'get_checked_in_training_plan_blocks_for_athlete',
+      );
+
+      final list = List<Map<String, dynamic>>.from(rows as List);
+
+      return list.map((row) {
+        return {
+          ...row,
+          'events': {
+            'id': row['event_id'],
+            'event_type': row['event_type'],
+            'gender': row['gender'],
+            'event_date': row['event_date'],
+            'event_time': row['event_time'],
+          },
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('Erro ao carregar blocos de planejamento para atleta: $e');
+      return [];
+    }
+  }
+
+  String _normalizarHorario(dynamic value) {
+    final raw = (value ?? '').toString().trim();
+    if (raw.isEmpty) return '';
+
+    final parts = raw.split(':');
+    if (parts.length >= 2) {
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+
+      if (h != null && m != null) {
+        return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+      }
+    }
+
+    return raw;
+  }
+
+  int _minutesFromTimeRange(dynamic startValue, dynamic endValue) {
+    final start = _normalizarHorario(startValue);
+    final end = _normalizarHorario(endValue);
+
+    final startParts = start.split(':');
+    final endParts = end.split(':');
+
+    if (startParts.length != 2 || endParts.length != 2) return 0;
+
+    final startHour = int.tryParse(startParts[0]);
+    final startMinute = int.tryParse(startParts[1]);
+    final endHour = int.tryParse(endParts[0]);
+    final endMinute = int.tryParse(endParts[1]);
+
+    if (startHour == null ||
+        startMinute == null ||
+        endHour == null ||
+        endMinute == null) {
+      return 0;
+    }
+
+    final startTotal = startHour * 60 + startMinute;
+    final endTotal = endHour * 60 + endMinute;
+
+    return math.max(0, endTotal - startTotal);
+  }
+
+  int _durationMinutesFromPlanBlock(Map<String, dynamic> row) {
+    final duration = row['duration_minutes'];
+
+    if (duration is int) return math.max(0, duration);
+    if (duration is num) return math.max(0, duration.round());
+
+    return _minutesFromTimeRange(row['start_time'], row['end_time']);
+  }
+
+  String _formatTrainingMinutes(int minutes) {
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+
+    if (h <= 0) return '${m}min';
+    if (m == 0) return '${h}h';
+    return '${h}h ${m}min';
+  }
+
+  Color _trainingCategoryColor(String category) {
+    switch (category) {
+      case 'Fundamentos':
+        return olympusSuccess;
+      case 'Tático':
+        return olympusPurple;
+      case 'Físico':
+        return olympusWarning;
+      default:
+        return olympusLightBlue;
+    }
+  }
+
+  IconData _trainingCategoryIcon(String category) {
+    switch (category) {
+      case 'Fundamentos':
+        return Icons.sports_volleyball_rounded;
+      case 'Tático':
+        return Icons.account_tree_rounded;
+      case 'Físico':
+        return Icons.fitness_center_rounded;
+      default:
+        return Icons.insights_rounded;
+    }
+  }
+
   Future<void> _loadData() async {
     setState(() {
       _loading = true;
@@ -510,6 +650,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
       );
 
       final messages = await _loadMessages(user.id);
+      final trainingPlanBlocks = await _loadTrainingPlanBlocks();
 
       if (!mounted) return;
       setState(() {
@@ -517,6 +658,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         _evaluations = evaluations;
         _checkins = checkins;
         _convocations = convocations;
+        _trainingPlanBlocks = trainingPlanBlocks;
         _messages = messages;
         _loading = false;
       });
@@ -707,6 +849,83 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         .length;
   }
 
+  List<_MonthlyPresenceAbsence> get _annualPresenceAbsenceByMonth {
+    final now = DateTime.now();
+    final year = now.year;
+
+    final monthlyPresenceEventIds = <int, Set<String>>{
+      for (int month = 1; month <= 12; month++) month: <String>{},
+    };
+    final monthlyAbsentEventIds = <int, Set<String>>{
+      for (int month = 1; month <= 12; month++) month: <String>{},
+    };
+
+    final acceptedTrainingEventDates = <String, DateTime>{};
+
+    for (final row in _convocations) {
+      final status = (row['status'] ?? '').toString().toLowerCase().trim();
+      if (status != 'accepted') continue;
+      if (!_isTrainingEvent(row)) continue;
+      if (!_eventMatchesAthleteGender(row)) continue;
+
+      final eventDate = _eventDateTime(row);
+      if (!_isOnOrAfterStatsRuleStart(eventDate)) continue;
+      if (eventDate == null || eventDate.year != year) continue;
+
+      final eventId = (row['event_id'] ?? '').toString();
+      if (eventId.isEmpty) continue;
+
+      acceptedTrainingEventDates[eventId] = eventDate;
+    }
+
+    final doneEventIds = _checkins
+        .where((row) {
+          if (!_isCheckinDone(row['check_in_status'])) return false;
+          if (!_isTrainingEvent(row)) return false;
+          if (!_eventMatchesAthleteGender(row)) return false;
+
+          final eventDate = _eventDateTime(row);
+          if (!_isOnOrAfterStatsRuleStart(eventDate)) return false;
+          if (eventDate == null || eventDate.year != year) return false;
+
+          final eventId = (row['event_id'] ?? '').toString();
+          return acceptedTrainingEventDates.containsKey(eventId);
+        })
+        .map((row) => (row['event_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    final today = DateTime.now();
+
+    for (final entry in acceptedTrainingEventDates.entries) {
+      final eventId = entry.key;
+      final eventDate = entry.value;
+      final month = eventDate.month;
+
+      if (doneEventIds.contains(eventId)) {
+        monthlyPresenceEventIds[month]!.add(eventId);
+        continue;
+      }
+
+      final checkinClosed = today.isAfter(
+        eventDate.add(const Duration(minutes: 30)),
+      );
+
+      if (checkinClosed) {
+        monthlyAbsentEventIds[month]!.add(eventId);
+      }
+    }
+
+    return List.generate(12, (index) {
+      final month = index + 1;
+      return _MonthlyPresenceAbsence(
+        month: month,
+        presences: monthlyPresenceEventIds[month]!.length,
+        absences: monthlyAbsentEventIds[month]!.length,
+      );
+    });
+  }
+
   int get _trainingRejectedCount {
     final start = _periodStart();
 
@@ -727,6 +946,52 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         .where((id) => id.isNotEmpty)
         .toSet()
         .length;
+  }
+
+  List<Map<String, dynamic>> get _checkedInTrainingPlanBlocksHistory {
+    return _trainingPlanBlocks.where((row) {
+      if (!_isTrainingEvent(row)) return false;
+      if (!_eventMatchesAthleteGender(row)) return false;
+      return _durationMinutesFromPlanBlock(row) > 0;
+    }).toList();
+  }
+
+  Map<String, int> get _trainingMinutesByCategory {
+    final map = <String, int>{
+      'Fundamentos': 0,
+      'Tático': 0,
+      'Físico': 0,
+    };
+
+    for (final row in _checkedInTrainingPlanBlocksHistory) {
+      final category = (row['category'] ?? '').toString().trim().isEmpty
+          ? 'Outros'
+          : (row['category'] ?? '').toString().trim();
+
+      map[category] = (map[category] ?? 0) + _durationMinutesFromPlanBlock(row);
+    }
+
+    return map;
+  }
+
+  Map<String, int> get _trainingMinutesByType {
+    final map = <String, int>{};
+
+    for (final row in _checkedInTrainingPlanBlocksHistory) {
+      final type = (row['type'] ?? '').toString().trim();
+      if (type.isEmpty) continue;
+
+      map[type] = (map[type] ?? 0) + _durationMinutesFromPlanBlock(row);
+    }
+
+    return map;
+  }
+
+  int get _totalTrainingPlanMinutes {
+    return _trainingMinutesByCategory.values.fold<int>(
+      0,
+      (sum, minutes) => sum + minutes,
+    );
   }
 
   String get _evolutionLabel {
@@ -942,6 +1207,90 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     );
   }
 
+  double get _athleteImageScrollProgress {
+    return (_scrollOffset / 420).clamp(0.0, 1.0).toDouble();
+  }
+
+  Widget _athleteParallaxLayer({
+    required Alignment alignment,
+    required double opacity,
+    required double parallaxFactor,
+    required double scale,
+    bool strongerBottomShade = false,
+  }) {
+    final avatarUrl = (_profile?['avatar_url'] ?? '').toString().trim();
+    if (avatarUrl.isEmpty) return const SizedBox.shrink();
+
+    final progress = _athleteImageScrollProgress;
+    final dynamicBlur = 1.0 + (progress * 2.4);
+    final yOffset = -_scrollOffset * parallaxFactor;
+
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Transform.translate(
+              offset: Offset(0, yOffset),
+              child: Transform.scale(
+                scale: scale + (progress * 0.045),
+                child: Opacity(
+                  opacity: opacity,
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(
+                      sigmaX: dynamicBlur,
+                      sigmaY: dynamicBlur,
+                    ),
+                    child: Image.network(
+                      avatarUrl,
+                      fit: BoxFit.cover,
+                      alignment: alignment,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: strongerBottomShade
+                      ? [
+                          const Color(0xFF06172B).withOpacity(0.40),
+                          olympusBlue.withOpacity(0.18),
+                          const Color(0xFF06172B).withOpacity(0.60),
+                        ]
+                      : [
+                          const Color(0xFF06172B).withOpacity(0.58),
+                          olympusBlue.withOpacity(0.12),
+                          const Color(0xFF06172B).withOpacity(0.36),
+                        ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFF071A30).withOpacity(0.70),
+                      const Color(0xFF123861).withOpacity(0.35),
+                      const Color(0xFF2C5F8D).withOpacity(0.25),
+                    ],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _header() {
     final fullName = (_profile?['full_name'] ??
             _supabase.auth.currentUser?.userMetadata?['full_name'] ??
@@ -1076,60 +1425,972 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     );
   }
 
+  String _fullMonthLabel(int month) {
+    const labels = [
+      '',
+      'Janeiro',
+      'Fevereiro',
+      'Março',
+      'Abril',
+      'Maio',
+      'Junho',
+      'Julho',
+      'Agosto',
+      'Setembro',
+      'Outubro',
+      'Novembro',
+      'Dezembro',
+    ];
+    if (month < 1 || month > 12) return '';
+    return labels[month];
+  }
+
+  String get _scoreStatusLabel {
+    if (_periodEvaluations.isEmpty) return 'Sem avaliações';
+    if (_score >= 8) return 'Alto desempenho';
+    if (_score >= 3) return 'Evoluindo';
+    if (_score >= 0) return 'Estável';
+    return 'Precisa reagir';
+  }
+
+  List<Map<String, dynamic>> get _scoreHistoryRows {
+    final rows = _periodEvaluations.toList()
+      ..sort((a, b) {
+        final ad = _parseDate(a['created_at']) ?? DateTime(1900);
+        final bd = _parseDate(b['created_at']) ?? DateTime(1900);
+        return bd.compareTo(ad);
+      });
+
+    return rows;
+  }
+
+  int _scoreDeltaForEvaluation(Map<String, dynamic> row) {
+    final tipo = (row['tipo'] ?? '').toString().toLowerCase();
+
+    if (tipo == 'destaque') return 2;
+    if (tipo == 'atencao' || tipo == 'atenção') return -1;
+
+    final score = row['score'];
+    if (score is num) return score.round();
+
+    return 0;
+  }
+
+  Color _scoreDeltaColor(int delta) {
+    if (delta > 0) return olympusSuccess;
+    if (delta < 0) return olympusDanger;
+    return olympusMuted;
+  }
+
+  String _scoreDeltaLabel(int delta) {
+    if (delta > 0) return '+$delta';
+    return delta.toString();
+  }
+
+  Widget _scoreMiniPill({
+    required String label,
+    required String value,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 9),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.13),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: color.withOpacity(0.34),
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(height: 5),
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                height: 1,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.72),
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _scoreHeroCard() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFF071A30),
+                  Color(0xFF123861),
+                  Color(0xFF2C5F8D),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              border: Border.all(
+                color: olympusGold,
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: olympusGold.withOpacity(0.20),
+                  blurRadius: 26,
+                  spreadRadius: 1,
+                  offset: const Offset(0, 10),
+                ),
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.18),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                _athleteParallaxLayer(
+                  alignment: Alignment.topCenter,
+                  opacity: 0.34,
+                  parallaxFactor: 0.075,
+                  scale: 1.18,
+                ),
+                Positioned(
+                  top: -36,
+                  right: -34,
+                  child: Container(
+                    width: 130,
+                    height: 130,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withOpacity(0.06),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: -38,
+                  left: -34,
+                  child: Container(
+                    width: 116,
+                    height: 116,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: olympusGold.withOpacity(0.08),
+                    ),
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 54,
+                          height: 54,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(18),
+                            gradient: const LinearGradient(
+                              colors: [
+                                Color(0xFFF8E08E),
+                                Color(0xFFD4AF37),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: olympusGold.withOpacity(0.40),
+                                blurRadius: 16,
+                                spreadRadius: 1,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.scoreboard_rounded,
+                            color: olympusBlue,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Score do período',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.82),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                _scoreStatusLabel,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: _showScoreHistory,
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            backgroundColor: Colors.white.withOpacity(0.10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(999),
+                              side: BorderSide(
+                                color: Colors.white.withOpacity(0.18),
+                              ),
+                            ),
+                          ),
+                          icon: const Icon(Icons.history_rounded, size: 16),
+                          label: const Text(
+                            'Ver histórico',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '$_score',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 58,
+                            fontWeight: FontWeight.w900,
+                            height: 0.95,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 7),
+                          child: Text(
+                            'pontos',
+                            style: TextStyle(
+                              color: olympusGold.withOpacity(0.95),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 15),
+                    Row(
+                      children: [
+                        _scoreMiniPill(
+                          label: 'Destaques',
+                          value: _destaques.toString(),
+                          color: olympusSuccess,
+                          icon: Icons.star_rounded,
+                        ),
+                        const SizedBox(width: 8),
+                        _scoreMiniPill(
+                          label: 'Atenções',
+                          value: _atencoes.toString(),
+                          color: olympusWarning,
+                          icon: Icons.warning_amber_rounded,
+                        ),
+                        const SizedBox(width: 8),
+                        _scoreMiniPill(
+                          label: 'Mensais',
+                          value: _completas.toString(),
+                          color: olympusLightBlue,
+                          icon: Icons.assignment_turned_in_outlined,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _trainingPlanCategoryRow({
+    required String category,
+    required int minutes,
+    required int total,
+  }) {
+    final color = _trainingCategoryColor(category);
+    final percent = total <= 0 ? 0.0 : minutes / total;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              _trainingCategoryIcon(category),
+              color: color,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  category,
+                  style: const TextStyle(
+                    color: olympusBlue,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: percent.clamp(0, 1),
+                    minHeight: 7,
+                    backgroundColor: olympusBorder,
+                    valueColor: AlwaysStoppedAnimation<Color>(color),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                _formatTrainingMinutes(minutes),
+                style: TextStyle(
+                  color: color,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '${(percent * 100).round()}%',
+                style: const TextStyle(
+                  color: olympusMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _trainingPlanPieChartAthlete() {
+    final categoryMinutes = _trainingMinutesByCategory;
+    final typeRanking = _trainingMinutesByType.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final totalMinutes = _totalTrainingPlanMinutes;
+    final hasData = totalMinutes > 0;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(26),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(26),
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFFFDFEFF),
+                  Color(0xFFF5F9FE),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              border: Border.all(color: Colors.white.withOpacity(0.72)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.13),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+                BoxShadow(
+                  color: olympusGold.withOpacity(0.12),
+                  blurRadius: 22,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  right: -28,
+                  top: -30,
+                  child: Container(
+                    width: 110,
+                    height: 110,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: olympusGold.withOpacity(0.08),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: -34,
+                  bottom: -36,
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: olympusLightBlue.withOpacity(0.07),
+                    ),
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 46,
+                          height: 46,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: const LinearGradient(
+                              colors: [
+                                Color(0xFFF8E08E),
+                                Color(0xFFD4AF37),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: olympusGold.withOpacity(0.26),
+                                blurRadius: 14,
+                                spreadRadius: 1,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.pie_chart_rounded,
+                            color: olympusBlue,
+                            size: 25,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Tempo do Treino',
+                                style: TextStyle(
+                                  color: olympusBlue,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Histórico completo dos treinos com check-in',
+                                style: TextStyle(
+                                  color: olympusMuted.withOpacity(0.92),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        _infoButton(
+                          title: 'Tempo do Treino',
+                          explanation:
+                              'Mostra a soma do tempo planejado pelo técnico somente nos treinos em que você fez check-in. Esta visão usa o histórico completo e não depende do filtro de período.',
+                          color: olympusGold,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    if (!hasData)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(13),
+                        decoration: BoxDecoration(
+                          color: olympusBlue.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: olympusBlue.withOpacity(0.10),
+                          ),
+                        ),
+                        child: const Text(
+                          'Ainda não há planejamento salvo para treinos em que você fez check-in.',
+                          style: TextStyle(
+                            color: olympusMuted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            height: 1.35,
+                          ),
+                        ),
+                      )
+                    else ...[
+                      SizedBox(
+                        height: 188,
+                        width: double.infinity,
+                        child: CustomPaint(
+                          painter: _TrainingPlanPiePainter(
+                            data: categoryMinutes,
+                            colors: {
+                              'Fundamentos': olympusSuccess,
+                              'Tático': olympusPurple,
+                              'Físico': olympusWarning,
+                            },
+                            totalMinutes: totalMinutes,
+                            centerText: _formatTrainingMinutes(totalMinutes),
+                            mutedColor: olympusMuted,
+                            titleColor: olympusBlue,
+                          ),
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _trainingPlanCategoryRow(
+                        category: 'Fundamentos',
+                        minutes: categoryMinutes['Fundamentos'] ?? 0,
+                        total: totalMinutes,
+                      ),
+                      _trainingPlanCategoryRow(
+                        category: 'Tático',
+                        minutes: categoryMinutes['Tático'] ?? 0,
+                        total: totalMinutes,
+                      ),
+                      _trainingPlanCategoryRow(
+                        category: 'Físico',
+                        minutes: categoryMinutes['Físico'] ?? 0,
+                        total: totalMinutes,
+                      ),
+                      if (typeRanking.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Principais focos treinados',
+                          style: TextStyle(
+                            color: olympusBlue,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ...typeRanking.take(4).map((entry) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    entry.key,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: olympusMuted,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  _formatTrainingMinutes(entry.value),
+                                  style: const TextStyle(
+                                    color: olympusBlue,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showScoreHistory() {
+    final rows = _scoreHistoryRows;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return SafeArea(
+          top: false,
+          child: Container(
+            height: MediaQuery.of(context).size.height * 0.86,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF4F7FB),
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
+            ),
+            child: Column(
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 46,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: olympusBorder,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                Container(
+                  margin: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(22),
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFF0D223B),
+                        Color(0xFF123861),
+                        Color(0xFF235E94),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: olympusBlue.withOpacity(0.22),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: olympusGold.withOpacity(0.18),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: olympusGold.withOpacity(0.44),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.scoreboard_rounded,
+                          color: olympusGold,
+                          size: 26,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Histórico do Score',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Total do período: $_score ponto(s)',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.78),
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                        color: Colors.white,
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: rows.isEmpty
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(20),
+                            child: Text(
+                              'Nenhuma avaliação registrada neste período.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: olympusMuted,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                          itemCount: rows.length,
+                          itemBuilder: (context, index) {
+                            final item = rows[index];
+                            final tipo =
+                                (item['tipo'] ?? 'Avaliação').toString();
+                            final fundamento =
+                                (item['fundamento'] ?? '').toString().trim();
+                            final motivo =
+                                (item['motivo'] ?? '').toString().trim();
+                            final observacao =
+                                (item['observacao'] ?? '').toString().trim();
+                            final delta = _scoreDeltaForEvaluation(item);
+                            final deltaColor = _scoreDeltaColor(delta);
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.all(13),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: deltaColor.withOpacity(0.18),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: 46,
+                                    height: 46,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: deltaColor.withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(15),
+                                      border: Border.all(
+                                        color: deltaColor.withOpacity(0.24),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      _scoreDeltaLabel(delta),
+                                      style: TextStyle(
+                                        color: deltaColor,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                tipo.toUpperCase(),
+                                                style: const TextStyle(
+                                                  color: olympusBlue,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w900,
+                                                ),
+                                              ),
+                                            ),
+                                            Text(
+                                              _formatDate(item['created_at']),
+                                              style: const TextStyle(
+                                                color: olympusMuted,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (fundamento.isNotEmpty) ...[
+                                          const SizedBox(height: 5),
+                                          Text(
+                                            fundamento,
+                                            style: const TextStyle(
+                                              color: olympusLightBlue,
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ],
+                                        if (motivo.isNotEmpty) ...[
+                                          const SizedBox(height: 5),
+                                          Text(
+                                            motivo,
+                                            style: const TextStyle(
+                                              color: olympusMuted,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                        if (observacao.isNotEmpty) ...[
+                                          const SizedBox(height: 7),
+                                          Text(
+                                            observacao,
+                                            style: const TextStyle(
+                                              color: Color(0xFF6A7E94),
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              height: 1.3,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _metricCard({
     required IconData icon,
     required String title,
     required String value,
     required Color color,
     required String explanation,
+    VoidCallback? onTap,
   }) {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 116),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.96),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: olympusBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 116),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.96),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: olympusBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, color: color, size: 22),
-              const Spacer(),
-              _infoButton(
-                title: title,
-                explanation: explanation,
-                color: color,
+              Row(
+                children: [
+                  Icon(icon, color: color, size: 22),
+                  const Spacer(),
+                  _infoButton(
+                    title: title,
+                    explanation: explanation,
+                    color: color,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    color: olympusBlue,
+                    fontSize: 23,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: olympusMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              style: const TextStyle(
-                color: olympusBlue,
-                fontSize: 23,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: olympusMuted,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1137,12 +2398,12 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   Widget _metricsGrid() {
     final metrics = [
       {
-        'icon': Icons.trending_up_rounded,
-        'title': 'Evolução',
-        'value': _evolutionLabel,
-        'color': olympusBlue,
+        'icon': Icons.fact_check_outlined,
+        'title': 'Presenças / Faltas',
+        'value': '$_trainingPresenceCount / $_trainingAcceptedAbsentCount',
+        'color': olympusPurple,
         'explanation':
-            'Mostra a leitura do período: Melhorando quando os destaques superam os pontos de atenção; Precisa de atenção quando os pontos de atenção superam os destaques; Estável quando há equilíbrio.',
+            'Mostra presenças e faltas no período selecionado. Presenças são check-ins realizados em treinos aceitos. Faltas são treinos aceitos em que o prazo de check-in expirou sem presença registrada. Só entram treinos a partir de 01/05/2026 e do mesmo gênero do atleta quando o evento possui gender.',
       },
       {
         'icon': Icons.star_rounded,
@@ -1160,30 +2421,6 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         'explanation':
             'Quantidade de pontos de atenção registrados pelo técnico no período selecionado.',
       },
-      {
-        'icon': Icons.scoreboard_rounded,
-        'title': 'Score',
-        'value': '$_score',
-        'color': olympusGold,
-        'explanation':
-            'Pontuação calculada pelas avaliações: destaque soma +2, ponto de atenção subtrai -1 e avaliações completas usam o score/nota salvo no banco quando existir.',
-      },
-      {
-        'icon': Icons.fact_check_outlined,
-        'title': 'Presença',
-        'value': '${(_presenceRate * 100).round()}%',
-        'color': olympusPurple,
-        'explanation':
-            'Percentual calculado pela mesma regra do painel do atleta: check-ins realizados ÷ treinos aceitos. Só entram treinos a partir de 01/05/2026 e do mesmo gênero do atleta quando o evento possui gender.',
-      },
-      {
-        'icon': Icons.assignment_turned_in_outlined,
-        'title': 'Mensais',
-        'value': '$_completas',
-        'color': olympusLightBlue,
-        'explanation':
-            'Quantidade de avaliações completas mensais registradas no período selecionado.',
-      },
     ];
 
     return Padding(
@@ -1192,15 +2429,11 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         builder: (context, constraints) {
           final width = constraints.maxWidth;
           final crossAxisCount = width < 360
-              ? 2
+              ? 1
               : width < 720
                   ? 3
-                  : 6;
-          final aspectRatio = width < 360
-              ? 1.04
-              : width < 720
-                  ? 1.12
-                  : 1.0;
+                  : 3;
+          final aspectRatio = width < 360 ? 2.7 : 1.22;
 
           return GridView.builder(
             itemCount: metrics.length,
@@ -1221,6 +2454,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                 value: item['value'] as String,
                 color: item['color'] as Color,
                 explanation: item['explanation'] as String,
+                onTap: null,
               );
             },
           );
@@ -1289,6 +2523,406 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             fontSize: 13,
             fontWeight: FontWeight.w700,
             height: 1.35,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _shortMonthLabel(int month) {
+    const labels = [
+      '',
+      'Jan',
+      'Fev',
+      'Mar',
+      'Abr',
+      'Mai',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Set',
+      'Out',
+      'Nov',
+      'Dez',
+    ];
+    return labels[month];
+  }
+
+  Widget _annualPresenceAbsenceChart() {
+    final data = _annualPresenceAbsenceByMonth;
+    final totalPresences =
+        data.fold<int>(0, (sum, item) => sum + item.presences);
+    final totalAbsences = data.fold<int>(0, (sum, item) => sum + item.absences);
+    final hasData = totalPresences > 0 || totalAbsences > 0;
+
+    final selectedMonth = _selectedAnnualMonth;
+    final selectedData = selectedMonth == null
+        ? null
+        : data.firstWhere(
+            (item) => item.month == selectedMonth,
+            orElse: () => _MonthlyPresenceAbsence(
+              month: selectedMonth,
+              presences: 0,
+              absences: 0,
+            ),
+          );
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(26),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(26),
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFF081C33),
+                  Color(0xFF123861),
+                  Color(0xFF1E5C8C),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              border: Border.all(
+                color: Colors.white24,
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: olympusLightBlue.withOpacity(0.26),
+                  blurRadius: 22,
+                  offset: const Offset(0, 10),
+                ),
+                BoxShadow(
+                  color: olympusGold.withOpacity(0.12),
+                  blurRadius: 26,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                _athleteParallaxLayer(
+                  alignment: Alignment.bottomCenter,
+                  opacity: 0.30,
+                  parallaxFactor: 0.115,
+                  scale: 1.24,
+                  strongerBottomShade: true,
+                ),
+                Positioned(
+                  top: -42,
+                  right: -34,
+                  child: Container(
+                    width: 128,
+                    height: 128,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withOpacity(0.06),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: -48,
+                  left: -36,
+                  child: Container(
+                    width: 122,
+                    height: 122,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: olympusGold.withOpacity(0.08),
+                    ),
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: LinearGradient(
+                              colors: [
+                                olympusGold.withOpacity(0.95),
+                                const Color(0xFFF8E08E),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: olympusGold.withOpacity(0.30),
+                                blurRadius: 14,
+                                spreadRadius: 1,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.show_chart_rounded,
+                            color: olympusBlue,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Presença anual',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Toque em um mês para ver o detalhe',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.72),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        _infoButton(
+                          title: 'Presença anual',
+                          explanation:
+                              'Gráfico anual com presenças e faltas por mês. Presença é check-in realizado em treino aceito. Falta é treino aceito cujo prazo de check-in expirou sem presença registrada. A regra considera treinos a partir de 01/05/2026 e o gênero do atleta quando o evento possui gender.',
+                          color: olympusGold,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        _annualSummaryPill(
+                          label: 'Presenças',
+                          value: totalPresences,
+                          color: olympusSuccess,
+                          icon: Icons.check_circle_rounded,
+                        ),
+                        const SizedBox(width: 10),
+                        _annualSummaryPill(
+                          label: 'Faltas',
+                          value: totalAbsences,
+                          color: olympusDanger,
+                          icon: Icons.cancel_rounded,
+                        ),
+                      ],
+                    ),
+                    if (selectedData != null) ...[
+                      const SizedBox(height: 12),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.13),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: olympusGold.withOpacity(0.34),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.touch_app_rounded,
+                              color: olympusGold,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${_fullMonthLabel(selectedData.month)}: ${selectedData.presences} presença(s) / ${selectedData.absences} falta(s)',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    Container(
+                      height: 236,
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(10, 12, 10, 8),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        color: Colors.white.withOpacity(0.08),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.11),
+                        ),
+                      ),
+                      child: hasData
+                          ? LayoutBuilder(
+                              builder: (context, constraints) {
+                                return GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTapDown: (details) {
+                                    final localX = details.localPosition.dx;
+                                    final left = constraints.maxWidth < 360
+                                        ? 30.0
+                                        : 34.0;
+                                    const right = 12.0;
+                                    final chartWidth =
+                                        constraints.maxWidth - left - right;
+
+                                    if (chartWidth <= 0) return;
+
+                                    final normalized =
+                                        ((localX - left) / chartWidth)
+                                            .clamp(0.0, 1.0);
+                                    final month = (normalized * 11).round() + 1;
+
+                                    setState(() {
+                                      _selectedAnnualMonth = month.clamp(1, 12);
+                                    });
+                                  },
+                                  child: CustomPaint(
+                                    painter: _AnnualPresenceAbsencePainter(
+                                      data: data,
+                                      presenceColor: olympusSuccess,
+                                      absenceColor: olympusDanger,
+                                      gridColor: Colors.white.withOpacity(0.16),
+                                      labelColor:
+                                          Colors.white.withOpacity(0.74),
+                                      selectedMonth: _selectedAnnualMonth,
+                                      selectedColor: olympusGold,
+                                    ),
+                                    child: const SizedBox.expand(),
+                                  ),
+                                );
+                              },
+                            )
+                          : Center(
+                              child: Text(
+                                'Ainda não há dados suficientes para montar o gráfico anual.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.76),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _chartLegendDot(
+                          label: 'Presenças',
+                          color: olympusSuccess,
+                        ),
+                        const SizedBox(width: 14),
+                        _chartLegendDot(
+                          label: 'Faltas',
+                          color: olympusDanger,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _annualSummaryPill({
+    required String label,
+    required int value,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: color.withOpacity(0.13),
+          border: Border.all(
+            color: color.withOpacity(0.34),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.76),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            Text(
+              value.toString(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chartLegendDot({
+    required String label,
+    required Color color,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.55),
+                blurRadius: 8,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.78),
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ],
@@ -1760,17 +3394,23 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
               RefreshIndicator(
                 onRefresh: _loadData,
                 child: ListView(
+                  controller: _scrollController,
+                  physics: const BouncingScrollPhysics(
+                    parent: AlwaysScrollableScrollPhysics(),
+                  ),
                   padding: const EdgeInsets.only(bottom: 28),
                   children: [
                     _header(),
+                    _scoreHeroCard(),
+                    _annualPresenceAbsenceChart(),
+                    _trainingPlanPieChartAthlete(),
                     _metricsGrid(),
                     const SizedBox(height: 12),
-                    _presenceExplanationCard(),
                     _evolutionChart(),
                     _fundamentsSection(),
+                    _historySection(),
                     _insightsSection(),
                     _messagesSection(),
-                    _historySection(),
                   ],
                 ),
               ),
@@ -1778,6 +3418,418 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         ),
       ),
     );
+  }
+}
+
+class _TrainingPlanPiePainter extends CustomPainter {
+  _TrainingPlanPiePainter({
+    required this.data,
+    required this.colors,
+    required this.totalMinutes,
+    required this.centerText,
+    required this.mutedColor,
+    required this.titleColor,
+  });
+
+  final Map<String, int> data;
+  final Map<String, Color> colors;
+  final int totalMinutes;
+  final String centerText;
+  final Color mutedColor;
+  final Color titleColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+
+    final center = Offset(size.width * 0.31, size.height / 2);
+    final radius = math.min(size.height * 0.32, size.width * 0.20);
+
+    final basePaint = Paint()
+      ..color = const Color(0xFFE4EDF5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 22
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawCircle(center, radius, basePaint);
+
+    final categories = ['Fundamentos', 'Tático', 'Físico'];
+    double startAngle = -math.pi / 2;
+
+    final arcPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 22
+      ..strokeCap = StrokeCap.round;
+
+    if (totalMinutes > 0) {
+      for (final category in categories) {
+        final value = data[category] ?? 0;
+        if (value <= 0) continue;
+
+        final sweep = (value / totalMinutes) * math.pi * 2;
+        arcPaint.color = colors[category] ?? titleColor;
+
+        canvas.drawArc(
+          Rect.fromCircle(center: center, radius: radius),
+          startAngle,
+          sweep,
+          false,
+          arcPaint,
+        );
+
+        startAngle += sweep;
+      }
+    }
+
+    canvas.drawCircle(
+      center,
+      radius - 22,
+      Paint()..color = Colors.white.withOpacity(0.94),
+    );
+
+    final titlePainter = TextPainter(
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+      text: TextSpan(
+        text: 'Total',
+        style: TextStyle(
+          color: mutedColor,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    )..layout(maxWidth: radius * 1.7);
+
+    titlePainter.paint(
+      canvas,
+      Offset(center.dx - titlePainter.width / 2, center.dy - 21),
+    );
+
+    final totalPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+      text: TextSpan(
+        text: centerText,
+        style: TextStyle(
+          color: titleColor,
+          fontSize: 16,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    )..layout(maxWidth: radius * 1.9);
+
+    totalPainter.paint(
+      canvas,
+      Offset(center.dx - totalPainter.width / 2, center.dy - 2),
+    );
+
+    final legendX = size.width * 0.58;
+    double legendY = size.height * 0.20;
+
+    for (final category in categories) {
+      final value = data[category] ?? 0;
+      final percent =
+          totalMinutes <= 0 ? 0 : (value / totalMinutes * 100).round();
+      final color = colors[category] ?? titleColor;
+
+      canvas.drawCircle(
+        Offset(legendX, legendY + 7),
+        5,
+        Paint()..color = color,
+      );
+
+      final legendPainter = TextPainter(
+        textDirection: TextDirection.ltr,
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: '$category\n',
+              style: TextStyle(
+                color: titleColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                height: 1.2,
+              ),
+            ),
+            TextSpan(
+              text: '$value min • $percent%',
+              style: TextStyle(
+                color: mutedColor,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                height: 1.25,
+              ),
+            ),
+          ],
+        ),
+      )..layout(maxWidth: size.width - legendX - 8);
+
+      legendPainter.paint(canvas, Offset(legendX + 12, legendY));
+      legendY += 42;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrainingPlanPiePainter oldDelegate) {
+    return oldDelegate.data != data ||
+        oldDelegate.totalMinutes != totalMinutes ||
+        oldDelegate.centerText != centerText ||
+        oldDelegate.colors != colors;
+  }
+}
+
+class _MonthlyPresenceAbsence {
+  const _MonthlyPresenceAbsence({
+    required this.month,
+    required this.presences,
+    required this.absences,
+  });
+
+  final int month;
+  final int presences;
+  final int absences;
+}
+
+class _AnnualPresenceAbsencePainter extends CustomPainter {
+  _AnnualPresenceAbsencePainter({
+    required this.data,
+    required this.presenceColor,
+    required this.absenceColor,
+    required this.gridColor,
+    required this.labelColor,
+    this.selectedMonth,
+    this.selectedColor,
+  });
+
+  final List<_MonthlyPresenceAbsence> data;
+  final Color presenceColor;
+  final Color absenceColor;
+  final Color gridColor;
+  final Color labelColor;
+  final int? selectedMonth;
+  final Color? selectedColor;
+
+  static const List<String> _monthLabels = [
+    '',
+    'Jan',
+    'Fev',
+    'Mar',
+    'Abr',
+    'Mai',
+    'Jun',
+    'Jul',
+    'Ago',
+    'Set',
+    'Out',
+    'Nov',
+    'Dez',
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (data.isEmpty || size.width <= 0 || size.height <= 0) return;
+
+    final padding = EdgeInsets.fromLTRB(
+      size.width < 360 ? 30 : 34,
+      16,
+      12,
+      30,
+    );
+
+    final chartWidth = size.width - padding.left - padding.right;
+    final chartHeight = size.height - padding.top - padding.bottom;
+
+    if (chartWidth <= 0 || chartHeight <= 0) return;
+
+    final maxPresence = data.map((e) => e.presences).fold<int>(0, math.max);
+    final maxAbsence = data.map((e) => e.absences).fold<int>(0, math.max);
+    final maxValue = math.max(1, math.max(maxPresence, maxAbsence));
+
+    final textPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+    );
+
+    final axisPaint = Paint()
+      ..color = gridColor.withOpacity(0.72)
+      ..strokeWidth = 1;
+
+    final gridPaint = Paint()
+      ..color = gridColor
+      ..strokeWidth = 1;
+
+    for (int i = 0; i <= 4; i++) {
+      final y = padding.top + chartHeight * (i / 4);
+      canvas.drawLine(
+        Offset(padding.left, y),
+        Offset(padding.left + chartWidth, y),
+        gridPaint,
+      );
+
+      final value = (maxValue - (maxValue * i / 4)).round();
+      textPainter.text = TextSpan(
+        text: value.toString(),
+        style: TextStyle(
+          color: labelColor,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(padding.left - textPainter.width - 8, y - 6),
+      );
+    }
+
+    canvas.drawLine(
+      Offset(padding.left, padding.top),
+      Offset(padding.left, padding.top + chartHeight),
+      axisPaint,
+    );
+
+    canvas.drawLine(
+      Offset(padding.left, padding.top + chartHeight),
+      Offset(padding.left + chartWidth, padding.top + chartHeight),
+      axisPaint,
+    );
+
+    if (selectedMonth != null && selectedMonth! >= 1 && selectedMonth! <= 12) {
+      final selectedIndex = selectedMonth! - 1;
+      final selectedX = data.length == 1
+          ? padding.left + chartWidth / 2
+          : padding.left + chartWidth * (selectedIndex / (data.length - 1));
+
+      final markerPaint = Paint()
+        ..color = (selectedColor ?? Colors.white).withOpacity(0.70)
+        ..strokeWidth = 1.4;
+
+      canvas.drawLine(
+        Offset(selectedX, padding.top),
+        Offset(selectedX, padding.top + chartHeight),
+        markerPaint,
+      );
+
+      canvas.drawCircle(
+        Offset(selectedX, padding.top + chartHeight),
+        4,
+        Paint()..color = selectedColor ?? Colors.white,
+      );
+    }
+
+    List<Offset> buildPoints(
+        int Function(_MonthlyPresenceAbsence item) getValue) {
+      return List.generate(data.length, (index) {
+        final x = data.length == 1
+            ? padding.left + chartWidth / 2
+            : padding.left + chartWidth * (index / (data.length - 1));
+
+        final value = getValue(data[index]);
+        final normalized = value / maxValue;
+        final y = padding.top + chartHeight - normalized * chartHeight;
+
+        return Offset(x, y);
+      });
+    }
+
+    final presencePoints = buildPoints((item) => item.presences);
+    final absencePoints = buildPoints((item) => item.absences);
+
+    void drawLineSeries({
+      required List<Offset> points,
+      required Color color,
+      required bool fill,
+    }) {
+      if (points.isEmpty) return;
+
+      final path = Path()..moveTo(points.first.dx, points.first.dy);
+      for (final point in points.skip(1)) {
+        path.lineTo(point.dx, point.dy);
+      }
+
+      if (fill && points.length > 1) {
+        final fillPath = Path.from(path)
+          ..lineTo(points.last.dx, padding.top + chartHeight)
+          ..lineTo(points.first.dx, padding.top + chartHeight)
+          ..close();
+
+        canvas.drawPath(
+          fillPath,
+          Paint()..color = color.withOpacity(0.10),
+        );
+      }
+
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = color.withOpacity(0.28)
+          ..strokeWidth = 7
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+      );
+
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = color
+          ..strokeWidth = 3
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
+
+      for (final point in points) {
+        canvas.drawCircle(point, 5.2, Paint()..color = Colors.white);
+        canvas.drawCircle(point, 3.5, Paint()..color = color);
+      }
+    }
+
+    drawLineSeries(
+      points: presencePoints,
+      color: presenceColor,
+      fill: true,
+    );
+
+    drawLineSeries(
+      points: absencePoints,
+      color: absenceColor,
+      fill: false,
+    );
+
+    for (int i = 0; i < data.length; i++) {
+      final x = data.length == 1
+          ? padding.left + chartWidth / 2
+          : padding.left + chartWidth * (i / (data.length - 1));
+
+      final label = _monthLabels[data[i].month];
+
+      textPainter.text = TextSpan(
+        text: label,
+        style: TextStyle(
+          color: labelColor,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      );
+      textPainter.layout();
+
+      textPainter.paint(
+        canvas,
+        Offset(x - textPainter.width / 2, padding.top + chartHeight + 10),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _AnnualPresenceAbsencePainter oldDelegate) {
+    return oldDelegate.data != data ||
+        oldDelegate.presenceColor != presenceColor ||
+        oldDelegate.absenceColor != absenceColor ||
+        oldDelegate.gridColor != gridColor ||
+        oldDelegate.labelColor != labelColor ||
+        oldDelegate.selectedMonth != selectedMonth ||
+        oldDelegate.selectedColor != selectedColor;
   }
 }
 

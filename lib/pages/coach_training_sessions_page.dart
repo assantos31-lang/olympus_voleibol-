@@ -1966,6 +1966,8 @@ class CoachTrainingPlanDetailPage extends StatefulWidget {
 
 class _CoachTrainingPlanDetailPageState
     extends State<CoachTrainingPlanDetailPage> {
+  final SupabaseClient _supabase = Supabase.instance.client;
+
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusBg = Color(0xFFF4F7FB);
@@ -1975,9 +1977,7 @@ class _CoachTrainingPlanDetailPageState
   static const Color olympusSubtle = Color(0xFF6A7E94);
   static const Color olympusBorder = Color(0xFFE4EDF5);
   static const Color olympusDanger = Color(0xFFDC2626);
-
-  static final Map<String, List<Map<String, dynamic>>> _cacheBlocos = {};
-  static final Map<String, String> _cacheObservacoes = {};
+  static const Color olympusSuccess = Color(0xFF16A34A);
 
   final TextEditingController _observacoesController = TextEditingController();
 
@@ -2016,29 +2016,28 @@ class _CoachTrainingPlanDetailPageState
   };
 
   late List<Map<String, dynamic>> _blocos;
+  bool _loadingPlan = true;
+  bool _savingPlan = false;
 
-  String get _cacheKey => (widget.treino['id'] ?? 'sem_id').toString();
+  String get _eventId => (widget.treino['id'] ?? '').toString();
 
   @override
   void initState() {
     super.initState();
 
-    final cachedBlocos = _cacheBlocos[_cacheKey];
-    if (cachedBlocos != null && cachedBlocos.isNotEmpty) {
-      _blocos = cachedBlocos.map((e) => Map<String, dynamic>.from(e)).toList();
-    } else {
-      _blocos = [
-        {
-          'categoria': '',
-          'tipo': '',
-          'inicio': '',
-          'fim': '',
-          'observacao': '',
-        },
-      ];
-    }
+    final inicio = _getHorarioInicialTreino();
+    _blocos = [
+      {
+        'id': null,
+        'categoria': '',
+        'tipo': '',
+        'inicio': inicio,
+        'fim': _calcularHorarioFimPadrao(inicio),
+        'observacao': '',
+      },
+    ];
 
-    _observacoesController.text = _cacheObservacoes[_cacheKey] ?? '';
+    _carregarPlanejamentoDoSupabase();
   }
 
   @override
@@ -2049,6 +2048,28 @@ class _CoachTrainingPlanDetailPageState
 
   bool _isMobile(BuildContext context) {
     return MediaQuery.of(context).size.width < 600;
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: olympusDanger,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: olympusSuccess,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Widget _responsiveActionRow({
@@ -2082,7 +2103,8 @@ class _CoachTrainingPlanDetailPageState
   }
 
   DateTime? _parseHorario(String value) {
-    final parts = value.trim().split(':');
+    final clean = _normalizarHorario(value);
+    final parts = clean.split(':');
     if (parts.length != 2) return null;
     final hour = int.tryParse(parts[0]);
     final minute = int.tryParse(parts[1]);
@@ -2096,8 +2118,113 @@ class _CoachTrainingPlanDetailPageState
     return '$h:$m';
   }
 
+  String _normalizarHorario(dynamic value) {
+    final raw = (value ?? '').toString().trim();
+    if (raw.isEmpty) return '';
+
+    final parts = raw.split(':');
+    if (parts.length >= 2) {
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+
+      if (h != null && m != null) {
+        return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+      }
+    }
+
+    return raw;
+  }
+
   String _getHorarioInicialTreino() {
-    return (widget.treino['event_time'] ?? '').toString().trim();
+    return _normalizarHorario(widget.treino['event_time']);
+  }
+
+  String _calcularHorarioFimPadrao(String inicio) {
+    final parsed = _parseHorario(inicio);
+    if (parsed == null) return '';
+    return _formatHorario(parsed.add(const Duration(minutes: 10)));
+  }
+
+  Map<String, dynamic> _blocoVazioPadrao() {
+    final inicio = _getHorarioInicialTreino();
+
+    return {
+      'id': null,
+      'categoria': '',
+      'tipo': '',
+      'inicio': inicio,
+      'fim': _calcularHorarioFimPadrao(inicio),
+      'observacao': '',
+    };
+  }
+
+  Map<String, dynamic> _mapBlocoFromDb(Map<String, dynamic> row) {
+    return {
+      'id': row['id'],
+      'categoria': (row['category'] ?? '').toString(),
+      'tipo': (row['type'] ?? '').toString(),
+      'inicio': _normalizarHorario(row['start_time']),
+      'fim': _normalizarHorario(row['end_time']),
+      'observacao': (row['observation'] ?? '').toString(),
+    };
+  }
+
+  Future<void> _carregarPlanejamentoDoSupabase() async {
+    setState(() {
+      _loadingPlan = true;
+    });
+
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) {
+        throw Exception('Usuário não autenticado.');
+      }
+
+      if (_eventId.isEmpty) {
+        throw Exception('Evento inválido.');
+      }
+
+      final blocosResponse = await _supabase
+          .from('training_plan_blocks')
+          .select(
+              'id, category, type, start_time, end_time, observation, position')
+          .eq('event_id', _eventId)
+          .eq('coach_id', user.id)
+          .order('position', ascending: true);
+
+      final blocosRows =
+          List<Map<String, dynamic>>.from(blocosResponse as List);
+
+      final notesResponse = await _supabase
+          .from('training_plan_notes')
+          .select('notes')
+          .eq('event_id', _eventId)
+          .eq('coach_id', user.id)
+          .maybeSingle();
+
+      if (!mounted) return;
+
+      setState(() {
+        if (blocosRows.isEmpty) {
+          _blocos = [_blocoVazioPadrao()];
+        } else {
+          _blocos = blocosRows.map(_mapBlocoFromDb).toList();
+        }
+
+        if (notesResponse != null) {
+          _observacoesController.text =
+              (notesResponse['notes'] ?? '').toString();
+        }
+
+        _loadingPlan = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingPlan = false;
+      });
+      _showError('Erro ao carregar planejamento: $e');
+    }
   }
 
   bool _blocoEstaCompleto(Map<String, dynamic> bloco) {
@@ -2118,12 +2245,6 @@ class _CoachTrainingPlanDetailPageState
     final parsed = _parseHorario(ultimoFim);
     if (parsed == null) return _getHorarioInicialTreino();
     return _formatHorario(parsed.add(const Duration(minutes: 1)));
-  }
-
-  void _salvarCache() {
-    _cacheBlocos[_cacheKey] =
-        _blocos.map((e) => Map<String, dynamic>.from(e)).toList();
-    _cacheObservacoes[_cacheKey] = _observacoesController.text.trim();
   }
 
   Future<String?> _selecionarHorario(String valorInicial) async {
@@ -2150,6 +2271,92 @@ class _CoachTrainingPlanDetailPageState
     return _formatHorario(dt);
   }
 
+  Future<void> _salvarNotasNoSupabase() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      throw Exception('Usuário não autenticado.');
+    }
+
+    await _supabase.from('training_plan_notes').upsert(
+      {
+        'event_id': _eventId,
+        'coach_id': user.id,
+        'notes': _observacoesController.text.trim(),
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      onConflict: 'event_id,coach_id',
+    );
+  }
+
+  Future<void> _salvarBlocoNoSupabase(int index) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      throw Exception('Usuário não autenticado.');
+    }
+
+    if (_eventId.isEmpty) {
+      throw Exception('Evento inválido.');
+    }
+
+    final bloco = _blocos[index];
+
+    if (!_blocoEstaCompleto(bloco)) {
+      return;
+    }
+
+    final payload = {
+      'event_id': _eventId,
+      'coach_id': user.id,
+      'category': (bloco['categoria'] ?? '').toString().trim(),
+      'type': (bloco['tipo'] ?? '').toString().trim(),
+      'start_time': _normalizarHorario(bloco['inicio']),
+      'end_time': _normalizarHorario(bloco['fim']),
+      'observation': (bloco['observacao'] ?? '').toString().trim(),
+      'position': index,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+
+    final blocoId = (bloco['id'] ?? '').toString();
+
+    if (blocoId.isEmpty || blocoId == 'null') {
+      final inserted = await _supabase
+          .from('training_plan_blocks')
+          .insert(payload)
+          .select('id')
+          .single();
+
+      if (!mounted) return;
+
+      setState(() {
+        _blocos[index]['id'] = inserted['id'];
+      });
+    } else {
+      await _supabase
+          .from('training_plan_blocks')
+          .update(payload)
+          .eq('id', blocoId);
+    }
+  }
+
+  Future<void> _reordenarBlocosNoSupabase() async {
+    for (int i = 0; i < _blocos.length; i++) {
+      final blocoId = (_blocos[i]['id'] ?? '').toString();
+      if (blocoId.isEmpty || blocoId == 'null') continue;
+
+      await _supabase.from('training_plan_blocks').update({
+        'position': i,
+        'updated_at': DateTime.now().toIso8601String()
+      }).eq('id', blocoId);
+    }
+  }
+
+  Future<void> _removerBlocoDoSupabase(Map<String, dynamic> bloco) async {
+    final blocoId = (bloco['id'] ?? '').toString();
+    if (blocoId.isEmpty || blocoId == 'null') return;
+
+    await _supabase.from('training_plan_blocks').delete().eq('id', blocoId);
+  }
+
   Future<void> _adicionarBloco() async {
     if (!_podeAdicionarNovoBloco) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2167,15 +2374,17 @@ class _CoachTrainingPlanDetailPageState
         ? _getHorarioInicialTreino()
         : _proximoHorarioInicial();
 
+    final novoBloco = {
+      'id': null,
+      'categoria': '',
+      'tipo': '',
+      'inicio': horarioInicial,
+      'fim': _calcularHorarioFimPadrao(horarioInicial),
+      'observacao': '',
+    };
+
     setState(() {
-      _blocos.add({
-        'categoria': '',
-        'tipo': '',
-        'inicio': horarioInicial,
-        'fim': '',
-        'observacao': '',
-      });
-      _salvarCache();
+      _blocos.add(novoBloco);
     });
 
     await _editarBloco(_blocos.length - 1);
@@ -2188,14 +2397,19 @@ class _CoachTrainingPlanDetailPageState
             ? 'Fundamentos'
             : (bloco['categoria'] ?? 'Fundamentos').toString();
     String tipoSelecionado = (bloco['tipo'] ?? '').toString();
+
     String horarioInicio = index == 0
         ? ((bloco['inicio'] ?? '').toString().trim().isNotEmpty
-            ? (bloco['inicio'] ?? '').toString()
+            ? _normalizarHorario(bloco['inicio'])
             : _getHorarioInicialTreino())
         : ((bloco['inicio'] ?? '').toString().trim().isNotEmpty
-            ? (bloco['inicio'] ?? '').toString()
+            ? _normalizarHorario(bloco['inicio'])
             : _proximoHorarioInicial());
-    String horarioFim = (bloco['fim'] ?? '').toString();
+
+    String horarioFim = (bloco['fim'] ?? '').toString().trim().isNotEmpty
+        ? _normalizarHorario(bloco['fim'])
+        : _calcularHorarioFimPadrao(horarioInicio);
+
     final observacaoController =
         TextEditingController(text: (bloco['observacao'] ?? '').toString());
 
@@ -2212,6 +2426,10 @@ class _CoachTrainingPlanDetailPageState
             if (!opcoesTipos.contains(tipoSelecionado) &&
                 opcoesTipos.isNotEmpty) {
               tipoSelecionado = opcoesTipos.first;
+            }
+
+            if (horarioFim.trim().isEmpty && horarioInicio.trim().isNotEmpty) {
+              horarioFim = _calcularHorarioFimPadrao(horarioInicio);
             }
 
             Widget buildCategoriaChip(String categoria) {
@@ -2410,6 +2628,8 @@ class _CoachTrainingPlanDetailPageState
                                 if (escolhido != null) {
                                   setModalState(() {
                                     horarioInicio = escolhido;
+                                    horarioFim =
+                                        _calcularHorarioFimPadrao(escolhido);
                                   });
                                 }
                               },
@@ -2443,32 +2663,83 @@ class _CoachTrainingPlanDetailPageState
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: () {
-                              if (tipoSelecionado.trim().isEmpty ||
-                                  horarioInicio.trim().isEmpty ||
-                                  horarioFim.trim().isEmpty) {
-                                return;
-                              }
+                            onPressed: _savingPlan
+                                ? null
+                                : () async {
+                                    if (tipoSelecionado.trim().isEmpty ||
+                                        horarioInicio.trim().isEmpty ||
+                                        horarioFim.trim().isEmpty) {
+                                      return;
+                                    }
 
-                              setState(() {
-                                _blocos[index] = {
-                                  'categoria': categoriaSelecionada,
-                                  'tipo': tipoSelecionado,
-                                  'inicio': horarioInicio.trim(),
-                                  'fim': horarioFim.trim(),
-                                  'observacao':
-                                      observacaoController.text.trim(),
-                                };
-                                _salvarCache();
-                              });
-                              Navigator.pop(context, true);
-                            },
+                                    final inicioParsed =
+                                        _parseHorario(horarioInicio);
+                                    final fimParsed = _parseHorario(horarioFim);
+
+                                    if (inicioParsed == null ||
+                                        fimParsed == null ||
+                                        !fimParsed.isAfter(inicioParsed)) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'O horário final precisa ser maior que o horário inicial.',
+                                          ),
+                                        ),
+                                      );
+                                      return;
+                                    }
+
+                                    setState(() {
+                                      _savingPlan = true;
+                                      _blocos[index] = {
+                                        'id': bloco['id'],
+                                        'categoria': categoriaSelecionada,
+                                        'tipo': tipoSelecionado,
+                                        'inicio': horarioInicio.trim(),
+                                        'fim': horarioFim.trim(),
+                                        'observacao':
+                                            observacaoController.text.trim(),
+                                      };
+                                    });
+
+                                    try {
+                                      await _salvarBlocoNoSupabase(index);
+
+                                      if (context.mounted) {
+                                        Navigator.pop(context, true);
+                                      }
+                                    } catch (e) {
+                                      if (mounted) {
+                                        _showError(
+                                          'Erro ao salvar bloco no Supabase: $e',
+                                        );
+                                      }
+                                    } finally {
+                                      if (mounted) {
+                                        setState(() {
+                                          _savingPlan = false;
+                                        });
+                                      }
+                                    }
+                                  },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: olympusBlue,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                             ),
-                            child: const Text('Salvar bloco'),
+                            child: _savingPlan
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                : const Text('Salvar bloco'),
                           ),
                         ),
                       ],
@@ -2485,34 +2756,60 @@ class _CoachTrainingPlanDetailPageState
     observacaoController.dispose();
 
     if (salvo == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bloco atualizado')),
-      );
+      _showSuccess('Bloco salvo no Supabase');
     }
   }
 
-  void _removerBloco(int index) {
-    setState(() {
-      if (_blocos.length == 1) {
-        _blocos[0] = {
-          'categoria': '',
-          'tipo': '',
-          'inicio': _getHorarioInicialTreino(),
-          'fim': '',
-          'observacao': '',
-        };
-      } else {
-        _blocos.removeAt(index);
+  Future<void> _removerBloco(int index) async {
+    final blocoRemovido = Map<String, dynamic>.from(_blocos[index]);
+
+    try {
+      await _removerBlocoDoSupabase(blocoRemovido);
+
+      setState(() {
+        if (_blocos.length == 1) {
+          _blocos[0] = _blocoVazioPadrao();
+        } else {
+          _blocos.removeAt(index);
+        }
+      });
+
+      await _reordenarBlocosNoSupabase();
+
+      if (mounted) {
+        _showSuccess('Bloco removido');
       }
-      _salvarCache();
-    });
+    } catch (e) {
+      _showError('Erro ao remover bloco: $e');
+    }
   }
 
-  void _salvarPlanejamento() {
-    _salvarCache();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Planejamento salvo')),
-    );
+  Future<void> _salvarPlanejamento() async {
+    setState(() {
+      _savingPlan = true;
+    });
+
+    try {
+      for (int i = 0; i < _blocos.length; i++) {
+        if (_blocoEstaCompleto(_blocos[i])) {
+          await _salvarBlocoNoSupabase(i);
+        }
+      }
+
+      await _salvarNotasNoSupabase();
+
+      if (!mounted) return;
+      _showSuccess('Planejamento salvo no Supabase');
+    } catch (e) {
+      if (!mounted) return;
+      _showError('Erro ao salvar planejamento: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _savingPlan = false;
+        });
+      }
+    }
   }
 
   Widget _buildBlocoCard(int index, bool isMobile) {
@@ -2522,8 +2819,10 @@ class _CoachTrainingPlanDetailPageState
     final inicio =
         ((bloco['inicio'] ?? '').toString().trim().isEmpty && index == 0)
             ? _getHorarioInicialTreino()
-            : (bloco['inicio'] ?? '').toString();
-    final fim = (bloco['fim'] ?? '').toString();
+            : _normalizarHorario(bloco['inicio']);
+    final fim = (bloco['fim'] ?? '').toString().trim().isEmpty
+        ? _calcularHorarioFimPadrao(inicio)
+        : _normalizarHorario(bloco['fim']);
     final observacao = (bloco['observacao'] ?? '').toString();
 
     return Container(
@@ -2568,14 +2867,13 @@ class _CoachTrainingPlanDetailPageState
                 ),
               ),
               IconButton(
-                onPressed: () => _editarBloco(index),
+                onPressed: _savingPlan ? null : () => _editarBloco(index),
                 icon: const Icon(Icons.edit_outlined),
                 color: olympusBlue,
                 tooltip: 'Editar',
               ),
               IconButton(
-                onPressed:
-                    _blocos.length > 1 ? () => _removerBloco(index) : null,
+                onPressed: _savingPlan ? null : () => _removerBloco(index),
                 icon: const Icon(Icons.delete_outline),
                 color: olympusDanger,
                 tooltip: 'Remover',
@@ -2629,146 +2927,173 @@ class _CoachTrainingPlanDetailPageState
         foregroundColor: Colors.white,
         actions: [
           IconButton(
-            onPressed: _salvarPlanejamento,
-            icon: const Icon(Icons.save_outlined),
+            onPressed: _loadingPlan || _savingPlan ? null : _salvarPlanejamento,
+            icon: _savingPlan
+                ? const SizedBox(
+                    width: 19,
+                    height: 19,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Icon(Icons.save_outlined),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _adicionarBloco,
+        onPressed: _loadingPlan || _savingPlan ? null : _adicionarBloco,
         backgroundColor: olympusBlue,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),
         label: const Text('Novo bloco'),
       ),
-      body: ListView(
-        padding: EdgeInsets.all(isMobile ? 12 : 16),
-        children: [
-          Container(
-            padding: EdgeInsets.all(isMobile ? 14 : 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: olympusBorder),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  (widget.treino['event_name'] ?? 'Treino').toString(),
-                  style: TextStyle(
-                    color: olympusBlue,
-                    fontSize: isMobile ? 18 : 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Data: ${(widget.treino['event_date'] ?? '').toString()}',
-                  style: TextStyle(
-                    color: olympusMuted,
-                    fontSize: isMobile ? 12 : 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Horário: ${(widget.treino['event_time'] ?? '').toString()}',
-                  style: TextStyle(
-                    color: olympusMuted,
-                    fontSize: isMobile ? 12 : 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if ((widget.treino['gender'] ?? '')
-                    .toString()
-                    .trim()
-                    .isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Categoria/Gênero: ${(widget.treino['gender'] ?? '').toString()}',
-                    style: TextStyle(
-                      color: olympusMuted,
-                      fontSize: isMobile ? 12 : 13,
-                      fontWeight: FontWeight.w600,
+      body: _loadingPlan
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _carregarPlanejamentoDoSupabase,
+              child: ListView(
+                padding: EdgeInsets.all(isMobile ? 12 : 16),
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(isMobile ? 14 : 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: olympusBorder),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          (widget.treino['event_name'] ?? 'Treino').toString(),
+                          style: TextStyle(
+                            color: olympusBlue,
+                            fontSize: isMobile ? 18 : 20,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Data: ${(widget.treino['event_date'] ?? '').toString()}',
+                          style: TextStyle(
+                            color: olympusMuted,
+                            fontSize: isMobile ? 12 : 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Horário: ${(widget.treino['event_time'] ?? '').toString()}',
+                          style: TextStyle(
+                            color: olympusMuted,
+                            fontSize: isMobile ? 12 : 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if ((widget.treino['gender'] ?? '')
+                            .toString()
+                            .trim()
+                            .isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Categoria/Gênero: ${(widget.treino['gender'] ?? '').toString()}',
+                            style: TextStyle(
+                              color: olympusMuted,
+                              fontSize: isMobile ? 12 : 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: EdgeInsets.all(isMobile ? 14 : 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: olympusBorder),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Planejamento por blocos',
+                          style: TextStyle(
+                            color: olympusBlue,
+                            fontSize: isMobile ? 15 : 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Cada bloco é salvo no Supabase ao tocar em Salvar bloco.',
+                          style: TextStyle(
+                            color: olympusMuted,
+                            fontSize: isMobile ? 12 : 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ...List.generate(
+                          _blocos.length,
+                          (index) => _buildBlocoCard(index, isMobile),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: EdgeInsets.all(isMobile ? 14 : 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: olympusBorder),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Observações do treino',
+                          style: TextStyle(
+                            color: olympusBlue,
+                            fontSize: isMobile ? 15 : 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: _observacoesController,
+                          maxLines: 4,
+                          decoration: const InputDecoration(
+                            hintText:
+                                'Ex: foco em regularidade de passe e tomada de decisão.',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _savingPlan ? null : _salvarPlanejamento,
+                            icon: const Icon(Icons.save_outlined),
+                            label: const Text('Salvar observações e blocos'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: olympusBlue,
+                              side: const BorderSide(color: olympusBlue),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 80),
                 ],
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          Container(
-            padding: EdgeInsets.all(isMobile ? 14 : 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: olympusBorder),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Planejamento por blocos',
-                  style: TextStyle(
-                    color: olympusBlue,
-                    fontSize: isMobile ? 15 : 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Preencha um bloco para habilitar o próximo.',
-                  style: TextStyle(
-                    color: olympusMuted,
-                    fontSize: isMobile ? 12 : 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ...List.generate(
-                  _blocos.length,
-                  (index) => _buildBlocoCard(index, isMobile),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          Container(
-            padding: EdgeInsets.all(isMobile ? 14 : 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: olympusBorder),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Observações do treino',
-                  style: TextStyle(
-                    color: olympusBlue,
-                    fontSize: isMobile ? 15 : 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _observacoesController,
-                  maxLines: 4,
-                  onChanged: (_) => _salvarCache(),
-                  decoration: const InputDecoration(
-                    hintText:
-                        'Ex: foco em regularidade de passe e tomada de decisão.',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 80),
-        ],
-      ),
     );
   }
 }

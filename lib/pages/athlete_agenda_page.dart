@@ -569,7 +569,12 @@ enable_ride_logistics
           int.parse(parts[1]),
           int.parse(parts[0]),
         );
-        return DateFormat('dd/MM (EEE)', 'pt_BR').format(date);
+        final dataFormatada = DateFormat('dd/MM', 'pt_BR').format(date);
+        final diaSemana = DateFormat('EEEE', 'pt_BR').format(date);
+        final diaSemanaFormatado = diaSemana.isEmpty
+            ? ''
+            : diaSemana[0].toUpperCase() + diaSemana.substring(1);
+        return '$dataFormatada|$diaSemanaFormatado';
       }
       return dataStr;
     } catch (_) {
@@ -2365,6 +2370,19 @@ enable_ride_logistics
                                         .trim();
                                     final eventType =
                                         (evento['event_type'] ?? '').toString();
+                                    final nomeEvento =
+                                        (evento['event_name'] ?? '')
+                                            .toString()
+                                            .trim();
+                                    final tipoNormalizado =
+                                        eventType.toLowerCase().trim();
+                                    final nomeNormalizado =
+                                        nomeEvento.toLowerCase().trim();
+                                    final mostrarNomeEvento = nomeEvento
+                                            .isNotEmpty &&
+                                        nomeNormalizado != tipoNormalizado &&
+                                        nomeNormalizado !=
+                                            'evento ' + tipoNormalizado;
                                     final corTipo =
                                         _getCorTipoEvento(eventType);
                                     final genero =
@@ -2408,16 +2426,20 @@ enable_ride_logistics
                                         _isCheckInRealizado(checkinStatus);
                                     final janelaCheckIn =
                                         _verificarJanelaCheckIn(evento);
+                                    final podeFazerCheckin =
+                                        status == 'accepted' &&
+                                            !jaFezCheckin &&
+                                            janelaCheckIn['disponivel'] == true;
                                     return Card(
-                                      margin: const EdgeInsets.only(bottom: 8),
-                                      elevation: 1,
+                                      margin: const EdgeInsets.only(bottom: 10),
+                                      elevation: 3,
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
+                                        borderRadius: BorderRadius.circular(14),
                                       ),
                                       color:
                                           _getCorFundoCard(genero, eventType),
                                       child: Padding(
-                                        padding: const EdgeInsets.all(12),
+                                        padding: const EdgeInsets.all(14),
                                         child: Column(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
@@ -2427,17 +2449,19 @@ enable_ride_logistics
                                                 Container(
                                                   padding: const EdgeInsets
                                                       .symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 4,
+                                                    horizontal: 12,
+                                                    vertical: 7,
                                                   ),
                                                   decoration: BoxDecoration(
                                                     color: corTipo
-                                                        .withOpacity(0.1),
+                                                        .withOpacity(0.14),
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                            12),
+                                                            16),
                                                     border: Border.all(
-                                                        color: corTipo),
+                                                      color: corTipo,
+                                                      width: 1.4,
+                                                    ),
                                                   ),
                                                   child: Text(
                                                     (evento['event_type'] ??
@@ -2447,8 +2471,9 @@ enable_ride_logistics
                                                     style: TextStyle(
                                                       color: corTipo,
                                                       fontWeight:
-                                                          FontWeight.bold,
-                                                      fontSize: 10,
+                                                          FontWeight.w900,
+                                                      fontSize: 14,
+                                                      letterSpacing: 0.7,
                                                     ),
                                                   ),
                                                 ),
@@ -2456,19 +2481,21 @@ enable_ride_logistics
                                                 Container(
                                                   padding: const EdgeInsets
                                                       .symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 4,
+                                                    horizontal: 10,
+                                                    vertical: 6,
                                                   ),
                                                   decoration: BoxDecoration(
                                                     color:
                                                         _getStatusColor(status)
-                                                            .withOpacity(0.1),
+                                                            .withOpacity(0.12),
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                            12),
+                                                            14),
                                                     border: Border.all(
-                                                        color: _getStatusColor(
-                                                            status)),
+                                                      color: _getStatusColor(
+                                                          status),
+                                                      width: 1.2,
+                                                    ),
                                                   ),
                                                   child: Text(
                                                     _getStatusLabel(status),
@@ -2476,8 +2503,8 @@ enable_ride_logistics
                                                       color: _getStatusColor(
                                                           status),
                                                       fontWeight:
-                                                          FontWeight.bold,
-                                                      fontSize: 10,
+                                                          FontWeight.w800,
+                                                      fontSize: 11.5,
                                                     ),
                                                   ),
                                                 ),
@@ -2558,15 +2585,16 @@ enable_ride_logistics
                                               ],
                                             ),
                                             const SizedBox(height: 8),
-                                            Text(
-                                              (evento['event_name'] ??
-                                                      'Sem nome')
-                                                  .toString(),
-                                              style: const TextStyle(
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.bold,
+                                            if (mostrarNomeEvento) ...[
+                                              Text(
+                                                nomeEvento,
+                                                style: const TextStyle(
+                                                  fontSize: 17,
+                                                  fontWeight: FontWeight.w800,
+                                                  height: 1.2,
+                                                ),
                                               ),
-                                            ),
+                                            ],
                                             if (eventType
                                                         .toLowerCase()
                                                         .trim() ==
@@ -2584,11 +2612,11 @@ enable_ride_logistics
                                                     child: Text(
                                                       championshipName,
                                                       style: TextStyle(
-                                                        fontSize: 12,
+                                                        fontSize: 13,
                                                         color:
                                                             Colors.amber[900],
                                                         fontWeight:
-                                                            FontWeight.w600,
+                                                            FontWeight.w700,
                                                       ),
                                                     ),
                                                   ),
@@ -2599,20 +2627,57 @@ enable_ride_logistics
                                             Row(
                                               children: [
                                                 Icon(Icons.calendar_today,
-                                                    size: 14,
+                                                    size: 16,
                                                     color: Colors.grey[600]),
                                                 const SizedBox(width: 6),
                                                 Expanded(
-                                                  child: Text(
-                                                    _formatarData(
-                                                      (evento['event_date'] ??
-                                                              '')
-                                                          .toString(),
-                                                    ),
-                                                    style: TextStyle(
-                                                      color: Colors.grey[700],
-                                                      fontSize: 12,
-                                                    ),
+                                                  child: Builder(
+                                                    builder: (context) {
+                                                      final dataParts =
+                                                          _formatarData(
+                                                        (evento['event_date'] ??
+                                                                '')
+                                                            .toString(),
+                                                      ).split('|');
+                                                      final dataFormatada =
+                                                          dataParts.isNotEmpty
+                                                              ? dataParts[0]
+                                                              : '';
+                                                      final diaSemana =
+                                                          dataParts.length > 1
+                                                              ? dataParts[1]
+                                                              : '';
+
+                                                      return RichText(
+                                                        text: TextSpan(
+                                                          style: TextStyle(
+                                                            color: Colors
+                                                                .grey[700],
+                                                            fontSize: 13,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                          ),
+                                                          children: [
+                                                            TextSpan(
+                                                              text:
+                                                                  dataFormatada,
+                                                            ),
+                                                            if (diaSemana
+                                                                .isNotEmpty)
+                                                              TextSpan(
+                                                                text:
+                                                                    ' ($diaSemana)',
+                                                                style:
+                                                                    const TextStyle(
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w900,
+                                                                ),
+                                                              ),
+                                                          ],
+                                                        ),
+                                                      );
+                                                    },
                                                   ),
                                                 ),
                                               ],
@@ -2620,7 +2685,7 @@ enable_ride_logistics
                                             Row(
                                               children: [
                                                 Icon(Icons.access_time,
-                                                    size: 14,
+                                                    size: 16,
                                                     color: Colors.grey[600]),
                                                 const SizedBox(width: 6),
                                                 Text(
@@ -2628,7 +2693,8 @@ enable_ride_logistics
                                                       .toString(),
                                                   style: TextStyle(
                                                     color: Colors.grey[700],
-                                                    fontSize: 12,
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w600,
                                                   ),
                                                 ),
                                               ],
@@ -2640,7 +2706,7 @@ enable_ride_logistics
                                               Row(
                                                 children: [
                                                   Icon(Icons.location_on,
-                                                      size: 14,
+                                                      size: 15,
                                                       color: Colors.grey[600]),
                                                   const SizedBox(width: 6),
                                                   Expanded(
@@ -2648,7 +2714,9 @@ enable_ride_logistics
                                                       enderecoCompleto,
                                                       style: TextStyle(
                                                         color: Colors.grey[700],
-                                                        fontSize: 11,
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w500,
                                                       ),
                                                       maxLines: 1,
                                                       overflow:
@@ -2777,74 +2845,58 @@ enable_ride_logistics
                                                 ),
                                               ),
                                             ],
-                                            const SizedBox(height: 8),
-                                            if (jaFezCheckin)
-                                              Row(
-                                                children: [
-                                                  const Icon(
-                                                    Icons.verified,
-                                                    color: Colors.green,
-                                                    size: 16,
-                                                  ),
-                                                  const SizedBox(width: 6),
-                                                  const Text(
-                                                    'Check-in realizado',
-                                                    style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      fontSize: 11,
+                                            if (jaFezCheckin ||
+                                                podeFazerCheckin) ...[
+                                              const SizedBox(height: 8),
+                                              if (jaFezCheckin)
+                                                Row(
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.verified,
                                                       color: Colors.green,
+                                                      size: 16,
                                                     ),
-                                                  ),
-                                                ],
-                                              )
-                                            else
-                                              SizedBox(
-                                                height: 32,
-                                                width: double.infinity,
-                                                child: ElevatedButton.icon(
-                                                  onPressed: status ==
-                                                              'accepted' &&
-                                                          janelaCheckIn[
-                                                                  'disponivel'] ==
-                                                              true
-                                                      ? () =>
-                                                          _fazerCheckIn(evento)
-                                                      : null,
-                                                  icon: const Icon(
-                                                    Icons.my_location,
-                                                    size: 16,
-                                                  ),
-                                                  label: Text(
-                                                    status == 'accepted'
-                                                        ? (janelaCheckIn[
-                                                                    'disponivel'] ==
-                                                                true
-                                                            ? 'Fazer Check-in'
-                                                            : janelaCheckIn[
-                                                                'mensagem'])
-                                                        : 'Check-in (aceite antes)',
-                                                    style: const TextStyle(
-                                                      fontSize: 11,
+                                                    const SizedBox(width: 6),
+                                                    const Text(
+                                                      'Check-in realizado',
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        fontSize: 11,
+                                                        color: Colors.green,
+                                                      ),
                                                     ),
-                                                  ),
-                                                  style:
-                                                      ElevatedButton.styleFrom(
-                                                    backgroundColor: status ==
-                                                                'accepted' &&
-                                                            janelaCheckIn[
-                                                                    'disponivel'] ==
-                                                                true
-                                                        ? Colors.green
-                                                        : Colors.grey,
-                                                    foregroundColor:
-                                                        Colors.white,
-                                                    padding: EdgeInsets.zero,
+                                                  ],
+                                                )
+                                              else
+                                                SizedBox(
+                                                  height: 32,
+                                                  width: double.infinity,
+                                                  child: ElevatedButton.icon(
+                                                    onPressed: () =>
+                                                        _fazerCheckIn(evento),
+                                                    icon: const Icon(
+                                                      Icons.my_location,
+                                                      size: 16,
+                                                    ),
+                                                    label: const Text(
+                                                      'Fazer Check-in',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                      ),
+                                                    ),
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                      backgroundColor:
+                                                          Colors.green,
+                                                      foregroundColor:
+                                                          Colors.white,
+                                                      padding: EdgeInsets.zero,
+                                                    ),
                                                   ),
                                                 ),
-                                              ),
-                                            if (status == 'accepted' &&
-                                                !jaFezCheckin) ...[
+                                            ],
+                                            if (podeFazerCheckin) ...[
                                               const SizedBox(height: 6),
                                               Container(
                                                 padding:
