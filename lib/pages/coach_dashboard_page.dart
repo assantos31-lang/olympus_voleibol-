@@ -4111,6 +4111,100 @@ class _CoachCompleteMonthlyEvaluationPageState
     return (total / _notas.length).round().clamp(1, 5);
   }
 
+  DateTime? _parseEventDate(dynamic value) {
+    final raw = (value ?? '').toString().trim();
+    if (raw.isEmpty) return null;
+
+    try {
+      final parts = raw.split('/');
+      if (parts.length == 3) {
+        return DateTime(
+          int.parse(parts[2]),
+          int.parse(parts[1]),
+          int.parse(parts[0]),
+        );
+      }
+
+      return DateTime.tryParse(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> _buscarEventoBaseParaAvaliacaoMensal(
+    String athleteId,
+  ) async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, 1);
+    final end = DateTime(now.year, now.month + 1, 1);
+
+    final checkinsResponse = await _supabase.from('checkins').select('''
+event_id,
+check_in_status,
+events:event_id (
+  id,
+  event_name,
+  event_type,
+  event_date,
+  event_time
+)
+''').eq('user_id', athleteId).inFilter('check_in_status', [
+          'realizado',
+          'realizado com sucesso',
+          'checked_in',
+          'checkin_realizado',
+          'ok',
+          'success',
+          'completed',
+          'done',
+        ]);
+
+    final checkins = List<Map<String, dynamic>>.from(checkinsResponse as List);
+
+    final eventos = <Map<String, dynamic>>[];
+
+    for (final checkin in checkins) {
+      final rawEvent = checkin['events'];
+      if (rawEvent == null || rawEvent is! Map) continue;
+
+      final event = Map<String, dynamic>.from(rawEvent);
+      final eventId = (event['id'] ?? checkin['event_id'] ?? '').toString();
+      if (eventId.isEmpty) continue;
+
+      final eventType =
+          (event['event_type'] ?? '').toString().toLowerCase().trim();
+
+      if (eventType != 'treino') continue;
+
+      final eventDate = _parseEventDate(event['event_date']);
+      if (eventDate == null) continue;
+
+      if (eventDate.isBefore(start) || !eventDate.isBefore(end)) continue;
+
+      eventos.add({
+        'id': eventId,
+        'event_name': (event['event_name'] ?? 'Avaliação mensal').toString(),
+        'event_date': (event['event_date'] ?? '').toString(),
+        'event_time': (event['event_time'] ?? '').toString(),
+        'eventDate': eventDate,
+      });
+    }
+
+    if (eventos.isEmpty) {
+      throw Exception(
+        'Não foi encontrado nenhum treino com check-in realizado neste mês para vincular a avaliação completa.',
+      );
+    }
+
+    eventos.sort((a, b) {
+      final ad = a['eventDate'] as DateTime;
+      final bd = b['eventDate'] as DateTime;
+      return bd.compareTo(ad);
+    });
+
+    return eventos.first;
+  }
+
   Future<void> _salvarAvaliacaoCompleta() async {
     if (!_isLastFourDaysOfMonth) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -4155,6 +4249,16 @@ class _CoachCompleteMonthlyEvaluationPageState
       final now = DateTime.now();
       final start = DateTime(now.year, now.month, 1);
       final end = DateTime(now.year, now.month + 1, 1);
+      final eventoBase = await _buscarEventoBaseParaAvaliacaoMensal(athleteId);
+      final eventId = (eventoBase['id'] ?? '').toString();
+      final eventName =
+          (eventoBase['event_name'] ?? 'Avaliação mensal').toString();
+      final eventDate = (eventoBase['event_date'] ?? '').toString();
+
+      if (eventId.isEmpty) {
+        throw Exception(
+            'Evento base inválido para salvar a avaliação completa.');
+      }
 
       final existing = await _supabase
           .from('training_evaluations')
@@ -4179,6 +4283,9 @@ class _CoachCompleteMonthlyEvaluationPageState
       final rows = <Map<String, dynamic>>[];
 
       rows.add({
+        'event_id': eventId,
+        'event_name': eventName,
+        'event_date': eventDate,
         'coach_id': user.id,
         'athlete_id': athleteId,
         'tipo': 'completa',
@@ -4192,6 +4299,9 @@ class _CoachCompleteMonthlyEvaluationPageState
 
       for (final fundamento in _fundamentos) {
         rows.add({
+          'event_id': eventId,
+          'event_name': eventName,
+          'event_date': eventDate,
           'coach_id': user.id,
           'athlete_id': athleteId,
           'tipo': 'completa',

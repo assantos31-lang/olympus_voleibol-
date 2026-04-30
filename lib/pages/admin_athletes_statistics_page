@@ -1,0 +1,544 @@
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'athlete_statistics_page.dart';
+
+class AdminAthletesStatisticsPage extends StatefulWidget {
+  const AdminAthletesStatisticsPage({super.key});
+
+  static Route<void> route() {
+    return MaterialPageRoute<void>(
+      builder: (_) => const AdminAthletesStatisticsPage(),
+    );
+  }
+
+  @override
+  State<AdminAthletesStatisticsPage> createState() =>
+      _AdminAthletesStatisticsPageState();
+}
+
+class _AdminAthletesStatisticsPageState
+    extends State<AdminAthletesStatisticsPage> {
+  final SupabaseClient _supabase = Supabase.instance.client;
+  final TextEditingController _searchController = TextEditingController();
+
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  static const Color olympusBg = Color(0xFFF4F7FB);
+  static const Color olympusMuted = Color(0xFF53657B);
+  static const Color olympusBorder = Color(0xFFE4EDF5);
+
+  bool _loading = true;
+  String? _error;
+  String _search = '';
+  List<Map<String, dynamic>> _athletes = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAthletes();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadAthletes() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final rows = await _supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, gender, user_type')
+          .inFilter('user_type', ['athlete', 'atleta'])
+          .order('full_name', ascending: true);
+
+      if (!mounted) return;
+      setState(() {
+        _athletes = List<Map<String, dynamic>>.from(rows as List);
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Erro ao carregar atletas: $e';
+        _loading = false;
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> get _filteredAthletes {
+    final query = _search.trim().toLowerCase();
+    if (query.isEmpty) return _athletes;
+
+    return _athletes.where((athlete) {
+      final name = (athlete['full_name'] ?? '').toString().toLowerCase();
+      final gender = (athlete['gender'] ?? '').toString().toLowerCase();
+      return name.contains(query) || gender.contains(query);
+    }).toList();
+  }
+
+  void _openAthlete(Map<String, dynamic> athlete) {
+    final athleteId = (athlete['id'] ?? '').toString();
+    if (athleteId.isEmpty) return;
+
+    Navigator.of(context).push(
+      AthleteStatisticsPage.route(
+        athleteId: athleteId,
+        adminView: true,
+      ),
+    );
+  }
+
+  void _goBackToDashboard() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/admin-dashboard',
+      (route) => false,
+    );
+  }
+
+  Widget _background() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) {
+              return Container(color: const Color(0xFF102845));
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: Container(color: Colors.black.withOpacity(0.40)),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  olympusBlue.withOpacity(0.62),
+                  Colors.black.withOpacity(0.18),
+                  Colors.black.withOpacity(0.70),
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _glassCard({
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+    EdgeInsetsGeometry? margin,
+  }) {
+    return Container(
+      width: double.infinity,
+      margin: margin ?? const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            padding: padding ?? const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.94),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: Colors.white.withOpacity(0.52)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.14),
+                  blurRadius: 16,
+                  offset: const Offset(0, 7),
+                ),
+              ],
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _header() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0D223B), Color(0xFF123861), Color(0xFF235E94)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: Colors.white.withOpacity(0.18)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.24),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: const LinearGradient(
+                colors: [Color(0xFFF8E08E), Color(0xFFD4AF37)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: olympusGold.withOpacity(0.32),
+                  blurRadius: 16,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.admin_panel_settings_rounded,
+              color: olympusBlue,
+              size: 29,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Estatísticas dos Atletas',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'Visão ADMIN • ${_athletes.length} atleta(s)',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.82),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _searchBox() {
+    return _glassCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: TextField(
+        controller: _searchController,
+        onChanged: (value) => setState(() => _search = value),
+        style: const TextStyle(
+          color: olympusBlue,
+          fontWeight: FontWeight.w800,
+        ),
+        decoration: InputDecoration(
+          hintText: 'Buscar atleta por nome ou gênero',
+          hintStyle: TextStyle(
+            color: olympusMuted.withOpacity(0.72),
+            fontWeight: FontWeight.w700,
+          ),
+          border: InputBorder.none,
+          prefixIcon: const Icon(Icons.search_rounded, color: olympusGold),
+          suffixIcon: _search.trim().isEmpty
+              ? null
+              : IconButton(
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _search = '');
+                  },
+                  icon: const Icon(Icons.close_rounded),
+                  color: olympusMuted,
+                ),
+        ),
+      ),
+    );
+  }
+
+  String _initials(String name) {
+    final clean = name.trim();
+    if (clean.isEmpty) return '?';
+
+    final parts = clean.split(RegExp(r'\s+'));
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+  }
+
+  String _genderLabel(dynamic value) {
+    final raw = (value ?? '').toString().trim().toLowerCase();
+
+    if (raw == 'f' || raw == 'female' || raw.contains('feminino')) {
+      return 'Feminino';
+    }
+
+    if (raw == 'm' || raw == 'male' || raw.contains('masculino')) {
+      return 'Masculino';
+    }
+
+    if (raw.isEmpty) return 'Gênero não informado';
+    return raw[0].toUpperCase() + raw.substring(1);
+  }
+
+  Widget _athleteCard(Map<String, dynamic> athlete) {
+    final name = (athlete['full_name'] ?? 'Atleta sem nome').toString();
+    final avatarUrl = (athlete['avatar_url'] ?? '').toString().trim();
+    final gender = _genderLabel(athlete['gender']);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _openAthlete(athlete),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(13),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.97),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: olympusBorder),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 11,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 28,
+                backgroundColor: olympusGold,
+                backgroundImage:
+                    avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                child: avatarUrl.isEmpty
+                    ? Text(
+                        _initials(name),
+                        style: const TextStyle(
+                          color: olympusBlue,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: olympusBlue,
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.person_outline_rounded,
+                          color: olympusLightBlue.withOpacity(0.86),
+                          size: 16,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            gender,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: olympusMuted,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: olympusBlue.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: olympusBlue.withOpacity(0.12)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Ver',
+                      style: TextStyle(
+                        color: olympusBlue,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: olympusBlue,
+                      size: 13,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _athletesList() {
+    final athletes = _filteredAthletes;
+
+    return _glassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.groups_rounded, color: olympusGold, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${athletes.length} atleta(s) encontrado(s)',
+                  style: const TextStyle(
+                    color: olympusBlue,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (athletes.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Center(
+                child: Text(
+                  'Nenhum atleta encontrado.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: olympusMuted,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            )
+          else
+            ...athletes.map(_athleteCard),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: olympusBg,
+      appBar: AppBar(
+        title: const Text('Atletas'),
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+        leading: IconButton(
+          tooltip: 'Voltar para o Dashboard',
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: _goBackToDashboard,
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Atualizar',
+            onPressed: _loadAthletes,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _background()),
+          if (_loading)
+            const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+          else if (_error != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(22),
+                child: Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            )
+          else
+            RefreshIndicator(
+              onRefresh: _loadAthletes,
+              child: ListView(
+                physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics(),
+                ),
+                padding: const EdgeInsets.only(bottom: 28),
+                children: [
+                  _header(),
+                  _searchBox(),
+                  _athletesList(),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
