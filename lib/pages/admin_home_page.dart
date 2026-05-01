@@ -1,13 +1,16 @@
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../services/auth_service.dart';
 import 'agenda_page.dart';
-import 'admin_financial_page.dart';
-import 'admin_messages_page.dart';
 import 'admin_birthdays_page.dart';
 import 'admin_competitions_page.dart';
+import 'admin_financial_page.dart';
+import 'admin_messages_page.dart';
 import 'admin_notifications_page.dart';
+import 'admin_training_plans_page.dart' show AdminTrainingPlansPage;
 
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
@@ -535,7 +538,9 @@ class _AdminHomePageState extends State<AdminHomePage> {
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 14),
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -585,7 +590,9 @@ class _AdminHomePageState extends State<AdminHomePage> {
                     child: Center(
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 22, vertical: 12),
+                          horizontal: 22,
+                          vertical: 12,
+                        ),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -624,7 +631,9 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                     borderRadius: BorderRadius.circular(18),
                                     child: BackdropFilter(
                                       filter: ImageFilter.blur(
-                                          sigmaX: 14, sigmaY: 14),
+                                        sigmaX: 14,
+                                        sigmaY: 14,
+                                      ),
                                       child: Column(
                                         children: [
                                           Text(
@@ -738,6 +747,36 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                   MaterialPageRoute(
                                     builder: (context) => const AgendaPage(),
                                   ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            _buildFuturisticButton(
+                              context: context,
+                              label: 'Programações de Treinos',
+                              icon: Icons.menu_book_outlined,
+                              accentColor: const Color(0xFFB9FBC0),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const AdminTrainingPlansPage(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            _buildFuturisticButton(
+                              context: context,
+                              label: 'Estatísticas dos Atletas',
+                              icon: Icons.bar_chart_rounded,
+                              accentColor: const Color(0xFF9D8DF1),
+                              isPrimary: true,
+                              onTap: () {
+                                Navigator.pushNamed(
+                                  context,
+                                  '/admin-athletes-statistics',
                                 );
                               },
                             ),
