@@ -4,6 +4,73 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+class _StatsResponsive {
+  static double width(BuildContext context) =>
+      MediaQuery.of(context).size.width;
+  static double height(BuildContext context) =>
+      MediaQuery.of(context).size.height;
+
+  static bool isSmall(BuildContext context) => width(context) < 360;
+  static bool isMobile(BuildContext context) => width(context) < 600;
+  static bool isTablet(BuildContext context) =>
+      width(context) >= 600 && width(context) < 1024;
+  static bool isDesktop(BuildContext context) => width(context) >= 1024;
+
+  static double font(BuildContext context, double base) {
+    final w = width(context);
+    if (w < 360) return base * 0.88;
+    if (w < 600) return base;
+    if (w < 1024) return base * 1.08;
+    return base * 1.16;
+  }
+
+  static double space(BuildContext context, double base) {
+    if (isSmall(context)) return base * 0.78;
+    if (isTablet(context)) return base * 1.08;
+    if (isDesktop(context)) return base * 1.14;
+    return base;
+  }
+
+  static EdgeInsets pageMargin(BuildContext context) {
+    final w = width(context);
+    if (w >= 1024) return const EdgeInsets.symmetric(horizontal: 48);
+    if (w >= 720) return const EdgeInsets.symmetric(horizontal: 28);
+    return EdgeInsets.zero;
+  }
+
+  static int metricsCrossAxisCount(
+      BuildContext context, double availableWidth) {
+    final width = availableWidth.isFinite
+        ? availableWidth
+        : _StatsResponsive.width(context);
+    if (width < 360) return 1;
+    if (width < 560) return 2;
+    if (width < 920) return 3;
+    return 4;
+  }
+
+  static double metricsAspectRatio(
+      BuildContext context, double availableWidth) {
+    final width = availableWidth.isFinite
+        ? availableWidth
+        : _StatsResponsive.width(context);
+    if (width < 360) return 2.35;
+    if (width < 430) return 1.12;
+    if (width < 560) return 1.22;
+    if (width < 920) return 1.26;
+    return 1.34;
+  }
+
+  static double annualChartHeight(BuildContext context) {
+    final h = height(context);
+    final w = width(context);
+    if (w < 360) return (h * 0.30).clamp(220.0, 280.0);
+    if (w < 600) return (h * 0.29).clamp(228.0, 300.0);
+    if (w < 1024) return (h * 0.32).clamp(260.0, 340.0);
+    return (h * 0.34).clamp(290.0, 380.0);
+  }
+}
+
 class AthleteStatisticsPage extends StatefulWidget {
   final String? athleteId;
   final bool adminView;
@@ -69,6 +136,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   static const Color olympusPurple = Color(0xFF7C3AED);
   static const Color olympusMuted = Color(0xFF53657B);
   static const Color olympusBorder = Color(0xFFE4EDF5);
+  static const String _eventsEmbedFk = 'convocations_event_id_fkey';
 
   bool _loading = true;
   String? _error;
@@ -409,6 +477,86 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         raw == 'done';
   }
 
+  String _normalizeEvaluationText(dynamic value) {
+    final raw = (value ?? '').toString().trim().toLowerCase();
+
+    if (raw.isEmpty) return '';
+
+    return raw
+        .replaceAll('ç', 'c')
+        .replaceAll('ã', 'a')
+        .replaceAll('á', 'a')
+        .replaceAll('à', 'a')
+        .replaceAll('â', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('ê', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ô', 'o')
+        .replaceAll('õ', 'o')
+        .replaceAll('ú', 'u');
+  }
+
+  String _evaluationSearchText(Map<String, dynamic> row) {
+    return [
+      row['tipo'],
+      row['slot'],
+      row['motivo'],
+      row['fundamento'],
+      row['observacao'],
+    ]
+        .map(_normalizeEvaluationText)
+        .where((value) => value.isNotEmpty)
+        .join(' ');
+  }
+
+  bool _isDestaqueEvaluation(Map<String, dynamic> row) {
+    final tipo = _normalizeEvaluationText(row['tipo']);
+    if (tipo == 'destaque' || tipo == 'destaques') return true;
+
+    final text = _evaluationSearchText(row);
+    return text.contains('destaque') ||
+        text.contains('destaques') ||
+        text.contains('positivo') ||
+        text.contains('ponto positivo') ||
+        text.contains('elogio') ||
+        text.contains('forte');
+  }
+
+  bool _isAtencaoEvaluation(Map<String, dynamic> row) {
+    final tipo = _normalizeEvaluationText(row['tipo']);
+    if (tipo == 'atencao' || tipo == 'atencoes') return true;
+
+    final text = _evaluationSearchText(row);
+    return text.contains('atencao') ||
+        text.contains('ponto de atencao') ||
+        text.contains('melhorar') ||
+        text.contains('correcao');
+  }
+
+  bool _isCompletaEvaluation(Map<String, dynamic> row) {
+    final tipo = _normalizeEvaluationText(row['tipo']);
+    if (tipo == 'completa' || tipo == 'completo') return true;
+
+    final text = _evaluationSearchText(row);
+    return text.contains('completa') ||
+        text.contains('completo') ||
+        text.contains('avaliacao mensal') ||
+        text.contains('avaliacao completa');
+  }
+
+  bool _isInsideEvaluationPeriod(Map<String, dynamic> row, DateTime? start) {
+    if (start == null) return true;
+
+    final date = _parseDate(row['created_at']);
+    if (date == null) return false;
+
+    final dayOnly = DateTime(date.year, date.month, date.day);
+    final startOnly = DateTime(start.year, start.month, start.day);
+
+    return !dayOnly.isBefore(startOnly);
+  }
+
   String _normalizeFundamento(dynamic value) {
     final raw = (value ?? '').toString().trim().toLowerCase();
 
@@ -503,7 +651,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }
 
   Future<List<Map<String, dynamic>>> _loadTrainingPlanBlocks(
-      String athleteId) async {
+    String athleteId,
+  ) async {
     try {
       dynamic rows;
 
@@ -669,13 +818,13 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
       final checkins = await _safeSelect(
         'checkins',
-        'id, user_id, event_id, check_in_status, created_at, events:event_id (id, event_type, gender, event_date, event_time)',
+        'id, user_id, event_id, check_in_status, created_at',
         userId: athleteId,
       );
 
       final convocations = await _safeSelect(
         'convocations',
-        'id, user_id, event_id, status, created_at, events:event_id (id, event_type, gender, event_date, event_time)',
+        'id, user_id, event_id, status, justification, created_at, events!$_eventsEmbedFk (id, event_type, gender, event_date, event_time)',
         userId: athleteId,
       );
 
@@ -704,7 +853,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   List<Map<String, dynamic>> get _periodEvaluations {
     final start = _periodStart();
     return _evaluations
-        .where((row) => _isInsidePeriod(row['created_at'], start))
+        .where((row) => _isInsideEvaluationPeriod(row, start))
         .toList();
   }
 
@@ -716,35 +865,26 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }
 
   int get _destaques {
-    return _periodEvaluations.where((row) {
-      return (row['tipo'] ?? '').toString().toLowerCase() == 'destaque';
-    }).length;
+    return _periodEvaluations.where(_isDestaqueEvaluation).length;
   }
 
   int get _atencoes {
-    return _periodEvaluations.where((row) {
-      final tipo = (row['tipo'] ?? '').toString().toLowerCase();
-      return tipo == 'atencao' || tipo == 'atenção';
-    }).length;
+    return _periodEvaluations.where(_isAtencaoEvaluation).length;
   }
 
   int get _completas {
-    return _periodEvaluations.where((row) {
-      return (row['tipo'] ?? '').toString().toLowerCase() == 'completa';
-    }).length;
+    return _periodEvaluations.where(_isCompletaEvaluation).length;
   }
 
   int get _score {
     int total = 0;
 
     for (final row in _periodEvaluations) {
-      final tipo = (row['tipo'] ?? '').toString().toLowerCase();
-
-      if (tipo == 'destaque') {
+      if (_isDestaqueEvaluation(row)) {
         total += 2;
-      } else if (tipo == 'atencao' || tipo == 'atenção') {
+      } else if (_isAtencaoEvaluation(row)) {
         total -= 1;
-      } else if (tipo == 'completa') {
+      } else if (_isCompletaEvaluation(row)) {
         final score = row['score'];
         if (score is num) total += score.round();
       } else {
@@ -762,13 +902,105 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     return (_trainingPresenceCount / base).clamp(0, 1);
   }
 
-  Set<String> get _acceptedTrainingEventIds {
+  double get _absenceRate {
+    final base = _trainingBaseCount;
+    if (base == 0) return 0;
+    return (_trainingAcceptedAbsentCount / base).clamp(0, 1);
+  }
+
+  String _formatPercentValue(double value) {
+    final percent = value * 100;
+    if (percent == percent.roundToDouble()) {
+      return '${percent.round()}%';
+    }
+
+    return '${percent.toStringAsFixed(1)}%';
+  }
+
+  double get _presenceGoal => 0.80;
+
+  Color _getPresenceBlinkColor(double rate) {
+    final percent = (rate * 100).round();
+
+    if (percent >= 100) return olympusSuccess;
+    if (percent >= 76) return olympusWarning;
+    return olympusDanger;
+  }
+
+  Color _getAbsenceBlinkColor(double rate) {
+    if (rate <= 0) return olympusMuted;
+    return olympusDanger;
+  }
+
+  String get _presenceStatus {
+    if (_trainingBaseCount == 0) return 'Sem treinos';
+    if (_presenceRate >= 0.95) return 'Elite';
+    if (_presenceRate >= _presenceGoal) return 'Boa';
+    if (_presenceRate >= 0.60) return 'Atenção';
+    return 'Crítico';
+  }
+
+  Color get _presenceStatusColor {
+    if (_trainingBaseCount == 0) return olympusMuted;
+    if (_presenceRate >= 0.95) return olympusSuccess;
+    if (_presenceRate >= _presenceGoal) return olympusLightBlue;
+    if (_presenceRate >= 0.60) return olympusWarning;
+    return olympusDanger;
+  }
+
+  Widget _presenceFailureValueWidget() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _BlinkingMetricValue(
+          text: _formatPercentValue(_presenceRate),
+          color: _getPresenceBlinkColor(_presenceRate),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          '/',
+          style: TextStyle(
+            color: olympusMuted,
+            fontSize: _StatsResponsive.font(context, 22),
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(width: 6),
+        _BlinkingMetricValue(
+          text: _formatPercentValue(_absenceRate),
+          color: _getAbsenceBlinkColor(_absenceRate),
+        ),
+      ],
+    );
+  }
+
+  Widget _presenceStatusPill() {
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: _presenceStatusColor.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _presenceStatusColor.withOpacity(0.28)),
+      ),
+      child: Text(
+        'Status: $_presenceStatus',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: _presenceStatusColor,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  Set<String> get _convokedTrainingEventIds {
     final start = _periodStart();
 
     return _convocations
         .where((row) {
-          final status = (row['status'] ?? '').toString().toLowerCase().trim();
-          if (status != 'accepted') return false;
           if (!_isTrainingEvent(row)) return false;
           if (!_eventMatchesAthleteGender(row)) return false;
           if (!_isInsideTrainingPeriod(row, start)) return false;
@@ -779,25 +1011,50 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         .toSet();
   }
 
+  Map<String, dynamic>? _convocationForEventId(String eventId) {
+    if (eventId.isEmpty) return null;
+
+    for (final row in _convocations) {
+      if ((row['event_id'] ?? '').toString() == eventId) {
+        return row;
+      }
+    }
+
+    return null;
+  }
+
+  bool _isCheckinInsideConvokedTrainingPeriod(
+    Map<String, dynamic> checkin,
+    DateTime? start,
+  ) {
+    final eventId = (checkin['event_id'] ?? '').toString();
+    final convocation = _convocationForEventId(eventId);
+
+    if (convocation == null) return false;
+    if (!_isTrainingEvent(convocation)) return false;
+    if (!_eventMatchesAthleteGender(convocation)) return false;
+    if (!_isInsideTrainingPeriod(convocation, start)) return false;
+
+    return true;
+  }
+
   int get _trainingBaseCount {
-    return _acceptedTrainingEventIds.length;
+    return _convokedTrainingEventIds.length;
   }
 
   int get _trainingPresenceCount {
-    final acceptedEventIds = _acceptedTrainingEventIds;
-    if (acceptedEventIds.isEmpty) return 0;
+    final convokedEventIds = _convokedTrainingEventIds;
+    if (convokedEventIds.isEmpty) return 0;
 
     final start = _periodStart();
 
     return _checkins
         .where((row) {
           if (!_isCheckinDone(row['check_in_status'])) return false;
-          if (!_isTrainingEvent(row)) return false;
-          if (!_eventMatchesAthleteGender(row)) return false;
-          if (!_isInsideTrainingPeriod(row, start)) return false;
+          if (!_isCheckinInsideConvokedTrainingPeriod(row, start)) return false;
 
           final eventId = (row['event_id'] ?? '').toString();
-          return acceptedEventIds.contains(eventId);
+          return convokedEventIds.contains(eventId);
         })
         .map((row) => (row['event_id'] ?? '').toString())
         .where((id) => id.isNotEmpty)
@@ -811,10 +1068,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     final doneEventIds = _checkins
         .where((row) {
           if (!_isCheckinDone(row['check_in_status'])) return false;
-          if (!_isTrainingEvent(row)) return false;
-          if (!_eventMatchesAthleteGender(row)) return false;
-          if (!_isInsideTrainingPeriod(row, start)) return false;
-          return true;
+          return _isCheckinInsideConvokedTrainingPeriod(row, start);
         })
         .map((row) => (row['event_id'] ?? '').toString())
         .where((id) => id.isNotEmpty)
@@ -822,8 +1076,6 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
     return _convocations
         .where((row) {
-          final status = (row['status'] ?? '').toString().toLowerCase().trim();
-          if (status != 'accepted') return false;
           if (!_isTrainingEvent(row)) return false;
           if (!_eventMatchesAthleteGender(row)) return false;
           if (!_isInsideTrainingPeriod(row, start)) return false;
@@ -848,10 +1100,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     final doneEventIds = _checkins
         .where((row) {
           if (!_isCheckinDone(row['check_in_status'])) return false;
-          if (!_isTrainingEvent(row)) return false;
-          if (!_eventMatchesAthleteGender(row)) return false;
-          if (!_isInsideTrainingPeriod(row, start)) return false;
-          return true;
+          return _isCheckinInsideConvokedTrainingPeriod(row, start);
         })
         .map((row) => (row['event_id'] ?? '').toString())
         .where((id) => id.isNotEmpty)
@@ -859,8 +1108,6 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
     return _convocations
         .where((row) {
-          final status = (row['status'] ?? '').toString().toLowerCase().trim();
-          if (status != 'accepted') return false;
           if (!_isTrainingEvent(row)) return false;
           if (!_eventMatchesAthleteGender(row)) return false;
           if (!_isInsideTrainingPeriod(row, start)) return false;
@@ -890,11 +1137,9 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
       for (int month = 1; month <= 12; month++) month: <String>{},
     };
 
-    final acceptedTrainingEventDates = <String, DateTime>{};
+    final convokedTrainingEventDates = <String, DateTime>{};
 
     for (final row in _convocations) {
-      final status = (row['status'] ?? '').toString().toLowerCase().trim();
-      if (status != 'accepted') continue;
       if (!_isTrainingEvent(row)) continue;
       if (!_eventMatchesAthleteGender(row)) continue;
 
@@ -905,21 +1150,15 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
       final eventId = (row['event_id'] ?? '').toString();
       if (eventId.isEmpty) continue;
 
-      acceptedTrainingEventDates[eventId] = eventDate;
+      convokedTrainingEventDates[eventId] = eventDate;
     }
 
     final doneEventIds = _checkins
         .where((row) {
           if (!_isCheckinDone(row['check_in_status'])) return false;
-          if (!_isTrainingEvent(row)) return false;
-          if (!_eventMatchesAthleteGender(row)) return false;
-
-          final eventDate = _eventDateTime(row);
-          if (!_isOnOrAfterStatsRuleStart(eventDate)) return false;
-          if (eventDate == null || eventDate.year != year) return false;
 
           final eventId = (row['event_id'] ?? '').toString();
-          return acceptedTrainingEventDates.containsKey(eventId);
+          return convokedTrainingEventDates.containsKey(eventId);
         })
         .map((row) => (row['event_id'] ?? '').toString())
         .where((id) => id.isNotEmpty)
@@ -927,7 +1166,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
     final today = DateTime.now();
 
-    for (final entry in acceptedTrainingEventDates.entries) {
+    for (final entry in convokedTrainingEventDates.entries) {
       final eventId = entry.key;
       final eventDate = entry.value;
       final month = eventDate.month;
@@ -1036,8 +1275,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     final map = <String, int>{};
 
     for (final row in _periodEvaluations) {
-      final tipo = (row['tipo'] ?? '').toString().toLowerCase();
-      if (tipo != 'atencao' && tipo != 'atenção') continue;
+      if (!_isAtencaoEvaluation(row)) continue;
 
       final fundamento = _normalizeFundamento(row['fundamento']);
       map[fundamento] = (map[fundamento] ?? 0) + 1;
@@ -1050,8 +1288,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     final map = <String, int>{};
 
     for (final row in _periodEvaluations) {
-      final tipo = (row['tipo'] ?? '').toString().toLowerCase();
-      if (tipo != 'destaque') continue;
+      if (!_isDestaqueEvaluation(row)) continue;
 
       final fundamento = _normalizeFundamento(row['fundamento']);
       map[fundamento] = (map[fundamento] ?? 0) + 1;
@@ -1068,12 +1305,10 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
       if (date == null) continue;
 
       final day = DateTime(date.year, date.month, date.day);
-      final tipo = (row['tipo'] ?? '').toString().toLowerCase();
-
       int score = 0;
-      if (tipo == 'destaque') {
+      if (_isDestaqueEvaluation(row)) {
         score = 2;
-      } else if (tipo == 'atencao' || tipo == 'atenção') {
+      } else if (_isAtencaoEvaluation(row)) {
         score = -1;
       } else {
         final raw = row['score'];
@@ -1097,7 +1332,12 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     final items = <String>[];
 
     if (_periodEvaluations.isEmpty) {
-      items.add('Ainda não há avaliações neste período.');
+      if (_evaluations.isEmpty) {
+        items.add('Ainda não há avaliações cadastradas para este atleta.');
+      } else {
+        items.add(
+            'Há ${_evaluations.length} avaliação(ns) cadastrada(s), mas nenhuma entrou no período ${_periodLabel()}. Verifique a data created_at da avaliação.');
+      }
     } else {
       if (_destaques >= 3) {
         items.add('Você acumulou $_destaques destaque(s) no período.');
@@ -1131,9 +1371,11 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
       }
     }
 
-    if (_presenceRate > 0 && _presenceRate < 0.65) {
-      items.add('Sua presença está abaixo do ideal no período.');
-    } else if (_presenceRate >= 0.85) {
+    if (_trainingBaseCount > 0 && _presenceRate < 0.75) {
+      items.add('⚠️ Sua presença está abaixo do ideal. Compareça aos treinos.');
+    } else if (_trainingBaseCount > 0 && _presenceRate >= 1) {
+      items.add('🔥 Presença perfeita! Continue assim.');
+    } else if (_trainingBaseCount > 0 && _presenceRate >= _presenceGoal) {
       items.add('Excelente presença no período.');
     }
 
@@ -1208,7 +1450,17 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }) {
     return Container(
       width: double.infinity,
-      margin: margin ?? const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      margin: margin ??
+          EdgeInsets.fromLTRB(
+            _StatsResponsive.isDesktop(context)
+                ? 48
+                : (_StatsResponsive.isTablet(context) ? 28 : 16),
+            0,
+            _StatsResponsive.isDesktop(context)
+                ? 48
+                : (_StatsResponsive.isTablet(context) ? 28 : 16),
+            _StatsResponsive.space(context, 12),
+          ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(22),
         child: BackdropFilter(
@@ -1323,14 +1575,25 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
   Widget _header() {
     final fullName = (_profile?['full_name'] ??
-            _supabase.auth.currentUser?.userMetadata?['full_name'] ??
+            (widget.adminView
+                ? 'Atleta'
+                : _supabase.auth.currentUser?.userMetadata?['full_name']) ??
             'Atleta')
         .toString();
     final avatarUrl = (_profile?['avatar_url'] ?? '').toString();
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-      padding: const EdgeInsets.all(16),
+      margin: EdgeInsets.fromLTRB(
+        _StatsResponsive.isDesktop(context)
+            ? 48
+            : (_StatsResponsive.isTablet(context) ? 28 : 16),
+        _StatsResponsive.space(context, 14),
+        _StatsResponsive.isDesktop(context)
+            ? 48
+            : (_StatsResponsive.isTablet(context) ? 28 : 16),
+        _StatsResponsive.space(context, 12),
+      ),
+      padding: EdgeInsets.all(_StatsResponsive.space(context, 16)),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         gradient: const LinearGradient(
@@ -1397,9 +1660,9 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                       fullName,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.white,
-                        fontSize: 20,
+                        fontSize: _StatsResponsive.font(context, 20),
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -1497,10 +1760,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }
 
   int _scoreDeltaForEvaluation(Map<String, dynamic> row) {
-    final tipo = (row['tipo'] ?? '').toString().toLowerCase();
-
-    if (tipo == 'destaque') return 2;
-    if (tipo == 'atencao' || tipo == 'atenção') return -1;
+    if (_isDestaqueEvaluation(row)) return 2;
+    if (_isAtencaoEvaluation(row)) return -1;
 
     final score = row['score'];
     if (score is num) return score.round();
@@ -1568,13 +1829,27 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   Widget _scoreHeroCard() {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      margin: EdgeInsets.fromLTRB(
+        _StatsResponsive.isDesktop(context)
+            ? 48
+            : (_StatsResponsive.isTablet(context) ? 28 : 16),
+        0,
+        _StatsResponsive.isDesktop(context)
+            ? 48
+            : (_StatsResponsive.isTablet(context) ? 28 : 16),
+        _StatsResponsive.space(context, 12),
+      ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(28),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
           child: Container(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            padding: EdgeInsets.fromLTRB(
+              _StatsResponsive.space(context, 18),
+              _StatsResponsive.space(context, 18),
+              _StatsResponsive.space(context, 18),
+              _StatsResponsive.space(context, 16),
+            ),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(28),
               gradient: const LinearGradient(
@@ -1726,9 +2001,9 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                       children: [
                         Text(
                           '$_score',
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: Colors.white,
-                            fontSize: 58,
+                            fontSize: _StatsResponsive.font(context, 58),
                             fontWeight: FontWeight.w900,
                             height: 0.95,
                           ),
@@ -1877,7 +2152,16 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      margin: EdgeInsets.fromLTRB(
+        _StatsResponsive.isDesktop(context)
+            ? 48
+            : (_StatsResponsive.isTablet(context) ? 28 : 16),
+        0,
+        _StatsResponsive.isDesktop(context)
+            ? 48
+            : (_StatsResponsive.isTablet(context) ? 28 : 16),
+        _StatsResponsive.space(context, 12),
+      ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(26),
         child: BackdropFilter(
@@ -2367,6 +2651,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     required String value,
     required Color color,
     required String explanation,
+    Widget? valueWidget,
+    Widget? bottomWidget,
     VoidCallback? onTap,
   }) {
     return Material(
@@ -2376,7 +2662,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         borderRadius: BorderRadius.circular(18),
         child: Container(
           constraints: const BoxConstraints(minHeight: 116),
-          padding: const EdgeInsets.all(12),
+          padding: EdgeInsets.all(_StatsResponsive.isSmall(context) ? 10 : 12),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.96),
             borderRadius: BorderRadius.circular(18),
@@ -2400,14 +2686,15 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  value,
-                  style: const TextStyle(
-                    color: olympusBlue,
-                    fontSize: 23,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+                child: valueWidget ??
+                    Text(
+                      value,
+                      style: TextStyle(
+                        color: olympusBlue,
+                        fontSize: _StatsResponsive.font(context, 23),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
               ),
               const SizedBox(height: 4),
               Text(
@@ -2420,6 +2707,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                   fontWeight: FontWeight.w800,
                 ),
               ),
+              if (bottomWidget != null) bottomWidget,
             ],
           ),
         ),
@@ -2431,11 +2719,18 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     final metrics = [
       {
         'icon': Icons.fact_check_outlined,
-        'title': 'Presenças / Faltas',
-        'value': '$_trainingPresenceCount / $_trainingAcceptedAbsentCount',
+        'title': 'Presença / Falta',
+        'value':
+            '${_formatPercentValue(_presenceRate)} / ${_formatPercentValue(_absenceRate)}',
+        'valueWidget': _presenceFailureValueWidget(),
+        'bottomWidget': _presenceStatusPill(),
         'color': olympusPurple,
         'explanation':
-            'Mostra presenças e faltas no período selecionado. Presenças são check-ins realizados em treinos aceitos. Faltas são treinos aceitos em que o prazo de check-in expirou sem presença registrada. Só entram treinos a partir de 01/05/2026 e do mesmo gênero do atleta quando o evento possui gender.',
+            'Base atual: ${_formatPercentValue(_presenceRate)} de presença e ${_formatPercentValue(_absenceRate)} de faltas sobre $_trainingBaseCount treino(s) convocado(s).\n\n'
+                'Presenças: $_trainingPresenceCount • Faltas: $_trainingAcceptedAbsentCount • Pendentes: $_trainingPendingCount • Recusados: $_trainingRejectedCount.\n\n'
+                'Presença = check-ins realizados em treinos convocados.\n'
+                'Falta = treinos convocados sem check-in após 30 minutos, incluindo recusados.\n\n'
+                'Regra válida ${_periodRuleLabel()}.',
       },
       {
         'icon': Icons.star_rounded,
@@ -2456,16 +2751,18 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     ];
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.symmetric(
+        horizontal: _StatsResponsive.isDesktop(context)
+            ? 48
+            : (_StatsResponsive.isTablet(context) ? 28 : 16),
+      ),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
-          final crossAxisCount = width < 360
-              ? 1
-              : width < 720
-                  ? 3
-                  : 3;
-          final aspectRatio = width < 360 ? 2.7 : 1.22;
+          final crossAxisCount =
+              _StatsResponsive.metricsCrossAxisCount(context, width);
+          final aspectRatio =
+              _StatsResponsive.metricsAspectRatio(context, width);
 
           return GridView.builder(
             itemCount: metrics.length,
@@ -2486,6 +2783,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                 value: item['value'] as String,
                 color: item['color'] as Color,
                 explanation: item['explanation'] as String,
+                valueWidget: item['valueWidget'] as Widget?,
+                bottomWidget: item['bottomWidget'] as Widget?,
                 onTap: null,
               );
             },
@@ -2543,13 +2842,13 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             _infoButton(
               title: 'Presença',
               explanation:
-                  'Presença = check-ins realizados ÷ treinos aceitos. Esta tela usa a mesma lógica do painel do atleta, considerando somente treinos a partir de 01/05/2026. Quando o evento possui gênero, o cálculo considera apenas treinos do mesmo gênero cadastrado no perfil da atleta.',
+                  'Presença = check-ins realizados ÷ treinos convocados. Falta = treinos convocados sem check-in depois do prazo de 30 minutos, incluindo recusados. Esta tela considera somente treinos a partir de 01/05/2026. Quando o evento possui gênero, o cálculo considera apenas treinos do mesmo gênero cadastrado no perfil da atleta.',
             ),
           ],
         ),
         const SizedBox(height: 10),
         Text(
-          'Base atual: $_trainingPresenceCount presença(s) em $_trainingBaseCount treino(s) aceito(s). Pendentes: $_trainingPendingCount • Ausência após aceite: $_trainingAcceptedAbsentCount • Recusados: $_trainingRejectedCount. Regra válida ${_periodRuleLabel()}. Gênero usado no filtro: $genderLabel.',
+          'Base atual: ${_formatPercentValue(_presenceRate)} de presença e ${_formatPercentValue(_absenceRate)} de faltas sobre $_trainingBaseCount treino(s) convocado(s). Presenças: $_trainingPresenceCount • Faltas: $_trainingAcceptedAbsentCount • Pendentes: $_trainingPendingCount • Recusados: $_trainingRejectedCount. Regra válida ${_periodRuleLabel()}. Gênero usado no filtro: $genderLabel.',
           style: const TextStyle(
             color: olympusMuted,
             fontSize: 13,
@@ -2601,7 +2900,16 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      margin: EdgeInsets.fromLTRB(
+        _StatsResponsive.isDesktop(context)
+            ? 48
+            : (_StatsResponsive.isTablet(context) ? 28 : 16),
+        0,
+        _StatsResponsive.isDesktop(context)
+            ? 48
+            : (_StatsResponsive.isTablet(context) ? 28 : 16),
+        _StatsResponsive.space(context, 12),
+      ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(26),
         child: BackdropFilter(
@@ -2730,7 +3038,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                         _infoButton(
                           title: 'Presença anual',
                           explanation:
-                              'Gráfico anual com presenças e faltas por mês. Presença é check-in realizado em treino aceito. Falta é treino aceito cujo prazo de check-in expirou sem presença registrada. A regra considera treinos a partir de 01/05/2026 e o gênero do atleta quando o evento possui gender.',
+                              'Gráfico anual com presenças e faltas por mês. Presença é check-in realizado em treino convocado. Falta é treino convocado cujo prazo de check-in expirou sem presença registrada, incluindo recusados. A regra considera treinos a partir de 01/05/2026 e o gênero do atleta quando o evento possui gender.',
                           color: olympusGold,
                         ),
                       ],
@@ -2793,7 +3101,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                     ],
                     const SizedBox(height: 14),
                     Container(
-                      height: 236,
+                      height: _StatsResponsive.annualChartHeight(context),
                       width: double.infinity,
                       padding: const EdgeInsets.fromLTRB(10, 12, 10, 8),
                       decoration: BoxDecoration(
@@ -3247,11 +3555,10 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   Widget _historySection() {
     final evaluations = _periodEvaluations.take(10).toList();
 
-    Color colorForType(String type) {
-      final tipo = type.toLowerCase();
-      if (tipo == 'destaque') return olympusSuccess;
-      if (tipo == 'atencao' || tipo == 'atenção') return olympusWarning;
-      if (tipo == 'completa') return olympusGold;
+    Color colorForEvaluation(Map<String, dynamic> row) {
+      if (_isDestaqueEvaluation(row)) return olympusSuccess;
+      if (_isAtencaoEvaluation(row)) return olympusWarning;
+      if (_isCompletaEvaluation(row)) return olympusGold;
       return olympusBlue;
     }
 
@@ -3281,7 +3588,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         else
           ...evaluations.map((evaluation) {
             final tipo = (evaluation['tipo'] ?? 'avaliação').toString();
-            final color = colorForType(tipo);
+            final color = colorForEvaluation(evaluation);
 
             return Container(
               margin: const EdgeInsets.only(bottom: 10),
@@ -3377,7 +3684,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
       appBar: AppBar(
         title: Text(widget.adminView
             ? 'Estatísticas do Atleta'
-            : 'Minhas Estatísticas'),
+            : 'Estatísticas do Atleta'),
         backgroundColor: olympusBlue,
         foregroundColor: Colors.white,
         leading: IconButton(
@@ -3449,6 +3756,59 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BlinkingMetricValue extends StatefulWidget {
+  const _BlinkingMetricValue({
+    required this.text,
+    required this.color,
+  });
+
+  final String text;
+  final Color color;
+
+  @override
+  State<_BlinkingMetricValue> createState() => _BlinkingMetricValueState();
+}
+
+class _BlinkingMetricValueState extends State<_BlinkingMetricValue>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+
+    _opacity = Tween<double>(begin: 0.45, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _opacity,
+      child: Text(
+        widget.text,
+        style: TextStyle(
+          color: widget.color,
+          fontSize: _StatsResponsive.font(context, 23),
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
@@ -3665,9 +4025,9 @@ class _AnnualPresenceAbsencePainter extends CustomPainter {
 
     final padding = EdgeInsets.fromLTRB(
       size.width < 360 ? 30 : 34,
-      16,
+      18,
       12,
-      30,
+      34,
     );
 
     final chartWidth = size.width - padding.left - padding.right;
@@ -3679,9 +4039,7 @@ class _AnnualPresenceAbsencePainter extends CustomPainter {
     final maxAbsence = data.map((e) => e.absences).fold<int>(0, math.max);
     final maxValue = math.max(1, math.max(maxPresence, maxAbsence));
 
-    final textPainter = TextPainter(
-      textDirection: TextDirection.ltr,
-    );
+    final textPainter = TextPainter(textDirection: TextDirection.ltr);
 
     final axisPaint = Paint()
       ..color = gridColor.withOpacity(0.72)
@@ -3727,130 +4085,156 @@ class _AnnualPresenceAbsencePainter extends CustomPainter {
       axisPaint,
     );
 
+    final monthSlot = chartWidth / data.length;
+    final barWidth = math.min(18.0, math.max(7.0, monthSlot * 0.26));
+    final gap = math.max(2.0, monthSlot * 0.08);
+    final radius = Radius.circular(math.min(5.0, barWidth / 2));
+
     if (selectedMonth != null && selectedMonth! >= 1 && selectedMonth! <= 12) {
       final selectedIndex = selectedMonth! - 1;
-      final selectedX = data.length == 1
-          ? padding.left + chartWidth / 2
-          : padding.left + chartWidth * (selectedIndex / (data.length - 1));
+      final selectedCenterX = padding.left + (selectedIndex + 0.5) * monthSlot;
+      final highlightWidth = math.max(24.0, monthSlot * 0.78);
 
-      final markerPaint = Paint()
-        ..color = (selectedColor ?? Colors.white).withOpacity(0.70)
-        ..strokeWidth = 1.4;
+      final highlightRect = Rect.fromLTWH(
+        selectedCenterX - highlightWidth / 2,
+        padding.top - 4,
+        highlightWidth,
+        chartHeight + 10,
+      );
+
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(highlightRect, const Radius.circular(12)),
+        Paint()..color = (selectedColor ?? Colors.white).withOpacity(0.10),
+      );
 
       canvas.drawLine(
-        Offset(selectedX, padding.top),
-        Offset(selectedX, padding.top + chartHeight),
-        markerPaint,
-      );
-
-      canvas.drawCircle(
-        Offset(selectedX, padding.top + chartHeight),
-        4,
-        Paint()..color = selectedColor ?? Colors.white,
+        Offset(selectedCenterX, padding.top),
+        Offset(selectedCenterX, padding.top + chartHeight),
+        Paint()
+          ..color = (selectedColor ?? Colors.white).withOpacity(0.42)
+          ..strokeWidth = 1.2,
       );
     }
 
-    List<Offset> buildPoints(
-        int Function(_MonthlyPresenceAbsence item) getValue) {
-      return List.generate(data.length, (index) {
-        final x = data.length == 1
-            ? padding.left + chartWidth / 2
-            : padding.left + chartWidth * (index / (data.length - 1));
-
-        final value = getValue(data[index]);
-        final normalized = value / maxValue;
-        final y = padding.top + chartHeight - normalized * chartHeight;
-
-        return Offset(x, y);
-      });
-    }
-
-    final presencePoints = buildPoints((item) => item.presences);
-    final absencePoints = buildPoints((item) => item.absences);
-
-    void drawLineSeries({
-      required List<Offset> points,
+    void drawValueLabel({
+      required int value,
+      required double x,
+      required double topY,
       required Color color,
-      required bool fill,
     }) {
-      if (points.isEmpty) return;
-
-      final path = Path()..moveTo(points.first.dx, points.first.dy);
-      for (final point in points.skip(1)) {
-        path.lineTo(point.dx, point.dy);
-      }
-
-      if (fill && points.length > 1) {
-        final fillPath = Path.from(path)
-          ..lineTo(points.last.dx, padding.top + chartHeight)
-          ..lineTo(points.first.dx, padding.top + chartHeight)
-          ..close();
-
-        canvas.drawPath(
-          fillPath,
-          Paint()..color = color.withOpacity(0.10),
-        );
-      }
-
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = color.withOpacity(0.28)
-          ..strokeWidth = 7
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
-      );
-
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = color
-          ..strokeWidth = 3
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round,
-      );
-
-      for (final point in points) {
-        canvas.drawCircle(point, 5.2, Paint()..color = Colors.white);
-        canvas.drawCircle(point, 3.5, Paint()..color = color);
-      }
-    }
-
-    drawLineSeries(
-      points: presencePoints,
-      color: presenceColor,
-      fill: true,
-    );
-
-    drawLineSeries(
-      points: absencePoints,
-      color: absenceColor,
-      fill: false,
-    );
-
-    for (int i = 0; i < data.length; i++) {
-      final x = data.length == 1
-          ? padding.left + chartWidth / 2
-          : padding.left + chartWidth * (i / (data.length - 1));
-
-      final label = _monthLabels[data[i].month];
+      if (value <= 0) return;
 
       textPainter.text = TextSpan(
-        text: label,
+        text: value.toString(),
         style: TextStyle(
-          color: labelColor,
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
+          color: color,
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
         ),
       );
       textPainter.layout();
-
       textPainter.paint(
         canvas,
-        Offset(x - textPainter.width / 2, padding.top + chartHeight + 10),
+        Offset(x - textPainter.width / 2, topY - 13),
+      );
+    }
+
+    for (int i = 0; i < data.length; i++) {
+      final item = data[i];
+      final centerX = padding.left + (i + 0.5) * monthSlot;
+      final baseY = padding.top + chartHeight;
+
+      final presenceHeight = item.presences <= 0
+          ? 0.0
+          : math.max(4.0, (item.presences / maxValue) * chartHeight);
+      final absenceHeight = item.absences <= 0
+          ? 0.0
+          : math.max(4.0, (item.absences / maxValue) * chartHeight);
+
+      final presenceLeft = centerX - barWidth - gap / 2;
+      final absenceLeft = centerX + gap / 2;
+
+      final presenceRect = Rect.fromLTWH(
+        presenceLeft,
+        baseY - presenceHeight,
+        barWidth,
+        presenceHeight,
+      );
+      final absenceRect = Rect.fromLTWH(
+        absenceLeft,
+        baseY - absenceHeight,
+        barWidth,
+        absenceHeight,
+      );
+
+      if (presenceHeight > 0) {
+        canvas.drawRRect(
+          RRect.fromRectAndCorners(
+            presenceRect,
+            topLeft: radius,
+            topRight: radius,
+          ),
+          Paint()..color = presenceColor,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndCorners(
+            presenceRect.inflate(2),
+            topLeft: radius,
+            topRight: radius,
+          ),
+          Paint()
+            ..color = presenceColor.withOpacity(0.18)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        );
+        drawValueLabel(
+          value: item.presences,
+          x: presenceRect.center.dx,
+          topY: presenceRect.top,
+          color: presenceColor,
+        );
+      }
+
+      if (absenceHeight > 0) {
+        canvas.drawRRect(
+          RRect.fromRectAndCorners(
+            absenceRect,
+            topLeft: radius,
+            topRight: radius,
+          ),
+          Paint()..color = absenceColor,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndCorners(
+            absenceRect.inflate(2),
+            topLeft: radius,
+            topRight: radius,
+          ),
+          Paint()
+            ..color = absenceColor.withOpacity(0.18)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        );
+        drawValueLabel(
+          value: item.absences,
+          x: absenceRect.center.dx,
+          topY: absenceRect.top,
+          color: absenceColor,
+        );
+      }
+
+      final label = _monthLabels[item.month];
+      final isSelected = selectedMonth == item.month;
+      textPainter.text = TextSpan(
+        text: label,
+        style: TextStyle(
+          color: isSelected ? (selectedColor ?? Colors.white) : labelColor,
+          fontSize: 10,
+          fontWeight: isSelected ? FontWeight.w900 : FontWeight.w800,
+        ),
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(centerX - textPainter.width / 2, baseY + 10),
       );
     }
   }

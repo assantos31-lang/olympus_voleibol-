@@ -8,7 +8,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/permission_service.dart';
 
 class CoachTrainingSessionsPage extends StatefulWidget {
-  const CoachTrainingSessionsPage({super.key});
+  final String initialTipoEvento;
+  final bool lockTipoEvento;
+
+  const CoachTrainingSessionsPage({
+    super.key,
+    this.initialTipoEvento = 'treino',
+    this.lockTipoEvento = false,
+  });
 
   @override
   State<CoachTrainingSessionsPage> createState() =>
@@ -40,6 +47,12 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
 
   String _filtroMes = '';
   String _filtroStatus = 'todos';
+  late String _filtroTipoEvento;
+  Map<String, int> _typeCounts = {
+    'treino': 0,
+    'campeonato': 0,
+    'liga': 0,
+  };
   Map<String, int> _statusCounts = {
     'accepted': 0,
     'rejected': 0,
@@ -49,6 +62,10 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
   @override
   void initState() {
     super.initState();
+    _filtroTipoEvento = _normalizarTipoEvento(widget.initialTipoEvento);
+    if (!_isTipoEventoSuportado(_filtroTipoEvento)) {
+      _filtroTipoEvento = 'treino';
+    }
     _setMesAtual();
     _buscarTreinosDoTecnico();
   }
@@ -60,6 +77,66 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
 
   bool _isMobile(BuildContext context) {
     return MediaQuery.of(context).size.width < 600;
+  }
+
+  String _normalizarTipoEvento(dynamic value) {
+    final raw = (value ?? '').toString().trim().toLowerCase();
+
+    if (raw.contains('treino')) return 'treino';
+    if (raw.contains('campeonato')) return 'campeonato';
+    if (raw.contains('liga')) return 'liga';
+
+    return raw;
+  }
+
+  bool _isTipoEventoSuportado(dynamic value) {
+    final tipo = _normalizarTipoEvento(value);
+    return tipo == 'treino' || tipo == 'campeonato' || tipo == 'liga';
+  }
+
+  String _labelTipoEvento(dynamic value) {
+    final tipo = _normalizarTipoEvento(value);
+
+    switch (tipo) {
+      case 'treino':
+        return 'Treino';
+      case 'campeonato':
+        return 'Campeonato';
+      case 'liga':
+        return 'Liga';
+      default:
+        return tipo.isEmpty ? 'Evento' : tipo;
+    }
+  }
+
+  Color _colorTipoEvento(dynamic value) {
+    final tipo = _normalizarTipoEvento(value);
+
+    switch (tipo) {
+      case 'treino':
+        return Colors.blue;
+      case 'campeonato':
+        return olympusGold;
+      case 'liga':
+        return olympusPurple;
+      default:
+        return olympusBlue;
+    }
+  }
+
+  IconData _iconTipoEvento(dynamic value) {
+    final tipo = _normalizarTipoEvento(value);
+
+    switch (tipo) {
+      case 'treino':
+        return Icons.fitness_center;
+      case 'campeonato':
+        return Icons.emoji_events_rounded;
+      case 'liga':
+        return Icons.workspace_premium_rounded;
+      default:
+        return Icons.event_rounded;
+    }
   }
 
   Widget _responsiveActionRow({
@@ -252,8 +329,9 @@ events!convocations_event_id_fkey (
         final eventType =
             (event['event_type'] ?? '').toString().toLowerCase().trim();
 
-        if (eventType != 'treino') continue;
+        if (!_isTipoEventoSuportado(eventType)) continue;
 
+        event['normalized_event_type'] = _normalizarTipoEvento(eventType);
         event['convocation_id'] = item['id'];
         event['convocation_status'] =
             (item['status'] ?? 'pending').toString().toLowerCase().trim();
@@ -375,18 +453,55 @@ events!convocations_event_id_fkey (
     }).toList();
   }
 
+  List<Map<String, dynamic>> _getEventosDoTipoSelecionado() {
+    return _getTreinosBaseFiltro().where((evento) {
+      final tipo = _normalizarTipoEvento(
+        evento['normalized_event_type'] ?? evento['event_type'],
+      );
+      return tipo == _filtroTipoEvento;
+    }).toList();
+  }
+
   void _atualizarResumoStatus() {
+    final typeCounts = {
+      'treino': 0,
+      'campeonato': 0,
+      'liga': 0,
+    };
+
+    for (final evento in _getTreinosBaseFiltro()) {
+      final tipo = _normalizarTipoEvento(
+        evento['normalized_event_type'] ?? evento['event_type'],
+      );
+
+      if (typeCounts.containsKey(tipo)) {
+        typeCounts[tipo] = typeCounts[tipo]! + 1;
+      }
+    }
+
     final counts = {'accepted': 0, 'rejected': 0, 'pending': 0};
 
-    for (final treino in _getTreinosBaseFiltro()) {
+    for (final evento in _getEventosDoTipoSelecionado()) {
       final status =
-          (treino['convocation_status'] ?? 'pending').toString().toLowerCase();
+          (evento['convocation_status'] ?? 'pending').toString().toLowerCase();
       if (counts.containsKey(status)) {
         counts[status] = counts[status]! + 1;
       }
     }
 
+    _typeCounts = typeCounts;
     _statusCounts = counts;
+  }
+
+  void _selecionarTipoEvento(String tipo) {
+    if (widget.lockTipoEvento) return;
+    if (_filtroTipoEvento == tipo) return;
+
+    setState(() {
+      _filtroTipoEvento = tipo;
+      _filtroStatus = 'todos';
+      _aplicarFiltros();
+    });
   }
 
   void _selecionarResumo(String status) {
@@ -399,7 +514,7 @@ events!convocations_event_id_fkey (
   }
 
   void _aplicarFiltros() {
-    var lista = _getTreinosBaseFiltro();
+    var lista = _getEventosDoTipoSelecionado();
 
     if (_filtroStatus != 'todos') {
       lista = lista.where((treino) {
@@ -1381,6 +1496,53 @@ events!convocations_event_id_fkey (
     );
   }
 
+  Widget _buildTipoEventoChip({
+    required String tipo,
+    required String label,
+    required int count,
+    required Color color,
+    required IconData icon,
+  }) {
+    final selected = _filtroTipoEvento == tipo;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => _selecionarTipoEvento(tipo),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        constraints: const BoxConstraints(minWidth: 104),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? color.withOpacity(0.18) : color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? color : color.withOpacity(0.24),
+            width: selected ? 1.4 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 16),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                '$label: $count',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildResumoTreinosSection() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
@@ -1417,10 +1579,12 @@ events!convocations_event_id_fkey (
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Treinos',
-                    style: TextStyle(
+                    widget.lockTipoEvento
+                        ? '${_labelTipoEvento(_filtroTipoEvento)}'
+                        : 'Eventos separados',
+                    style: const TextStyle(
                       color: olympusBlue,
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
@@ -1430,6 +1594,52 @@ events!convocations_event_id_fkey (
               ],
             ),
             const SizedBox(height: 8),
+            if (widget.lockTipoEvento)
+              _buildTipoEventoChip(
+                tipo: _filtroTipoEvento,
+                label: _labelTipoEvento(_filtroTipoEvento),
+                count: _typeCounts[_filtroTipoEvento] ?? 0,
+                color: _colorTipoEvento(_filtroTipoEvento),
+                icon: _iconTipoEvento(_filtroTipoEvento),
+              )
+            else
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  _buildTipoEventoChip(
+                    tipo: 'treino',
+                    label: 'Treinos',
+                    count: _typeCounts['treino'] ?? 0,
+                    color: Colors.blue,
+                    icon: Icons.fitness_center,
+                  ),
+                  _buildTipoEventoChip(
+                    tipo: 'campeonato',
+                    label: 'Campeonatos',
+                    count: _typeCounts['campeonato'] ?? 0,
+                    color: olympusGold,
+                    icon: Icons.emoji_events_rounded,
+                  ),
+                  _buildTipoEventoChip(
+                    tipo: 'liga',
+                    label: 'Liga',
+                    count: _typeCounts['liga'] ?? 0,
+                    color: olympusPurple,
+                    icon: Icons.workspace_premium_rounded,
+                  ),
+                ],
+              ),
+            const SizedBox(height: 10),
+            Text(
+              'Status em ${_labelTipoEvento(_filtroTipoEvento)}',
+              style: const TextStyle(
+                color: olympusMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
             Wrap(
               spacing: 6,
               runSpacing: 6,
@@ -1532,6 +1742,12 @@ events!convocations_event_id_fkey (
 
   Widget _buildTreinoCard(Map<String, dynamic> treino) {
     final isMobile = _isMobile(context);
+    final tipoEvento = _normalizarTipoEvento(
+      treino['normalized_event_type'] ?? treino['event_type'],
+    );
+    final tipoLabel = _labelTipoEvento(tipoEvento);
+    final tipoColor = _colorTipoEvento(tipoEvento);
+    final tipoIcon = _iconTipoEvento(tipoEvento);
     final genero = (treino['gender'] ?? '').toString();
     final endereco = _formatarEndereco(treino);
     final status =
@@ -1590,16 +1806,23 @@ events!convocations_event_id_fkey (
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: olympusBlue.withOpacity(0.10),
+                      color: tipoColor.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: const Text(
-                      'TREINO',
-                      style: TextStyle(
-                        color: olympusBlue,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(tipoIcon, color: tipoColor, size: 13),
+                        const SizedBox(width: 5),
+                        Text(
+                          tipoLabel.toUpperCase(),
+                          style: TextStyle(
+                            color: tipoColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const Spacer(),
@@ -1849,7 +2072,7 @@ events!convocations_event_id_fkey (
                 child: ElevatedButton.icon(
                   onPressed: () => _abrirAvaliacaoRapida(treino),
                   icon: const Icon(Icons.fact_check_outlined),
-                  label: const Text('Avaliação rápida'),
+                  label: Text('Avaliação rápida de $tipoLabel'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: olympusPurple,
                     foregroundColor: Colors.white,
@@ -1859,22 +2082,24 @@ events!convocations_event_id_fkey (
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _abrirDetalheTreino(treino),
-                  icon: const Icon(Icons.menu_book_outlined),
-                  label: const Text('Abrir planejamento'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: olympusBlue,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(
-                      vertical: isMobile ? 11 : 12,
+              if (tipoEvento == 'treino') ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _abrirDetalheTreino(treino),
+                    icon: const Icon(Icons.menu_book_outlined),
+                    label: const Text('Abrir planejamento'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: olympusBlue,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(
+                        vertical: isMobile ? 11 : 12,
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -1887,7 +2112,11 @@ events!convocations_event_id_fkey (
     return Scaffold(
       backgroundColor: olympusBg,
       appBar: AppBar(
-        title: const Text('Planejamento de treinos'),
+        title: Text(
+          widget.lockTipoEvento
+              ? 'Avaliar ${_labelTipoEvento(_filtroTipoEvento)}'
+              : 'Eventos e avaliações',
+        ),
         backgroundColor: olympusBlue,
         foregroundColor: Colors.white,
         actions: [
@@ -1918,13 +2147,15 @@ events!convocations_event_id_fkey (
                         ),
                       )
                     : _treinosFiltrados.isEmpty
-                        ? const Center(
+                        ? Center(
                             child: Padding(
-                              padding: EdgeInsets.all(24),
+                              padding: const EdgeInsets.all(24),
                               child: Text(
-                                'Nenhum treino encontrado para o técnico logado.',
+                                widget.lockTipoEvento
+                                    ? 'Nenhum ${_labelTipoEvento(_filtroTipoEvento).toLowerCase()} encontrado para os filtros atuais.'
+                                    : 'Nenhum evento encontrado para os filtros atuais.',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   color: Color(0xFF53657B),
                                   fontSize: 15,
                                   fontWeight: FontWeight.w600,
@@ -3177,6 +3408,34 @@ class _CoachQuickAthleteEvaluationPageState
     return MediaQuery.of(context).size.width < 600;
   }
 
+  String _normalizarTipoEvento(dynamic value) {
+    final raw = (value ?? '').toString().trim().toLowerCase();
+
+    if (raw.contains('treino')) return 'treino';
+    if (raw.contains('campeonato')) return 'campeonato';
+    if (raw.contains('liga')) return 'liga';
+
+    return raw;
+  }
+
+  String _labelTipoEvento(dynamic value) {
+    final tipo = _normalizarTipoEvento(value);
+
+    switch (tipo) {
+      case 'treino':
+        return 'treino';
+      case 'campeonato':
+        return 'campeonato';
+      case 'liga':
+        return 'liga';
+      default:
+        return tipo.isEmpty ? 'evento' : tipo;
+    }
+  }
+
+  String get _eventoLabel => _labelTipoEvento(
+      widget.treino['normalized_event_type'] ?? widget.treino['event_type']);
+
   Widget _responsiveActionRow({
     required List<Widget> children,
     double spacing = 10,
@@ -3414,8 +3673,9 @@ class _CoachQuickAthleteEvaluationPageState
 
     if (_atletas.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Nenhum atleta com check-in disponível para seleção.'),
+        SnackBar(
+          content: Text(
+              'Nenhum atleta com check-in disponível neste $_eventoLabel.'),
         ),
       );
       return;
@@ -3814,7 +4074,7 @@ class _CoachQuickAthleteEvaluationPageState
     return Scaffold(
       backgroundColor: olympusBg,
       appBar: AppBar(
-        title: const Text('Avaliação rápida'),
+        title: Text('Avaliação rápida de $_eventoLabel'),
         backgroundColor: olympusBlue,
         foregroundColor: Colors.white,
         actions: [
@@ -3864,9 +4124,9 @@ class _CoachQuickAthleteEvaluationPageState
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Somente atletas que fizeram check-in aparecem na seleção.',
-                  style: TextStyle(
+                Text(
+                  'Somente atletas que fizeram check-in neste $_eventoLabel aparecem na seleção.',
+                  style: const TextStyle(
                     color: Color(0xFF6A7E94),
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -3900,11 +4160,11 @@ class _CoachQuickAthleteEvaluationPageState
                         ),
                       )
                     : _atletas.isEmpty
-                        ? const Padding(
-                            padding: EdgeInsets.all(8),
+                        ? Padding(
+                            padding: const EdgeInsets.all(8),
                             child: Text(
-                              'Nenhum atleta visível com check-in realizado neste treino.',
-                              style: TextStyle(
+                              'Nenhum atleta visível com check-in realizado neste $_eventoLabel.',
+                              style: const TextStyle(
                                 color: Color(0xFF53657B),
                                 fontWeight: FontWeight.w600,
                               ),
@@ -3914,7 +4174,7 @@ class _CoachQuickAthleteEvaluationPageState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Destaques e pontos de atenção',
+                                'Destaques e pontos de atenção de $_eventoLabel',
                                 style: TextStyle(
                                   color: olympusBlue,
                                   fontSize: isMobile ? 15 : 16,
@@ -3923,7 +4183,7 @@ class _CoachQuickAthleteEvaluationPageState
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                'Escolha 2 destaques e 3 pontos de atenção com motivo.',
+                                'Escolha 2 destaques e 3 pontos de atenção com motivo. Treinos, campeonatos e liga ficam separados pelo evento.',
                                 style: TextStyle(
                                   color: olympusMuted,
                                   fontSize: isMobile ? 12 : 13,

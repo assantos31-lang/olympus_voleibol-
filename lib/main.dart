@@ -11,8 +11,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'firebase_options.dart';
 import 'pages/admin_home_page.dart';
+import 'pages/admin_athletes_statistics_list_page.dart';
 import 'pages/athlete_dashboard_page.dart';
-import 'pages/admin_athletes_statistics_page.dart';
 import 'pages/chat_rooms_page.dart';
 import 'pages/complete_profile_page.dart';
 import 'pages/dashboard_router_page.dart';
@@ -114,12 +114,6 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       initialRoute: '/',
-      onGenerateRoute: (settings) {
-        if (settings.name == '/admin-athletes-statistics') {
-          return AthleteStatisticsPage.route(adminView: true);
-        }
-        return null;
-      },
       routes: {
         '/': (context) => const AppBootstrapPage(),
         '/login': (context) => const LoginPage(),
@@ -128,6 +122,8 @@ class MyApp extends StatelessWidget {
         '/complete-profile': (context) => const CompleteProfilePage(),
         '/dashboard': (context) => const DashboardRouterPage(),
         '/admin-home': (context) => const AdminHomePage(),
+        '/admin-athletes-statistics': (context) =>
+            const AdminAthletesStatisticsListPage(),
         '/chat-rooms': (context) => const ChatRoomsPage(),
       },
     );

@@ -26,7 +26,7 @@ class AthleteDashboardPage extends StatefulWidget {
 }
 
 class _AthleteDashboardPageState extends State<AthleteDashboardPage>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final supabase = Supabase.instance.client;
   final _authService = AuthService();
   final PermissionService _permissionService = PermissionService();
@@ -45,6 +45,8 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   bool _isLoadingTodayBirthdays = true;
   late final AnimationController _birthdayBadgeController;
   late final Animation<double> _birthdayBadgeScale;
+  late final AnimationController _presenceBlinkController;
+  late final Animation<double> _presenceBlinkOpacity;
   int _messageUnreadCount = 0;
   int _competitionNewCount = 0;
   int? _currentUserRankingPosition;
@@ -108,6 +110,16 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     _birthdayBadgeScale = Tween<double>(begin: 1.0, end: 1.08).animate(
       CurvedAnimation(
         parent: _birthdayBadgeController,
+        curve: Curves.easeInOut,
+      ),
+    );
+    _presenceBlinkController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 760),
+    )..repeat(reverse: true);
+    _presenceBlinkOpacity = Tween<double>(begin: 0.42, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _presenceBlinkController,
         curve: Curves.easeInOut,
       ),
     );
@@ -741,6 +753,20 @@ event_type
     if (_currentStreak <= 0) return '🔥 Inicie sua sequência';
     if (_currentStreak == 1) return '🔥 1 treino seguido';
     return '🔥 $_currentStreak treinos seguidos';
+  }
+
+  Color _getPresencePercentColor(double percent) {
+    final roundedPercent = percent.round();
+
+    if (roundedPercent >= 100) {
+      return Colors.greenAccent;
+    }
+
+    if (roundedPercent >= 76) {
+      return olympusGold;
+    }
+
+    return Colors.redAccent;
   }
 
   Map<String, dynamic>? _getNextTrainingEvent() {
@@ -3290,9 +3316,11 @@ event_time
                   label: 'Presenças',
                   helper: 'Taxa de presença',
                   value: '${_monthlyPresencePercent.toStringAsFixed(0)}%',
-                  valueColor: const Color(0xFFFFF2A8),
-                  accentColor: const Color(0xFFE7CC44),
+                  valueColor: _getPresencePercentColor(_monthlyPresencePercent),
+                  accentColor:
+                      _getPresencePercentColor(_monthlyPresencePercent),
                   chartType: _MiniChartType.line,
+                  blinkValue: true,
                 ),
               ),
               const SizedBox(width: 8),
@@ -3334,6 +3362,7 @@ event_time
     required Color valueColor,
     required Color accentColor,
     required _MiniChartType chartType,
+    bool blinkValue = false,
   }) {
     return Container(
       height: 92,
@@ -3399,15 +3428,34 @@ event_time
             ),
           ),
           const SizedBox(height: 2),
-          Text(
-            value,
-            style: TextStyle(
-              color: valueColor,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              height: 1,
-            ),
-          ),
+          blinkValue
+              ? FadeTransition(
+                  opacity: _presenceBlinkOpacity,
+                  child: Text(
+                    value,
+                    style: TextStyle(
+                      color: valueColor,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                      shadows: [
+                        Shadow(
+                          color: valueColor.withOpacity(0.75),
+                          blurRadius: 12,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : Text(
+                  value,
+                  style: TextStyle(
+                    color: valueColor,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    height: 1,
+                  ),
+                ),
           const Spacer(),
           _buildMiniChart(chartType, accentColor),
         ],
@@ -4220,6 +4268,7 @@ event_time
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _birthdayBadgeController.dispose();
+    _presenceBlinkController.dispose();
     if (_messagesRealtimeChannel != null) {
       supabase.removeChannel(_messagesRealtimeChannel!);
     }

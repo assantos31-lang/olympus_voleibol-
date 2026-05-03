@@ -237,7 +237,22 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const CoachTrainingSessionsPage(),
+        builder: (context) => const CoachTrainingSessionsPage(
+          initialTipoEvento: 'treino',
+          lockTipoEvento: true,
+        ),
+      ),
+    );
+  }
+
+  void _navigateToChampionshipEvaluations() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CoachTrainingSessionsPage(
+          initialTipoEvento: 'campeonato',
+          lockTipoEvento: true,
+        ),
       ),
     );
   }
@@ -823,6 +838,13 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                         'Planejamento e avaliação rápida dos treinos marcados',
                     color: const Color(0xFF3B82F6),
                     onTap: _navigateToTrainingPlanner,
+                  ),
+                  _buildDashboardCard(
+                    icon: Icons.emoji_events_outlined,
+                    title: 'Avaliar Campeonatos',
+                    subtitle: 'Avalie jogos de campeonatos separadamente',
+                    color: const Color(0xFF7C3AED),
+                    onTap: _navigateToChampionshipEvaluations,
                   ),
                   _buildDashboardCard(
                     icon: Icons.analytics_outlined,
