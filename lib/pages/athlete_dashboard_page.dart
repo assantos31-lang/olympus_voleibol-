@@ -598,7 +598,9 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
 status,
 events!$_eventsEmbedFk (
 id,
-event_type
+event_type,
+event_date,
+event_time
 )
 ''').eq('user_id', user.id).eq('status', 'pending');
 
@@ -611,6 +613,11 @@ event_type
           if (event == null) continue;
 
           final eventMap = Map<String, dynamic>.from(event);
+
+          if (!_isPendingConvocationStillActionable(eventMap)) {
+            continue;
+          }
+
           final eventType =
               (eventMap['event_type'] ?? '').toString().toLowerCase().trim();
 
@@ -631,10 +638,11 @@ event_type
 
         if (mounted) {
           setState(() {
-            _pendingCount = response.length;
             _pendingTrainingCount = pendingTraining;
             _pendingFriendlyCount = pendingFriendly;
             _pendingCompetitionCount = pendingCompetition;
+            _pendingCount =
+                pendingTraining + pendingFriendly + pendingCompetition;
           });
         }
       }
@@ -763,6 +771,25 @@ event_type
     }
 
     if (roundedPercent >= 76) {
+      return olympusGold;
+    }
+
+    return Colors.redAccent;
+  }
+
+  Color _getAbsenceCardColor() {
+    if (_monthlyAbsenceCount <= 0) {
+      return Colors.greenAccent;
+    }
+
+    final totalConsidered = _monthlyPresenceCount + _monthlyAbsenceCount;
+    if (totalConsidered <= 0) {
+      return Colors.greenAccent;
+    }
+
+    final presencePercent = (_monthlyPresenceCount / totalConsidered) * 100;
+
+    if (presencePercent >= 76 && presencePercent <= 99) {
       return olympusGold;
     }
 
@@ -2014,6 +2041,12 @@ event_time
         trainingEventIds.add(eventId);
       }
 
+      final pendingTrainingOpenCount = trainingEvents.where((event) {
+        final status = (event['status'] ?? '').toString().toLowerCase().trim();
+        return status == 'pending' &&
+            _isPendingConvocationStillActionable(event);
+      }).length;
+
       final checkins = trainingEventIds.isEmpty
           ? <dynamic>[]
           : await supabase
@@ -2053,12 +2086,23 @@ event_time
             .compareTo(b['event_datetime'] as DateTime),
       );
 
-      for (final event in trainingEvents) {
+      final countedTrainingEvents = trainingEvents.where((event) {
+        final eventId = (event['id'] ?? '').toString();
+        final eventDate = event['event_datetime'] as DateTime;
+        final hasValidCheckin = eventHasValidCheckin[eventId] ?? false;
+        final checkinExpired =
+            now.isAfter(eventDate.add(const Duration(minutes: 30)));
+
+        // Ignora treinos futuros/abertos no percentual. Se já houver check-in
+        // válido, conta como realizado mesmo antes do prazo fechar.
+        return hasValidCheckin || checkinExpired;
+      }).toList();
+
+      for (final event in countedTrainingEvents) {
         final eventId = (event['id'] ?? '').toString();
         final status = (event['status'] ?? '').toString().toLowerCase().trim();
         final justification =
             (event['justification'] ?? '').toString().toLowerCase().trim();
-        final eventDate = event['event_datetime'] as DateTime;
         final hasValidCheckin = eventHasValidCheckin[eventId] ?? false;
 
         if (hasValidCheckin) {
@@ -2067,10 +2111,7 @@ event_time
           continue;
         }
 
-        final checkinExpired =
-            now.isAfter(eventDate.add(const Duration(minutes: 30)));
-
-        final isAcceptedButAbsent = checkinExpired && status == 'accepted';
+        final isAcceptedButAbsent = status == 'accepted';
         final isExpiredRejectedAbsence =
             status == 'rejected' && justification == 'prazo expirado';
 
@@ -2085,20 +2126,12 @@ event_time
         }
       }
 
-      final totalTrainings = trainingEvents.length;
+      final totalTrainings = countedTrainingEvents.length;
       final presencePercent =
           totalTrainings > 0 ? (monthlyPresence / totalTrainings) * 100 : 0.0;
 
       int currentStreak = 0;
-      final completedTrainings = trainingEvents
-          .where(
-            (event) => now.isAfter(
-              (event['event_datetime'] as DateTime).add(
-                const Duration(minutes: 30),
-              ),
-            ),
-          )
-          .toList()
+      final completedTrainings = countedTrainingEvents.toList()
         ..sort(
           (a, b) => (b['event_datetime'] as DateTime)
               .compareTo(a['event_datetime'] as DateTime),
@@ -2120,6 +2153,10 @@ event_time
           _confirmedPresenceCount = confirmedPresence;
           _acceptedButAbsentCount = acceptedButAbsent;
           _rejectedPresenceCount = rejectedPresence;
+          _pendingTrainingCount = pendingTrainingOpenCount;
+          _pendingCount = pendingTrainingOpenCount +
+              _pendingFriendlyCount +
+              _pendingCompetitionCount;
           _monthlyTrainingTotal = totalTrainings;
           _monthlyPresenceCount = monthlyPresence;
           _monthlyAbsenceCount = monthlyAbsence;
@@ -2147,6 +2184,40 @@ event_time
     } catch (_) {
       return null;
     }
+  }
+
+  bool _isPendingConvocationStillActionable(
+    Map<String, dynamic> eventMap,
+  ) {
+    final eventDateTime = _parseEventDateTime(
+      (eventMap['event_date'] ?? '').toString(),
+      (eventMap['event_time'] ?? '').toString(),
+    );
+
+    if (eventDateTime == null) return false;
+
+    final now = DateTime.now();
+    if (!eventDateTime.isAfter(now)) return false;
+
+    final eventType =
+        (eventMap['event_type'] ?? '').toString().toLowerCase().trim();
+
+    int horasLimite;
+    switch (eventType) {
+      case 'treino':
+        horasLimite = 0;
+        break;
+      case 'amistoso':
+        horasLimite = 12;
+        break;
+      case 'campeonato':
+        horasLimite = 48;
+        break;
+      default:
+        horasLimite = 3;
+    }
+
+    return eventDateTime.difference(now).inMinutes >= (horasLimite * 60);
   }
 
   String _getAgendaSubtitle() {
@@ -3330,9 +3401,10 @@ event_time
                   label: 'Faltas',
                   helper: 'Faltas no mês',
                   value: _monthlyAbsenceCount.toString(),
-                  valueColor: Colors.white,
-                  accentColor: const Color(0xFFE15A5A),
-                  chartType: _MiniChartType.barsRed,
+                  valueColor: _getAbsenceCardColor(),
+                  accentColor: _getAbsenceCardColor(),
+                  chartType: _MiniChartType.line,
+                  blinkValue: true,
                 ),
               ),
               const SizedBox(width: 8),
@@ -3342,7 +3414,7 @@ event_time
                   label: 'Volume de treino',
                   helper: 'Treinos do mês',
                   value: _monthlyTrainingTotal.toString(),
-                  valueColor: const Color(0xFFFFF2A8),
+                  valueColor: const Color(0xFF4FA3FF),
                   accentColor: const Color(0xFF4FA3FF),
                   chartType: _MiniChartType.grid,
                 ),
@@ -3371,18 +3443,19 @@ event_time
         borderRadius: BorderRadius.circular(10),
         gradient: LinearGradient(
           colors: [
+            accentColor.withOpacity(0.30),
             const Color(0xFF0F2138),
-            accentColor.withOpacity(0.10),
+            accentColor.withOpacity(0.12),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        border: Border.all(color: accentColor.withOpacity(0.85), width: 1.1),
+        border: Border.all(color: accentColor.withOpacity(0.95), width: 1.1),
         boxShadow: [
           BoxShadow(
-            color: accentColor.withOpacity(0.16),
-            blurRadius: 10,
-            spreadRadius: 0.5,
+            color: accentColor.withOpacity(0.24),
+            blurRadius: 13,
+            spreadRadius: 0.7,
           ),
         ],
       ),
@@ -3501,7 +3574,7 @@ event_time
                       height: 5,
                       decoration: BoxDecoration(
                         color: active
-                            ? const Color(0xFFE1C84B)
+                            ? accentColor.withOpacity(0.95)
                             : accentColor.withOpacity(0.22),
                         borderRadius: BorderRadius.circular(1.5),
                       ),

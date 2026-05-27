@@ -2,10 +2,12 @@ import 'dart:convert';
 import 'dart:math' show asin, cos, sin, sqrt;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/permission_service.dart';
+import 'coach_championship_scout_page.dart' as championship_scout;
 
 class CoachTrainingSessionsPage extends StatefulWidget {
   final String initialTipoEvento;
@@ -1732,10 +1734,17 @@ events!convocations_event_id_fkey (
   }
 
   void _abrirAvaliacaoRapida(Map<String, dynamic> treino) {
+    final tipoEvento = _normalizarTipoEvento(
+      treino['normalized_event_type'] ?? treino['event_type'],
+    );
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => CoachQuickAthleteEvaluationPage(treino: treino),
+        builder: (_) => tipoEvento == 'campeonato'
+            ? championship_scout.CoachChampionshipScoutEvaluationPage(
+                treino: treino)
+            : CoachQuickAthleteEvaluationPage(treino: treino),
       ),
     );
   }
@@ -1757,6 +1766,10 @@ events!convocations_event_id_fkey (
     final prazoInfo = _getPrazoInfo(treino);
     final janelaCheckIn = _verificarJanelaCheckIn(treino);
     final jaFezCheckin = _isCheckInRealizado(treino['check_in_status']);
+    final canFazerCheckIn = status == 'accepted' &&
+        allowCheckin &&
+        janelaCheckIn['disponivel'] == true &&
+        !jaFezCheckin;
     final justification = (treino['justification'] ?? '').toString().trim();
 
     Color statusColor;
@@ -1913,7 +1926,7 @@ events!convocations_event_id_fkey (
                 ),
               ],
               const SizedBox(height: 14),
-              if (status == 'pending') ...[
+              if (status == 'pending' && podeEditar) ...[
                 _responsiveActionRow(
                   children: [
                     ElevatedButton.icon(
@@ -1950,16 +1963,15 @@ events!convocations_event_id_fkey (
                 ),
                 const SizedBox(height: 10),
               ],
-              if (status != 'pending') ...[
+              if (status != 'pending' && podeEditar) ...[
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed:
-                        podeEditar ? () => _editarResposta(treino) : null,
+                    onPressed: () => _editarResposta(treino),
                     icon: const Icon(Icons.edit, size: 16),
                     label: const Text('Editar resposta'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: podeEditar ? olympusPurple : Colors.grey,
+                      backgroundColor: olympusPurple,
                       foregroundColor: Colors.white,
                       padding: EdgeInsets.symmetric(
                         vertical: isMobile ? 11 : 12,
@@ -1999,31 +2011,15 @@ events!convocations_event_id_fkey (
                     ],
                   ),
                 ),
-              ] else ...[
+              ] else if (canFazerCheckIn) ...[
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: status == 'accepted' &&
-                            allowCheckin &&
-                            janelaCheckIn['disponivel'] == true
-                        ? () => _fazerCheckIn(treino)
-                        : null,
+                    onPressed: () => _fazerCheckIn(treino),
                     icon: const Icon(Icons.my_location, size: 16),
-                    label: Text(
-                      status == 'accepted'
-                          ? (allowCheckin
-                              ? (janelaCheckIn['disponivel'] == true
-                                  ? 'Fazer Check-in'
-                                  : (janelaCheckIn['mensagem'] ?? 'Check-in'))
-                              : 'Check-in indisponível')
-                          : 'Check-in (aceite antes)',
-                    ),
+                    label: const Text('Fazer Check-in'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: status == 'accepted' &&
-                              allowCheckin &&
-                              janelaCheckIn['disponivel'] == true
-                          ? olympusSuccess
-                          : Colors.grey,
+                      backgroundColor: olympusSuccess,
                       foregroundColor: Colors.white,
                       padding: EdgeInsets.symmetric(
                         vertical: isMobile ? 11 : 12,
@@ -2031,50 +2027,58 @@ events!convocations_event_id_fkey (
                     ),
                   ),
                 ),
-                if (status == 'accepted' && !jaFezCheckin) ...[
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.red[50],
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.red[200]!),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 14,
-                          color: Colors.red[700],
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Raio 200m | 10min antes até 30min após',
-                            style: TextStyle(
-                              fontSize: isMobile ? 9.5 : 10,
-                              color: Colors.red[900],
-                              fontWeight: FontWeight.w500,
-                            ),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.red[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 14,
+                        color: Colors.red[700],
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Raio 200m | 10min antes até 30min após',
+                          style: TextStyle(
+                            fontSize: isMobile ? 9.5 : 10,
+                            color: Colors.red[900],
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ],
               const SizedBox(height: 10),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: () => _abrirAvaliacaoRapida(treino),
-                  icon: const Icon(Icons.fact_check_outlined),
-                  label: Text('Avaliação rápida de $tipoLabel'),
+                  icon: Icon(
+                    tipoEvento == 'campeonato'
+                        ? Icons.analytics_outlined
+                        : Icons.fact_check_outlined,
+                  ),
+                  label: Text(
+                    tipoEvento == 'campeonato'
+                        ? 'Avaliar Campeonato (Scout)'
+                        : 'Avaliação rápida de $tipoLabel',
+                  ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: olympusPurple,
+                    backgroundColor: tipoEvento == 'campeonato'
+                        ? olympusGold
+                        : olympusPurple,
                     foregroundColor: Colors.white,
                     padding: EdgeInsets.symmetric(
                       vertical: isMobile ? 11 : 12,

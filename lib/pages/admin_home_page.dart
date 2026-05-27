@@ -26,20 +26,29 @@ class _AdminHomePageState extends State<AdminHomePage> {
   bool isLoadingBirthdays = true;
   bool _showAllMonthBirthdays = false;
   int unreadNotificationsCount = 0;
+  int pendingFinancialReceiptsCount = 0;
+  int overdueFinancialRecordsCount = 0;
+  int pendingFinancialRecordsCount = 0;
   RealtimeChannel? _adminNotificationsChannel;
+  RealtimeChannel? _financialReceiptsChannel;
 
   @override
   void initState() {
     super.initState();
     _fetchMonthBirthdays();
     _fetchUnreadNotificationsCount();
+    _fetchPendingFinancialReceiptsCount();
     _listenForAdminNotifications();
+    _listenForFinancialReceipts();
   }
 
   @override
   void dispose() {
     if (_adminNotificationsChannel != null) {
       supabase.removeChannel(_adminNotificationsChannel!);
+    }
+    if (_financialReceiptsChannel != null) {
+      supabase.removeChannel(_financialReceiptsChannel!);
     }
     super.dispose();
   }
@@ -92,6 +101,75 @@ class _AdminHomePageState extends State<AdminHomePage> {
             value: user.id,
           ),
           callback: (_) => _fetchUnreadNotificationsCount(),
+        )
+        .subscribe();
+  }
+
+  Future<void> _fetchPendingFinancialReceiptsCount() async {
+    try {
+      final response = await supabase
+          .from('financial_records')
+          .select('id, status, day, month, year, receipt_url');
+
+      final allRecords = List<Map<String, dynamic>>.from(response as List);
+      final today = DateTime.now();
+      final todayDate = DateTime(today.year, today.month, today.day);
+
+      final openRecords = allRecords.where((record) {
+        final status = record['status']?.toString().trim().toLowerCase() ?? '';
+        return status != 'approved';
+      }).toList();
+
+      final overdueCount = openRecords.where((record) {
+        final day = int.tryParse(record['day']?.toString() ?? '') ?? 1;
+        final month =
+            int.tryParse(record['month']?.toString() ?? '') ?? today.month;
+        final year =
+            int.tryParse(record['year']?.toString() ?? '') ?? today.year;
+        final dueDate = DateTime(year, month, day);
+        return dueDate.isBefore(todayDate);
+      }).length;
+
+      final pendingReceiptCount = openRecords.where((record) {
+        final status = record['status']?.toString().trim().toLowerCase() ?? '';
+        final receiptUrl = record['receipt_url']?.toString().trim() ?? '';
+        return status == 'pending' && receiptUrl.isNotEmpty;
+      }).length;
+
+      final pendingCount = openRecords.length;
+
+      if (mounted) {
+        setState(() {
+          pendingFinancialReceiptsCount = pendingReceiptCount;
+          overdueFinancialRecordsCount = overdueCount;
+          pendingFinancialRecordsCount = pendingCount;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar status financeiro: $e');
+    }
+  }
+
+  void _listenForFinancialReceipts() {
+    _financialReceiptsChannel = supabase
+        .channel('admin_home_financial_receipts')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'financial_records',
+          callback: (_) => _fetchPendingFinancialReceiptsCount(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'financial_records',
+          callback: (_) => _fetchPendingFinancialReceiptsCount(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.delete,
+          schema: 'public',
+          table: 'financial_records',
+          callback: (_) => _fetchPendingFinancialReceiptsCount(),
         )
         .subscribe();
   }
@@ -491,6 +569,40 @@ class _AdminHomePageState extends State<AdminHomePage> {
     );
   }
 
+  int get _financialBadgeCount {
+    if (overdueFinancialRecordsCount > 0) return overdueFinancialRecordsCount;
+    if (pendingFinancialReceiptsCount > 0) return pendingFinancialReceiptsCount;
+    return pendingFinancialRecordsCount;
+  }
+
+  Color get _financialBadgeColor {
+    if (overdueFinancialRecordsCount > 0) return Colors.redAccent;
+    if (pendingFinancialReceiptsCount > 0) return Colors.blueAccent;
+    return Colors.orangeAccent;
+  }
+
+  IconData get _financialBadgeIcon {
+    if (overdueFinancialRecordsCount > 0) return Icons.warning_rounded;
+    if (pendingFinancialReceiptsCount > 0) return Icons.attach_file_rounded;
+    return Icons.schedule_rounded;
+  }
+
+  String get _financialBadgeTooltip {
+    if (overdueFinancialRecordsCount > 0) {
+      return overdueFinancialRecordsCount == 1
+          ? '1 cobrança atrasada'
+          : '$overdueFinancialRecordsCount cobranças atrasadas';
+    }
+    if (pendingFinancialReceiptsCount > 0) {
+      return pendingFinancialReceiptsCount == 1
+          ? '1 comprovante aguardando aprovação'
+          : '$pendingFinancialReceiptsCount comprovantes aguardando aprovação';
+    }
+    return pendingFinancialRecordsCount == 1
+        ? '1 cobrança pendente'
+        : '$pendingFinancialRecordsCount cobranças pendentes';
+  }
+
   @override
   Widget build(BuildContext context) {
     const goldenColor = Color(0xFFE4C050);
@@ -820,15 +932,19 @@ class _AdminHomePageState extends State<AdminHomePage> {
                               label: 'Financeiro',
                               icon: Icons.attach_money_rounded,
                               accentColor: cyanColor,
-                              badgeCount: unreadNotificationsCount,
-                              onTap: () {
-                                Navigator.push(
+                              badgeCount: _financialBadgeCount,
+                              badgeTooltip: _financialBadgeTooltip,
+                              badgeColor: _financialBadgeColor,
+                              badgeIcon: _financialBadgeIcon,
+                              onTap: () async {
+                                await Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (context) =>
                                         const AdminFinancialPage(),
                                   ),
                                 );
+                                _fetchPendingFinancialReceiptsCount();
                               },
                             ),
                             const SizedBox(height: 18),
@@ -882,6 +998,9 @@ class _AdminHomePageState extends State<AdminHomePage> {
     bool isPrimary = false,
     bool isMuted = false,
     int badgeCount = 0,
+    String? badgeTooltip,
+    Color badgeColor = Colors.redAccent,
+    IconData badgeIcon = Icons.receipt_long_rounded,
   }) {
     final Color baseTextColor = isMuted
         ? Colors.white.withOpacity(0.70)
@@ -889,8 +1008,9 @@ class _AdminHomePageState extends State<AdminHomePage> {
 
     return SizedBox(
       width: double.infinity,
-      height: 66,
+      height: 74,
       child: Stack(
+        clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
           Positioned(
@@ -928,7 +1048,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
             ),
           ),
           Positioned(
-            top: 2,
+            top: 6,
             child: Container(
               width: 84,
               height: 4,
@@ -944,34 +1064,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
               ),
             ),
           ),
-          if (badgeCount > 0)
-            Positioned(
-              top: 0,
-              right: 18,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.redAccent,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white, width: 1.4),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.redAccent.withOpacity(0.45),
-                      blurRadius: 10,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: Text(
-                  badgeCount > 99 ? '99+' : badgeCount.toString(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
           ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: BackdropFilter(
@@ -982,6 +1074,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                   borderRadius: BorderRadius.circular(16),
                   onTap: onTap,
                   child: Ink(
+                    height: 66,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
@@ -1087,6 +1180,55 @@ class _AdminHomePageState extends State<AdminHomePage> {
               ),
             ),
           ),
+
+          // IMPORTANTE:
+          // O badge precisa ficar POR ÚLTIMO no Stack.
+          // Antes ele era desenhado antes do botão, e o botão ficava por cima dele.
+          if (badgeCount > 0)
+            Positioned(
+              top: 0,
+              right: 12,
+              child: Tooltip(
+                message: badgeTooltip ?? '$badgeCount pendência(s)',
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: badgeColor,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.white, width: 1.6),
+                    boxShadow: [
+                      BoxShadow(
+                        color: badgeColor.withOpacity(0.55),
+                        blurRadius: 12,
+                        spreadRadius: 1,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        badgeIcon,
+                        color: Colors.white,
+                        size: 12,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        badgeCount > 99 ? '99+' : badgeCount.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          height: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

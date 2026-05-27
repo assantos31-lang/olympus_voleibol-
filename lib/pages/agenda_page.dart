@@ -19,6 +19,7 @@ class _AgendaPageState extends State<AgendaPage> {
   // ✅ NOVO: Variáveis de controle de permissão
   bool _hasPermission = true;
   bool _checkingPermission = true;
+  bool _isAdmin = false; // ✅ NOVO: controla ações exclusivas de admin
   Map<String, bool> _agendaActionPermissions = const {
     'edit_event': true,
     'insert_score': true,
@@ -63,6 +64,7 @@ class _AgendaPageState extends State<AgendaPage> {
         setState(() {
           _hasPermission = false;
           _checkingPermission = false;
+          _isAdmin = false;
         });
         return;
       }
@@ -81,6 +83,7 @@ class _AgendaPageState extends State<AgendaPage> {
         setState(() {
           _hasPermission = true;
           _checkingPermission = false;
+          _isAdmin = true;
           _agendaActionPermissions = const {
             'edit_event': true,
             'insert_score': true,
@@ -100,6 +103,7 @@ class _AgendaPageState extends State<AgendaPage> {
       setState(() {
         _hasPermission = hasAccess;
         _checkingPermission = false;
+        _isAdmin = false;
         _agendaActionPermissions = actionPermissions;
       });
     } catch (e) {
@@ -108,6 +112,7 @@ class _AgendaPageState extends State<AgendaPage> {
       setState(() {
         _hasPermission = true;
         _checkingPermission = false;
+        _isAdmin = false;
         _agendaActionPermissions = const {
           'edit_event': true,
           'insert_score': true,
@@ -1376,6 +1381,1469 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
+  // ✅ NOVO: Admin pode alterar o status de aceite mesmo após o prazo
+  // ✅ NOVO: Admin pode alterar o status de aceite mesmo após o prazo
+  // ✅ VISUAL AJUSTADO: modal no padrão Olympus do sistema
+  Future<void> _alterarStatusAceiteAtleta(Map<String, dynamic> evento) async {
+    if (!_isAdmin) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Apenas administradores podem alterar o aceite.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final eventId = evento['id']?.toString();
+    if (eventId == null || eventId.isEmpty) return;
+
+    try {
+      final convocationsResponse = await _supabase
+          .from('convocations')
+          .select('user_id, status, justification')
+          .eq('event_id', eventId);
+
+      final participantes = <Map<String, dynamic>>[];
+
+      for (final convocation in convocationsResponse) {
+        final userId = convocation['user_id']?.toString();
+        if (userId == null || userId.isEmpty) continue;
+
+        final profileResponse = await _supabase
+            .from('profiles')
+            .select('full_name, user_type')
+            .eq('id', userId)
+            .maybeSingle();
+
+        if (profileResponse == null) continue;
+
+        participantes.add({
+          'user_id': userId,
+          'nome': profileResponse['full_name'] ?? 'Sem nome',
+          'tipo': profileResponse['user_type'] ?? 'unknown',
+          'status': convocation['status'] ?? 'pending',
+          'justification': convocation['justification'] ?? '',
+        });
+      }
+
+      if (!mounted) return;
+
+      if (participantes.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Nenhum atleta/técnico convocado para este evento.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      String? selectedUserId = participantes.first['user_id']?.toString();
+      String selectedStatus =
+          participantes.first['status']?.toString() ?? 'pending';
+      final justificationController = TextEditingController(
+        text: participantes.first['justification']?.toString() ?? '',
+      );
+      bool saving = false;
+
+      String statusLabel(String status) {
+        switch (status) {
+          case 'accepted':
+            return 'Aceito';
+          case 'rejected':
+            return 'Recusado';
+          default:
+            return 'Pendente';
+        }
+      }
+
+      IconData statusIcon(String status) {
+        switch (status) {
+          case 'accepted':
+            return Icons.check_circle_outline;
+          case 'rejected':
+            return Icons.cancel_outlined;
+          default:
+            return Icons.hourglass_empty;
+        }
+      }
+
+      Color statusColor(String status) {
+        switch (status) {
+          case 'accepted':
+            return Colors.green;
+          case 'rejected':
+            return Colors.red;
+          default:
+            return Colors.orange;
+        }
+      }
+
+      await showDialog(
+        context: context,
+        barrierDismissible: !saving,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            final selectedParticipante = participantes.firstWhere(
+              (p) => p['user_id']?.toString() == selectedUserId,
+              orElse: () => participantes.first,
+            );
+
+            final tipo = selectedParticipante['tipo'] == 'athlete'
+                ? 'Atleta'
+                : selectedParticipante['tipo'] == 'coach'
+                    ? 'Técnico'
+                    : 'Membro';
+
+            final currentStatus =
+                selectedParticipante['status']?.toString() ?? 'pending';
+            final currentStatusColor = statusColor(currentStatus);
+
+            InputDecoration olympusInputDecoration(String label) {
+              return InputDecoration(
+                labelText: label,
+                labelStyle: TextStyle(
+                  color: olympusBlue.withOpacity(0.75),
+                  fontWeight: FontWeight.w600,
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: olympusBlue.withOpacity(0.12),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(
+                    color: olympusGold,
+                    width: 2,
+                  ),
+                ),
+                disabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: Colors.grey.withOpacity(0.20),
+                  ),
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              );
+            }
+
+            Widget olympusSection({
+              required IconData icon,
+              required String title,
+              required Widget child,
+            }) {
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: olympusBlue.withOpacity(0.12),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.035),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(icon, size: 17, color: olympusGold),
+                        const SizedBox(width: 7),
+                        Text(
+                          title,
+                          style: TextStyle(
+                            color: olympusBlue.withOpacity(0.85),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    child,
+                  ],
+                ),
+              );
+            }
+
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 24,
+              ),
+              elevation: 10,
+              shadowColor: olympusGold.withOpacity(0.25),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.86,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(20, 20, 12, 18),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              olympusBlue,
+                              olympusLightBlue,
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(11),
+                              decoration: BoxDecoration(
+                                color: olympusGold.withOpacity(0.18),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: olympusGold.withOpacity(0.45),
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.manage_accounts_outlined,
+                                color: olympusGold,
+                                size: 28,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Alterar aceite',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 21,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    evento['event_name']?.toString() ??
+                                        'Evento sem nome',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.82),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: saving
+                                  ? null
+                                  : () => Navigator.pop(dialogContext),
+                              icon: const Icon(Icons.close),
+                              color: Colors.white,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(18),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              olympusSection(
+                                icon: Icons.person_outline,
+                                title: 'ATLETA / TÉCNICO',
+                                child: DropdownButtonFormField<String>(
+                                  value: selectedUserId,
+                                  isExpanded: true,
+                                  decoration: olympusInputDecoration(
+                                    'Selecione o participante',
+                                  ),
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    color: olympusGold,
+                                  ),
+                                  items: participantes.map((participante) {
+                                    final participanteTipo =
+                                        participante['tipo'] == 'athlete'
+                                            ? 'Atleta'
+                                            : participante['tipo'] == 'coach'
+                                                ? 'Técnico'
+                                                : 'Membro';
+                                    final participanteStatus =
+                                        participante['status']?.toString() ??
+                                            'pending';
+                                    return DropdownMenuItem<String>(
+                                      value:
+                                          participante['user_id']?.toString(),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            statusIcon(participanteStatus),
+                                            size: 18,
+                                            color:
+                                                statusColor(participanteStatus),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              '${participante['nome']} • $participanteTipo',
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: saving
+                                      ? null
+                                      : (value) {
+                                          if (value == null) return;
+                                          final participante =
+                                              participantes.firstWhere(
+                                            (p) =>
+                                                p['user_id']?.toString() ==
+                                                value,
+                                            orElse: () => participantes.first,
+                                          );
+                                          setDialogState(() {
+                                            selectedUserId = value;
+                                            selectedStatus =
+                                                participante['status']
+                                                            ?.toString()
+                                                            .trim()
+                                                            .isNotEmpty ==
+                                                        true
+                                                    ? participante['status']
+                                                        .toString()
+                                                    : 'pending';
+                                            justificationController.text =
+                                                participante['justification']
+                                                        ?.toString() ??
+                                                    '';
+                                          });
+                                        },
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: currentStatusColor.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: currentStatusColor.withOpacity(0.25),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: currentStatusColor
+                                            .withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Icon(
+                                        statusIcon(currentStatus),
+                                        color: currentStatusColor,
+                                        size: 22,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Status atual: ${statusLabel(currentStatus)}',
+                                            style: TextStyle(
+                                              color: currentStatusColor,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            tipo,
+                                            style: TextStyle(
+                                              color: Colors.grey[700],
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              olympusSection(
+                                icon: Icons.rule_folder_outlined,
+                                title: 'NOVO STATUS',
+                                child: DropdownButtonFormField<String>(
+                                  value: selectedStatus,
+                                  decoration: olympusInputDecoration(
+                                    'Escolha o novo status',
+                                  ),
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    color: olympusGold,
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'accepted',
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.check_circle_outline,
+                                            size: 18,
+                                            color: Colors.green,
+                                          ),
+                                          SizedBox(width: 8),
+                                          Text('Aceito'),
+                                        ],
+                                      ),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'pending',
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.hourglass_empty,
+                                            size: 18,
+                                            color: Colors.orange,
+                                          ),
+                                          SizedBox(width: 8),
+                                          Text('Pendente'),
+                                        ],
+                                      ),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'rejected',
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.cancel_outlined,
+                                            size: 18,
+                                            color: Colors.red,
+                                          ),
+                                          SizedBox(width: 8),
+                                          Text('Recusado'),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: saving
+                                      ? null
+                                      : (value) {
+                                          if (value == null) return;
+                                          setDialogState(() {
+                                            selectedStatus = value;
+                                            if (value != 'rejected') {
+                                              justificationController.clear();
+                                            }
+                                          });
+                                        },
+                                ),
+                              ),
+                              if (selectedStatus == 'rejected') ...[
+                                const SizedBox(height: 14),
+                                olympusSection(
+                                  icon: Icons.notes_outlined,
+                                  title: 'JUSTIFICATIVA',
+                                  child: TextField(
+                                    controller: justificationController,
+                                    maxLines: 3,
+                                    enabled: !saving,
+                                    decoration: olympusInputDecoration(
+                                      'Justificativa da recusa (opcional)',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 14),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(13),
+                                decoration: BoxDecoration(
+                                  color: olympusBlue.withOpacity(0.055),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: olympusBlue.withOpacity(0.10),
+                                  ),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(
+                                      Icons.info_outline,
+                                      color: olympusBlue,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 9),
+                                    Expanded(
+                                      child: Text(
+                                        'Esta alteração ignora o prazo normal de resposta e será aplicada diretamente na convocação.',
+                                        style: TextStyle(
+                                          color: Colors.grey[700],
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.08),
+                              blurRadius: 10,
+                              offset: const Offset(0, -2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: saving
+                                    ? null
+                                    : () => Navigator.pop(dialogContext),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.grey[700],
+                                  side: BorderSide(color: Colors.grey[300]!),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Cancelar',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: ElevatedButton.icon(
+                                onPressed: saving || selectedUserId == null
+                                    ? null
+                                    : () async {
+                                        setDialogState(() {
+                                          saving = true;
+                                        });
+
+                                        try {
+                                          final justification =
+                                              selectedStatus == 'rejected'
+                                                  ? justificationController.text
+                                                      .trim()
+                                                  : null;
+
+                                          final updatedRows = await _supabase
+                                              .from('convocations')
+                                              .update({
+                                                'status': selectedStatus,
+                                                'justification': justification,
+                                              })
+                                              .eq('event_id', eventId)
+                                              .eq('user_id', selectedUserId!)
+                                              .select(
+                                                'user_id, status, justification',
+                                              );
+
+                                          if (updatedRows is! List ||
+                                              updatedRows.isEmpty) {
+                                            throw Exception(
+                                              'Nenhuma convocação foi atualizada. Verifique as policies/RLS da tabela convocations para permitir update de admin.',
+                                            );
+                                          }
+
+                                          final updatedStatus = updatedRows
+                                              .first['status']
+                                              ?.toString();
+                                          if (updatedStatus != selectedStatus) {
+                                            throw Exception(
+                                              'O banco retornou status "$updatedStatus" em vez de "$selectedStatus". Pode existir trigger/policy revertendo a alteração.',
+                                            );
+                                          }
+
+                                          if (selectedStatus != 'accepted') {
+                                            await _supabase
+                                                .from('checkins')
+                                                .delete()
+                                                .eq('event_id', eventId)
+                                                .eq('user_id', selectedUserId!);
+                                          }
+
+                                          if (mounted) {
+                                            Navigator.pop(dialogContext);
+                                            await _buscarEventos();
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  '✅ Status alterado para ${statusLabel(selectedStatus)}!',
+                                                ),
+                                                backgroundColor: Colors.green,
+                                              ),
+                                            );
+                                          }
+                                        } catch (e) {
+                                          setDialogState(() {
+                                            saving = false;
+                                          });
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  '❌ Erro ao alterar status de aceite: $e',
+                                                ),
+                                                backgroundColor: Colors.red,
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: olympusGold,
+                                  foregroundColor: olympusBlue,
+                                  disabledBackgroundColor: Colors.grey[300],
+                                  disabledForegroundColor: Colors.grey[600],
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  elevation: 4,
+                                  shadowColor: olympusGold.withOpacity(0.35),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                icon: saving
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: olympusBlue,
+                                        ),
+                                      )
+                                    : const Icon(Icons.save_outlined),
+                                label: Text(
+                                  saving ? 'Salvando...' : 'Salvar alteração',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      );
+
+      justificationController.dispose();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao abrir alteração de aceite: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // ✅ NOVO: Check-in atrasado/manual apenas para Admin
+  Future<void> _realizarCheckinAtrasado(Map<String, dynamic> evento) async {
+    if (!_isAdmin) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Apenas administradores podem fazer check-in atrasado.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final eventId = evento['id']?.toString();
+    if (eventId == null || eventId.isEmpty) return;
+
+    try {
+      final convocationsResponse = await _supabase
+          .from('convocations')
+          .select('user_id, status')
+          .eq('event_id', eventId)
+          .eq('status', 'accepted');
+
+      final checkinsResponse = await _supabase
+          .from('checkins')
+          .select('user_id')
+          .eq('event_id', eventId);
+
+      final Set<String> userIdsComCheckin = checkinsResponse
+          .map<String>((row) => row['user_id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      final participantesSemCheckin = <Map<String, dynamic>>[];
+
+      for (final convocation in convocationsResponse) {
+        final userId = convocation['user_id']?.toString();
+        if (userId == null || userId.isEmpty) continue;
+        if (userIdsComCheckin.contains(userId)) continue;
+
+        final profileResponse = await _supabase
+            .from('profiles')
+            .select('full_name, user_type')
+            .eq('id', userId)
+            .maybeSingle();
+
+        if (profileResponse == null) continue;
+
+        participantesSemCheckin.add({
+          'user_id': userId,
+          'nome': profileResponse['full_name'] ?? 'Sem nome',
+          'tipo': profileResponse['user_type'] ?? 'unknown',
+        });
+      }
+
+      if (!mounted) return;
+
+      if (participantesSemCheckin.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Todos os participantes que aceitaram já fizeram check-in.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      String? selectedUserId = participantesSemCheckin.first['user_id'];
+      DateTime selectedDate = DateTime.now();
+      TimeOfDay selectedTime = TimeOfDay.now();
+      bool saving = false;
+
+      ThemeData olympusPickerTheme(BuildContext pickerContext) {
+        final base = Theme.of(pickerContext);
+        return base.copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: olympusBlue,
+            onPrimary: Colors.white,
+            secondary: olympusGold,
+            onSecondary: olympusBlue,
+            surface: Colors.white,
+            onSurface: Color(0xFF1E3A5F),
+          ),
+          datePickerTheme: DatePickerThemeData(
+            backgroundColor: Colors.white,
+            headerBackgroundColor: olympusBlue,
+            headerForegroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            dayOverlayColor: MaterialStateProperty.all(
+              olympusGold.withOpacity(0.10),
+            ),
+            todayBorder: BorderSide(
+              color: olympusGold,
+              width: 1.5,
+            ),
+            todayForegroundColor: MaterialStateProperty.all(olympusBlue),
+            dayForegroundColor: MaterialStateProperty.resolveWith((states) {
+              if (states.contains(MaterialState.selected)) return Colors.white;
+              return olympusBlue;
+            }),
+            dayBackgroundColor: MaterialStateProperty.resolveWith((states) {
+              if (states.contains(MaterialState.selected)) return olympusGold;
+              return null;
+            }),
+          ),
+          timePickerTheme: TimePickerThemeData(
+            backgroundColor: Colors.white,
+            hourMinuteColor: MaterialStateColor.resolveWith((states) {
+              if (states.contains(MaterialState.selected)) {
+                return olympusGold.withOpacity(0.22);
+              }
+              return olympusBlue.withOpacity(0.06);
+            }),
+            hourMinuteTextColor: MaterialStateColor.resolveWith((states) {
+              if (states.contains(MaterialState.selected)) return olympusBlue;
+              return Colors.grey[800]!;
+            }),
+            dialHandColor: olympusBlue,
+            dialBackgroundColor: olympusBlue.withOpacity(0.06),
+            dialTextColor: MaterialStateColor.resolveWith((states) {
+              if (states.contains(MaterialState.selected)) return Colors.white;
+              return olympusBlue;
+            }),
+            entryModeIconColor: olympusBlue,
+            helpTextStyle: const TextStyle(
+              color: olympusBlue,
+              fontWeight: FontWeight.w700,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+          ),
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(
+              foregroundColor: olympusBlue,
+              textStyle: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        );
+      }
+
+      await showDialog(
+        context: context,
+        barrierDismissible: !saving,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            final selectedDateTime = DateTime(
+              selectedDate.year,
+              selectedDate.month,
+              selectedDate.day,
+              selectedTime.hour,
+              selectedTime.minute,
+            );
+
+            final participanteSelecionado = participantesSemCheckin.firstWhere(
+              (p) => p['user_id']?.toString() == selectedUserId,
+              orElse: () => participantesSemCheckin.first,
+            );
+            final tipoSelecionado = participanteSelecionado['tipo'] == 'athlete'
+                ? 'Atleta'
+                : participanteSelecionado['tipo'] == 'coach'
+                    ? 'Técnico'
+                    : 'Membro';
+
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 24,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(26),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(26),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(20, 18, 12, 18),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [olympusBlue, olympusLightBlue],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 54,
+                            height: 54,
+                            decoration: BoxDecoration(
+                              color: olympusGold.withOpacity(0.14),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: olympusGold.withOpacity(0.55),
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.more_time_outlined,
+                              color: olympusGold,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Check-in atrasado',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 21,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  (evento['event_name'] ?? 'Sem nome')
+                                      .toString(),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.86),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: saving
+                                ? null
+                                : () => Navigator.pop(dialogContext),
+                            icon: const Icon(Icons.close_rounded),
+                            color: Colors.white,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(18, 18, 18, 10),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: olympusBlue.withOpacity(0.14),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.04),
+                                    blurRadius: 14,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.person_outline,
+                                        color: olympusGold,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'ATLETA / TÉCNICO',
+                                        style: TextStyle(
+                                          color: olympusBlue.withOpacity(0.82),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.4,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  DropdownButtonFormField<String>(
+                                    value: selectedUserId,
+                                    isExpanded: true,
+                                    decoration: InputDecoration(
+                                      labelText: 'Selecione o participante',
+                                      labelStyle: TextStyle(
+                                        color: olympusBlue.withOpacity(0.70),
+                                      ),
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      prefixIcon: const Icon(
+                                        Icons.hourglass_empty_rounded,
+                                        color: olympusGold,
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                        borderSide: BorderSide(
+                                          color: Colors.grey[200]!,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                        borderSide: const BorderSide(
+                                          color: olympusGold,
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 14,
+                                      ),
+                                    ),
+                                    icon: const Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      color: olympusGold,
+                                    ),
+                                    items: participantesSemCheckin
+                                        .map((participante) {
+                                      final tipo =
+                                          participante['tipo'] == 'athlete'
+                                              ? 'Atleta'
+                                              : participante['tipo'] == 'coach'
+                                                  ? 'Técnico'
+                                                  : 'Membro';
+                                      return DropdownMenuItem<String>(
+                                        value: participante['user_id'],
+                                        child: Text(
+                                          '${participante['nome']} • $tipo',
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Color(0xFF24364B),
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: saving
+                                        ? null
+                                        : (value) {
+                                            setDialogState(() {
+                                              selectedUserId = value;
+                                            });
+                                          },
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: olympusBlue.withOpacity(0.055),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.verified_user_outlined,
+                                          color: olympusBlue,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            '$tipoSelecionado aceitou a convocação e está disponível para check-in manual.',
+                                            style: TextStyle(
+                                              color:
+                                                  olympusBlue.withOpacity(0.82),
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(16),
+                                    onTap: saving
+                                        ? null
+                                        : () async {
+                                            final pickedDate =
+                                                await showDatePicker(
+                                              context: context,
+                                              initialDate: selectedDate,
+                                              firstDate: DateTime(2020),
+                                              lastDate: DateTime.now().add(
+                                                const Duration(days: 365),
+                                              ),
+                                              locale: const Locale('pt', 'BR'),
+                                              builder: (context, child) {
+                                                return Theme(
+                                                  data: olympusPickerTheme(
+                                                      context),
+                                                  child: child!,
+                                                );
+                                              },
+                                            );
+                                            if (pickedDate != null) {
+                                              setDialogState(() {
+                                                selectedDate = pickedDate;
+                                              });
+                                            }
+                                          },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            olympusGold.withOpacity(0.16),
+                                            olympusGold.withOpacity(0.08),
+                                          ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: olympusGold.withOpacity(0.35),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.calendar_month_outlined,
+                                                color: olympusBlue,
+                                                size: 18,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                'DATA',
+                                                style: TextStyle(
+                                                  color: olympusBlue
+                                                      .withOpacity(0.72),
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            DateFormat('dd/MM/yyyy', 'pt_BR')
+                                                .format(selectedDate),
+                                            style: const TextStyle(
+                                              color: olympusBlue,
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(16),
+                                    onTap: saving
+                                        ? null
+                                        : () async {
+                                            final pickedTime =
+                                                await showTimePicker(
+                                              context: context,
+                                              initialTime: selectedTime,
+                                              builder: (context, child) {
+                                                return Theme(
+                                                  data: olympusPickerTheme(
+                                                      context),
+                                                  child: child!,
+                                                );
+                                              },
+                                            );
+                                            if (pickedTime != null) {
+                                              setDialogState(() {
+                                                selectedTime = pickedTime;
+                                              });
+                                            }
+                                          },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            olympusBlue.withOpacity(0.10),
+                                            olympusBlue.withOpacity(0.045),
+                                          ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: olympusBlue.withOpacity(0.18),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.access_time_rounded,
+                                                color: olympusBlue,
+                                                size: 18,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                'HORÁRIO',
+                                                style: TextStyle(
+                                                  color: olympusBlue
+                                                      .withOpacity(0.72),
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            selectedTime.format(context),
+                                            style: const TextStyle(
+                                              color: olympusBlue,
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: Colors.grey[300]!),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.info_outline,
+                                    color: olympusBlue,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Será gravado no banco como: ${DateFormat('dd/MM/yyyy HH:mm', 'pt_BR').format(selectedDateTime)}',
+                                      style: TextStyle(
+                                        color: Colors.grey[700],
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.06),
+                            blurRadius: 18,
+                            offset: const Offset(0, -4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: saving
+                                  ? null
+                                  : () => Navigator.pop(dialogContext),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.grey[700],
+                                side: BorderSide(color: Colors.grey[300]!),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              child: const Text(
+                                'Cancelar',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: ElevatedButton.icon(
+                              onPressed: saving || selectedUserId == null
+                                  ? null
+                                  : () async {
+                                      setDialogState(() {
+                                        saving = true;
+                                      });
+
+                                      try {
+                                        await _supabase.from('checkins').upsert(
+                                          {
+                                            'event_id': eventId,
+                                            'user_id': selectedUserId,
+                                            // IMPORTANTE: a tela de Estatísticas só considera presença
+                                            // quando check_in_status tem um valor reconhecido como realizado.
+                                            'check_in_status': 'realizado',
+                                            // Horário histórico escolhido pelo admin.
+                                            'created_at': selectedDateTime
+                                                .toIso8601String(),
+                                          },
+                                          onConflict: 'event_id,user_id',
+                                        );
+
+                                        if (mounted) {
+                                          Navigator.pop(dialogContext);
+                                          await _buscarCheckinInfo();
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                  '✅ Check-in atrasado registrado com sucesso!'),
+                                              backgroundColor: Colors.green,
+                                            ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        setDialogState(() {
+                                          saving = false;
+                                        });
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                  '❌ Erro ao registrar check-in: $e'),
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: olympusGold,
+                                foregroundColor: olympusBlue,
+                                disabledBackgroundColor: Colors.grey[300],
+                                disabledForegroundColor: Colors.grey[600],
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                elevation: 4,
+                                shadowColor: olympusGold.withOpacity(0.35),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              icon: saving
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: olympusBlue,
+                                      ),
+                                    )
+                                  : const Icon(Icons.check_circle_outline),
+                              label: Text(
+                                saving ? 'Salvando...' : 'Registrar',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao abrir check-in atrasado: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _inserirPlacar(Map<String, dynamic> evento) async {
     final setFormat = evento['set_format'] ?? '1 Set';
     int totalSets = 1;
@@ -2309,7 +3777,8 @@ class _AgendaPageState extends State<AgendaPage> {
                                                 _canUseAgendaAction(
                                                     'export_game_data') ||
                                                 _canUseAgendaAction(
-                                                    'delete_event'))
+                                                    'delete_event') ||
+                                                _isAdmin)
                                               PopupMenuButton<String>(
                                                 icon: Icon(
                                                   Icons.more_vert,
@@ -2336,6 +3805,16 @@ class _AgendaPageState extends State<AgendaPage> {
                                                       _canUseAgendaAction(
                                                           'view_called_up')) {
                                                     _mostrarStatusCheckin(
+                                                        evento);
+                                                  } else if (value ==
+                                                          'late_checkin' &&
+                                                      _isAdmin) {
+                                                    _realizarCheckinAtrasado(
+                                                        evento);
+                                                  } else if (value ==
+                                                          'change_acceptance_status' &&
+                                                      _isAdmin) {
+                                                    _alterarStatusAceiteAtleta(
                                                         evento);
                                                   } else if (value ==
                                                           'exportar' &&
@@ -2429,6 +3908,45 @@ class _AgendaPageState extends State<AgendaPage> {
                                                           SizedBox(width: 8),
                                                           Text(
                                                               'Ver status check-in'),
+                                                        ],
+                                                      ),
+                                                    ));
+                                                  }
+                                                  // ✅ ADMIN: sempre mostra Check-in atrasado no menu,
+                                                  // mesmo se allow_checkin estiver false ou o prazo já passou.
+                                                  if (_isAdmin) {
+                                                    items.add(PopupMenuItem(
+                                                      value: 'late_checkin',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons
+                                                                .more_time_outlined,
+                                                            size: 18,
+                                                            color: olympusBlue,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Text(
+                                                              'Check-in atrasado'),
+                                                        ],
+                                                      ),
+                                                    ));
+                                                  }
+                                                  if (_isAdmin) {
+                                                    items.add(PopupMenuItem(
+                                                      value:
+                                                          'change_acceptance_status',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons
+                                                                .manage_accounts_outlined,
+                                                            size: 18,
+                                                            color: olympusBlue,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Text(
+                                                              'Alterar aceite'),
                                                         ],
                                                       ),
                                                     ));

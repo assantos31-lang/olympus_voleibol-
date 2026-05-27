@@ -4,6 +4,9 @@ import 'dart:ui';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
 import '../models/financial_record_model.dart';
 import '../services/permission_service.dart';
 
@@ -18,11 +21,19 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   final _supabase = Supabase.instance.client;
   final _picker = ImagePicker();
   final PermissionService _permissionService = PermissionService();
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
+  bool _notificationsReady = false;
+  final ScrollController _parallaxScrollController = ScrollController();
+  double _parallaxOffset = 0;
   List<FinancialRecord> _records = [];
+  List<FinancialRecord> _allRecords = [];
   bool _isLoading = true;
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
   String _selectedType = 'all';
+  String _quickFilter = 'all';
+  bool _showAdvancedFilters = false;
   List<String> _allowedTypes = ['monthly', 'games', 'maintenance', 'other'];
   // ✅ Contadores
   int _overdueCount = 0;
@@ -36,8 +47,30 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   @override
   void initState() {
     super.initState();
+    _parallaxScrollController.addListener(_handleParallaxScroll);
+    _initFinancialNotifications();
     _markFinancialAsViewed();
     _loadFinancialFilters();
+  }
+
+  void _handleParallaxScroll() {
+    if (!_parallaxScrollController.hasClients) return;
+    final nextOffset = _parallaxScrollController.offset;
+
+    if ((nextOffset - _parallaxOffset).abs() < 2) return;
+
+    if (mounted) {
+      setState(() {
+        _parallaxOffset = nextOffset;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _parallaxScrollController.removeListener(_handleParallaxScroll);
+    _parallaxScrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _markFinancialAsViewed() async {
@@ -130,18 +163,27 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       final now = DateTime.now();
       final todayOnly = DateTime(now.year, now.month, now.day);
       final dueDateOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
-
       final isApproved = record.status == 'approved';
       final isOverdue = !isApproved && todayOnly.isAfter(dueDateOnly);
+      final isPending = record.status == 'pending' && !isOverdue;
 
-      return isSelectedMonthYear || isOverdue;
+      final matchesBase = isSelectedMonthYear || isOverdue;
+      if (!matchesBase) return false;
+
+      if (_quickFilter == 'overdue') return isOverdue;
+      if (_quickFilter == 'pending') return isPending;
+      if (_quickFilter == 'paid') return isApproved;
+      return true;
     }).toList();
 
+    if (!mounted) return;
     setState(() {
+      _allRecords = allAllowedRecords;
       _records = filteredRecords;
       _isLoading = false;
     });
     _calculateCounters();
+    await _scheduleFinancialNotifications();
   }
 
   // ✅ NOVO: Calcular contadores de atrasos e novos boletos
@@ -151,7 +193,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
     int overdue = 0;
     int newBills = 0;
 
-    for (var record in _records) {
+    for (var record in _allRecords) {
       if (record.status == 'approved') {
         // Não conta pagos
         continue;
@@ -172,6 +214,204 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       _overdueCount = overdue;
       _newBillsCount = newBills;
     });
+  }
+
+  Future<void> _initFinancialNotifications() async {
+    try {
+      tz_data.initializeTimeZones();
+
+      const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const iosInit = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
+
+      const initSettings = InitializationSettings(
+        android: androidInit,
+        iOS: iosInit,
+      );
+
+      await _localNotifications.initialize(initSettings);
+
+      final androidPlugin =
+          _localNotifications.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.requestNotificationsPermission();
+
+      final iosPlugin =
+          _localNotifications.resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin>();
+      await iosPlugin?.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      _notificationsReady = true;
+      await _scheduleFinancialNotifications();
+    } catch (e) {
+      debugPrint('Erro ao inicializar notificações financeiras: $e');
+    }
+  }
+
+  NotificationDetails _financialNotificationDetails({
+    required bool isOverdue,
+  }) {
+    final androidDetails = AndroidNotificationDetails(
+      'financial_due_notifications',
+      'Financeiro',
+      channelDescription:
+          'Lembretes de vencimento, pendências e atrasos financeiros.',
+      importance: Importance.high,
+      priority: Priority.high,
+      color: isOverdue ? Colors.red : olympusGold,
+      icon: '@mipmap/ic_launcher',
+    );
+
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    return NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+  }
+
+  bool _hasReceipt(FinancialRecord record) {
+    final receiptUrl = record.receiptUrl;
+    return receiptUrl != null && receiptUrl.trim().isNotEmpty;
+  }
+
+  bool _shouldNotifyRecord(FinancialRecord record) {
+    if (record.status == 'approved') return false;
+
+    // Se o atleta já anexou comprovante, não cobrar novamente.
+    if (record.status == 'pending' && _hasReceipt(record)) return false;
+
+    return true;
+  }
+
+  int _notificationIdFor(FinancialRecord record, String kind) {
+    final raw = '${record.id}-$kind'.hashCode;
+    return raw.abs() % 2147483647;
+  }
+
+  tz.TZDateTime _nextValidSchedule(DateTime dateTime) {
+    final scheduled = tz.TZDateTime.from(dateTime, tz.local);
+    final now = tz.TZDateTime.now(tz.local);
+
+    if (scheduled.isAfter(now)) {
+      return scheduled;
+    }
+
+    return now.add(const Duration(seconds: 8));
+  }
+
+  Future<void> _scheduleFinancialNotifications() async {
+    if (!_notificationsReady || _allRecords.isEmpty) return;
+
+    try {
+      for (final record in _allRecords) {
+        await _cancelFinancialNotificationsForRecord(record);
+
+        if (!_shouldNotifyRecord(record)) continue;
+
+        final dueDate = _getDueDate(record);
+        final now = DateTime.now();
+        final todayOnly = DateTime(now.year, now.month, now.day);
+        final dueOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
+
+        final typeLabel = record.typeLabel;
+        final value = _formatMoney(record.value);
+        final formattedDueDate = DateFormat('dd/MM/yyyy').format(dueDate);
+
+        final beforeDue = DateTime(
+          dueDate.year,
+          dueDate.month,
+          dueDate.day,
+          9,
+          0,
+        ).subtract(const Duration(days: 2));
+
+        final dueDay = DateTime(
+          dueDate.year,
+          dueDate.month,
+          dueDate.day,
+          9,
+          0,
+        );
+
+        final overdueDay = DateTime(
+          dueDate.year,
+          dueDate.month,
+          dueDate.day,
+          9,
+          0,
+        ).add(const Duration(days: 1));
+
+        if (todayOnly.isBefore(dueOnly.subtract(const Duration(days: 1))) ||
+            todayOnly.isAtSameMomentAs(
+              dueOnly.subtract(const Duration(days: 2)),
+            )) {
+          await _localNotifications.zonedSchedule(
+            _notificationIdFor(record, 'before'),
+            'Pagamento próximo do vencimento',
+            '$typeLabel de $value vence em $formattedDueDate.',
+            _nextValidSchedule(beforeDue),
+            _financialNotificationDetails(isOverdue: false),
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
+            payload: record.id,
+          );
+        }
+
+        if (todayOnly.isBefore(dueOnly) ||
+            todayOnly.isAtSameMomentAs(dueOnly)) {
+          await _localNotifications.zonedSchedule(
+            _notificationIdFor(record, 'due'),
+            'Pagamento vence hoje',
+            '$typeLabel de $value vence hoje. Anexe o comprovante após pagar.',
+            _nextValidSchedule(dueDay),
+            _financialNotificationDetails(isOverdue: false),
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
+            payload: record.id,
+          );
+        }
+
+        if (todayOnly.isAfter(dueOnly) ||
+            todayOnly.isAtSameMomentAs(dueOnly.add(const Duration(days: 1)))) {
+          await _localNotifications.zonedSchedule(
+            _notificationIdFor(record, 'overdue'),
+            'Pagamento em atraso',
+            '$typeLabel de $value venceu em $formattedDueDate.',
+            _nextValidSchedule(overdueDay),
+            _financialNotificationDetails(isOverdue: true),
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
+            matchDateTimeComponents: DateTimeComponents.time,
+            payload: record.id,
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao agendar notificações financeiras: $e');
+    }
+  }
+
+  Future<void> _cancelFinancialNotificationsForRecord(
+    FinancialRecord record,
+  ) async {
+    await _localNotifications.cancel(_notificationIdFor(record, 'before'));
+    await _localNotifications.cancel(_notificationIdFor(record, 'due'));
+    await _localNotifications.cancel(_notificationIdFor(record, 'overdue'));
   }
 
   Future<void> _uploadReceipt(FinancialRecord record) async {
@@ -311,75 +551,880 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   }
 
   int _getCrossAxisCount(double width) {
-    if (width > 900) return 4;
-    if (width > 600) return 3;
-    if (width > 350) return 2;
-    return 1;
+    if (width >= 1100) return 4;
+    if (width >= 760) return 3;
+    return 2;
   }
 
   double _getChildAspectRatio(double width) {
-    if (width > 900) return 1.08;
-    if (width > 600) return 1.0;
-    if (width > 350) return 0.98;
-    return 1.12;
+    if (width >= 1100) return 1.08;
+    if (width >= 760) return 0.98;
+    if (width >= 390) return 0.73;
+    return 0.66;
   }
 
   Widget _buildPremiumFinancialBackground() {
+    final parallaxY = -(_parallaxOffset * 0.10).clamp(0.0, 90.0);
+
     return Stack(
+      fit: StackFit.expand,
       children: [
-        Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
-            fit: BoxFit.cover,
-            alignment: Alignment.center,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(color: const Color(0xFF102845));
-            },
-          ),
-        ),
-        Positioned.fill(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-            child: Container(color: Colors.transparent),
-          ),
-        ),
-        Positioned.fill(
-          child: Container(
-            color: Colors.black.withOpacity(0.08),
-          ),
-        ),
-        Positioned.fill(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  olympusBlue.withOpacity(0.40),
-                  olympusLightBlue.withOpacity(0.18),
-                  Colors.black.withOpacity(0.55),
-                ],
-              ),
+        Transform.translate(
+          offset: Offset(0, parallaxY),
+          child: Transform.scale(
+            scale: 1.10,
+            child: Image.asset(
+              'assets/images/monte_olimpo_v2.png',
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+              errorBuilder: (context, error, stackTrace) {
+                return Container(color: const Color(0xFFF4F7FB));
+              },
             ),
           ),
         ),
-        Positioned.fill(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: const Alignment(0, -0.62),
-                radius: 1.18,
-                colors: [
-                  olympusGold.withOpacity(0.10),
-                  Colors.transparent,
-                  Colors.transparent,
-                ],
+        BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 0.55, sigmaY: 0.55),
+          child: Container(color: Colors.transparent),
+        ),
+        Container(
+          color: Colors.white.withOpacity(0.28),
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.white.withOpacity(0.08),
+                Colors.white.withOpacity(0.18),
+                const Color(0xFFE8EEF6).withOpacity(0.34),
+              ],
+            ),
+          ),
+        ),
+        IgnorePointer(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: Container(
+              height: 180,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    olympusBlue.withOpacity(0.18),
+                    Colors.transparent,
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ],
     );
+  }
+
+  Widget _buildGlassPanel({
+    required Widget child,
+    EdgeInsetsGeometry padding = const EdgeInsets.all(12),
+    double radius = 18,
+    Color? borderColor,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.78),
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(
+              color: borderColor ?? Colors.white.withOpacity(0.55),
+              width: 1.1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 20,
+                offset: const Offset(0, 9),
+              ),
+              BoxShadow(
+                color: olympusGold.withOpacity(0.06),
+                blurRadius: 18,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  double _getPaidTotalForSelectedMonth() {
+    return _allRecords
+        .where((record) =>
+            record.year == _selectedYear &&
+            record.month == _selectedMonth &&
+            record.status == 'approved')
+        .fold<double>(0, (sum, record) => sum + record.value);
+  }
+
+  double _getOpenTotal() {
+    return _allRecords
+        .where((record) => record.status != 'approved')
+        .fold<double>(0, (sum, record) => sum + record.value);
+  }
+
+  double _getOverdueTotal() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return _allRecords.where((record) {
+      if (record.status == 'approved') return false;
+      final dueDate = _getDueDate(record);
+      final dueOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
+      return today.isAfter(dueOnly);
+    }).fold<double>(0, (sum, record) => sum + record.value);
+  }
+
+  int _getPendingReceiptCount() {
+    return _allRecords.where((record) {
+      return record.status == 'pending' &&
+          record.receiptUrl != null &&
+          record.receiptUrl!.trim().isNotEmpty;
+    }).length;
+  }
+
+  String _formatMoney(double value) => 'R\$ ${value.toStringAsFixed(2)}';
+
+  String _getFinancialScoreLabel() {
+    if (_overdueCount > 0) return 'Inadimplente';
+    if (_newBillsCount > 0) return 'Atenção';
+    return 'Em dia';
+  }
+
+  Color _getFinancialScoreColor() {
+    if (_overdueCount > 0) return Colors.red;
+    if (_newBillsCount > 0) return Colors.orange;
+    return Colors.green;
+  }
+
+  IconData _getFinancialScoreIcon() {
+    if (_overdueCount > 0) return Icons.warning_rounded;
+    if (_newBillsCount > 0) return Icons.schedule_rounded;
+    return Icons.verified_rounded;
+  }
+
+  String _getSmartInsight() {
+    if (_overdueCount > 0) {
+      return "Você tem $_overdueCount ${_overdueCount == 1 ? 'cobrança vencida' : 'cobranças vencidas'}. Regularize para voltar ao status em dia.";
+    }
+    if (_newBillsCount > 0) {
+      return "Você tem $_newBillsCount ${_newBillsCount == 1 ? 'cobrança em aberto' : 'cobranças em aberto'} neste momento.";
+    }
+    final paidMonths = _allRecords
+        .where((record) => record.status == 'approved')
+        .map((record) => '${record.month}/${record.year}')
+        .toSet()
+        .length;
+    if (paidMonths >= 3) {
+      return 'Boa! Você já possui pagamentos aprovados em $paidMonths meses.';
+    }
+    return 'Tudo certo por aqui. Quando houver novas cobranças, elas aparecerão nesta tela.';
+  }
+
+  Widget _buildAthleteUpgradeHeader() {
+    final paid = _getPaidTotalForSelectedMonth();
+    final open = _getOpenTotal();
+    final overdue = _getOverdueTotal();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      child: Column(
+        children: [
+          _buildCompactFinancialSummary(paid, open, overdue),
+          const SizedBox(height: 10),
+          _buildSmartFilterToggle(),
+          if (_showAdvancedFilters) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildModernDropdown(
+                    icon: Icons.calendar_month,
+                    value: _selectedMonth,
+                    items: List.generate(12, (i) => i + 1)
+                        .map((m) => DropdownMenuItem(
+                              value: m,
+                              child: Text(
+                                DateFormat.MMMM('pt_BR')
+                                    .format(DateTime(2024, m)),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setState(() {
+                      _selectedMonth = v!;
+                      _loadRecords();
+                    }),
+                    label: 'Mês',
+                    iconColor: olympusGold,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildModernDropdown(
+                    icon: Icons.date_range,
+                    value: _selectedYear,
+                    items: List.generate(5, (i) => 2026 + i)
+                        .map((y) => DropdownMenuItem(
+                              value: y,
+                              child: Text(
+                                y.toString(),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setState(() {
+                      _selectedYear = v!;
+                      _loadRecords();
+                    }),
+                    label: 'Ano',
+                    iconColor: olympusGold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _buildModernDropdown(
+              icon: Icons.category_outlined,
+              value: _selectedType,
+              items: [
+                const DropdownMenuItem(
+                    value: 'all',
+                    child: Text('Todos os Tipos',
+                        style: TextStyle(fontWeight: FontWeight.w600))),
+                if (_allowedTypes.contains('monthly'))
+                  const DropdownMenuItem(
+                      value: 'monthly',
+                      child: Text('Mensalidade',
+                          style: TextStyle(fontWeight: FontWeight.w600))),
+                if (_allowedTypes.contains('games'))
+                  const DropdownMenuItem(
+                      value: 'games',
+                      child: Text('Jogos',
+                          style: TextStyle(fontWeight: FontWeight.w600))),
+                if (_allowedTypes.contains('maintenance'))
+                  const DropdownMenuItem(
+                      value: 'maintenance',
+                      child: Text('Manutenção',
+                          style: TextStyle(fontWeight: FontWeight.w600))),
+                if (_allowedTypes.contains('other'))
+                  const DropdownMenuItem(
+                      value: 'other',
+                      child: Text('Outros',
+                          style: TextStyle(fontWeight: FontWeight.w600))),
+              ],
+              onChanged: (v) => setState(() {
+                _selectedType = v!;
+                _loadRecords();
+              }),
+              label: 'Tipo',
+              iconColor: olympusGold,
+            ),
+          ],
+          const SizedBox(height: 10),
+          _buildQuickFilters(),
+          const SizedBox(height: 10),
+          _buildMiniFinancialChart(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSmartAlertCard(
+      double open, double overdue, int pendingReceipts) {
+    if (_overdueCount == 0 && _newBillsCount == 0 && pendingReceipts == 0) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Row(
+          children: [
+            const Icon(Icons.check_circle_rounded,
+                color: Colors.greenAccent, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Tudo certo por aqui.',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.86),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.10),
+              blurRadius: 10,
+              offset: const Offset(0, 4))
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                  _overdueCount > 0
+                      ? Icons.warning_rounded
+                      : Icons.info_rounded,
+                  color: _overdueCount > 0 ? Colors.red : olympusGold,
+                  size: 20),
+              const SizedBox(width: 8),
+              const Expanded(
+                  child: Text('Atenção no financeiro',
+                      style: TextStyle(
+                          color: olympusBlue,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900))),
+              TextButton(
+                onPressed: () => setState(() {
+                  _quickFilter = _overdueCount > 0 ? 'overdue' : 'pending';
+                  _loadRecords();
+                }),
+                child: const Text('Ver agora'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (_overdueCount > 0)
+                _buildAlertPill(Icons.warning_rounded,
+                    '$_overdueCount em atraso', Colors.red),
+              if (open > 0)
+                _buildAlertPill(Icons.attach_money_rounded, _formatMoney(open),
+                    olympusBlue),
+              if (pendingReceipts > 0)
+                _buildAlertPill(Icons.attach_file_rounded,
+                    '$pendingReceipts comprovante(s)', Colors.blue),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAlertPill(IconData icon, String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+          color: color.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withOpacity(0.25))),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, color: color, size: 14),
+        const SizedBox(width: 5),
+        Text(text,
+            style: TextStyle(
+                color: color, fontSize: 12, fontWeight: FontWeight.w800))
+      ]),
+    );
+  }
+
+  Widget _buildCompactFinancialSummary(
+      double paid, double open, double overdue) {
+    return _buildGlassPanel(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      radius: 18,
+      child: Row(
+        children: [
+          _buildSummaryInlineItem('Pago', _formatMoney(paid),
+              Icons.check_circle_rounded, Colors.green),
+          _buildSummaryDivider(),
+          _buildSummaryInlineItem('Aberto', _formatMoney(open),
+              Icons.schedule_rounded, Colors.orange),
+          _buildSummaryDivider(),
+          _buildSummaryInlineItem('Atrasado', _formatMoney(overdue),
+              Icons.warning_rounded, Colors.red),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryInlineItem(
+      String label, String value, IconData icon, Color color) {
+    return Expanded(
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 16),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: color, fontSize: 13, fontWeight: FontWeight.w900),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Color(0xFF5C6670),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryDivider() {
+    return Container(
+      width: 1,
+      height: 34,
+      margin: const EdgeInsets.symmetric(horizontal: 7),
+      color: const Color(0xFFE1E6ED),
+    );
+  }
+
+  Widget _buildSmartFilterToggle() {
+    final monthLabel =
+        DateFormat.MMMM('pt_BR').format(DateTime(2024, _selectedMonth));
+    final typeLabel =
+        _selectedType == 'all' ? 'Todos os tipos' : _typeLabel(_selectedType);
+
+    return InkWell(
+      onTap: () => setState(() => _showAdvancedFilters = !_showAdvancedFilters),
+      borderRadius: BorderRadius.circular(20),
+      child: _buildGlassPanel(
+        radius: 18,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    olympusGold.withOpacity(0.28),
+                    olympusGold.withOpacity(0.12),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: olympusGold.withOpacity(0.28)),
+              ),
+              child:
+                  const Icon(Icons.tune_rounded, color: olympusBlue, size: 18),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Filtro inteligente',
+                    style: TextStyle(
+                      color: olympusBlue,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$monthLabel $_selectedYear • $typeLabel',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              _showAdvancedFilters
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded,
+              color: olympusBlue,
+              size: 22,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _typeLabel(String type) {
+    switch (type) {
+      case 'monthly':
+        return 'Mensalidade';
+      case 'games':
+        return 'Jogos';
+      case 'maintenance':
+        return 'Manutenção';
+      case 'other':
+        return 'Outros';
+      default:
+        return 'Todos os tipos';
+    }
+  }
+
+  Widget _buildCompactScoreAndInsightCard() {
+    final scoreColor = _getFinancialScoreColor();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDDE6F0)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: scoreColor.withOpacity(0.18),
+              border: Border.all(color: scoreColor.withOpacity(0.55)),
+            ),
+            child: Icon(_getFinancialScoreIcon(), color: scoreColor, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_getFinancialScoreLabel(),
+                    style: TextStyle(
+                        color: scoreColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900)),
+                const SizedBox(height: 2),
+                Text(_getSmartInsight(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: Colors.white.withOpacity(0.82),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1.15)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoreAndInsightCard() {
+    final scoreColor = _getFinancialScoreColor();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE1E8F0))),
+      child: Row(
+        children: [
+          Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: scoreColor.withOpacity(0.18),
+                  border: Border.all(color: scoreColor.withOpacity(0.55))),
+              child:
+                  Icon(_getFinancialScoreIcon(), color: scoreColor, size: 22)),
+          const SizedBox(width: 10),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(_getFinancialScoreLabel(),
+                    style: TextStyle(
+                        color: scoreColor,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900)),
+                const SizedBox(height: 3),
+                Text(_getSmartInsight(),
+                    style: TextStyle(
+                        color: Colors.white.withOpacity(0.82),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ])),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickFilters() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final itemWidth = (constraints.maxWidth - 24) / 4;
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            SizedBox(
+              width: itemWidth,
+              child: _buildQuickFilterChip(
+                  'all', 'Todos', Icons.grid_view_rounded),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: _buildQuickFilterChip(
+                  'overdue', 'Atrasados', Icons.warning_rounded),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: _buildQuickFilterChip(
+                  'pending', 'Pendentes', Icons.schedule_rounded),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: _buildQuickFilterChip(
+                  'paid', 'Pagos', Icons.check_circle_rounded),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildQuickFilterChip(String value, String label, IconData icon) {
+    final selected = _quickFilter == value;
+    return AnimatedScale(
+      scale: selected ? 1.02 : 1,
+      duration: const Duration(milliseconds: 160),
+      child: InkWell(
+        onTap: () => setState(() {
+          _quickFilter = value;
+          _loadRecords();
+        }),
+        borderRadius: BorderRadius.circular(14),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+          decoration: BoxDecoration(
+            gradient: selected
+                ? LinearGradient(
+                    colors: [Color(0xFFD4AF37), Color(0xFFE7C75D)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : null,
+            color: selected ? null : Colors.white.withOpacity(0.78),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected
+                  ? olympusGold.withOpacity(0.70)
+                  : Colors.white.withOpacity(0.58),
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: olympusGold.withOpacity(0.24),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+          ),
+          child: Column(
+            children: [
+              Icon(
+                icon,
+                color: selected ? olympusBlue : const Color(0xFF64748B),
+                size: 15,
+              ),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? olympusBlue : const Color(0xFF475569),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonthlyTimeline() {
+    final recordsInYear =
+        _allRecords.where((record) => record.year == _selectedYear).toList();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.10),
+                blurRadius: 10,
+                offset: const Offset(0, 4))
+          ]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Row(children: [
+          Icon(Icons.timeline_rounded, color: olympusBlue, size: 18),
+          SizedBox(width: 6),
+          Text('Linha do tempo do ano',
+              style: TextStyle(
+                  color: olympusBlue,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900))
+        ]),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: List.generate(12, (index) {
+              final month = index + 1;
+              final monthRecords = recordsInYear
+                  .where((record) => record.month == month)
+                  .toList();
+              final status = _getMonthTimelineStatus(monthRecords);
+              final color = status['color'] as Color;
+              final icon = status['icon'] as IconData;
+              final text = status['text'] as String;
+              final label = DateFormat.MMM('pt_BR')
+                  .format(DateTime(_selectedYear, month))
+                  .replaceAll('.', '');
+              return Container(
+                width: 78,
+                margin: const EdgeInsets.only(right: 8),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                decoration: BoxDecoration(
+                    color: color.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: color.withOpacity(0.25))),
+                child: Column(children: [
+                  Icon(icon, color: color, size: 18),
+                  const SizedBox(height: 5),
+                  Text(label,
+                      style: const TextStyle(
+                          color: olympusBlue,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 3),
+                  Text(text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: color,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800))
+                ]),
+              );
+            }),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Map<String, dynamic> _getMonthTimelineStatus(List<FinancialRecord> records) {
+    if (records.isEmpty) {
+      return {
+        'text': 'Sem débito',
+        'color': Colors.grey,
+        'icon': Icons.remove_circle_outline_rounded
+      };
+    }
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final hasOverdue = records.any((record) {
+      if (record.status == 'approved') return false;
+      final dueDate = _getDueDate(record);
+      return today.isAfter(DateTime(dueDate.year, dueDate.month, dueDate.day));
+    });
+    if (hasOverdue)
+      return {
+        'text': 'Atrasado',
+        'color': Colors.red,
+        'icon': Icons.cancel_rounded
+      };
+    if (records.any((record) => record.status == 'pending'))
+      return {
+        'text': 'Pendente',
+        'color': Colors.orange,
+        'icon': Icons.schedule_rounded
+      };
+    if (records.every((record) => record.status == 'approved'))
+      return {
+        'text': 'Pago',
+        'color': Colors.green,
+        'icon': Icons.check_circle_rounded
+      };
+    if (records.any((record) => record.status == 'rejected'))
+      return {
+        'text': 'Rejeitado',
+        'color': Colors.red,
+        'icon': Icons.report_gmailerrorred_rounded
+      };
+    return {
+      'text': 'Aberto',
+      'color': olympusBlue,
+      'icon': Icons.receipt_long_rounded
+    };
   }
 
   @override
@@ -410,243 +1455,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
           ),
           Column(
             children: [
-              Container(
-                padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Color(0xFF1E3A5F),
-                      Color(0xFF2C5F8D),
-                    ],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(16),
-                    bottomRight: Radius.circular(16),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    if (_overdueCount > 0 || _newBillsCount > 0)
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        margin: const EdgeInsets.only(bottom: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.95),
-                          borderRadius: BorderRadius.circular(10),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            if (_overdueCount > 0)
-                              Expanded(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                        color: Colors.red.withOpacity(0.3)),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.warning,
-                                          color: Colors.red, size: 16),
-                                      const SizedBox(width: 6),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              'Em Atraso',
-                                              style: TextStyle(
-                                                fontSize: 9,
-                                                color: Colors.grey,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                            Text(
-                                              '$_overdueCount ${_overdueCount == 1 ? "conta" : "contas"}',
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.red,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            if (_overdueCount > 0 && _newBillsCount > 0)
-                              const SizedBox(width: 6),
-                            if (_newBillsCount > 0)
-                              Expanded(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: olympusGold.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                        color: olympusGold.withOpacity(0.3)),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.add_circle_outline,
-                                          color: olympusGold, size: 16),
-                                      const SizedBox(width: 6),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              'Novos Boletos',
-                                              style: TextStyle(
-                                                fontSize: 9,
-                                                color: Colors.grey,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                            Text(
-                                              '$_newBillsCount ${_newBillsCount == 1 ? "boleto" : "boletos"}',
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.bold,
-                                                color: olympusBlue,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildModernDropdown(
-                            icon: Icons.calendar_month,
-                            value: _selectedMonth,
-                            items: List.generate(12, (i) => i + 1)
-                                .map((m) => DropdownMenuItem(
-                                      value: m,
-                                      child: Text(
-                                        DateFormat.MMMM('pt_BR')
-                                            .format(DateTime(2024, m)),
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ))
-                                .toList(),
-                            onChanged: (v) => setState(() {
-                              _selectedMonth = v!;
-                              _loadRecords();
-                            }),
-                            label: 'Mês',
-                            iconColor: olympusGold,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _buildModernDropdown(
-                            icon: Icons.date_range,
-                            value: _selectedYear,
-                            items: List.generate(5, (i) => 2026 + i)
-                                .map((y) => DropdownMenuItem(
-                                      value: y,
-                                      child: Text(
-                                        y.toString(),
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ))
-                                .toList(),
-                            onChanged: (v) => setState(() {
-                              _selectedYear = v!;
-                              _loadRecords();
-                            }),
-                            label: 'Ano',
-                            iconColor: olympusGold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    _buildModernDropdown(
-                      icon: Icons.category_outlined,
-                      value: _selectedType,
-                      items: [
-                        const DropdownMenuItem(
-                          value: 'all',
-                          child: Text(
-                            'Todos os Tipos',
-                            style: TextStyle(fontWeight: FontWeight.w500),
-                          ),
-                        ),
-                        if (_allowedTypes.contains('monthly'))
-                          const DropdownMenuItem(
-                            value: 'monthly',
-                            child: Text(
-                              'Mensalidade',
-                              style: TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                          ),
-                        if (_allowedTypes.contains('games'))
-                          const DropdownMenuItem(
-                            value: 'games',
-                            child: Text(
-                              'Jogos',
-                              style: TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                          ),
-                        if (_allowedTypes.contains('maintenance'))
-                          const DropdownMenuItem(
-                            value: 'maintenance',
-                            child: Text(
-                              'Manutenção',
-                              style: TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                          ),
-                        if (_allowedTypes.contains('other'))
-                          const DropdownMenuItem(
-                            value: 'other',
-                            child: Text(
-                              'Outros',
-                              style: TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                          ),
-                      ],
-                      onChanged: (v) => setState(() {
-                        _selectedType = v!;
-                        _loadRecords();
-                      }),
-                      label: 'Tipo',
-                      iconColor: olympusGold,
-                    ),
-                  ],
-                ),
-              ),
+              _buildAthleteUpgradeHeader(),
               Expanded(
                 child: _isLoading
                     ? const Center(
@@ -675,8 +1484,8 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                               margin: const EdgeInsets.all(20),
                               padding: const EdgeInsets.all(18),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.10),
-                                borderRadius: BorderRadius.circular(18),
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
                                 border: Border.all(
                                   color: Colors.white.withOpacity(0.14),
                                 ),
@@ -688,13 +1497,13 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                   Icon(
                                     Icons.receipt_long_outlined,
                                     size: 64,
-                                    color: Colors.white70,
+                                    color: olympusBlue,
                                   ),
                                   const SizedBox(height: 16),
                                   const Text(
                                     'Nenhum registro encontrado',
                                     style: TextStyle(
-                                      color: Colors.white,
+                                      color: olympusBlue,
                                       fontSize: 16,
                                     ),
                                     textAlign: TextAlign.center,
@@ -706,15 +1515,17 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                         : LayoutBuilder(
                             builder: (context, constraints) {
                               return GridView.builder(
-                                padding: const EdgeInsets.all(14),
+                                controller: _parallaxScrollController,
+                                padding:
+                                    const EdgeInsets.fromLTRB(10, 10, 10, 14),
                                 gridDelegate:
                                     SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount:
                                       _getCrossAxisCount(constraints.maxWidth),
                                   childAspectRatio: _getChildAspectRatio(
                                       constraints.maxWidth),
-                                  crossAxisSpacing: 10,
-                                  mainAxisSpacing: 10,
+                                  crossAxisSpacing: 8,
+                                  mainAxisSpacing: 8,
                                 ),
                                 itemCount: _records.length,
                                 itemBuilder: (context, index) {
@@ -730,7 +1541,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                   final isOverdue = statusText == 'Atrasado';
 
                                   return ClipRRect(
-                                    borderRadius: BorderRadius.circular(18),
+                                    borderRadius: BorderRadius.circular(20),
                                     child: BackdropFilter(
                                       filter: ImageFilter.blur(
                                           sigmaX: 10, sigmaY: 10),
@@ -745,7 +1556,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                             end: Alignment.bottomRight,
                                           ),
                                           borderRadius:
-                                              BorderRadius.circular(18),
+                                              BorderRadius.circular(20),
                                           border: Border.all(
                                             color:
                                                 Colors.white.withOpacity(0.38),
@@ -755,8 +1566,8 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                             BoxShadow(
                                               color: Colors.black
                                                   .withOpacity(0.14),
-                                              blurRadius: 12,
-                                              offset: const Offset(0, 5),
+                                              blurRadius: 18,
+                                              offset: const Offset(0, 8),
                                             ),
                                             BoxShadow(
                                               color:
@@ -772,9 +1583,11 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                             onTap: () =>
                                                 _showRecordDetails(record),
                                             borderRadius:
-                                                BorderRadius.circular(18),
+                                                BorderRadius.circular(20),
                                             child: Padding(
-                                              padding: const EdgeInsets.all(14),
+                                              padding:
+                                                  const EdgeInsets.fromLTRB(
+                                                      10, 10, 10, 14),
                                               child: Column(
                                                 crossAxisAlignment:
                                                     CrossAxisAlignment.start,
@@ -806,7 +1619,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                           _getTypeIcon(
                                                               record.type),
                                                           color: typeColor,
-                                                          size: 18,
+                                                          size: 16,
                                                         ),
                                                       ),
                                                       const Spacer(),
@@ -849,23 +1662,23 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                       ),
                                                     ],
                                                   ),
-                                                  const SizedBox(height: 14),
+                                                  const SizedBox(height: 10),
                                                   Text(
                                                     'R\$ ${record.value.toStringAsFixed(2)}',
                                                     style: const TextStyle(
                                                       fontWeight:
                                                           FontWeight.w800,
-                                                      fontSize: 28,
+                                                      fontSize: 22,
                                                       color: Color(0xFF1E3A5F),
                                                       height: 1,
                                                     ),
                                                   ),
-                                                  const SizedBox(height: 8),
+                                                  const SizedBox(height: 6),
                                                   Container(
                                                     padding: const EdgeInsets
                                                         .symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 6,
+                                                      horizontal: 8,
+                                                      vertical: 5,
                                                     ),
                                                     decoration: BoxDecoration(
                                                       color: typeColor
@@ -882,7 +1695,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                       style: TextStyle(
                                                         fontWeight:
                                                             FontWeight.w700,
-                                                        fontSize: 13,
+                                                        fontSize: 11,
                                                         color: typeColor,
                                                       ),
                                                     ),
@@ -891,8 +1704,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                   Container(
                                                     width: double.infinity,
                                                     padding:
-                                                        const EdgeInsets.all(
-                                                            10),
+                                                        const EdgeInsets.all(8),
                                                     decoration: BoxDecoration(
                                                       color: isOverdue
                                                           ? Colors.red
@@ -915,8 +1727,8 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                     child: Row(
                                                       children: [
                                                         Container(
-                                                          width: 30,
-                                                          height: 30,
+                                                          width: 26,
+                                                          height: 26,
                                                           decoration:
                                                               BoxDecoration(
                                                             color: isOverdue
@@ -934,7 +1746,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                           child: Icon(
                                                             Icons
                                                                 .calendar_today,
-                                                            size: 15,
+                                                            size: 13,
                                                             color: isOverdue
                                                                 ? Colors.red
                                                                 : typeColor,
@@ -952,7 +1764,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                                 'Vencimento',
                                                                 style:
                                                                     TextStyle(
-                                                                  fontSize: 11,
+                                                                  fontSize: 9,
                                                                   color: Colors
                                                                           .grey[
                                                                       600],
@@ -967,7 +1779,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                                 formattedDueDate,
                                                                 style:
                                                                     TextStyle(
-                                                                  fontSize: 14,
+                                                                  fontSize: 12,
                                                                   color: isOverdue
                                                                       ? Colors.red[
                                                                           700]
@@ -984,6 +1796,9 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                       ],
                                                     ),
                                                   ),
+                                                  const SizedBox(height: 10),
+                                                  _buildRecordActionButtons(
+                                                      record),
                                                 ],
                                               ),
                                             ),
@@ -1001,6 +1816,305 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMiniFinancialChart() {
+    final yearRecords =
+        _allRecords.where((record) => record.year == _selectedYear).toList();
+
+    final maxValue = List.generate(12, (index) {
+      final month = index + 1;
+      return yearRecords
+          .where((record) => record.month == month)
+          .fold<double>(0, (sum, record) => sum + record.value);
+    }).fold<double>(0, (max, value) => value > max ? value : max);
+
+    return _buildGlassPanel(
+      radius: 20,
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.bar_chart_rounded, color: olympusBlue, size: 18),
+              SizedBox(width: 6),
+              Text(
+                'Evolução financeira',
+                style: TextStyle(
+                  color: olympusBlue,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 118,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: List.generate(12, (index) {
+                final month = index + 1;
+                final monthRecords = yearRecords
+                    .where((record) => record.month == month)
+                    .toList();
+
+                final paid = monthRecords
+                    .where((record) => record.status == 'approved')
+                    .fold<double>(0, (sum, record) => sum + record.value);
+
+                final overdue = monthRecords.where((record) {
+                  if (record.status == 'approved') return false;
+                  final dueDate = _getDueDate(record);
+                  final now = DateTime.now();
+                  final today = DateTime(now.year, now.month, now.day);
+                  return today.isAfter(
+                    DateTime(dueDate.year, dueDate.month, dueDate.day),
+                  );
+                }).fold<double>(0, (sum, record) => sum + record.value);
+
+                final pending = monthRecords.where((record) {
+                  if (record.status == 'approved') return false;
+                  final dueDate = _getDueDate(record);
+                  final now = DateTime.now();
+                  final today = DateTime(now.year, now.month, now.day);
+                  return !today.isAfter(
+                    DateTime(dueDate.year, dueDate.month, dueDate.day),
+                  );
+                }).fold<double>(0, (sum, record) => sum + record.value);
+
+                final total = paid + pending + overdue;
+                final totalHeight = maxValue == 0
+                    ? 8.0
+                    : (72 * (total / maxValue)).clamp(8.0, 72.0);
+
+                double segmentHeight(double value) {
+                  if (total <= 0) return 0;
+                  return (totalHeight * (value / total))
+                      .clamp(3.0, totalHeight);
+                }
+
+                final label = DateFormat.MMM('pt_BR')
+                    .format(DateTime(_selectedYear, month))
+                    .replaceAll('.', '');
+
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (total > 0)
+                          Text(
+                            total.toStringAsFixed(0),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: olympusBlue,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          )
+                        else
+                          const SizedBox(height: 10),
+                        const SizedBox(height: 3),
+                        Container(
+                          width: 16,
+                          height: total > 0 ? totalHeight : 8,
+                          decoration: BoxDecoration(
+                            color: total > 0
+                                ? Colors.transparent
+                                : Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(999),
+                            boxShadow: total > 0
+                                ? [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.10),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: total > 0
+                              ? Column(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    if (overdue > 0)
+                                      Container(
+                                        height: segmentHeight(overdue),
+                                        color: Colors.red,
+                                      ),
+                                    if (pending > 0)
+                                      Container(
+                                        height: segmentHeight(pending),
+                                        color: Colors.orange,
+                                      ),
+                                    if (paid > 0)
+                                      Container(
+                                        height: segmentHeight(paid),
+                                        color: Colors.green,
+                                      ),
+                                  ],
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF6B7280),
+                            fontSize: 8,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              _buildChartLegend('Pago', Colors.green),
+              _buildChartLegend('Pendente', Colors.orange),
+              _buildChartLegend('Atrasado', Colors.red),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartLegend(String label, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF5C6670),
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRecordActionButtons(FinancialRecord record) {
+    final pixKey = _extractPixKey(record);
+    final canUploadReceipt = record.status == 'pending' &&
+        (record.receiptUrl == null || record.receiptUrl!.trim().isEmpty);
+
+    if (record.status == 'approved') {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: pixKey == null
+              ? null
+              : () async {
+                  HapticFeedback.selectionClick();
+                  await Clipboard.setData(ClipboardData(text: pixKey));
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Chave Pix copiada!'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                },
+          icon: const Icon(Icons.pix, size: 15),
+          label: Text(pixKey == null ? 'Sem Pix' : 'Copiar Pix'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: olympusBlue,
+            side: BorderSide(color: olympusBlue.withOpacity(0.24)),
+            backgroundColor: Colors.white.withOpacity(0.55),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            textStyle:
+                const TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: pixKey == null
+                ? null
+                : () async {
+                    HapticFeedback.selectionClick();
+                    await Clipboard.setData(ClipboardData(text: pixKey));
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Chave Pix copiada!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  },
+            icon: const Icon(Icons.pix, size: 14),
+            label: Text(pixKey == null ? 'Sem Pix' : 'Pix'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: olympusBlue,
+              side: BorderSide(color: olympusBlue.withOpacity(0.24)),
+              backgroundColor: Colors.white.withOpacity(0.55),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+              textStyle:
+                  const TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
+            ),
+          ),
+        ),
+        if (canUploadReceipt) ...[
+          const SizedBox(width: 8),
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () {
+                HapticFeedback.mediumImpact();
+                _uploadReceipt(record);
+              },
+              icon: const Icon(Icons.upload_file_rounded, size: 14),
+              label: const Text('Já paguei'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: olympusGold,
+                foregroundColor: olympusBlue,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+                textStyle:
+                    const TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -1227,7 +2341,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewPadding.bottom + 12,
           ),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [Colors.white, Color(0xFFF8F9FA)],
               begin: Alignment.topCenter,

@@ -146,6 +146,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   List<Map<String, dynamic>> _messages = [];
   List<Map<String, dynamic>> _checkins = [];
   List<Map<String, dynamic>> _convocations = [];
+  Map<String, Map<String, dynamic>> _eventsById = {};
   List<Map<String, dynamic>> _trainingPlanBlocks = [];
 
   String _period = 'mes';
@@ -467,14 +468,39 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   bool _isCheckinDone(dynamic value) {
     final raw = (value ?? '').toString().trim().toLowerCase();
 
+    // ✅ IMPORTANTE:
+    // A tabela `checkins` representa presença.
+    // Alguns check-ins antigos/atrasados podem ter sido gravados sem
+    // `check_in_status` ou com variações de texto. Para não manter falta
+    // indevidamente, qualquer linha existente em `checkins` sem status de
+    // erro/cancelamento também conta como presença.
+    if (raw.isEmpty) return true;
+
+    if (raw == 'cancelado' ||
+        raw == 'canceled' ||
+        raw == 'cancelled' ||
+        raw == 'erro' ||
+        raw == 'error' ||
+        raw == 'failed' ||
+        raw == 'falhou') {
+      return false;
+    }
+
     return raw == 'realizado' ||
         raw == 'realizado com sucesso' ||
         raw == 'checked_in' ||
         raw == 'checkin_realizado' ||
+        raw == 'check-in realizado' ||
+        raw == 'presente' ||
+        raw == 'presence' ||
         raw == 'ok' ||
         raw == 'success' ||
         raw == 'completed' ||
-        raw == 'done';
+        raw == 'done' ||
+        raw == 'manual' ||
+        raw == 'late' ||
+        raw == 'atrasado' ||
+        raw == 'checkin_atrasado';
   }
 
   String _normalizeEvaluationText(dynamic value) {
@@ -648,6 +674,38 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
       });
 
     return messages;
+  }
+
+  Future<Map<String, Map<String, dynamic>>> _loadEventsByIds(
+    Iterable<String> eventIds,
+  ) async {
+    final ids = eventIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (ids.isEmpty) return {};
+
+    try {
+      final rows = await _supabase
+          .from('events')
+          .select('id, event_type, gender, event_date, event_time, created_at')
+          .inFilter('id', ids);
+
+      final map = <String, Map<String, dynamic>>{};
+      for (final row in List<Map<String, dynamic>>.from(rows as List)) {
+        final id = (row['id'] ?? '').toString();
+        if (id.isNotEmpty) {
+          map[id] = row;
+        }
+      }
+
+      return map;
+    } catch (e) {
+      debugPrint('Erro ao carregar eventos dos check-ins: $e');
+      return {};
+    }
   }
 
   Future<List<Map<String, dynamic>>> _loadTrainingPlanBlocks(
@@ -828,6 +886,16 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         userId: athleteId,
       );
 
+      final eventIds = <String>{
+        ...checkins
+            .map((row) => (row['event_id'] ?? '').toString())
+            .where((id) => id.isNotEmpty),
+        ...convocations
+            .map((row) => (row['event_id'] ?? '').toString())
+            .where((id) => id.isNotEmpty),
+      };
+      final eventsById = await _loadEventsByIds(eventIds);
+
       final messages = await _loadMessages(athleteId);
       final trainingPlanBlocks = await _loadTrainingPlanBlocks(athleteId);
 
@@ -837,6 +905,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         _evaluations = evaluations;
         _checkins = checkins;
         _convocations = convocations;
+        _eventsById = eventsById;
         _trainingPlanBlocks = trainingPlanBlocks;
         _messages = messages;
         _loading = false;
@@ -996,10 +1065,36 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     );
   }
 
+  Map<String, dynamic>? _eventForEventId(String eventId) {
+    if (eventId.isEmpty) return null;
+
+    final direct = _eventsById[eventId];
+    if (direct != null) return direct;
+
+    final convocation = _convocationForEventId(eventId);
+    final embeddedEvent = convocation?['events'];
+    if (embeddedEvent is Map) {
+      return Map<String, dynamic>.from(embeddedEvent);
+    }
+
+    return null;
+  }
+
+  bool _eventMapIsTrainingAndInsidePeriod(
+    Map<String, dynamic> event,
+    DateTime? start,
+  ) {
+    final wrapped = {'events': event};
+    if (!_isTrainingEvent(wrapped)) return false;
+    if (!_eventMatchesAthleteGender(wrapped)) return false;
+    if (!_isInsideTrainingPeriod(wrapped, start)) return false;
+    return true;
+  }
+
   Set<String> get _convokedTrainingEventIds {
     final start = _periodStart();
 
-    return _convocations
+    final eventIds = _convocations
         .where((row) {
           if (!_isTrainingEvent(row)) return false;
           if (!_eventMatchesAthleteGender(row)) return false;
@@ -1009,6 +1104,13 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         .map((row) => (row['event_id'] ?? '').toString())
         .where((id) => id.isNotEmpty)
         .toSet();
+
+    // ✅ Inclui também treinos com check-in válido, mesmo quando o atleta
+    // não tem registro correspondente em `convocations`. Isso cobre check-ins
+    // atrasados/manuais feitos pelo admin.
+    eventIds.addAll(_checkedInTrainingEventIdsInPeriod(start));
+
+    return eventIds;
   }
 
   Map<String, dynamic>? _convocationForEventId(String eventId) {
@@ -1028,23 +1130,86 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     DateTime? start,
   ) {
     final eventId = (checkin['event_id'] ?? '').toString();
+    if (eventId.isEmpty) return false;
+
     final convocation = _convocationForEventId(eventId);
 
-    if (convocation == null) return false;
-    if (!_isTrainingEvent(convocation)) return false;
-    if (!_eventMatchesAthleteGender(convocation)) return false;
-    if (!_isInsideTrainingPeriod(convocation, start)) return false;
+    if (convocation != null) {
+      if (!_isTrainingEvent(convocation)) return false;
+      if (!_eventMatchesAthleteGender(convocation)) return false;
+      if (!_isInsideTrainingPeriod(convocation, start)) return false;
+      return true;
+    }
 
-    return true;
+    final event = _eventForEventId(eventId);
+    if (event == null) return false;
+
+    return _eventMapIsTrainingAndInsidePeriod(event, start);
+  }
+
+  Set<String> _checkedInTrainingEventIdsInPeriod(DateTime? start) {
+    return _checkins
+        .where((row) {
+          if (!_isCheckinDone(row['check_in_status'])) return false;
+
+          final eventId = (row['event_id'] ?? '').toString();
+          if (eventId.isEmpty) return false;
+
+          final event = _eventForEventId(eventId);
+          if (event == null) return false;
+
+          return _eventMapIsTrainingAndInsidePeriod(event, start);
+        })
+        .map((row) => (row['event_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  bool _isExplicitAbsenceCheckinStatus(dynamic value) {
+    final raw = (value ?? '').toString().trim().toLowerCase();
+
+    return raw == 'ausente' ||
+        raw == 'absence' ||
+        raw == 'absent' ||
+        raw == 'faltou' ||
+        raw == 'falta' ||
+        raw == 'no_show' ||
+        raw == 'nao_compareceu' ||
+        raw == 'não_compareceu' ||
+        raw == 'nao compareceu' ||
+        raw == 'não compareceu';
+  }
+
+  Set<String> _explicitAbsenceTrainingEventIdsInPeriod(DateTime? start) {
+    return _checkins
+        .where((row) {
+          if (!_isExplicitAbsenceCheckinStatus(row['check_in_status'])) {
+            return false;
+          }
+
+          final eventId = (row['event_id'] ?? '').toString();
+          if (eventId.isEmpty) return false;
+
+          final event = _eventForEventId(eventId);
+          if (event == null) return false;
+
+          return _eventMapIsTrainingAndInsidePeriod(event, start);
+        })
+        .map((row) => (row['event_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
   }
 
   int get _trainingBaseCount {
-    return _convokedTrainingEventIds.length;
+    // Base do percentual de presença: somente treinos já consolidados.
+    // Treinos futuros ou ainda dentro do prazo de check-in ficam como
+    // pendentes e NÃO entram no denominador da porcentagem.
+    return _trainingPresenceCount + _trainingAcceptedAbsentCount;
   }
 
   int get _trainingPresenceCount {
-    final convokedEventIds = _convokedTrainingEventIds;
-    if (convokedEventIds.isEmpty) return 0;
+    final baseEventIds = _convokedTrainingEventIds;
+    if (baseEventIds.isEmpty) return 0;
 
     final start = _periodStart();
 
@@ -1054,7 +1219,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
           if (!_isCheckinInsideConvokedTrainingPeriod(row, start)) return false;
 
           final eventId = (row['event_id'] ?? '').toString();
-          return convokedEventIds.contains(eventId);
+          return baseEventIds.contains(eventId);
         })
         .map((row) => (row['event_id'] ?? '').toString())
         .where((id) => id.isNotEmpty)
@@ -1065,14 +1230,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   int get _trainingPendingCount {
     final start = _periodStart();
     final now = DateTime.now();
-    final doneEventIds = _checkins
-        .where((row) {
-          if (!_isCheckinDone(row['check_in_status'])) return false;
-          return _isCheckinInsideConvokedTrainingPeriod(row, start);
-        })
-        .map((row) => (row['event_id'] ?? '').toString())
-        .where((id) => id.isNotEmpty)
-        .toSet();
+    final doneEventIds = _checkedInTrainingEventIdsInPeriod(start);
 
     return _convocations
         .where((row) {
@@ -1096,15 +1254,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
   int get _trainingAcceptedAbsentCount {
     final start = _periodStart();
-    final now = DateTime.now();
-    final doneEventIds = _checkins
-        .where((row) {
-          if (!_isCheckinDone(row['check_in_status'])) return false;
-          return _isCheckinInsideConvokedTrainingPeriod(row, start);
-        })
-        .map((row) => (row['event_id'] ?? '').toString())
-        .where((id) => id.isNotEmpty)
-        .toSet();
+    final doneEventIds = _checkedInTrainingEventIdsInPeriod(start);
+    final explicitAbsences = _explicitAbsenceTrainingEventIdsInPeriod(start);
 
     return _convocations
         .where((row) {
@@ -1115,10 +1266,10 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
           final eventId = (row['event_id'] ?? '').toString();
           if (eventId.isEmpty || doneEventIds.contains(eventId)) return false;
 
-          final eventDate = _eventDateTime(row);
-          if (eventDate == null) return false;
-
-          return now.isAfter(eventDate.add(const Duration(minutes: 30)));
+          // Mesma correção feita na tela do atleta:
+          // pendente/vencido NÃO vira falta automaticamente.
+          // Falta só conta quando existe ausência explícita registrada.
+          return explicitAbsences.contains(eventId);
         })
         .map((row) => (row['event_id'] ?? '').toString())
         .where((id) => id.isNotEmpty)
@@ -1127,8 +1278,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }
 
   List<_MonthlyPresenceAbsence> get _annualPresenceAbsenceByMonth {
-    final now = DateTime.now();
-    final year = now.year;
+    final year = DateTime.now().year;
 
     final monthlyPresenceEventIds = <int, Set<String>>{
       for (int month = 1; month <= 12; month++) month: <String>{},
@@ -1153,34 +1303,51 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
       convokedTrainingEventDates[eventId] = eventDate;
     }
 
-    final doneEventIds = _checkins
-        .where((row) {
-          if (!_isCheckinDone(row['check_in_status'])) return false;
+    final checkedTrainingEventDates = <String, DateTime>{};
+    final doneEventIds = <String>{};
 
-          final eventId = (row['event_id'] ?? '').toString();
-          return convokedTrainingEventDates.containsKey(eventId);
-        })
-        .map((row) => (row['event_id'] ?? '').toString())
-        .where((id) => id.isNotEmpty)
-        .toSet();
+    for (final row in _checkins) {
+      if (!_isCheckinDone(row['check_in_status'])) continue;
 
-    final today = DateTime.now();
+      final eventId = (row['event_id'] ?? '').toString();
+      if (eventId.isEmpty) continue;
 
-    for (final entry in convokedTrainingEventDates.entries) {
+      final event = _eventForEventId(eventId);
+      if (event == null) continue;
+      if (!_eventMapIsTrainingAndInsidePeriod(event, null)) continue;
+
+      final eventDate = _eventDateTime({'events': event});
+      if (!_isOnOrAfterStatsRuleStart(eventDate)) continue;
+      if (eventDate == null || eventDate.year != year) continue;
+
+      checkedTrainingEventDates[eventId] = eventDate;
+      doneEventIds.add(eventId);
+    }
+
+    final explicitAbsenceEventIds =
+        _explicitAbsenceTrainingEventIdsInPeriod(null);
+
+    final allTrainingEventDates = <String, DateTime>{
+      ...convokedTrainingEventDates,
+      ...checkedTrainingEventDates,
+    };
+
+    for (final entry in allTrainingEventDates.entries) {
       final eventId = entry.key;
       final eventDate = entry.value;
       final month = eventDate.month;
 
+      // Check-in válido sempre ganha da falta.
       if (doneEventIds.contains(eventId)) {
         monthlyPresenceEventIds[month]!.add(eventId);
+        monthlyAbsentEventIds[month]!.remove(eventId);
         continue;
       }
 
-      final checkinClosed = today.isAfter(
-        eventDate.add(const Duration(minutes: 30)),
-      );
-
-      if (checkinClosed) {
+      // Mesma correção feita na tela do atleta:
+      // pendente/vencido NÃO vira falta no gráfico anual.
+      // Falta só aparece quando existe ausência explícita registrada.
+      if (explicitAbsenceEventIds.contains(eventId)) {
         monthlyAbsentEventIds[month]!.add(eventId);
       }
     }
@@ -2716,80 +2883,173 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }
 
   Widget _metricsGrid() {
-    final metrics = [
-      {
-        'icon': Icons.fact_check_outlined,
-        'title': 'Presença / Falta',
-        'value':
-            '${_formatPercentValue(_presenceRate)} / ${_formatPercentValue(_absenceRate)}',
-        'valueWidget': _presenceFailureValueWidget(),
-        'bottomWidget': _presenceStatusPill(),
-        'color': olympusPurple,
-        'explanation':
-            'Base atual: ${_formatPercentValue(_presenceRate)} de presença e ${_formatPercentValue(_absenceRate)} de faltas sobre $_trainingBaseCount treino(s) convocado(s).\n\n'
-                'Presenças: $_trainingPresenceCount • Faltas: $_trainingAcceptedAbsentCount • Pendentes: $_trainingPendingCount • Recusados: $_trainingRejectedCount.\n\n'
-                'Presença = check-ins realizados em treinos convocados.\n'
-                'Falta = treinos convocados sem check-in após 30 minutos, incluindo recusados.\n\n'
-                'Regra válida ${_periodRuleLabel()}.',
-      },
-      {
-        'icon': Icons.star_rounded,
-        'title': 'Destaques',
-        'value': '$_destaques',
-        'color': olympusSuccess,
-        'explanation':
-            'Quantidade de avaliações do tipo destaque recebidas no período selecionado.',
-      },
-      {
-        'icon': Icons.warning_amber_rounded,
-        'title': 'Atenções',
-        'value': '$_atencoes',
-        'color': olympusWarning,
-        'explanation':
-            'Quantidade de pontos de atenção registrados pelo técnico no período selecionado.',
-      },
-    ];
+    final presenceValue =
+        '${_formatPercentValue(_presenceRate)} / ${_formatPercentValue(_absenceRate)}';
 
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: _StatsResponsive.isDesktop(context)
+    return Container(
+      width: double.infinity,
+      margin: EdgeInsets.fromLTRB(
+        _StatsResponsive.isDesktop(context)
             ? 48
             : (_StatsResponsive.isTablet(context) ? 28 : 16),
+        0,
+        _StatsResponsive.isDesktop(context)
+            ? 48
+            : (_StatsResponsive.isTablet(context) ? 28 : 16),
+        _StatsResponsive.space(context, 12),
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth;
-          final crossAxisCount =
-              _StatsResponsive.metricsCrossAxisCount(context, width);
-          final aspectRatio =
-              _StatsResponsive.metricsAspectRatio(context, width);
-
-          return GridView.builder(
-            itemCount: metrics.length,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: crossAxisCount,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-              childAspectRatio: aspectRatio,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.97),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withOpacity(0.55)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.10),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _compactMetricItem(
+              icon: Icons.fact_check_outlined,
+              color: olympusPurple,
+              value: presenceValue,
+              label: 'Presença / Falta',
+              badge: 'Status: $_presenceStatus',
+              onTap: () => _showItemExplanation(
+                title: 'Presença / Falta',
+                explanation:
+                    'Base atual: ${_formatPercentValue(_presenceRate)} de presença e ${_formatPercentValue(_absenceRate)} de faltas sobre $_trainingBaseCount treino(s) já consolidado(s).\n\n'
+                    'Presenças: $_trainingPresenceCount • Faltas: $_trainingAcceptedAbsentCount • Pendentes: $_trainingPendingCount • Recusados: $_trainingRejectedCount.\n\n'
+                    'Presença = check-ins realizados em treinos convocados.\n'
+                    'Falta = somente ausência explícita registrada. Pendente/vencido não vira falta automaticamente.\n\n'
+                    'Regra válida ${_periodRuleLabel()}.',
+              ),
             ),
-            itemBuilder: (context, index) {
-              final item = metrics[index];
+          ),
+          _compactMetricDivider(),
+          Expanded(
+            child: _compactMetricItem(
+              icon: Icons.star_rounded,
+              color: olympusSuccess,
+              value: _destaques.toString(),
+              label: 'Destaques',
+              onTap: () => _showItemExplanation(
+                title: 'Destaques',
+                explanation:
+                    'Quantidade de avaliações do tipo destaque recebidas no período selecionado.',
+              ),
+            ),
+          ),
+          _compactMetricDivider(),
+          Expanded(
+            child: _compactMetricItem(
+              icon: Icons.warning_amber_rounded,
+              color: olympusWarning,
+              value: _atencoes.toString(),
+              label: 'Atenções',
+              onTap: () => _showItemExplanation(
+                title: 'Atenções',
+                explanation:
+                    'Quantidade de pontos de atenção registrados pelo técnico no período selecionado.',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-              return _metricCard(
-                icon: item['icon'] as IconData,
-                title: item['title'] as String,
-                value: item['value'] as String,
-                color: item['color'] as Color,
-                explanation: item['explanation'] as String,
-                valueWidget: item['valueWidget'] as Widget?,
-                bottomWidget: item['bottomWidget'] as Widget?,
-                onTap: null,
-              );
-            },
-          );
-        },
+  Widget _compactMetricDivider() {
+    return Container(
+      width: 1,
+      height: 70,
+      margin: const EdgeInsets.symmetric(horizontal: 6),
+      color: olympusBorder,
+    );
+  }
+
+  Widget _compactMetricItem({
+    required IconData icon,
+    required Color color,
+    required String value,
+    required String label,
+    String? badge,
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 18),
+              const SizedBox(height: 7),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: olympusBlue,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: olympusMuted,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  height: 1.12,
+                ),
+              ),
+              if (badge != null) ...[
+                const SizedBox(height: 7),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _presenceStatusColor.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: _presenceStatusColor.withOpacity(0.25),
+                    ),
+                  ),
+                  child: Text(
+                    badge,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _presenceStatusColor,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2842,13 +3102,13 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             _infoButton(
               title: 'Presença',
               explanation:
-                  'Presença = check-ins realizados ÷ treinos convocados. Falta = treinos convocados sem check-in depois do prazo de 30 minutos, incluindo recusados. Esta tela considera somente treinos a partir de 01/05/2026. Quando o evento possui gênero, o cálculo considera apenas treinos do mesmo gênero cadastrado no perfil da atleta.',
+                  'Presença = check-ins realizados ÷ treinos já consolidados, incluindo check-in atrasado lançado pelo admin. Falta = somente ausência explícita registrada. Treinos futuros ou ainda dentro do prazo ficam pendentes e não entram no percentual. Esta tela considera somente treinos a partir de 01/05/2026. Quando o evento possui gênero, o cálculo considera apenas treinos do mesmo gênero cadastrado no perfil da atleta.',
             ),
           ],
         ),
         const SizedBox(height: 10),
         Text(
-          'Base atual: ${_formatPercentValue(_presenceRate)} de presença e ${_formatPercentValue(_absenceRate)} de faltas sobre $_trainingBaseCount treino(s) convocado(s). Presenças: $_trainingPresenceCount • Faltas: $_trainingAcceptedAbsentCount • Pendentes: $_trainingPendingCount • Recusados: $_trainingRejectedCount. Regra válida ${_periodRuleLabel()}. Gênero usado no filtro: $genderLabel.',
+          'Base atual: ${_formatPercentValue(_presenceRate)} de presença e ${_formatPercentValue(_absenceRate)} de faltas sobre $_trainingBaseCount treino(s) já consolidado(s). Presenças: $_trainingPresenceCount • Faltas: $_trainingAcceptedAbsentCount • Pendentes: $_trainingPendingCount • Recusados: $_trainingRejectedCount. Regra válida ${_periodRuleLabel()}. Gênero usado no filtro: $genderLabel.',
           style: const TextStyle(
             color: olympusMuted,
             fontSize: 13,
@@ -3038,7 +3298,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                         _infoButton(
                           title: 'Presença anual',
                           explanation:
-                              'Gráfico anual com presenças e faltas por mês. Presença é check-in realizado em treino convocado. Falta é treino convocado cujo prazo de check-in expirou sem presença registrada, incluindo recusados. A regra considera treinos a partir de 01/05/2026 e o gênero do atleta quando o evento possui gender.',
+                              'Gráfico anual com presenças e faltas por mês. Presença é check-in realizado em treino convocado, incluindo check-in atrasado lançado pelo admin. Falta é somente ausência explícita registrada; pendente/vencido não vira falta automaticamente. A regra considera treinos a partir de 01/05/2026 e o gênero do atleta quando o evento possui gender.',
                           color: olympusGold,
                         ),
                       ],
