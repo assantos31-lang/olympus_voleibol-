@@ -333,29 +333,6 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
     return statusDone || hasCheckedInAt || hasLocation;
   }
 
-  bool _isExplicitAbsenceStatus(dynamic value) {
-    final raw = (value ?? '').toString().trim().toLowerCase();
-
-    return raw == 'ausente' ||
-        raw == 'absence' ||
-        raw == 'absent' ||
-        raw == 'faltou' ||
-        raw == 'falta' ||
-        raw == 'no_show' ||
-        raw == 'nao_compareceu' ||
-        raw == 'não_compareceu' ||
-        raw == 'nao compareceu' ||
-        raw == 'não compareceu';
-  }
-
-  Set<String> _explicitTrainingAbsenceEventIds() {
-    return _checkins
-        .where((row) => _isExplicitAbsenceStatus(row['check_in_status']))
-        .map((row) => (row['event_id'] ?? '').toString())
-        .where((id) => id.isNotEmpty)
-        .toSet();
-  }
-
   Set<String> _doneTrainingEventIds() {
     return _checkins
         .where(_isTrainingCheckinDone)
@@ -375,7 +352,6 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
   List<_MonthlyPresenceAbsence> _annualTrainingPresence() {
     final year = DateTime.now().year;
     final doneEventIds = _doneTrainingEventIds();
-    final explicitAbsenceEventIds = _explicitTrainingAbsenceEventIds();
 
     final monthlyPresenceEventIds = <int, Set<String>>{
       for (int month = 1; month <= 12; month++) month: <String>{},
@@ -383,6 +359,8 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
     final monthlyAbsentEventIds = <int, Set<String>>{
       for (int month = 1; month <= 12; month++) month: <String>{},
     };
+
+    final convokedTrainingEventDates = <String, DateTime>{};
 
     for (final convocation in _convocations) {
       final eventId = (convocation['event_id'] ?? '').toString();
@@ -396,16 +374,65 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
       if (eventDate == null || eventDate.year != year) continue;
       if (!_isOnOrAfterStatsRuleStart(eventDate)) continue;
 
+      convokedTrainingEventDates[eventId] = eventDate;
+    }
+
+    final checkedTrainingEventDates = <String, DateTime>{};
+
+    for (final checkin in _checkins) {
+      if (!_isTrainingCheckinDone(checkin)) continue;
+
+      final eventId = (checkin['event_id'] ?? '').toString();
+      if (eventId.isEmpty) continue;
+
+      final event = _eventsById[eventId];
+      if (event == null) continue;
+      if (_normalizeEventType(event['event_type']) != 'treino') continue;
+
+      final eventDate = _eventDateTime(event);
+      if (eventDate == null || eventDate.year != year) continue;
+      if (!_isOnOrAfterStatsRuleStart(eventDate)) continue;
+
+      checkedTrainingEventDates[eventId] = eventDate;
+    }
+
+    final allTrainingEventDates = <String, DateTime>{
+      ...convokedTrainingEventDates,
+      ...checkedTrainingEventDates,
+    };
+
+    final today = DateTime.now();
+
+    for (final entry in allTrainingEventDates.entries) {
+      final eventId = entry.key;
+      final eventDate = entry.value;
+      final month = eventDate.month;
+
+      // Check-in válido sempre ganha da falta, inclusive atrasado/manual.
       if (doneEventIds.contains(eventId)) {
-        monthlyPresenceEventIds[eventDate.month]!.add(eventId);
-        monthlyAbsentEventIds[eventDate.month]!.remove(eventId);
+        monthlyPresenceEventIds[month]!.add(eventId);
+        monthlyAbsentEventIds[month]!.remove(eventId);
         continue;
       }
 
-      // Não inferir falta automaticamente por evento vencido/pendente.
-      // Falta anual só aparece se houver registro explícito de ausência.
-      if (explicitAbsenceEventIds.contains(eventId)) {
-        monthlyAbsentEventIds[eventDate.month]!.add(eventId);
+      // Falta só nasce de treino ACEITO cujo prazo de check-in já fechou.
+      // Recusados e pendentes seguem a mesma regra da Agenda: não viram falta.
+      if (!convokedTrainingEventDates.containsKey(eventId)) continue;
+
+      final convocation = _convocations.firstWhere(
+        (row) => (row['event_id'] ?? '').toString() == eventId,
+        orElse: () => const <String, dynamic>{},
+      );
+      final status =
+          (convocation['status'] ?? '').toString().toLowerCase().trim();
+      if (status != 'accepted') continue;
+
+      final checkinClosed = today.isAfter(
+        eventDate.add(const Duration(minutes: 30)),
+      );
+
+      if (checkinClosed) {
+        monthlyAbsentEventIds[month]!.add(eventId);
       }
     }
 
@@ -1373,6 +1400,7 @@ class _AthleteStatisticsDetailPageState
   List<Map<String, dynamic>> _messages = [];
   List<Map<String, dynamic>> _checkins = [];
   List<Map<String, dynamic>> _convocations = [];
+  Map<String, Map<String, dynamic>> _eventsById = {};
   List<Map<String, dynamic>> _trainingPlanBlocks = [];
   List<Map<String, dynamic>> _matchScouts = [];
   List<Map<String, dynamic>> _matchScoutActionDetails = [];
@@ -2135,12 +2163,47 @@ class _AthleteStatisticsDetailPageState
         return (row['athlete_id'] ?? '').toString() == user.id;
       }).toList();
 
+      final eventsById = <String, Map<String, dynamic>>{};
+
+      for (final convocation in convocations) {
+        final eventId = (convocation['event_id'] ?? '').toString();
+        final event = convocation['events'];
+        if (eventId.isEmpty || event is! Map) continue;
+        eventsById[eventId] = Map<String, dynamic>.from(event);
+      }
+
+      final missingEventIds = checkins
+          .map((row) => (row['event_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty && !eventsById.containsKey(id))
+          .toSet()
+          .toList();
+
+      if (missingEventIds.isNotEmpty) {
+        try {
+          final eventRows = await _supabase
+              .from('events')
+              .select(
+                'id, event_name, event_type, gender, event_date, event_time, championship_name',
+              )
+              .inFilter('id', missingEventIds);
+
+          for (final row in eventRows) {
+            final event = Map<String, dynamic>.from(row as Map);
+            final eventId = (event['id'] ?? '').toString();
+            if (eventId.isNotEmpty) eventsById[eventId] = event;
+          }
+        } catch (_) {
+          // Mantém apenas os eventos visíveis via convocação.
+        }
+      }
+
       if (!mounted) return;
       setState(() {
         _profile = profiles.isNotEmpty ? profiles.first : null;
         _evaluations = evaluations;
         _checkins = checkins;
         _convocations = convocations;
+        _eventsById = eventsById;
         _trainingPlanBlocks = trainingPlanBlocks;
         _matchScouts = athleteMatchScouts;
         _matchScoutActionDetails = athleteMatchScoutActionDetails;
@@ -2627,7 +2690,14 @@ class _AthleteStatisticsDetailPageState
 
   Set<String> get _convokedTrainingEventIds {
     final start = _periodStart();
-    return _selectedStatsEventIds(start: start);
+
+    final eventIds = _selectedStatsEventIds(start: start);
+
+    // Inclui também treinos com check-in válido, mesmo quando não existe
+    // convocação correspondente. Isso cobre check-ins manuais/atrasados.
+    eventIds.addAll(_checkedInTrainingEventIdsInPeriod(start));
+
+    return eventIds;
   }
 
   Set<String> get _doneCheckinEventIds {
@@ -2733,6 +2803,50 @@ class _AthleteStatisticsDetailPageState
     return null;
   }
 
+  Map<String, dynamic>? _eventForEventId(String eventId) {
+    if (eventId.isEmpty) return null;
+
+    final direct = _eventsById[eventId];
+    if (direct != null) return direct;
+
+    final convocation = _convocationForEventId(eventId);
+    final embeddedEvent = convocation?['events'];
+    if (embeddedEvent is Map) {
+      return Map<String, dynamic>.from(embeddedEvent);
+    }
+
+    return null;
+  }
+
+  bool _eventMapIsSelectedTrainingAndInsidePeriod(
+    Map<String, dynamic> event,
+    DateTime? start,
+  ) {
+    final wrapped = {'events': event};
+    if (_eventTypeForRow(wrapped) != 'treino') return false;
+    if (!_eventMatchesAthleteGender(wrapped)) return false;
+    if (!_isInsideTrainingPeriod(wrapped, start)) return false;
+    return true;
+  }
+
+  Set<String> _checkedInTrainingEventIdsInPeriod(DateTime? start) {
+    return _checkins
+        .where((row) {
+          if (!_isCheckinDone(row['check_in_status'])) return false;
+
+          final eventId = (row['event_id'] ?? '').toString();
+          if (eventId.isEmpty) return false;
+
+          final event = _eventForEventId(eventId);
+          if (event == null) return false;
+
+          return _eventMapIsSelectedTrainingAndInsidePeriod(event, start);
+        })
+        .map((row) => (row['event_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
   bool _isCheckinInsideConvokedTrainingPeriod(
     Map<String, dynamic> checkin,
     DateTime? start,
@@ -2792,6 +2906,7 @@ class _AthleteStatisticsDetailPageState
 
     final start = _periodStart();
     final doneEventIds = _doneCheckinEventIds;
+    final now = DateTime.now();
 
     return _convocations
         .where((row) {
@@ -2803,7 +2918,10 @@ class _AthleteStatisticsDetailPageState
           final eventId = (row['event_id'] ?? '').toString();
           if (eventId.isEmpty || doneEventIds.contains(eventId)) return false;
 
-          return _isPendingTrainingStillActionable(row);
+          final eventDate = _eventDateTime(row);
+          if (eventDate == null) return true;
+
+          return !now.isAfter(eventDate.add(const Duration(minutes: 30)));
         })
         .map((row) => (row['event_id'] ?? '').toString())
         .where((id) => id.isNotEmpty)
@@ -2817,17 +2935,23 @@ class _AthleteStatisticsDetailPageState
     }
 
     final start = _periodStart();
-    final explicitAbsences = _explicitAbsenceEventIds;
     final doneEventIds = _doneCheckinEventIds;
+    final now = DateTime.now();
 
     return _convocations
         .where((row) {
           if (!_isSelectedStatsEvent(row, start: start)) return false;
 
+          final status = (row['status'] ?? '').toString().toLowerCase().trim();
+          if (status != 'accepted') return false;
+
           final eventId = (row['event_id'] ?? '').toString();
           if (eventId.isEmpty || doneEventIds.contains(eventId)) return false;
 
-          return explicitAbsences.contains(eventId);
+          final eventDate = _eventDateTime(row);
+          if (eventDate == null) return false;
+
+          return now.isAfter(eventDate.add(const Duration(minutes: 30)));
         })
         .map((row) => (row['event_id'] ?? '').toString())
         .where((id) => id.isNotEmpty)
@@ -2885,22 +3009,58 @@ class _AthleteStatisticsDetailPageState
       });
     }
 
-    final explicitAbsences = _explicitAbsenceEventIds;
+    final checkedTrainingEventDates = <String, DateTime>{};
 
-    for (final entry in selectedEventDates.entries) {
+    for (final checkin in _checkins) {
+      if (!_isCheckinDone(checkin['check_in_status'])) continue;
+
+      final eventId = (checkin['event_id'] ?? '').toString();
+      if (eventId.isEmpty) continue;
+
+      final event = _eventForEventId(eventId);
+      if (event == null) continue;
+      if (!_eventMapIsSelectedTrainingAndInsidePeriod(event, null)) continue;
+
+      final eventDate = _eventDateTime({'events': event});
+      if (!_isOnOrAfterStatsRuleStart(eventDate)) continue;
+      if (eventDate == null || eventDate.year != year) continue;
+
+      checkedTrainingEventDates[eventId] = eventDate;
+    }
+
+    final allTrainingEventDates = <String, DateTime>{
+      ...selectedEventDates,
+      ...checkedTrainingEventDates,
+    };
+
+    final today = DateTime.now();
+
+    for (final entry in allTrainingEventDates.entries) {
       final eventId = entry.key;
       final eventDate = entry.value;
       final month = eventDate.month;
 
+      // Check-in válido sempre ganha da falta, inclusive atrasado/manual.
       if (doneEventIds.contains(eventId)) {
         monthlyPresenceEventIds[month]!.add(eventId);
         monthlyAbsentEventIds[month]!.remove(eventId);
         continue;
       }
 
-      // Não transformar pendente/vencido em falta no gráfico anual.
-      // Falta só entra quando existe um registro explícito de ausência.
-      if (explicitAbsences.contains(eventId)) {
+      // Falta só nasce de treino ACEITO cujo prazo de check-in já fechou.
+      // Recusados e pendentes seguem a mesma regra da Agenda: não viram falta.
+      if (!selectedEventDates.containsKey(eventId)) continue;
+
+      final convocation = _convocationForEventId(eventId);
+      final status =
+          (convocation?['status'] ?? '').toString().toLowerCase().trim();
+      if (status != 'accepted') continue;
+
+      final checkinClosed = today.isAfter(
+        eventDate.add(const Duration(minutes: 30)),
+      );
+
+      if (checkinClosed) {
         monthlyAbsentEventIds[month]!.add(eventId);
       }
     }
@@ -4863,7 +5023,7 @@ class _AthleteStatisticsDetailPageState
             _infoButton(
               title: 'Presença',
               explanation:
-                  'Presença = check-ins realizados ÷ eventos convocados, incluindo check-in atrasado/manual. Falta = eventos convocados sem check-in depois do prazo de 30 minutos, incluindo recusados. Esta tela considera somente treinos a partir de 01/05/2026. Quando o evento possui gênero, o cálculo considera apenas treinos do mesmo gênero cadastrado no perfil da atleta.',
+                  'Presença = check-ins realizados ÷ eventos consolidados, incluindo check-in atrasado/manual. Falta = treinos aceitos sem check-in depois do prazo de 30 minutos. Recusados e pendentes não viram falta. Esta tela considera somente treinos a partir de 01/05/2026. Quando o evento possui gênero, o cálculo considera apenas treinos do mesmo gênero cadastrado no perfil da atleta.',
             ),
           ],
         ),

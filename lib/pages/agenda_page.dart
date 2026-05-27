@@ -42,6 +42,7 @@ class _AgendaPageState extends State<AgendaPage> {
   String _filtroSelecionado = 'Todos';
   String _filtroMes = '';
   String _filtroGenero = 'Todos';
+  bool _mostrarEventosPassados = false;
   Set<String> _placaresExpandidos = {}; // IDs dos placares expandidos
   // ✅ Cores do logo Olympus Voleibol
   static const Color olympusBlue = Color(0xFF1E3A5F);
@@ -278,8 +279,77 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
+  DateTime? _parseEventoDateTime(Map<String, dynamic> evento) {
+    try {
+      final dataStr = (evento['event_date'] ?? '').toString().trim();
+      final horaStr = (evento['event_time'] ?? '').toString().trim();
+
+      if (dataStr.isEmpty || horaStr.isEmpty) return null;
+
+      final dp = dataStr.split('/');
+      final tp = horaStr.split(':');
+
+      if (dp.length != 3 || tp.length < 2) return null;
+
+      return DateTime(
+        int.parse(dp[2]),
+        int.parse(dp[1]),
+        int.parse(dp[0]),
+        int.parse(tp[0]),
+        int.parse(tp[1]),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _isEventoPassado(Map<String, dynamic> evento) {
+    final dataHora = _parseEventoDateTime(evento);
+    if (dataHora == null) return false;
+    return dataHora.isBefore(DateTime.now());
+  }
+
+  int _getEventosPassadosCount() {
+    return _eventos.where((evento) {
+      if (!_isEventoPassado(evento)) return false;
+
+      if (_filtroSelecionado != 'Todos' &&
+          (evento['event_type'] ?? '').toString().toLowerCase() !=
+              _filtroSelecionado.toLowerCase()) {
+        return false;
+      }
+
+      if (_filtroMes.isNotEmpty) {
+        final dataEvento = evento['event_date'] ?? '';
+        if (dataEvento.toString().length < 7) return false;
+        if (dataEvento.toString().substring(3) != _filtroMes) return false;
+      }
+
+      if (_filtroGenero != 'Todos' &&
+          (evento['gender'] ?? evento['category'] ?? '')
+                  .toString()
+                  .toLowerCase() !=
+              _filtroGenero.toLowerCase()) {
+        return false;
+      }
+
+      return true;
+    }).length;
+  }
+
+  void _alternarEventosPassados() {
+    setState(() {
+      _mostrarEventosPassados = !_mostrarEventosPassados;
+      _aplicarFiltros();
+    });
+  }
+
   void _aplicarFiltros() {
-    List<Map<String, dynamic>> eventosFiltrados = _eventos;
+    List<Map<String, dynamic>> eventosFiltrados = _eventos.where((evento) {
+      final passou = _isEventoPassado(evento);
+      return _mostrarEventosPassados ? passou : !passou;
+    }).toList();
+
     if (_filtroSelecionado != 'Todos') {
       eventosFiltrados = eventosFiltrados
           .where((evento) =>
@@ -306,6 +376,17 @@ class _AgendaPageState extends State<AgendaPage> {
               _filtroGenero.toLowerCase())
           .toList();
     }
+    eventosFiltrados.sort((a, b) {
+      final dataA = _parseEventoDateTime(a) ?? DateTime(9999);
+      final dataB = _parseEventoDateTime(b) ?? DateTime(9999);
+
+      if (_mostrarEventosPassados) {
+        return dataB.compareTo(dataA);
+      }
+
+      return dataA.compareTo(dataB);
+    });
+
     setState(() {
       _eventosFiltrados = eventosFiltrados;
     });
@@ -356,266 +437,525 @@ class _AgendaPageState extends State<AgendaPage> {
     return Colors.white;
   }
 
-  void _mostrarPlanejamentoTreino(Map<String, dynamic> evento) {
-    final dynamic rawBlocks = evento['training_blocks'] ??
-        evento['planning_blocks'] ??
-        evento['blocks'] ??
-        evento['training_plan'] ??
-        evento['planning'];
+  Future<void> _mostrarPlanejamentoTreino(Map<String, dynamic> evento) async {
+    final eventId = evento['id']?.toString();
 
-    List<Map<String, dynamic>> blocos = [];
-
-    if (rawBlocks is List) {
-      blocos = rawBlocks
-          .whereType<Map>()
-          .map((item) => Map<String, dynamic>.from(item))
-          .toList();
-    } else if (rawBlocks is Map) {
-      final map = Map<String, dynamic>.from(rawBlocks);
-      final nestedBlocks = map['blocks'];
-      if (nestedBlocks is List) {
-        blocos = nestedBlocks
-            .whereType<Map>()
-            .map((item) => Map<String, dynamic>.from(item))
-            .toList();
-      }
+    if (eventId == null || eventId.isEmpty) {
+      return;
     }
 
-    blocos.sort((a, b) {
-      final aStart =
-          (a['start_time'] ?? a['start'] ?? a['hora_inicio'] ?? '').toString();
-      final bStart =
-          (b['start_time'] ?? b['start'] ?? b['hora_inicio'] ?? '').toString();
-      return aStart.compareTo(bStart);
-    });
+    try {
+      final blocksResponse = await _supabase
+          .from('training_plan_blocks')
+          .select(
+            'id, event_id, coach_id, category, type, start_time, end_time, observation, position, updated_at',
+          )
+          .eq('event_id', eventId)
+          .order('position', ascending: true);
 
-    final planningType = (evento['training_type'] ??
-            evento['plan_type'] ??
-            evento['planning_type'] ??
-            evento['tipo_treino'] ??
-            'Não informado')
-        .toString();
+      final notesResponse = await _supabase
+          .from('training_plan_notes')
+          .select('event_id, coach_id, notes, updated_at')
+          .eq('event_id', eventId);
 
-    final planningNotes = (evento['training_notes'] ??
-            evento['planning_notes'] ??
-            evento['plan_notes'] ??
-            evento['observacoes_treino'] ??
-            '')
-        .toString();
+      final blocks = List<Map<String, dynamic>>.from(blocksResponse as List);
+      final notes = List<Map<String, dynamic>>.from(notesResponse as List);
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  'Planejamento do treino',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: olympusBlue,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  (evento['event_name'] ?? 'Treino').toString(),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: olympusBlue.withOpacity(0.06),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: olympusBlue.withOpacity(0.10)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Tipo do treino: $planningType',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: olympusBlue,
+      final coachIds = <String>{};
+
+      for (final block in blocks) {
+        final coachId = (block['coach_id'] ?? '').toString();
+        if (coachId.isNotEmpty) coachIds.add(coachId);
+      }
+
+      for (final note in notes) {
+        final coachId = (note['coach_id'] ?? '').toString();
+        if (coachId.isNotEmpty) coachIds.add(coachId);
+      }
+
+      final profilesById = <String, Map<String, dynamic>>{};
+
+      if (coachIds.isNotEmpty) {
+        final profilesResponse = await _supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url')
+            .inFilter('id', coachIds.toList());
+
+        for (final profile in List<Map<String, dynamic>>.from(
+          profilesResponse as List,
+        )) {
+          final id = (profile['id'] ?? '').toString();
+          if (id.isNotEmpty) {
+            profilesById[id] = profile;
+          }
+        }
+      }
+
+      final blocksByCoach = <String, List<Map<String, dynamic>>>{};
+      final notesByCoach = <String, Map<String, dynamic>>{};
+
+      for (final block in blocks) {
+        final coachId = (block['coach_id'] ?? '').toString();
+        if (coachId.isEmpty) continue;
+
+        blocksByCoach.putIfAbsent(coachId, () => []);
+        blocksByCoach[coachId]!.add(block);
+      }
+
+      for (final note in notes) {
+        final coachId = (note['coach_id'] ?? '').toString();
+        if (coachId.isEmpty) continue;
+
+        notesByCoach[coachId] = note;
+      }
+
+      final allCoachIds = <String>{
+        ...blocksByCoach.keys,
+        ...notesByCoach.keys,
+      }.toList();
+
+      allCoachIds.sort((a, b) {
+        final nameA = (profilesById[a]?['full_name'] ?? 'Técnico').toString();
+        final nameB = (profilesById[b]?['full_name'] ?? 'Técnico').toString();
+        return nameA.compareTo(nameB);
+      });
+
+      if (!mounted) return;
+
+      if (allCoachIds.isEmpty) {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          builder: (context) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 42,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(999),
                         ),
                       ),
-                      if (planningNotes.trim().isNotEmpty) ...[
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Planejamento do treino',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: olympusBlue,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.orange[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange[200]!),
+                      ),
+                      child: const Text(
+                        'Nenhum planejamento vinculado a este treino.',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: olympusBlue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text('Fechar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+        return;
+      }
+
+      String selectedCoachId = allCoachIds.first;
+
+      int blockMinutes(Map<String, dynamic> block) {
+        DateTime? parseTime(dynamic value) {
+          final raw = (value ?? '').toString().trim();
+          final parts = raw.split(':');
+          if (parts.length < 2) return null;
+
+          final hour = int.tryParse(parts[0]);
+          final minute = int.tryParse(parts[1]);
+
+          if (hour == null || minute == null) return null;
+          return DateTime(2000, 1, 1, hour, minute);
+        }
+
+        final start = parseTime(block['start_time']);
+        final end = parseTime(block['end_time']);
+
+        if (start == null || end == null || !end.isAfter(start)) return 0;
+        return end.difference(start).inMinutes;
+      }
+
+      String formatDuration(int minutes) {
+        if (minutes <= 0) return '0min';
+
+        final h = minutes ~/ 60;
+        final m = minutes % 60;
+
+        if (h == 0) return '${m}min';
+        if (m == 0) return '${h}h';
+        return '${h}h ${m}min';
+      }
+
+      String normalizeTime(dynamic value) {
+        final raw = (value ?? '').toString().trim();
+        final parts = raw.split(':');
+
+        if (parts.length >= 2) {
+          final h = int.tryParse(parts[0]);
+          final m = int.tryParse(parts[1]);
+
+          if (h != null && m != null) {
+            return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+          }
+        }
+
+        return raw;
+      }
+
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setModalState) {
+              final selectedBlocks = List<Map<String, dynamic>>.from(
+                  blocksByCoach[selectedCoachId] ?? []);
+              final selectedNote = notesByCoach[selectedCoachId];
+              final selectedProfile = profilesById[selectedCoachId];
+              final coachName =
+                  (selectedProfile?['full_name'] ?? 'Técnico').toString();
+              final notesText = (selectedNote?['notes'] ?? '').toString();
+              final totalMinutes = selectedBlocks.fold<int>(
+                0,
+                (sum, block) => sum + blockMinutes(block),
+              );
+
+              return SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.86,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 42,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        const Text(
+                          'Planejamento do treino',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: olympusBlue,
+                          ),
+                        ),
                         const SizedBox(height: 8),
                         Text(
-                          planningNotes,
-                          style: TextStyle(
-                            color: Colors.grey[700],
-                            fontSize: 13,
+                          (evento['event_name'] ?? 'Treino').toString(),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (allCoachIds.length > 1) ...[
+                          DropdownButtonFormField<String>(
+                            value: selectedCoachId,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: 'Treinador',
+                              prefixIcon: const Icon(
+                                Icons.sports_rounded,
+                                color: olympusGold,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                  color: olympusGold,
+                                  width: 1.5,
+                                ),
+                              ),
+                            ),
+                            items: allCoachIds.map((coachId) {
+                              final name = (profilesById[coachId]
+                                          ?['full_name'] ??
+                                      'Técnico')
+                                  .toString();
+                              return DropdownMenuItem<String>(
+                                value: coachId,
+                                child: Text(
+                                  name,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setModalState(() {
+                                selectedCoachId = value;
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: olympusBlue.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: olympusBlue.withOpacity(0.10),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: olympusBlue.withOpacity(0.10),
+                                child: Text(
+                                  coachName.isNotEmpty
+                                      ? coachName.characters.first.toUpperCase()
+                                      : 'T',
+                                  style: const TextStyle(
+                                    color: olympusBlue,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      coachName,
+                                      style: const TextStyle(
+                                        color: olympusBlue,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '${selectedBlocks.length} bloco${selectedBlocks.length == 1 ? '' : 's'} • ${formatDuration(totalMinutes)}',
+                                      style: TextStyle(
+                                        color: Colors.grey[700],
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (notesText.trim().isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: olympusGold.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: olympusGold.withOpacity(0.20),
+                              ),
+                            ),
+                            child: Text(
+                              notesText,
+                              style: TextStyle(
+                                color: Colors.grey[800],
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        if (selectedBlocks.isEmpty)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.orange[50],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.orange[200]!),
+                            ),
+                            child: const Text(
+                              'Nenhum bloco cadastrado para este treinador.',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          )
+                        else
+                          Flexible(
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: selectedBlocks.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 10),
+                              itemBuilder: (context, index) {
+                                final bloco = selectedBlocks[index];
+                                final titulo = (bloco['type'] ??
+                                        bloco['category'] ??
+                                        'Bloco ${index + 1}')
+                                    .toString();
+                                final categoria =
+                                    (bloco['category'] ?? 'Bloco').toString();
+                                final inicio =
+                                    normalizeTime(bloco['start_time']);
+                                final fim = normalizeTime(bloco['end_time']);
+                                final observacao =
+                                    (bloco['observation'] ?? '').toString();
+                                final minutos = blockMinutes(bloco);
+
+                                return Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(12),
+                                    border:
+                                        Border.all(color: Colors.grey[200]!),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Container(
+                                            width: 28,
+                                            height: 28,
+                                            alignment: Alignment.center,
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  olympusGold.withOpacity(0.16),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              '${index + 1}',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                color: olympusBlue,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              titulo,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 14,
+                                                color: olympusBlue,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        '$categoria${inicio.isNotEmpty || fim.isNotEmpty ? ' • $inicio${fim.isNotEmpty ? ' às $fim' : ''}' : ''}${minutos > 0 ? ' • ${formatDuration(minutos)}' : ''}',
+                                        style: TextStyle(
+                                          color: Colors.grey[700],
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      if (observacao.trim().isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          observacao,
+                                          style: TextStyle(
+                                            color: Colors.grey[700],
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: olympusBlue,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                            child: const Text('Fechar'),
                           ),
                         ),
                       ],
-                    ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                if (blocos.isEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.orange[50],
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.orange[200]!),
-                    ),
-                    child: const Text(
-                      'Nenhum planejamento vinculado a este treino.',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  )
-                else
-                  Flexible(
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: blocos.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemBuilder: (context, index) {
-                        final bloco = blocos[index];
-                        final titulo = (bloco['title'] ??
-                                bloco['nome'] ??
-                                bloco['activity'] ??
-                                bloco['descricao'] ??
-                                'Bloco ${index + 1}')
-                            .toString();
-                        final tipo = (bloco['type'] ??
-                                bloco['tipo'] ??
-                                bloco['category'] ??
-                                'Bloco')
-                            .toString();
-                        final inicio = (bloco['start_time'] ??
-                                bloco['start'] ??
-                                bloco['hora_inicio'] ??
-                                '')
-                            .toString();
-                        final fim = (bloco['end_time'] ??
-                                bloco['end'] ??
-                                bloco['hora_fim'] ??
-                                '')
-                            .toString();
-                        final intensidade =
-                            (bloco['intensity'] ?? bloco['intensidade'] ?? '')
-                                .toString();
-                        final observacao = (bloco['notes'] ??
-                                bloco['observacao'] ??
-                                bloco['observações'] ??
-                                '')
-                            .toString();
-
-                        return Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[50],
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey[200]!),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 28,
-                                    height: 28,
-                                    alignment: Alignment.center,
-                                    decoration: BoxDecoration(
-                                      color: olympusBlue.withOpacity(0.10),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      '${index + 1}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        color: olympusBlue,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      titulo,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 14,
-                                        color: olympusBlue,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                '$tipo${inicio.isNotEmpty || fim.isNotEmpty ? ' • $inicio${fim.isNotEmpty ? ' às $fim' : ''}' : ''}${intensidade.isNotEmpty ? ' • $intensidade' : ''}',
-                                style: TextStyle(
-                                  color: Colors.grey[700],
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              if (observacao.trim().isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  observacao,
-                                  style: TextStyle(
-                                    color: Colors.grey[700],
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: olympusBlue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: const Text('Fechar'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+              );
+            },
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao carregar planejamento do treino: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _navegarParaCadastroEvento() async {
@@ -3521,6 +3861,11 @@ class _AgendaPageState extends State<AgendaPage> {
                 // Filtro de Mês e Gênero
                 Row(
                   children: [
+                    SizedBox(
+                      width: 104,
+                      child: _buildEventosPassadosButton(),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: _buildModernDropdown(
                         icon: Icons.calendar_month,
@@ -3628,7 +3973,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                     size: 64, color: Colors.grey[400]),
                                 const SizedBox(height: 16),
                                 Text(
-                                  'Nenhum evento encontrado',
+                                  _mostrarEventosPassados
+                                      ? 'Nenhum evento passado encontrado'
+                                      : 'Nenhum evento futuro encontrado',
                                   style: TextStyle(
                                     fontSize: 18,
                                     color: Colors.grey[600],
@@ -3636,7 +3983,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  'Clique no + para adicionar um evento',
+                                  _mostrarEventosPassados
+                                      ? 'Volte para Futuros para ver os próximos eventos'
+                                      : 'Clique no + para adicionar um evento',
                                   style: TextStyle(color: Colors.grey[500]),
                                 ),
                               ],
@@ -4603,6 +4952,72 @@ class _AgendaPageState extends State<AgendaPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEventosPassadosButton() {
+    final count = _getEventosPassadosCount();
+
+    return SizedBox(
+      height: 72,
+      child: ElevatedButton(
+        onPressed: _alternarEventosPassados,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _mostrarEventosPassados ? olympusGold : Colors.white,
+          foregroundColor: olympusBlue,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              _mostrarEventosPassados
+                  ? Icons.upcoming_rounded
+                  : Icons.history_rounded,
+              size: 16,
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                _mostrarEventosPassados ? 'Futuros' : 'Passados',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            if (!_mostrarEventosPassados) ...[
+              const SizedBox(width: 5),
+              Container(
+                constraints: const BoxConstraints(
+                  minWidth: 20,
+                  minHeight: 20,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: olympusGold,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  count.toString(),
+                  style: const TextStyle(
+                    color: olympusBlue,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

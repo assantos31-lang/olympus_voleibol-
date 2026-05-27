@@ -1165,41 +1165,6 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         .toSet();
   }
 
-  bool _isExplicitAbsenceCheckinStatus(dynamic value) {
-    final raw = (value ?? '').toString().trim().toLowerCase();
-
-    return raw == 'ausente' ||
-        raw == 'absence' ||
-        raw == 'absent' ||
-        raw == 'faltou' ||
-        raw == 'falta' ||
-        raw == 'no_show' ||
-        raw == 'nao_compareceu' ||
-        raw == 'não_compareceu' ||
-        raw == 'nao compareceu' ||
-        raw == 'não compareceu';
-  }
-
-  Set<String> _explicitAbsenceTrainingEventIdsInPeriod(DateTime? start) {
-    return _checkins
-        .where((row) {
-          if (!_isExplicitAbsenceCheckinStatus(row['check_in_status'])) {
-            return false;
-          }
-
-          final eventId = (row['event_id'] ?? '').toString();
-          if (eventId.isEmpty) return false;
-
-          final event = _eventForEventId(eventId);
-          if (event == null) return false;
-
-          return _eventMapIsTrainingAndInsidePeriod(event, start);
-        })
-        .map((row) => (row['event_id'] ?? '').toString())
-        .where((id) => id.isNotEmpty)
-        .toSet();
-  }
-
   int get _trainingBaseCount {
     // Base do percentual de presença: somente treinos já consolidados.
     // Treinos futuros ou ainda dentro do prazo de check-in ficam como
@@ -1238,6 +1203,9 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
           if (!_eventMatchesAthleteGender(row)) return false;
           if (!_isInsideTrainingPeriod(row, start)) return false;
 
+          final status = (row['status'] ?? '').toString().toLowerCase().trim();
+          if (status != 'pending') return false;
+
           final eventId = (row['event_id'] ?? '').toString();
           if (eventId.isEmpty || doneEventIds.contains(eventId)) return false;
 
@@ -1254,8 +1222,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
   int get _trainingAcceptedAbsentCount {
     final start = _periodStart();
+    final now = DateTime.now();
     final doneEventIds = _checkedInTrainingEventIdsInPeriod(start);
-    final explicitAbsences = _explicitAbsenceTrainingEventIdsInPeriod(start);
 
     return _convocations
         .where((row) {
@@ -1263,13 +1231,16 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
           if (!_eventMatchesAthleteGender(row)) return false;
           if (!_isInsideTrainingPeriod(row, start)) return false;
 
+          final status = (row['status'] ?? '').toString().toLowerCase().trim();
+          if (status != 'accepted') return false;
+
           final eventId = (row['event_id'] ?? '').toString();
           if (eventId.isEmpty || doneEventIds.contains(eventId)) return false;
 
-          // Mesma correção feita na tela do atleta:
-          // pendente/vencido NÃO vira falta automaticamente.
-          // Falta só conta quando existe ausência explícita registrada.
-          return explicitAbsences.contains(eventId);
+          final eventDate = _eventDateTime(row);
+          if (eventDate == null) return false;
+
+          return now.isAfter(eventDate.add(const Duration(minutes: 30)));
         })
         .map((row) => (row['event_id'] ?? '').toString())
         .where((id) => id.isNotEmpty)
@@ -1278,7 +1249,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }
 
   List<_MonthlyPresenceAbsence> get _annualPresenceAbsenceByMonth {
-    final year = DateTime.now().year;
+    final now = DateTime.now();
+    final year = now.year;
 
     final monthlyPresenceEventIds = <int, Set<String>>{
       for (int month = 1; month <= 12; month++) month: <String>{},
@@ -1324,30 +1296,40 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
       doneEventIds.add(eventId);
     }
 
-    final explicitAbsenceEventIds =
-        _explicitAbsenceTrainingEventIdsInPeriod(null);
-
     final allTrainingEventDates = <String, DateTime>{
       ...convokedTrainingEventDates,
       ...checkedTrainingEventDates,
     };
+
+    final today = DateTime.now();
 
     for (final entry in allTrainingEventDates.entries) {
       final eventId = entry.key;
       final eventDate = entry.value;
       final month = eventDate.month;
 
-      // Check-in válido sempre ganha da falta.
+      // ✅ Check-in válido sempre ganha da falta, inclusive atrasado/manual
+      // feito pelo admin.
       if (doneEventIds.contains(eventId)) {
         monthlyPresenceEventIds[month]!.add(eventId);
         monthlyAbsentEventIds[month]!.remove(eventId);
         continue;
       }
 
-      // Mesma correção feita na tela do atleta:
-      // pendente/vencido NÃO vira falta no gráfico anual.
-      // Falta só aparece quando existe ausência explícita registrada.
-      if (explicitAbsenceEventIds.contains(eventId)) {
+      // ❌ Só marcamos falta para treino convocado e aceito.
+      // Recusados e pendentes seguem a mesma leitura da Agenda: não viram falta automática.
+      if (!convokedTrainingEventDates.containsKey(eventId)) continue;
+
+      final convocation = _convocationForEventId(eventId);
+      final status =
+          (convocation?['status'] ?? '').toString().toLowerCase().trim();
+      if (status != 'accepted') continue;
+
+      final checkinClosed = today.isAfter(
+        eventDate.add(const Duration(minutes: 30)),
+      );
+
+      if (checkinClosed) {
         monthlyAbsentEventIds[month]!.add(eventId);
       }
     }
@@ -2883,173 +2865,80 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }
 
   Widget _metricsGrid() {
-    final presenceValue =
-        '${_formatPercentValue(_presenceRate)} / ${_formatPercentValue(_absenceRate)}';
+    final metrics = [
+      {
+        'icon': Icons.fact_check_outlined,
+        'title': 'Presença / Falta',
+        'value':
+            '${_formatPercentValue(_presenceRate)} / ${_formatPercentValue(_absenceRate)}',
+        'valueWidget': _presenceFailureValueWidget(),
+        'bottomWidget': _presenceStatusPill(),
+        'color': olympusPurple,
+        'explanation':
+            'Base atual: ${_formatPercentValue(_presenceRate)} de presença e ${_formatPercentValue(_absenceRate)} de faltas sobre $_trainingBaseCount treino(s) já consolidado(s).\n\n'
+                'Presenças: $_trainingPresenceCount • Faltas: $_trainingAcceptedAbsentCount • Pendentes: $_trainingPendingCount • Recusados: $_trainingRejectedCount.\n\n'
+                'Presença = check-ins realizados em treinos convocados.\n'
+                'Falta = treinos aceitos sem check-in após 30 minutos.\n\n'
+                'Regra válida ${_periodRuleLabel()}.',
+      },
+      {
+        'icon': Icons.star_rounded,
+        'title': 'Destaques',
+        'value': '$_destaques',
+        'color': olympusSuccess,
+        'explanation':
+            'Quantidade de avaliações do tipo destaque recebidas no período selecionado.',
+      },
+      {
+        'icon': Icons.warning_amber_rounded,
+        'title': 'Atenções',
+        'value': '$_atencoes',
+        'color': olympusWarning,
+        'explanation':
+            'Quantidade de pontos de atenção registrados pelo técnico no período selecionado.',
+      },
+    ];
 
-    return Container(
-      width: double.infinity,
-      margin: EdgeInsets.fromLTRB(
-        _StatsResponsive.isDesktop(context)
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: _StatsResponsive.isDesktop(context)
             ? 48
             : (_StatsResponsive.isTablet(context) ? 28 : 16),
-        0,
-        _StatsResponsive.isDesktop(context)
-            ? 48
-            : (_StatsResponsive.isTablet(context) ? 28 : 16),
-        _StatsResponsive.space(context, 12),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.97),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withOpacity(0.55)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.10),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _compactMetricItem(
-              icon: Icons.fact_check_outlined,
-              color: olympusPurple,
-              value: presenceValue,
-              label: 'Presença / Falta',
-              badge: 'Status: $_presenceStatus',
-              onTap: () => _showItemExplanation(
-                title: 'Presença / Falta',
-                explanation:
-                    'Base atual: ${_formatPercentValue(_presenceRate)} de presença e ${_formatPercentValue(_absenceRate)} de faltas sobre $_trainingBaseCount treino(s) já consolidado(s).\n\n'
-                    'Presenças: $_trainingPresenceCount • Faltas: $_trainingAcceptedAbsentCount • Pendentes: $_trainingPendingCount • Recusados: $_trainingRejectedCount.\n\n'
-                    'Presença = check-ins realizados em treinos convocados.\n'
-                    'Falta = somente ausência explícita registrada. Pendente/vencido não vira falta automaticamente.\n\n'
-                    'Regra válida ${_periodRuleLabel()}.',
-              ),
-            ),
-          ),
-          _compactMetricDivider(),
-          Expanded(
-            child: _compactMetricItem(
-              icon: Icons.star_rounded,
-              color: olympusSuccess,
-              value: _destaques.toString(),
-              label: 'Destaques',
-              onTap: () => _showItemExplanation(
-                title: 'Destaques',
-                explanation:
-                    'Quantidade de avaliações do tipo destaque recebidas no período selecionado.',
-              ),
-            ),
-          ),
-          _compactMetricDivider(),
-          Expanded(
-            child: _compactMetricItem(
-              icon: Icons.warning_amber_rounded,
-              color: olympusWarning,
-              value: _atencoes.toString(),
-              label: 'Atenções',
-              onTap: () => _showItemExplanation(
-                title: 'Atenções',
-                explanation:
-                    'Quantidade de pontos de atenção registrados pelo técnico no período selecionado.',
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final crossAxisCount =
+              _StatsResponsive.metricsCrossAxisCount(context, width);
+          final aspectRatio =
+              _StatsResponsive.metricsAspectRatio(context, width);
 
-  Widget _compactMetricDivider() {
-    return Container(
-      width: 1,
-      height: 70,
-      margin: const EdgeInsets.symmetric(horizontal: 6),
-      color: olympusBorder,
-    );
-  }
+          return GridView.builder(
+            itemCount: metrics.length,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: aspectRatio,
+            ),
+            itemBuilder: (context, index) {
+              final item = metrics[index];
 
-  Widget _compactMetricItem({
-    required IconData icon,
-    required Color color,
-    required String value,
-    required String label,
-    String? badge,
-    VoidCallback? onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: color, size: 18),
-              const SizedBox(height: 7),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  value,
-                  maxLines: 1,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: olympusBlue,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w900,
-                    height: 1,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: olympusMuted,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  height: 1.12,
-                ),
-              ),
-              if (badge != null) ...[
-                const SizedBox(height: 7),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _presenceStatusColor.withOpacity(0.10),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: _presenceStatusColor.withOpacity(0.25),
-                    ),
-                  ),
-                  child: Text(
-                    badge,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: _presenceStatusColor,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
-                      height: 1,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
+              return _metricCard(
+                icon: item['icon'] as IconData,
+                title: item['title'] as String,
+                value: item['value'] as String,
+                color: item['color'] as Color,
+                explanation: item['explanation'] as String,
+                valueWidget: item['valueWidget'] as Widget?,
+                bottomWidget: item['bottomWidget'] as Widget?,
+                onTap: null,
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -3102,7 +2991,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             _infoButton(
               title: 'Presença',
               explanation:
-                  'Presença = check-ins realizados ÷ treinos já consolidados, incluindo check-in atrasado lançado pelo admin. Falta = somente ausência explícita registrada. Treinos futuros ou ainda dentro do prazo ficam pendentes e não entram no percentual. Esta tela considera somente treinos a partir de 01/05/2026. Quando o evento possui gênero, o cálculo considera apenas treinos do mesmo gênero cadastrado no perfil da atleta.',
+                  'Presença = check-ins realizados ÷ treinos já consolidados, incluindo check-in atrasado lançado pelo admin. Falta = treinos aceitos sem check-in depois do prazo de 30 minutos. Treinos futuros ou ainda dentro do prazo ficam pendentes e não entram no percentual. Esta tela considera somente treinos a partir de 01/05/2026. Quando o evento possui gênero, o cálculo considera apenas treinos do mesmo gênero cadastrado no perfil da atleta.',
             ),
           ],
         ),
@@ -3298,7 +3187,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                         _infoButton(
                           title: 'Presença anual',
                           explanation:
-                              'Gráfico anual com presenças e faltas por mês. Presença é check-in realizado em treino convocado, incluindo check-in atrasado lançado pelo admin. Falta é somente ausência explícita registrada; pendente/vencido não vira falta automaticamente. A regra considera treinos a partir de 01/05/2026 e o gênero do atleta quando o evento possui gender.',
+                              'Gráfico anual com presenças e faltas por mês. Presença é check-in realizado em treino convocado, incluindo check-in atrasado lançado pelo admin. Falta é treino aceito cujo prazo de check-in expirou sem presença registrada. A regra considera treinos a partir de 01/05/2026 e o gênero do atleta quando o evento possui gender.',
                           color: olympusGold,
                         ),
                       ],

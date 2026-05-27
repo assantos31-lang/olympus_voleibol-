@@ -55,18 +55,288 @@ class _AdminAthletesStatisticsListPageState
   static const Color olympusMuted = Color(0xFF53657B);
   static const Color olympusBorder = Color(0xFFE4EDF5);
   static const Color olympusPurple = Color(0xFF7C3AED);
+  static const Color olympusSuccess = Color(0xFF16A34A);
+  static const Color olympusWarning = Color(0xFFF59E0B);
+  static const Color olympusDanger = Color(0xFFDC2626);
 
   bool _loading = true;
   String? _error;
   String _search = '';
   String _selectedGender = '';
+  String _selectedStatus = '';
 
   List<Map<String, dynamic>> _athletes = [];
+  Map<String, _AdminAthleteStats> _athleteStats = {};
 
   @override
   void initState() {
     super.initState();
     _loadAthletes();
+  }
+
+  String _normalizeEvaluationText(dynamic value) {
+    final raw = (value ?? '').toString().trim().toLowerCase();
+
+    if (raw.isEmpty) return '';
+
+    return raw
+        .replaceAll('ç', 'c')
+        .replaceAll('ã', 'a')
+        .replaceAll('á', 'a')
+        .replaceAll('à', 'a')
+        .replaceAll('â', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('ê', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ô', 'o')
+        .replaceAll('õ', 'o')
+        .replaceAll('ú', 'u');
+  }
+
+  String _evaluationSearchText(Map<String, dynamic> row) {
+    return [
+      row['tipo'],
+      row['slot'],
+      row['motivo'],
+      row['fundamento'],
+      row['observacao'],
+    ]
+        .map(_normalizeEvaluationText)
+        .where((value) => value.isNotEmpty)
+        .join(' ');
+  }
+
+  bool _isDestaqueEvaluation(Map<String, dynamic> row) {
+    final tipo = _normalizeEvaluationText(row['tipo']);
+    if (tipo == 'destaque' || tipo == 'destaques') return true;
+
+    final text = _evaluationSearchText(row);
+    return text.contains('destaque') ||
+        text.contains('destaques') ||
+        text.contains('positivo') ||
+        text.contains('ponto positivo') ||
+        text.contains('elogio') ||
+        text.contains('forte');
+  }
+
+  bool _isAtencaoEvaluation(Map<String, dynamic> row) {
+    final tipo = _normalizeEvaluationText(row['tipo']);
+    if (tipo == 'atencao' || tipo == 'atencoes') return true;
+
+    final text = _evaluationSearchText(row);
+    return text.contains('atencao') ||
+        text.contains('ponto de atencao') ||
+        text.contains('melhorar') ||
+        text.contains('correcao');
+  }
+
+  bool _isCheckinDone(dynamic value) {
+    final raw = (value ?? '').toString().trim().toLowerCase();
+
+    if (raw.isEmpty) return true;
+
+    if (raw == 'cancelado' ||
+        raw == 'canceled' ||
+        raw == 'cancelled' ||
+        raw == 'erro' ||
+        raw == 'error' ||
+        raw == 'failed' ||
+        raw == 'falhou') {
+      return false;
+    }
+
+    return raw == 'realizado' ||
+        raw == 'realizado com sucesso' ||
+        raw == 'checked_in' ||
+        raw == 'checkin_realizado' ||
+        raw == 'check-in realizado' ||
+        raw == 'presente' ||
+        raw == 'presence' ||
+        raw == 'ok' ||
+        raw == 'success' ||
+        raw == 'completed' ||
+        raw == 'done' ||
+        raw == 'manual' ||
+        raw == 'late' ||
+        raw == 'atrasado' ||
+        raw == 'checkin_atrasado';
+  }
+
+  bool _isExplicitAbsenceStatus(dynamic value) {
+    final raw = (value ?? '').toString().trim().toLowerCase();
+
+    return raw == 'ausente' ||
+        raw == 'absence' ||
+        raw == 'absent' ||
+        raw == 'faltou' ||
+        raw == 'falta' ||
+        raw == 'no_show' ||
+        raw == 'nao_compareceu' ||
+        raw == 'não_compareceu' ||
+        raw == 'nao compareceu' ||
+        raw == 'não compareceu';
+  }
+
+  Future<Map<String, _AdminAthleteStats>> _loadAthletesStats(
+    Iterable<String> athleteIds,
+  ) async {
+    final ids = athleteIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (ids.isEmpty) return {};
+
+    final stats = <String, _AdminAthleteStats>{
+      for (final id in ids) id: const _AdminAthleteStats.empty(),
+    };
+
+    try {
+      final rows = await _supabase
+          .from('training_evaluations')
+          .select(
+            'athlete_id, tipo, slot, motivo, fundamento, observacao, created_at',
+          )
+          .inFilter('athlete_id', ids);
+
+      for (final row in List<Map<String, dynamic>>.from(rows as List)) {
+        final athleteId = (row['athlete_id'] ?? '').toString();
+        if (athleteId.isEmpty) continue;
+
+        final current = stats[athleteId] ?? const _AdminAthleteStats.empty();
+
+        stats[athleteId] = current.copyWith(
+          destaques: current.destaques + (_isDestaqueEvaluation(row) ? 1 : 0),
+          atencoes: current.atencoes + (_isAtencaoEvaluation(row) ? 1 : 0),
+        );
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar avaliações dos atletas: $e');
+    }
+
+    try {
+      final rows = await _supabase
+          .from('checkins')
+          .select('user_id, event_id, check_in_status')
+          .inFilter('user_id', ids);
+
+      final presenceByAthlete = <String, Set<String>>{};
+      final explicitAbsenceByAthlete = <String, Set<String>>{};
+
+      for (final row in List<Map<String, dynamic>>.from(rows as List)) {
+        final athleteId = (row['user_id'] ?? '').toString();
+        final eventId = (row['event_id'] ?? '').toString();
+
+        if (athleteId.isEmpty || eventId.isEmpty) continue;
+
+        if (_isCheckinDone(row['check_in_status'])) {
+          presenceByAthlete
+              .putIfAbsent(athleteId, () => <String>{})
+              .add(eventId);
+          continue;
+        }
+
+        if (_isExplicitAbsenceStatus(row['check_in_status'])) {
+          explicitAbsenceByAthlete
+              .putIfAbsent(athleteId, () => <String>{})
+              .add(eventId);
+        }
+      }
+
+      for (final athleteId in ids) {
+        final presencas = presenceByAthlete[athleteId] ?? <String>{};
+        final faltas = explicitAbsenceByAthlete[athleteId] ?? <String>{};
+
+        // Mesma regra da estatística do atleta:
+        // presença por check-in válido; falta somente por ausência explícita.
+        // Pendente/vencido/convocado sem check-in NÃO vira falta.
+        faltas.removeAll(presencas);
+
+        final current = stats[athleteId] ?? const _AdminAthleteStats.empty();
+        stats[athleteId] = current.copyWith(
+          presencas: presencas.length,
+          faltas: faltas.length,
+        );
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar check-ins dos atletas: $e');
+    }
+
+    return stats;
+  }
+
+  _AdminAthleteStats _statsFor(Map<String, dynamic> athlete) {
+    final athleteId = _asString(athlete['id']);
+    return _athleteStats[athleteId] ?? const _AdminAthleteStats.empty();
+  }
+
+  String _athleteStatusKey(Map<String, dynamic> athlete) {
+    final stats = _statsFor(athlete);
+    final hasFrequency = stats.baseFrequencia > 0;
+    final hasEvaluation = stats.destaques > 0 || stats.atencoes > 0;
+
+    if (!hasFrequency && !hasEvaluation) {
+      return 'sem_dados';
+    }
+
+    // Crítico fica reservado para frequência realmente baixa.
+    // Ponto de atenção NÃO deve transformar o atleta em crítico.
+    if (hasFrequency && stats.presenceRate < 0.60) {
+      return 'critico';
+    }
+
+    // Atenção cobre: frequência abaixo da meta, falta explícita ou pontos de atenção.
+    // Ex.: Douglas com ponto de atenção deve aparecer como "Atenção", não "Crítico".
+    if ((hasFrequency && stats.presenceRate < 0.80) ||
+        stats.faltas > 0 ||
+        stats.atencoes > 0) {
+      return 'atencao';
+    }
+
+    if (hasFrequency &&
+        stats.presenceRate >= 0.95 &&
+        stats.faltas == 0 &&
+        stats.destaques > 0) {
+      return 'elite';
+    }
+
+    if ((hasFrequency && stats.presenceRate >= 0.80) || stats.destaques > 0) {
+      return 'bom';
+    }
+
+    return 'sem_dados';
+  }
+
+  String _athleteStatusLabel(Map<String, dynamic> athlete) {
+    switch (_athleteStatusKey(athlete)) {
+      case 'elite':
+        return 'Elite';
+      case 'bom':
+        return 'Boa';
+      case 'atencao':
+        return 'Atenção';
+      case 'critico':
+        return 'Crítico';
+      default:
+        return 'Sem dados';
+    }
+  }
+
+  Color _athleteStatusColor(Map<String, dynamic> athlete) {
+    switch (_athleteStatusKey(athlete)) {
+      case 'elite':
+        return olympusSuccess;
+      case 'bom':
+        return olympusLightBlue;
+      case 'atencao':
+        return olympusWarning;
+      case 'critico':
+        return olympusDanger;
+      default:
+        return olympusMuted;
+    }
   }
 
   Future<void> _loadAthletes() async {
@@ -84,10 +354,16 @@ class _AdminAthletesStatisticsListPageState
           .neq('user_type', 'admin')
           .order('full_name', ascending: true);
 
+      final athletes = List<Map<String, dynamic>>.from(rows as List);
+      final stats = await _loadAthletesStats(
+        athletes.map((athlete) => _asString(athlete['id'])),
+      );
+
       if (!mounted) return;
 
       setState(() {
-        _athletes = List<Map<String, dynamic>>.from(rows as List);
+        _athletes = athletes;
+        _athleteStats = stats;
         _loading = false;
       });
     } catch (e) {
@@ -146,6 +422,16 @@ class _AdminAthletesStatisticsListPageState
       final position = _asString(athlete['court_position']).toLowerCase();
       final level = _asString(athlete['performance_level']).toLowerCase();
       final gender = _asString(athlete['gender']).toLowerCase();
+      final statusKey = _athleteStatusKey(athlete);
+      final statusLabel = _athleteStatusLabel(athlete).toLowerCase();
+      final normalizedStatusLabel = statusLabel
+          .replaceAll('ç', 'c')
+          .replaceAll('ã', 'a')
+          .replaceAll('í', 'i');
+
+      if (_selectedStatus.isNotEmpty && statusKey != _selectedStatus) {
+        return false;
+      }
 
       if (_selectedGender.isNotEmpty) {
         final selected = _selectedGender.toLowerCase();
@@ -163,7 +449,9 @@ class _AdminAthletesStatisticsListPageState
           email.contains(query) ||
           phone.contains(query) ||
           position.contains(query) ||
-          level.contains(query);
+          level.contains(query) ||
+          statusLabel.contains(query) ||
+          normalizedStatusLabel.contains(query);
     }).toList();
   }
 
@@ -372,6 +660,55 @@ class _AdminAthletesStatisticsListPageState
               ],
             ),
           ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Status do atleta',
+              style: TextStyle(
+                color: olympusMuted.withOpacity(0.90),
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(height: 7),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _filterChip(
+                  label: 'Todos',
+                  selected: _selectedStatus.isEmpty,
+                  onTap: () => setState(() => _selectedStatus = ''),
+                ),
+                const SizedBox(width: 8),
+                _statusFilterChip(
+                  label: 'Elite',
+                  value: 'elite',
+                  color: olympusSuccess,
+                ),
+                const SizedBox(width: 8),
+                _statusFilterChip(
+                  label: 'Boa',
+                  value: 'bom',
+                  color: olympusLightBlue,
+                ),
+                const SizedBox(width: 8),
+                _statusFilterChip(
+                  label: 'Atenção',
+                  value: 'atencao',
+                  color: olympusWarning,
+                ),
+                const SizedBox(width: 8),
+                _statusFilterChip(
+                  label: 'Crítico',
+                  value: 'critico',
+                  color: olympusDanger,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -399,6 +736,31 @@ class _AdminAthletesStatisticsListPageState
     );
   }
 
+  Widget _statusFilterChip({
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    final selected = _selectedStatus == value;
+
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      showCheckmark: false,
+      selectedColor: color.withOpacity(0.18),
+      backgroundColor: olympusBg,
+      labelStyle: TextStyle(
+        color: selected ? color : olympusMuted,
+        fontWeight: FontWeight.w900,
+      ),
+      side: BorderSide(
+        color: selected ? color : olympusBorder,
+      ),
+      onSelected: (_) =>
+          setState(() => _selectedStatus = selected ? '' : value),
+    );
+  }
+
   Widget _athleteCard(Map<String, dynamic> athlete) {
     final name = _asString(athlete['full_name']).isEmpty
         ? 'Sem nome'
@@ -410,6 +772,9 @@ class _AdminAthletesStatisticsListPageState
     final gender = _genderLabel(_asString(athlete['gender']));
     final level = _asString(athlete['performance_level']);
     final email = _asString(athlete['email']);
+    final stats = _statsFor(athlete);
+    final statusColor = _athleteStatusColor(athlete);
+    final statusLabel = _athleteStatusLabel(athlete);
 
     return Container(
       margin: EdgeInsets.zero,
@@ -424,12 +789,18 @@ class _AdminAthletesStatisticsListPageState
               child: Ink(
                 padding: const EdgeInsets.all(13),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.94),
+                  color: Color.alphaBlend(
+                    statusColor.withOpacity(0.10),
+                    Colors.white.withOpacity(0.94),
+                  ),
                   borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: Colors.white.withOpacity(0.54)),
+                  border: Border.all(
+                    color: statusColor.withOpacity(0.42),
+                    width: 1.2,
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.12),
+                      color: statusColor.withOpacity(0.12),
                       blurRadius: 14,
                       offset: const Offset(0, 7),
                     ),
@@ -437,21 +808,32 @@ class _AdminAthletesStatisticsListPageState
                 ),
                 child: Row(
                   children: [
-                    CircleAvatar(
-                      radius: 29,
-                      backgroundColor: olympusGold,
-                      backgroundImage:
-                          avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-                      child: avatarUrl.isEmpty
-                          ? Text(
-                              _initials(name),
-                              style: const TextStyle(
-                                color: olympusBlue,
-                                fontSize: 19,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            )
-                          : null,
+                    Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: statusColor.withOpacity(0.78),
+                          width: 2,
+                        ),
+                      ),
+                      child: CircleAvatar(
+                        radius: 29,
+                        backgroundColor: olympusGold,
+                        backgroundImage: avatarUrl.isNotEmpty
+                            ? NetworkImage(avatarUrl)
+                            : null,
+                        child: avatarUrl.isEmpty
+                            ? Text(
+                                _initials(name),
+                                style: const TextStyle(
+                                  color: olympusBlue,
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              )
+                            : null,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -479,8 +861,37 @@ class _AdminAthletesStatisticsListPageState
                               fontWeight: FontWeight.w700,
                             ),
                           ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 5,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              _miniStatusBadge(
+                                label: statusLabel,
+                                color: statusColor,
+                              ),
+                              _miniInfoBadge(
+                                label: stats.baseFrequencia == 0
+                                    ? '--'
+                                    : '${(stats.presenceRate * 100).round()}%',
+                                icon: Icons.fact_check_rounded,
+                                color: statusColor,
+                              ),
+                              _miniInfoBadge(
+                                label: '${stats.destaques}',
+                                icon: Icons.star_rounded,
+                                color: olympusSuccess,
+                              ),
+                              _miniInfoBadge(
+                                label: '${stats.atencoes}',
+                                icon: Icons.warning_amber_rounded,
+                                color: olympusWarning,
+                              ),
+                            ],
+                          ),
                           if (level.isNotEmpty || email.isNotEmpty) ...[
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 5),
                             Text(
                               level.isNotEmpty ? level : email,
                               maxLines: 1,
@@ -500,15 +911,15 @@ class _AdminAthletesStatisticsListPageState
                       width: 42,
                       height: 42,
                       decoration: BoxDecoration(
-                        color: olympusPurple.withOpacity(0.10),
+                        color: statusColor.withOpacity(0.13),
                         borderRadius: BorderRadius.circular(15),
                         border: Border.all(
-                          color: olympusPurple.withOpacity(0.18),
+                          color: statusColor.withOpacity(0.24),
                         ),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.bar_chart_rounded,
-                        color: olympusPurple,
+                        color: statusColor,
                       ),
                     ),
                   ],
@@ -517,6 +928,58 @@ class _AdminAthletesStatisticsListPageState
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _miniStatusBadge({
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.13),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.26)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  Widget _miniInfoBadge({
+    required String label,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.09),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 12),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -650,6 +1113,47 @@ class _AdminAthletesStatisticsListPageState
           _body(),
         ],
       ),
+    );
+  }
+}
+
+class _AdminAthleteStats {
+  const _AdminAthleteStats({
+    required this.presencas,
+    required this.faltas,
+    required this.destaques,
+    required this.atencoes,
+  });
+
+  const _AdminAthleteStats.empty()
+      : presencas = 0,
+        faltas = 0,
+        destaques = 0,
+        atencoes = 0;
+
+  final int presencas;
+  final int faltas;
+  final int destaques;
+  final int atencoes;
+
+  int get baseFrequencia => presencas + faltas;
+
+  double get presenceRate {
+    if (baseFrequencia <= 0) return 0;
+    return (presencas / baseFrequencia).clamp(0.0, 1.0).toDouble();
+  }
+
+  _AdminAthleteStats copyWith({
+    int? presencas,
+    int? faltas,
+    int? destaques,
+    int? atencoes,
+  }) {
+    return _AdminAthleteStats(
+      presencas: presencas ?? this.presencas,
+      faltas: faltas ?? this.faltas,
+      destaques: destaques ?? this.destaques,
+      atencoes: atencoes ?? this.atencoes,
     );
   }
 }
