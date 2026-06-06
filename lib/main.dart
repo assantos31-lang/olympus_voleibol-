@@ -12,7 +12,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'firebase_options.dart';
 import 'pages/admin_home_page.dart';
 import 'pages/admin_athletes_statistics_list_page.dart';
+import 'pages/admin_coach_evaluations_page.dart';
 import 'pages/athlete_dashboard_page.dart';
+import 'pages/athlete_coach_evaluation_page.dart';
 import 'pages/chat_rooms_page.dart';
 import 'pages/complete_profile_page.dart';
 import 'pages/dashboard_router_page.dart';
@@ -124,6 +126,10 @@ class MyApp extends StatelessWidget {
         '/admin-home': (context) => const AdminHomePage(),
         '/admin-athletes-statistics': (context) =>
             const AdminAthletesStatisticsListPage(),
+        '/athlete-coach-evaluation': (context) =>
+            const AthleteCoachEvaluationPage(),
+        '/admin-coach-evaluations': (context) =>
+            const AdminCoachEvaluationsPage(),
         '/chat-rooms': (context) => const ChatRoomsPage(),
       },
     );

@@ -260,14 +260,33 @@ class PushTokenService {
     debugPrint(payload.toString());
 
     try {
-      await _supabase
-          .from('user_push_tokens')
-          .upsert(payload, onConflict: 'installation_id');
+      await _supabase.rpc(
+        'register_user_push_token',
+        params: {
+          'p_installation_id': installationId,
+          'p_device_token': token,
+          'p_platform': Platform.isIOS ? 'ios' : 'android',
+          'p_permission_status': permissionStatus,
+          'p_app_version': version,
+        },
+      );
 
-      debugPrint('[PushTokenService] ✅ salvo');
-    } catch (e, st) {
-      debugPrint('[PushTokenService] ❌ erro upsert: $e');
-      debugPrintStack(stackTrace: st);
+      debugPrint('[PushTokenService] ✅ salvo via RPC');
+    } catch (rpcError, rpcStack) {
+      debugPrint(
+          '[PushTokenService] ❌ erro RPC register_user_push_token: $rpcError');
+      debugPrintStack(stackTrace: rpcStack);
+
+      try {
+        await _supabase
+            .from('user_push_tokens')
+            .upsert(payload, onConflict: 'installation_id');
+
+        debugPrint('[PushTokenService] ✅ salvo via fallback upsert');
+      } catch (e, st) {
+        debugPrint('[PushTokenService] ❌ erro fallback upsert: $e');
+        debugPrintStack(stackTrace: st);
+      }
     }
   }
 

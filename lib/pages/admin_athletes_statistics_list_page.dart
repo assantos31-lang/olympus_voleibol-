@@ -58,6 +58,8 @@ class _AdminAthletesStatisticsListPageState
   static const Color olympusSuccess = Color(0xFF16A34A);
   static const Color olympusWarning = Color(0xFFF59E0B);
   static const Color olympusDanger = Color(0xFFDC2626);
+  static const String _eventsEmbedFk = 'convocations_event_id_fkey';
+  static final DateTime _statsRuleStartDate = DateTime(2026, 5, 1);
 
   bool _loading = true;
   String? _error;
@@ -163,23 +165,99 @@ class _AdminAthletesStatisticsListPageState
         raw == 'checkin_atrasado';
   }
 
-  bool _isExplicitAbsenceStatus(dynamic value) {
+  String _normalizeGenderValue(dynamic value) {
     final raw = (value ?? '').toString().trim().toLowerCase();
 
-    return raw == 'ausente' ||
-        raw == 'absence' ||
-        raw == 'absent' ||
-        raw == 'faltou' ||
-        raw == 'falta' ||
-        raw == 'no_show' ||
-        raw == 'nao_compareceu' ||
-        raw == 'não_compareceu' ||
-        raw == 'nao compareceu' ||
-        raw == 'não compareceu';
+    if (raw == 'f' ||
+        raw == 'female' ||
+        raw == 'feminino' ||
+        raw.contains('feminino')) {
+      return 'feminino';
+    }
+
+    if (raw == 'm' ||
+        raw == 'male' ||
+        raw == 'masculino' ||
+        raw.contains('masculino')) {
+      return 'masculino';
+    }
+
+    return raw;
+  }
+
+  DateTime? _parseEventDateTime(dynamic dateValue, dynamic timeValue) {
+    final eventDate = (dateValue ?? '').toString().trim();
+    final eventTime = (timeValue ?? '').toString().trim();
+
+    if (eventDate.isEmpty) return null;
+
+    try {
+      if (eventDate.contains('/')) {
+        final d = eventDate.split('/');
+        final t = eventTime.isEmpty ? ['0', '0'] : eventTime.split(':');
+
+        if (d.length == 3 && t.length >= 2) {
+          return DateTime(
+            int.parse(d[2]),
+            int.parse(d[1]),
+            int.parse(d[0]),
+            int.parse(t[0]),
+            int.parse(t[1]),
+          );
+        }
+      }
+
+      final iso = DateTime.tryParse(eventDate);
+      if (iso != null) {
+        if (eventTime.isEmpty) return iso.toLocal();
+
+        final t = eventTime.split(':');
+        if (t.length >= 2) {
+          return DateTime(
+            iso.year,
+            iso.month,
+            iso.day,
+            int.parse(t[0]),
+            int.parse(t[1]),
+          );
+        }
+
+        return iso.toLocal();
+      }
+    } catch (_) {
+      return null;
+    }
+
+    return null;
+  }
+
+  bool _isEventOnOrAfterStatsRuleStart(DateTime? eventDate) {
+    if (eventDate == null) return false;
+    final normalized = DateTime(eventDate.year, eventDate.month, eventDate.day);
+    return !normalized.isBefore(_statsRuleStartDate);
+  }
+
+  bool _eventMatchesAthleteGender(
+    Map<String, dynamic> event,
+    Map<String, dynamic>? athlete,
+  ) {
+    final athleteGender = _normalizeGenderValue(athlete?['gender']);
+    if (athleteGender.isEmpty) return true;
+
+    final eventGender = _normalizeGenderValue(event['gender']);
+    if (eventGender.isEmpty) return true;
+
+    return eventGender == athleteGender;
+  }
+
+  bool _isTrainingEvent(Map<String, dynamic> event) {
+    final type = (event['event_type'] ?? '').toString().toLowerCase().trim();
+    return type == 'treino';
   }
 
   Future<Map<String, _AdminAthleteStats>> _loadAthletesStats(
     Iterable<String> athleteIds,
+    List<Map<String, dynamic>> athletes,
   ) async {
     final ids = athleteIds
         .map((id) => id.trim())
@@ -217,29 +295,94 @@ class _AdminAthletesStatisticsListPageState
     }
 
     try {
-      final rows = await _supabase
-          .from('checkins')
-          .select('user_id, event_id, check_in_status')
-          .inFilter('user_id', ids);
+      final athletesById = {
+        for (final athlete in athletes)
+          (athlete['id'] ?? '').toString(): athlete,
+      };
 
-      final presenceByAthlete = <String, Set<String>>{};
-      final explicitAbsenceByAthlete = <String, Set<String>>{};
+      final convocationRows = await _supabase.from('convocations').select('''
+user_id,
+event_id,
+status,
+events!$_eventsEmbedFk (
+id,
+event_type,
+gender,
+event_date,
+event_time
+)
+''').inFilter('user_id', ids);
 
-      for (final row in List<Map<String, dynamic>>.from(rows as List)) {
+      final convokedTrainingEventIdsByAthlete = <String, Set<String>>{};
+      final expiredWithoutCheckinByAthlete = <String, Set<String>>{};
+      final now = DateTime.now();
+
+      for (final row in List<Map<String, dynamic>>.from(
+        convocationRows as List,
+      )) {
         final athleteId = (row['user_id'] ?? '').toString();
         final eventId = (row['event_id'] ?? '').toString();
 
         if (athleteId.isEmpty || eventId.isEmpty) continue;
 
-        if (_isCheckinDone(row['check_in_status'])) {
-          presenceByAthlete
-              .putIfAbsent(athleteId, () => <String>{})
-              .add(eventId);
+        final eventRaw = row['events'];
+        if (eventRaw is! Map) continue;
+
+        final event = Map<String, dynamic>.from(eventRaw);
+        if (!_isTrainingEvent(event)) continue;
+
+        final eventDate = _parseEventDateTime(
+          event['event_date'],
+          event['event_time'],
+        );
+        if (!_isEventOnOrAfterStatsRuleStart(eventDate)) continue;
+
+        if (!_eventMatchesAthleteGender(event, athletesById[athleteId])) {
           continue;
         }
 
-        if (_isExplicitAbsenceStatus(row['check_in_status'])) {
-          explicitAbsenceByAthlete
+        convokedTrainingEventIdsByAthlete
+            .putIfAbsent(athleteId, () => <String>{})
+            .add(eventId);
+
+        final checkinClosed = eventDate != null &&
+            now.isAfter(eventDate.add(const Duration(minutes: 30)));
+
+        if (checkinClosed) {
+          expiredWithoutCheckinByAthlete
+              .putIfAbsent(athleteId, () => <String>{})
+              .add(eventId);
+        }
+      }
+
+      final allTrainingEventIds = convokedTrainingEventIdsByAthlete.values
+          .expand((ids) => ids)
+          .toSet()
+          .toList();
+
+      final checkinRows = allTrainingEventIds.isEmpty
+          ? <dynamic>[]
+          : await _supabase
+              .from('checkins')
+              .select('user_id, event_id, check_in_status')
+              .inFilter('user_id', ids)
+              .inFilter('event_id', allTrainingEventIds);
+
+      final presenceByAthlete = <String, Set<String>>{};
+
+      for (final row in List<Map<String, dynamic>>.from(checkinRows as List)) {
+        final athleteId = (row['user_id'] ?? '').toString();
+        final eventId = (row['event_id'] ?? '').toString();
+
+        if (athleteId.isEmpty || eventId.isEmpty) continue;
+
+        final athleteTrainingEvents =
+            convokedTrainingEventIdsByAthlete[athleteId] ?? <String>{};
+
+        if (!athleteTrainingEvents.contains(eventId)) continue;
+
+        if (_isCheckinDone(row['check_in_status'])) {
+          presenceByAthlete
               .putIfAbsent(athleteId, () => <String>{})
               .add(eventId);
         }
@@ -247,11 +390,12 @@ class _AdminAthletesStatisticsListPageState
 
       for (final athleteId in ids) {
         final presencas = presenceByAthlete[athleteId] ?? <String>{};
-        final faltas = explicitAbsenceByAthlete[athleteId] ?? <String>{};
+        final faltas = expiredWithoutCheckinByAthlete[athleteId] ?? <String>{};
 
-        // Mesma regra da estatística do atleta:
-        // presença por check-in válido; falta somente por ausência explícita.
-        // Pendente/vencido/convocado sem check-in NÃO vira falta.
+        // Mesma regra do card "Presença / Falta":
+        // Presença = check-in válido em treino convocado.
+        // Falta = treino convocado sem check-in após 30 minutos.
+        // A presença sempre prevalece sobre a falta.
         faltas.removeAll(presencas);
 
         final current = stats[athleteId] ?? const _AdminAthleteStats.empty();
@@ -261,7 +405,7 @@ class _AdminAthletesStatisticsListPageState
         );
       }
     } catch (e) {
-      debugPrint('Erro ao carregar check-ins dos atletas: $e');
+      debugPrint('Erro ao carregar presença/faltas dos atletas: $e');
     }
 
     return stats;
@@ -275,38 +419,30 @@ class _AdminAthletesStatisticsListPageState
   String _athleteStatusKey(Map<String, dynamic> athlete) {
     final stats = _statsFor(athlete);
     final hasFrequency = stats.baseFrequencia > 0;
-    final hasEvaluation = stats.destaques > 0 || stats.atencoes > 0;
 
-    if (!hasFrequency && !hasEvaluation) {
+    // Mesma regra do card "Presença / Falta"
+    // Elite >= 95%
+    // Boa >= 80%
+    // Atenção >= 60%
+    // Crítico < 60%
+
+    if (!hasFrequency) {
       return 'sem_dados';
     }
 
-    // Crítico fica reservado para frequência realmente baixa.
-    // Ponto de atenção NÃO deve transformar o atleta em crítico.
-    if (hasFrequency && stats.presenceRate < 0.60) {
-      return 'critico';
-    }
-
-    // Atenção cobre: frequência abaixo da meta, falta explícita ou pontos de atenção.
-    // Ex.: Douglas com ponto de atenção deve aparecer como "Atenção", não "Crítico".
-    if ((hasFrequency && stats.presenceRate < 0.80) ||
-        stats.faltas > 0 ||
-        stats.atencoes > 0) {
-      return 'atencao';
-    }
-
-    if (hasFrequency &&
-        stats.presenceRate >= 0.95 &&
-        stats.faltas == 0 &&
-        stats.destaques > 0) {
+    if (stats.presenceRate >= 0.95) {
       return 'elite';
     }
 
-    if ((hasFrequency && stats.presenceRate >= 0.80) || stats.destaques > 0) {
+    if (stats.presenceRate >= 0.80) {
       return 'bom';
     }
 
-    return 'sem_dados';
+    if (stats.presenceRate >= 0.60) {
+      return 'atencao';
+    }
+
+    return 'critico';
   }
 
   String _athleteStatusLabel(Map<String, dynamic> athlete) {
@@ -357,6 +493,7 @@ class _AdminAthletesStatisticsListPageState
       final athletes = List<Map<String, dynamic>>.from(rows as List);
       final stats = await _loadAthletesStats(
         athletes.map((athlete) => _asString(athlete['id'])),
+        athletes,
       );
 
       if (!mounted) return;

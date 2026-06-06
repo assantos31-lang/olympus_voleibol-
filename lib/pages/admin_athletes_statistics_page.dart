@@ -1231,9 +1231,6 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
           if (!_eventMatchesAthleteGender(row)) return false;
           if (!_isInsideTrainingPeriod(row, start)) return false;
 
-          final status = (row['status'] ?? '').toString().toLowerCase().trim();
-          if (status != 'accepted') return false;
-
           final eventId = (row['event_id'] ?? '').toString();
           if (eventId.isEmpty || doneEventIds.contains(eventId)) return false;
 
@@ -1316,14 +1313,10 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         continue;
       }
 
-      // ❌ Só marcamos falta para treino convocado e aceito.
-      // Recusados e pendentes seguem a mesma leitura da Agenda: não viram falta automática.
+      // ❌ Falta = treino convocado sem check-in após 30 minutos.
+      // Aceitos, pendentes, recusados ou qualquer outro status sem check-in
+      // entram como falta após o prazo.
       if (!convokedTrainingEventDates.containsKey(eventId)) continue;
-
-      final convocation = _convocationForEventId(eventId);
-      final status =
-          (convocation?['status'] ?? '').toString().toLowerCase().trim();
-      if (status != 'accepted') continue;
 
       final checkinClosed = today.isAfter(
         eventDate.add(const Duration(minutes: 30)),
@@ -2878,7 +2871,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             'Base atual: ${_formatPercentValue(_presenceRate)} de presença e ${_formatPercentValue(_absenceRate)} de faltas sobre $_trainingBaseCount treino(s) já consolidado(s).\n\n'
                 'Presenças: $_trainingPresenceCount • Faltas: $_trainingAcceptedAbsentCount • Pendentes: $_trainingPendingCount • Recusados: $_trainingRejectedCount.\n\n'
                 'Presença = check-ins realizados em treinos convocados.\n'
-                'Falta = treinos aceitos sem check-in após 30 minutos.\n\n'
+                'Falta = treinos convocados sem check-in após 30 minutos.\n\n'
                 'Regra válida ${_periodRuleLabel()}.',
       },
       {
@@ -2991,7 +2984,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             _infoButton(
               title: 'Presença',
               explanation:
-                  'Presença = check-ins realizados ÷ treinos já consolidados, incluindo check-in atrasado lançado pelo admin. Falta = treinos aceitos sem check-in depois do prazo de 30 minutos. Treinos futuros ou ainda dentro do prazo ficam pendentes e não entram no percentual. Esta tela considera somente treinos a partir de 01/05/2026. Quando o evento possui gênero, o cálculo considera apenas treinos do mesmo gênero cadastrado no perfil da atleta.',
+                  'Presença = check-ins realizados ÷ treinos já consolidados, incluindo check-in atrasado lançado pelo admin. Falta = treinos convocados sem check-in depois do prazo de 30 minutos. Treinos futuros ou ainda dentro do prazo ficam pendentes e não entram no percentual. Esta tela considera somente treinos a partir de 01/05/2026. Quando o evento possui gênero, o cálculo considera apenas treinos do mesmo gênero cadastrado no perfil da atleta.',
             ),
           ],
         ),
@@ -3187,7 +3180,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                         _infoButton(
                           title: 'Presença anual',
                           explanation:
-                              'Gráfico anual com presenças e faltas por mês. Presença é check-in realizado em treino convocado, incluindo check-in atrasado lançado pelo admin. Falta é treino aceito cujo prazo de check-in expirou sem presença registrada. A regra considera treinos a partir de 01/05/2026 e o gênero do atleta quando o evento possui gender.',
+                              'Gráfico anual com presenças e faltas por mês. Presença é check-in realizado em treino convocado, incluindo check-in atrasado lançado pelo admin. Falta é treino convocado cujo prazo de check-in expirou sem presença registrada. A regra considera treinos a partir de 01/05/2026 e o gênero do atleta quando o evento possui gender.',
                           color: olympusGold,
                         ),
                       ],

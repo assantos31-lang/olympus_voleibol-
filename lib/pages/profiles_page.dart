@@ -26,6 +26,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
   bool _isCheckingAccess = true;
   String _selectedGenderFilter = 'Todos';
   String _selectedUserTypeFilter = 'Todos';
+  bool _showInactiveUsers = false;
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
@@ -197,6 +198,45 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
   }
 
+  bool _isProfileActive(Map<String, dynamic> profile) {
+    return profile['is_active'] != false;
+  }
+
+  Future<void> _setProfileActive(
+      Map<String, dynamic> profile, bool isActive) async {
+    final id = (profile['id'] ?? '').toString();
+    if (id.isEmpty) return;
+
+    final name = (profile['full_name'] ?? 'usuário').toString();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isActive ? 'Reativar usuário' : 'Inativar usuário'),
+        content: Text(
+          isActive
+              ? 'Deseja reativar o acesso de $name ao aplicativo?'
+              : 'Deseja tornar $name inativo? O acesso ao aplicativo ficará restrito imediatamente.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(isActive ? 'Reativar' : 'Inativar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    await updateProfile(id, {
+      'is_active': isActive,
+    });
+  }
+
   void _confirmDelete(String id) {
     showDialog(
       context: context,
@@ -218,6 +258,142 @@ class _ProfilesPageState extends State<ProfilesPage> {
               foregroundColor: Colors.white,
             ),
             child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _normalizeCoachTeamGender(dynamic value) {
+    final normalized = (value ?? '').toString().trim().toLowerCase();
+    if (normalized == 'feminino') return 'Feminino';
+    if (normalized == 'masculino') return 'Masculino';
+    return 'all';
+  }
+
+  String _shortCoachTeamGenderLabel(String value) {
+    switch (_normalizeCoachTeamGender(value)) {
+      case 'Feminino':
+        return 'Feminino';
+      case 'Masculino':
+        return 'Masculino';
+      default:
+        return 'Ambos';
+    }
+  }
+
+  Widget _buildCoachTeamPermissionsCard({
+    required String selectedValue,
+    required ValueChanged<String> onSelected,
+  }) {
+    final options = const [
+      {'value': 'Feminino', 'label': 'Feminino', 'icon': Icons.female_rounded},
+      {'value': 'Masculino', 'label': 'Masculino', 'icon': Icons.male_rounded},
+      {'value': 'all', 'label': 'Ambos', 'icon': Icons.groups_2_rounded},
+    ];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            olympusBlue.withOpacity(0.95),
+            olympusLightBlue.withOpacity(0.88),
+          ],
+        ),
+        border: Border.all(color: olympusGold.withOpacity(0.45)),
+        boxShadow: [
+          BoxShadow(
+            color: olympusBlue.withOpacity(0.22),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  color: Colors.white.withOpacity(0.12),
+                  border: Border.all(color: Colors.white.withOpacity(0.18)),
+                ),
+                child: const Icon(
+                  Icons.manage_accounts_rounded,
+                  color: Colors.white,
+                  size: 23,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Time do treinador',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Define quais atletas, avaliações e relatórios este técnico acompanha.',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.82),
+                        fontSize: 12.2,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: options.map((item) {
+              final value = item['value']! as String;
+              final label = item['label']! as String;
+              final icon = item['icon']! as IconData;
+              final selected =
+                  _normalizeCoachTeamGender(selectedValue) == value;
+
+              return ChoiceChip(
+                selected: selected,
+                showCheckmark: false,
+                avatar: Icon(
+                  icon,
+                  size: 17,
+                  color: selected ? olympusBlue : olympusBlue.withOpacity(0.88),
+                ),
+                label: Text(label),
+                selectedColor: olympusGold,
+                backgroundColor: const Color(0xFFF4F7FB),
+                side: BorderSide(
+                  color:
+                      selected ? olympusGold : Colors.white.withOpacity(0.70),
+                ),
+                labelStyle: TextStyle(
+                  color: selected ? olympusBlue : olympusBlue.withOpacity(0.88),
+                  fontWeight: FontWeight.w900,
+                ),
+                onSelected: (_) => onSelected(value),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -421,6 +597,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
         visibilityPermissions['show_in_evaluations'] ?? false;
     final isAthleteProfile =
         (profile['user_type'] ?? '').toString().trim() == 'athlete';
+    final isCoachProfile =
+        (profile['user_type'] ?? '').toString().trim() == 'coach';
+    String selectedCoachTeamGender =
+        _normalizeCoachTeamGender(profile['coach_team_gender']);
 
     bool showMonthFilter = agendaFilters['show_month_filter'] ?? true;
     bool showStatusFilter = agendaFilters['show_status_filter'] ?? true;
@@ -472,20 +652,52 @@ class _ProfilesPageState extends State<ProfilesPage> {
       );
     }
 
+    Future<void> saveCoachTeamGender() async {
+      await _permissionService.updateCoachTeamGender(
+        userId: userId,
+        coachTeamGender: selectedCoachTeamGender,
+      );
+      profile['coach_team_gender'] = selectedCoachTeamGender;
+      await fetchProfiles();
+    }
+
     await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFFF7FAFC),
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+          contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
           title: Row(
             children: [
-              Icon(Icons.lock_outline, color: olympusGold),
-              const SizedBox(width: 8),
-              const Text('Gerenciar Permissões'),
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF1E3A5F), Color(0xFF2C5F8D)],
+                  ),
+                ),
+                child: const Icon(Icons.lock_outline, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Gerenciar Permissões',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
             ],
           ),
           content: ConstrainedBox(
             constraints: const BoxConstraints(
-              maxWidth: 500,
+              maxWidth: 560,
             ),
             child: SingleChildScrollView(
               child: Column(
@@ -500,6 +712,39 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  if (isCoachProfile)
+                    _buildCoachTeamPermissionsCard(
+                      selectedValue: selectedCoachTeamGender,
+                      onSelected: (value) async {
+                        setDialogState(() {
+                          selectedCoachTeamGender = value;
+                        });
+                        try {
+                          await saveCoachTeamGender();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Time do treinador atualizado para ${_shortCoachTeamGenderLabel(value)}.',
+                                ),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Erro ao atualizar time do treinador: $e',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    ),
                   const Text(
                     'Permissões de Acesso:',
                     style: TextStyle(
@@ -1374,6 +1619,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           'full_name': nameCtrl.text.trim(),
                           'phone': phoneCtrl.text.replaceAll(RegExp(r'\D'), ''),
                           'user_type': selectedType,
+                          'is_active': true,
                           'updated_at': DateTime.now().toIso8601String(),
                         }).eq('id', userId);
 
@@ -1451,13 +1697,15 @@ class _ProfilesPageState extends State<ProfilesPage> {
     final filtered = profiles.where((profile) {
       final gender = (profile['gender'] ?? '').toString().trim();
       final userType = (profile['user_type'] ?? '').toString().trim();
+      final isActive = _isProfileActive(profile);
 
+      final matchesStatus = _showInactiveUsers ? !isActive : isActive;
       final matchesGender =
           _selectedGenderFilter == 'Todos' || gender == _selectedGenderFilter;
       final matchesUserType = _selectedUserTypeFilter == 'Todos' ||
           userType == _selectedUserTypeFilter;
 
-      return matchesGender && matchesUserType;
+      return matchesStatus && matchesGender && matchesUserType;
     }).toList();
 
     filtered.sort((a, b) {
@@ -1472,16 +1720,16 @@ class _ProfilesPageState extends State<ProfilesPage> {
   String _getSelectedFiltersLabel() {
     if (_selectedGenderFilter == 'Todos' &&
         _selectedUserTypeFilter == 'Todos') {
-      return 'Todos os perfis';
+      return _showInactiveUsers ? 'Usuários inativos' : 'Usuários ativos';
     }
     if (_selectedGenderFilter != 'Todos' &&
         _selectedUserTypeFilter != 'Todos') {
-      return '${_getTypeLabel(_selectedUserTypeFilter)} • $_selectedGenderFilter';
+      return '${_showInactiveUsers ? 'Inativos' : 'Ativos'} • ${_getTypeLabel(_selectedUserTypeFilter)} • $_selectedGenderFilter';
     }
     if (_selectedUserTypeFilter != 'Todos') {
-      return _getTypeLabel(_selectedUserTypeFilter);
+      return '${_showInactiveUsers ? 'Inativos' : 'Ativos'} • ${_getTypeLabel(_selectedUserTypeFilter)}';
     }
-    return _selectedGenderFilter;
+    return '${_showInactiveUsers ? 'Inativos' : 'Ativos'} • $_selectedGenderFilter';
   }
 
   Widget _buildFilterDropdown({
@@ -1559,6 +1807,66 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
   }
 
+  Widget _buildStatusToggleButton({
+    required IconData icon,
+    required String title,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: selected
+                ? [
+                    olympusGold.withOpacity(0.34),
+                    olympusGold.withOpacity(0.18),
+                  ]
+                : [
+                    Colors.white.withOpacity(0.10),
+                    Colors.white.withOpacity(0.06),
+                  ],
+          ),
+          border: Border.all(
+            color: selected
+                ? olympusGold.withOpacity(0.70)
+                : Colors.white.withOpacity(0.16),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: selected ? olympusGold : Colors.white.withOpacity(0.80),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+                  fontSize: 12.5,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildFiltersBar(int resultsCount) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
@@ -1602,6 +1910,36 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     _selectedUserTypeFilter = value;
                   });
                 },
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatusToggleButton(
+                  icon: Icons.verified_user_outlined,
+                  title: 'Usuários Ativos',
+                  selected: !_showInactiveUsers,
+                  onTap: () {
+                    setState(() {
+                      _showInactiveUsers = false;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildStatusToggleButton(
+                  icon: Icons.person_off_outlined,
+                  title: 'Usuários Inativos',
+                  selected: _showInactiveUsers,
+                  onTap: () {
+                    setState(() {
+                      _showInactiveUsers = true;
+                    });
+                  },
+                ),
               ),
             ],
           ),
@@ -1663,6 +2001,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
     final phone = (profile['phone'] ?? '').toString();
     final cpf = (profile['cpf'] ?? '').toString();
     final gender = (profile['gender'] ?? '').toString();
+    final coachTeamGender = (profile['coach_team_gender'] ?? '').toString();
+    final isActive = _isProfileActive(profile);
 
     Color cardColor;
     if (gender == 'Masculino') {
@@ -1671,6 +2011,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
       cardColor = Colors.purple;
     } else {
       cardColor = Colors.white;
+    }
+
+    if (!isActive) {
+      cardColor = Colors.grey;
     }
 
     return Container(
@@ -1793,6 +2137,39 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                   ],
                                 ),
                               ),
+                              if (!isActive)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.redAccent.withOpacity(0.18),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: Colors.redAccent.withOpacity(0.35),
+                                    ),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.block_rounded,
+                                        size: 14,
+                                        color: Colors.white,
+                                      ),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Inativo',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               if (gender.isNotEmpty)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
@@ -1817,6 +2194,40 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                       const SizedBox(width: 6),
                                       Text(
                                         gender,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              if (userType == 'coach')
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: olympusGold.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: olympusGold.withOpacity(0.28),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.groups_2_outlined,
+                                        size: 14,
+                                        color: Colors.white,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        _getCoachTeamGenderLabel(
+                                            coachTeamGender),
                                         style: const TextStyle(
                                           fontSize: 12,
                                           color: Colors.white,
@@ -1856,6 +2267,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           _showPermissionsDialog(profile);
                         } else if (value == 'reset_password') {
                           _showResetPasswordDialog(profile);
+                        } else if (value == 'toggle_active') {
+                          _setProfileActive(
+                              profile, !_isProfileActive(profile));
                         }
                       },
                       itemBuilder: (context) => const [
@@ -1874,6 +2288,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         PopupMenuItem(
                           value: 'reset_password',
                           child: Text('Resetar senha'),
+                        ),
+                        PopupMenuItem(
+                          value: 'toggle_active',
+                          child: Text('Alterar status'),
                         ),
                       ],
                     ),
@@ -2132,6 +2550,20 @@ class _ProfilesPageState extends State<ProfilesPage> {
         elevation: 4,
       ),
     );
+  }
+
+  String _getCoachTeamGenderLabel(String? value) {
+    switch ((value ?? '').trim().toLowerCase()) {
+      case 'masculino':
+        return 'Time masculino';
+      case 'feminino':
+        return 'Time feminino';
+      case 'ambos':
+      case 'all':
+        return 'Times masculino e feminino';
+      default:
+        return 'Time não definido';
+    }
   }
 
   String _formatCpf(String? cpf) {
@@ -2531,8 +2963,15 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                       DropdownMenuItem(
                           value: 'admin', child: Text('Administrador')),
                     ],
-                    onChanged: (value) =>
-                        setState(() => _selectedUserType = value!),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _selectedUserType = value;
+                        if (_selectedUserType != 'athlete') {
+                          _selectedPosition = '';
+                        }
+                      });
+                    },
                     validator: (value) =>
                         value == null ? 'Campo obrigatório' : null,
                   ),
@@ -2941,6 +3380,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
     final data = <String, dynamic>{
       'full_name': _fullNameController.text.trim(),
       'user_type': _selectedUserType,
+      if (widget.profile == null) 'is_active': true,
       'phone': _removeMask(_phoneController.text),
       if (_birthDateController.text.isNotEmpty)
         'birth_date': _birthDateController.text,

@@ -832,6 +832,20 @@ class _AdminHomePageState extends State<AdminHomePage> {
                             const SizedBox(height: 26),
                             _buildFuturisticButton(
                               context: context,
+                              label: 'Avaliações dos Treinadores',
+                              icon: Icons.rate_review_rounded,
+                              accentColor: const Color(0xFF64FFDA),
+                              isPrimary: true,
+                              onTap: () {
+                                Navigator.pushNamed(
+                                  context,
+                                  '/admin-coach-evaluations',
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            _buildFuturisticButton(
+                              context: context,
                               label: 'Notificações',
                               icon: Icons.notifications_active_outlined,
                               accentColor: const Color(0xFFFFD166),

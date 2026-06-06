@@ -110,12 +110,28 @@ class _CoachChampionshipAthleteEvaluationPageState
       icon: Icons.front_hand_rounded,
     ),
     ChampionshipAthleteFoundationMetric(
+      title: 'Passe',
+      positiveLabel: 'Bom',
+      negativeLabel: 'Erro',
+      positiveField: 'passe_bom',
+      negativeField: 'passe_erro',
+      icon: Icons.swap_horiz_rounded,
+    ),
+    ChampionshipAthleteFoundationMetric(
       title: 'Ataque',
       positiveLabel: 'Ponto',
       negativeLabel: 'Erro',
       positiveField: 'ataque_ponto',
       negativeField: 'ataque_erro',
       icon: Icons.bolt_rounded,
+    ),
+    ChampionshipAthleteFoundationMetric(
+      title: 'Largada de bola',
+      positiveLabel: 'Boa',
+      negativeLabel: 'Erro',
+      positiveField: 'largada_bola_boa',
+      negativeField: 'largada_bola_erro',
+      icon: Icons.touch_app_rounded,
     ),
     ChampionshipAthleteFoundationMetric(
       title: 'Bloqueio',
@@ -212,6 +228,29 @@ class _CoachChampionshipAthleteEvaluationPageState
         weight: 2,
       ),
     ],
+    'Largada de bola': [
+      ChampionshipScoutActionOption(
+        label: 'Ponto de largada',
+        description: 'Largada caiu direto na quadra adversária.',
+        quality: 'elite',
+        impact: 'ponto_direto',
+        weight: 4,
+      ),
+      ChampionshipScoutActionOption(
+        label: 'Largada tática',
+        description: 'Largada tirou a defesa do sistema.',
+        quality: 'boa',
+        impact: 'vantagem',
+        weight: 3,
+      ),
+      ChampionshipScoutActionOption(
+        label: 'Largada inteligente',
+        description: 'Boa leitura do espaço vazio da defesa.',
+        quality: 'boa',
+        impact: 'vantagem',
+        weight: 2,
+      ),
+    ],
     'Bloqueio': [
       ChampionshipScoutActionOption(
         label: 'Ponto de bloqueio',
@@ -256,6 +295,29 @@ class _CoachChampionshipAthleteEvaluationPageState
         quality: 'elite',
         impact: 'vantagem',
         weight: 3,
+      ),
+    ],
+    'Passe': [
+      ChampionshipScoutActionOption(
+        label: 'Passe A',
+        description: 'Passe perfeito, permite todas as opções ofensivas.',
+        quality: 'elite',
+        impact: 'vantagem',
+        weight: 3,
+      ),
+      ChampionshipScoutActionOption(
+        label: 'Passe B',
+        description: 'Passe controlado, mantém a jogada organizada.',
+        quality: 'boa',
+        impact: 'neutro',
+        weight: 2,
+      ),
+      ChampionshipScoutActionOption(
+        label: 'Passe de cobertura',
+        description: 'Cobertura ou ajuste que manteve a bola viva.',
+        quality: 'boa',
+        impact: 'neutro',
+        weight: 2,
       ),
     ],
     'Defesa': [
@@ -403,6 +465,29 @@ class _CoachChampionshipAthleteEvaluationPageState
         weight: -3,
       ),
     ],
+    'Largada de bola': [
+      ChampionshipScoutActionOption(
+        label: 'Rede',
+        description: 'Largada parou na rede.',
+        quality: 'ruim',
+        impact: 'prejuizo',
+        weight: -3,
+      ),
+      ChampionshipScoutActionOption(
+        label: 'Fora',
+        description: 'Largada saiu pela lateral ou fundo.',
+        quality: 'ruim',
+        impact: 'prejuizo',
+        weight: -3,
+      ),
+      ChampionshipScoutActionOption(
+        label: 'Previsível',
+        description: 'Largada facilitou a defesa adversária.',
+        quality: 'regular',
+        impact: 'neutro',
+        weight: -1,
+      ),
+    ],
     'Bloqueio': [
       ChampionshipScoutActionOption(
         label: 'Rede',
@@ -472,6 +557,29 @@ class _CoachChampionshipAthleteEvaluationPageState
       ChampionshipScoutActionOption(
         label: 'Comunicação',
         description: 'Erro por falta de comunicação.',
+        quality: 'regular',
+        impact: 'prejuizo',
+        weight: -2,
+      ),
+    ],
+    'Passe': [
+      ChampionshipScoutActionOption(
+        label: 'Passe C',
+        description: 'Passe ruim, tirou o time do sistema.',
+        quality: 'ruim',
+        impact: 'prejuizo',
+        weight: -3,
+      ),
+      ChampionshipScoutActionOption(
+        label: 'Passe para fora',
+        description: 'Passe perdeu totalmente o controle.',
+        quality: 'ruim',
+        impact: 'prejuizo',
+        weight: -3,
+      ),
+      ChampionshipScoutActionOption(
+        label: 'Comunicação',
+        description: 'Erro de passe por falta de chamada.',
         quality: 'regular',
         impact: 'prejuizo',
         weight: -2,
@@ -564,10 +672,14 @@ class _CoachChampionshipAthleteEvaluationPageState
       'saque_erro': 0,
       'recepcao_boa': 0,
       'recepcao_erro': 0,
+      'passe_bom': 0,
+      'passe_erro': 0,
       'levantamento_bom': 0,
       'levantamento_erro': 0,
       'ataque_ponto': 0,
       'ataque_erro': 0,
+      'largada_bola_boa': 0,
+      'largada_bola_erro': 0,
       'bloqueio_ponto': 0,
       'bloqueio_erro': 0,
       'defesa_boa': 0,
@@ -1412,51 +1524,55 @@ class _CoachChampionshipAthleteEvaluationPageState
     }) {
       return InkWell(
         onTap: _saving ? null : onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         child: Container(
-          width: isMobile ? 34 : 36,
-          height: isMobile ? 34 : 36,
+          width: isMobile ? 30 : 34,
+          height: isMobile ? 30 : 34,
           decoration: BoxDecoration(
             color: color.withOpacity(0.10),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withOpacity(0.20)),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: color.withOpacity(0.22)),
           ),
-          child: Icon(icon, color: color, size: 18),
+          child: Icon(icon, color: color, size: 17),
         ),
       );
     }
 
-    Widget valueBox({
+    Widget valuePill({
       required String label,
       required int value,
       required Color color,
     }) {
       return Container(
-        width: isMobile ? 56 : 64,
-        padding: const EdgeInsets.symmetric(vertical: 7),
+        constraints: BoxConstraints(minWidth: isMobile ? 38 : 44),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
           color: color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: color.withOpacity(0.18)),
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               '$value',
               style: TextStyle(
                 color: color,
-                fontSize: 15,
+                fontSize: isMobile ? 14 : 15,
                 fontWeight: FontWeight.w900,
+                height: 1,
               ),
             ),
+            const SizedBox(height: 2),
             Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: color,
-                fontSize: 9,
+                fontSize: 8.5,
                 fontWeight: FontWeight.w800,
+                height: 1,
               ),
             ),
           ],
@@ -1464,83 +1580,97 @@ class _CoachChampionshipAthleteEvaluationPageState
       );
     }
 
+    Widget counterLine({
+      required String label,
+      required int value,
+      required String valueLabel,
+      required Color color,
+      required String field,
+    }) {
+      return Row(
+        children: [
+          SizedBox(
+            width: isMobile ? 44 : 56,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: isMobile ? 10.5 : 11.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          counterButton(
+            icon: Icons.remove_rounded,
+            color: color,
+            onTap: () => _alterarContador(athleteId, field, -1),
+          ),
+          const SizedBox(width: 6),
+          valuePill(label: valueLabel, value: value, color: color),
+          const SizedBox(width: 6),
+          counterButton(
+            icon: Icons.add_rounded,
+            color: color,
+            onTap: () => _alterarContador(athleteId, field, 1),
+          ),
+        ],
+      );
+    }
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: EdgeInsets.all(isMobile ? 10 : 12),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 10 : 12,
+        vertical: isMobile ? 9 : 10,
+      ),
       decoration: BoxDecoration(
         color: olympusBg,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: olympusBorder),
       ),
-      child: Column(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            children: [
-              Icon(metric.icon, color: olympusBlue, size: 19),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  metric.title,
-                  style: const TextStyle(
-                    color: olympusBlue,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              counterButton(
-                icon: Icons.remove_rounded,
-                color: olympusSuccess,
-                onTap: () =>
-                    _alterarContador(athleteId, metric.positiveField, -1),
-              ),
-              const SizedBox(width: 6),
-              valueBox(
-                label: metric.positiveLabel,
-                value: positive,
-                color: olympusSuccess,
-              ),
-              const SizedBox(width: 6),
-              counterButton(
-                icon: Icons.add_rounded,
-                color: olympusSuccess,
-                onTap: () =>
-                    _alterarContador(athleteId, metric.positiveField, 1),
-              ),
-            ],
+          Container(
+            width: isMobile ? 34 : 38,
+            height: isMobile ? 34 : 38,
+            decoration: BoxDecoration(
+              color: olympusBlue.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(metric.icon, color: olympusBlue, size: 19),
           ),
-          const SizedBox(height: 8),
-          Row(
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              metric.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: olympusBlue,
+                fontSize: isMobile ? 12.5 : 13.5,
+                fontWeight: FontWeight.w900,
+                height: 1.05,
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const SizedBox(width: 27),
-              const Expanded(
-                child: Text(
-                  'Erros',
-                  style: TextStyle(
-                    color: olympusSubtle,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+              counterLine(
+                label: 'Ação',
+                value: positive,
+                valueLabel: metric.positiveLabel,
+                color: olympusSuccess,
+                field: metric.positiveField,
               ),
-              counterButton(
-                icon: Icons.remove_rounded,
-                color: olympusDanger,
-                onTap: () =>
-                    _alterarContador(athleteId, metric.negativeField, -1),
-              ),
-              const SizedBox(width: 6),
-              valueBox(
-                label: metric.negativeLabel,
+              const SizedBox(height: 7),
+              counterLine(
+                label: 'Erro',
                 value: negative,
+                valueLabel: metric.negativeLabel,
                 color: olympusDanger,
-              ),
-              const SizedBox(width: 6),
-              counterButton(
-                icon: Icons.add_rounded,
-                color: olympusDanger,
-                onTap: () =>
-                    _alterarContador(athleteId, metric.negativeField, 1),
+                field: metric.negativeField,
               ),
             ],
           ),

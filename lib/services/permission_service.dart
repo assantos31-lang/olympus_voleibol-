@@ -429,13 +429,156 @@ class PermissionService {
           .eq('page_name', pageName)
           .eq('can_access', true);
 
-      return List<Map<String, dynamic>>.from(response as List)
+      final visibleIds = List<Map<String, dynamic>>.from(response as List)
           .map((row) => (row['user_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      if (visibleIds.isEmpty) return [];
+
+      final shouldFilterAthletes =
+          pageName == 'ranking' || pageName == 'avaliacoes';
+      if (!shouldFilterAthletes) {
+        return visibleIds;
+      }
+
+      final currentUserId = _supabase.auth.currentUser?.id;
+      final currentProfile = currentUserId == null
+          ? null
+          : await _supabase
+              .from('profiles')
+              .select('user_type, coach_team_gender')
+              .eq('id', currentUserId)
+              .maybeSingle();
+
+      final currentUserType =
+          (currentProfile?['user_type'] ?? '').toString().trim().toLowerCase();
+      final coachTeamGender = normalizeCoachTeamGender(
+        currentProfile?['coach_team_gender'],
+      );
+
+      final profilesResponse = await _supabase
+          .from('profiles')
+          .select('id, user_type, gender, is_active')
+          .inFilter('id', visibleIds);
+
+      final profiles =
+          List<Map<String, dynamic>>.from(profilesResponse as List);
+
+      return profiles
+          .where((profile) {
+            final userType =
+                (profile['user_type'] ?? '').toString().trim().toLowerCase();
+            final isAthlete = userType == 'athlete' || userType == 'atleta';
+            if (!isAthlete) return false;
+
+            final isActive = profile['is_active'] != false;
+            if (!isActive) return false;
+
+            if (currentUserType == 'coach' && coachTeamGender != 'all') {
+              return coachCanAccessGender(
+                coachTeamGender: coachTeamGender,
+                athleteGender: profile['gender'],
+              );
+            }
+
+            return true;
+          })
+          .map((profile) => (profile['id'] ?? '').toString())
           .where((id) => id.isNotEmpty)
           .toList();
     } catch (e) {
       print('❌ Erro ao buscar usuários visíveis para $pageName: $e');
       return [];
     }
+  }
+
+  String normalizeCoachTeamGender(dynamic value) {
+    final raw = (value ?? '').toString().trim().toLowerCase();
+    if (raw == 'masculino' || raw == 'male' || raw == 'm') {
+      return 'Masculino';
+    }
+    if (raw == 'feminino' || raw == 'female' || raw == 'f') {
+      return 'Feminino';
+    }
+    return 'all';
+  }
+
+  String coachTeamGenderLabel(dynamic value) {
+    switch (normalizeCoachTeamGender(value)) {
+      case 'Masculino':
+        return 'Masculino';
+      case 'Feminino':
+        return 'Feminino';
+      default:
+        return 'Ambos';
+    }
+  }
+
+  Future<String> getCoachTeamGender({String? userId}) async {
+    try {
+      final targetUserId = userId ?? _supabase.auth.currentUser?.id;
+      if (targetUserId == null || targetUserId.isEmpty) return 'all';
+
+      final response = await _supabase
+          .from('profiles')
+          .select('user_type, coach_team_gender')
+          .eq('id', targetUserId)
+          .maybeSingle();
+
+      final userType = (response?['user_type'] ?? '').toString().toLowerCase();
+      if (userType != 'coach') return 'all';
+
+      return normalizeCoachTeamGender(response?['coach_team_gender']);
+    } catch (e) {
+      print('❌ Erro ao buscar gênero do time do treinador: $e');
+      return 'all';
+    }
+  }
+
+  Future<void> updateCoachTeamGender({
+    required String userId,
+    required String coachTeamGender,
+  }) async {
+    try {
+      await _supabase
+          .from('profiles')
+          .update({
+            'coach_team_gender': normalizeCoachTeamGender(coachTeamGender),
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', userId)
+          .eq('user_type', 'coach');
+    } catch (e) {
+      print('❌ Erro ao atualizar gênero do time do treinador: $e');
+      rethrow;
+    }
+  }
+
+  bool coachCanAccessGender({
+    required String coachTeamGender,
+    required dynamic athleteGender,
+  }) {
+    final normalizedCoachGender = normalizeCoachTeamGender(coachTeamGender);
+    if (normalizedCoachGender == 'all') return true;
+    return normalizedCoachGender.toLowerCase() ==
+        (athleteGender ?? '').toString().trim().toLowerCase();
+  }
+
+  Future<List<Map<String, dynamic>>> filterAthletesForCurrentCoach(
+    List<Map<String, dynamic>> athletes,
+  ) async {
+    final coachTeamGender = await getCoachTeamGender();
+    if (coachTeamGender == 'all') return athletes;
+
+    return athletes
+        .where(
+          (athlete) => coachCanAccessGender(
+            coachTeamGender: coachTeamGender,
+            athleteGender: athlete['gender'],
+          ),
+        )
+        .toList();
   }
 }

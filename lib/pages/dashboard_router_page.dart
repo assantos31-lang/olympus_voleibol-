@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../main.dart';
 import 'athlete_dashboard_page.dart';
 import 'complete_profile_page.dart';
 import 'admin_home_page.dart';
 import 'coach_dashboard_page.dart';
+import 'coach_complete_profile_page.dart';
 
 class DashboardRouterPage extends StatefulWidget {
   const DashboardRouterPage({super.key});
@@ -16,8 +18,9 @@ class DashboardRouterPage extends StatefulWidget {
 }
 
 class _DashboardRouterPageState extends State<DashboardRouterPage> {
-  final supabase = Supabase.instance.client;
+  final SupabaseClient supabase = Supabase.instance.client;
   StreamSubscription<AuthState>? _authSubscription;
+
   bool _isLoading = true;
   bool _isRedirecting = false;
   Widget? _dashboardWidget;
@@ -40,6 +43,79 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
     });
 
     _loadDashboard();
+  }
+
+  bool _isBlank(dynamic value) {
+    return value == null || value.toString().trim().isEmpty;
+  }
+
+  bool _isInactive(Map<String, dynamic>? profile) {
+    if (profile == null) return false;
+    return profile['is_active'] == false;
+  }
+
+  bool _needsCompleteProfile({
+    required String userType,
+    required Map<String, dynamic>? profile,
+  }) {
+    if (profile == null) return false;
+
+    final normalizedType = userType.trim().toLowerCase();
+    final isAthlete = normalizedType == 'athlete' || normalizedType == 'atleta';
+    final isCoach = normalizedType == 'coach' ||
+        normalizedType == 'tecnico' ||
+        normalizedType == 'técnico' ||
+        normalizedType == 'treinador';
+
+    if (!isAthlete && !isCoach) return false;
+
+    final fullName = (profile['full_name'] ?? '').toString().trim();
+    final hasCompleteName = fullName
+            .split(RegExp(r'\s+'))
+            .where((part) => part.trim().length >= 2)
+            .length >=
+        2;
+
+    if (isAthlete) {
+      return !hasCompleteName ||
+          _isBlank(profile['cpf']) ||
+          _isBlank(profile['phone']);
+    }
+
+    return !hasCompleteName ||
+        _isBlank(profile['cpf']) ||
+        _isBlank(profile['phone']) ||
+        _isBlank(profile['rg']) ||
+        _isBlank(profile['avatar_url']) ||
+        _isBlank(profile['cep']) ||
+        _isBlank(profile['address_street']) ||
+        _isBlank(profile['address_number']) ||
+        _isBlank(profile['address_neighborhood']) ||
+        _isBlank(profile['address_city']) ||
+        _isBlank(profile['address_state']);
+  }
+
+  Future<void> _restrictInactiveUser() async {
+    await supabase.auth.signOut();
+
+    if (!mounted || _isRedirecting) return;
+
+    _isRedirecting = true;
+
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/login',
+      (route) => false,
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Seu acesso está inativo. Entre em contato com a administração.',
+        ),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   Future<void> _loadDashboard() async {
@@ -67,31 +143,36 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
 
       final profile = await supabase
           .from('profiles')
-          .select('user_type, full_name, cpf, phone')
+          .select(
+            'user_type, full_name, cpf, phone, rg, avatar_url, is_active, coach_team_gender, cep, address_street, address_number, address_neighborhood, address_city, address_state',
+          )
           .eq('id', user.id)
           .maybeSingle();
 
       if (!mounted) return;
 
+      if (_isInactive(profile)) {
+        await _restrictInactiveUser();
+        return;
+      }
+
       final userType = (profile?['user_type'] ?? 'member').toString();
 
-      final fullName = profile?['full_name'];
-      final cpf = profile?['cpf'];
-      final phone = profile?['phone'];
+      if (_needsCompleteProfile(userType: userType, profile: profile)) {
+        final normalizedType = userType.trim().toLowerCase();
+        final isCoach = normalizedType == 'coach' ||
+            normalizedType == 'tecnico' ||
+            normalizedType == 'técnico' ||
+            normalizedType == 'treinador';
 
-      final needsCompleteProfile = userType == 'athlete' &&
-          (fullName == null ||
-              fullName.toString().isEmpty ||
-              cpf == null ||
-              phone == null);
-
-      if (needsCompleteProfile) {
         if (!_isRedirecting) {
           _isRedirecting = true;
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => const CompleteProfilePage(),
+              builder: (context) => isCoach
+                  ? const CoachCompleteProfilePage()
+                  : const CompleteProfilePage(),
             ),
           );
         }
@@ -104,6 +185,9 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
           dashboard = const AdminHomePage();
           break;
         case 'coach':
+        case 'tecnico':
+        case 'técnico':
+        case 'treinador':
           dashboard = const CoachDashboardPage();
           break;
         default:

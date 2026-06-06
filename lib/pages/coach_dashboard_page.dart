@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'dart:math' as math;
 
@@ -7,6 +8,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'admin_competitions_page.dart';
 import 'coach_training_sessions_page.dart';
 import 'coach_ranking_page.dart';
+import 'coach_complete_profile_page.dart';
+import '../coach/pages/coach_complete_monthly_evaluation_page.dart';
+import '../coach/pages/coach_messages_page.dart';
 import '../services/permission_service.dart';
 
 Future<void> sendEvaluationMessageToAthlete({
@@ -84,12 +88,30 @@ class CoachDashboardPage extends StatefulWidget {
 class _CoachDashboardPageState extends State<CoachDashboardPage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final supabase = Supabase.instance.client;
+  final PermissionService _permissionService = PermissionService();
 
   bool _isLoading = true;
   bool _isBackgroundReady = false;
   int _competitionNewCount = 0;
+  int _unreadMessagesCount = 0;
   DateTime? _lastCompetitionsViewedAt;
   RealtimeChannel? _competitionsRealtimeChannel;
+  RealtimeChannel? _messageParticipantsRealtimeChannel;
+  RealtimeChannel? _messagesRealtimeChannel;
+  RealtimeChannel? _messageThreadsRealtimeChannel;
+  Timer? _messagesBadgeFallbackTimer;
+  DateTime? _lastMessageNotificationAt;
+  String _coachFullName = 'Técnico';
+  String _coachAvatarUrl = '';
+  String _coachRoleLabel = 'Técnico';
+  String _coachTeamGender = 'all';
+  int _activeAthletesCount = 0;
+  int _todayTrainingsCount = 0;
+  int _weekTrainingsCount = 0;
+  int _activeCompetitionsCount = 0;
+  int _pendingEvaluationsCount = 0;
+  int _unplannedTrainingsCount = 0;
+  int _championshipsWithoutScoutCount = 0;
 
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
@@ -127,7 +149,12 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       _isLoading = true;
     });
 
-    await _loadCompetitionNewCount();
+    await Future.wait([
+      _loadCoachProfile(),
+      _loadCompetitionNewCount(),
+      _loadUnreadMessagesCount(showNotification: false),
+      _loadDashboardIntelligence(),
+    ]);
 
     if (mounted) {
       setState(() {
@@ -162,6 +189,233 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     return DateTime.tryParse(raw.toString())?.toLocal();
   }
 
+  Future<void> _loadCoachProfile() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      if (mounted) {
+        setState(() {
+          _coachFullName = 'Técnico';
+          _coachAvatarUrl = '';
+          _coachRoleLabel = 'Técnico';
+          _coachTeamGender = 'all';
+        });
+      }
+      return;
+    }
+
+    try {
+      final profile = await supabase
+          .from('profiles')
+          .select('full_name, avatar_url, user_type, coach_team_gender')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      final metadataName = user.userMetadata?['full_name']?.toString().trim();
+      final fullName = (profile?['full_name'] ?? metadataName ?? 'Técnico')
+          .toString()
+          .trim();
+      final avatarUrl = (profile?['avatar_url'] ?? '').toString().trim();
+      final userType = (profile?['user_type'] ?? 'coach').toString().trim();
+      final coachTeamGender = _permissionService.normalizeCoachTeamGender(
+        profile?['coach_team_gender'],
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _coachFullName = fullName.isEmpty ? 'Técnico' : fullName;
+        _coachAvatarUrl = avatarUrl;
+        _coachRoleLabel = _profileRoleLabel(userType);
+        _coachTeamGender = coachTeamGender;
+      });
+    } catch (e) {
+      debugPrint('Erro ao carregar perfil do técnico: $e');
+    }
+  }
+
+  DateTime? _parseFlexibleDate(dynamic value) {
+    final raw = (value ?? '').toString().trim();
+    if (raw.isEmpty) return null;
+
+    final parsedIso = DateTime.tryParse(raw);
+    if (parsedIso != null) return parsedIso.toLocal();
+
+    final parts = raw.split('/');
+    if (parts.length == 3) {
+      final day = int.tryParse(parts[0]);
+      final month = int.tryParse(parts[1]);
+      final year = int.tryParse(parts[2]);
+      if (day != null && month != null && year != null) {
+        return DateTime(year, month, day);
+      }
+    }
+
+    return null;
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  bool _isTrainingType(String value) {
+    return value.trim().toLowerCase() == 'treino';
+  }
+
+  bool _isCompetitionType(String value) {
+    final type = value.trim().toLowerCase();
+    return type == 'campeonato' ||
+        type == 'amistoso' ||
+        type == 'jogo' ||
+        type == 'liga';
+  }
+
+  bool _coachCanAccessAthleteGender(dynamic athleteGender) {
+    final normalizedCoachGender =
+        _permissionService.normalizeCoachTeamGender(_coachTeamGender);
+
+    if (normalizedCoachGender == 'all') return true;
+
+    final normalizedAthleteGender =
+        (athleteGender ?? '').toString().trim().toLowerCase();
+
+    return normalizedAthleteGender == normalizedCoachGender.toLowerCase();
+  }
+
+  Future<void> _loadDashboardIntelligence() async {
+    try {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final nextSevenDays = today.add(const Duration(days: 7));
+      final currentMonthStart = DateTime(now.year, now.month, 1);
+      final nextMonthStart = DateTime(now.year, now.month + 1, 1);
+
+      final results = await Future.wait([
+        supabase.from('profiles').select('id, user_type, gender, is_active'),
+        supabase
+            .from('events')
+            .select('id, event_type, event_date, created_at'),
+        supabase
+            .from('training_evaluations')
+            .select('id, event_id, athlete_id, tipo, created_at'),
+        supabase
+            .from('match_scouts')
+            .select('id, event_id, athlete_id, updated_at, created_at'),
+      ]);
+
+      final profiles = List<Map<String, dynamic>>.from(results[0] as List);
+      final events = List<Map<String, dynamic>>.from(results[1] as List);
+      final trainingEvaluations =
+          List<Map<String, dynamic>>.from(results[2] as List);
+      final matchScouts = List<Map<String, dynamic>>.from(results[3] as List);
+
+      final activeAthleteIds = profiles
+          .where((profile) {
+            final userType =
+                (profile['user_type'] ?? '').toString().toLowerCase().trim();
+            final isAthlete = userType == 'athlete' || userType == 'atleta';
+            if (!isAthlete) return false;
+
+            final isActive = profile['is_active'] != false;
+            if (!isActive) return false;
+
+            return _coachCanAccessAthleteGender(profile['gender']);
+          })
+          .map((profile) => (profile['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      final eventDates = <String, DateTime>{};
+      var todayTrainings = 0;
+      var weekTrainings = 0;
+      var activeCompetitions = 0;
+      final trainingEventIdsNextSevenDays = <String>{};
+      final competitionEventIds = <String>{};
+
+      for (final event in events) {
+        final id = (event['id'] ?? '').toString();
+        final type = (event['event_type'] ?? '').toString();
+        final date = _parseFlexibleDate(event['event_date']) ??
+            _parseFlexibleDate(event['created_at']);
+
+        if (id.isNotEmpty && date != null) {
+          eventDates[id] = date;
+        }
+
+        if (date == null) continue;
+
+        if (_isTrainingType(type)) {
+          if (_isSameDay(date, today)) {
+            todayTrainings++;
+          }
+          if (!date.isBefore(today) && date.isBefore(nextSevenDays)) {
+            weekTrainings++;
+            if (id.isNotEmpty) trainingEventIdsNextSevenDays.add(id);
+          }
+        }
+
+        if (_isCompetitionType(type)) {
+          if (!date.isBefore(today.subtract(const Duration(days: 30)))) {
+            activeCompetitions++;
+          }
+          if (id.isNotEmpty) competitionEventIds.add(id);
+        }
+      }
+
+      final evaluatedAthleteIdsThisMonth = <String>{};
+      final trainingEventsWithEvaluation = <String>{};
+      for (final row in trainingEvaluations) {
+        final createdAt = _parseFlexibleDate(row['created_at']);
+        if (createdAt == null ||
+            createdAt.isBefore(currentMonthStart) ||
+            !createdAt.isBefore(nextMonthStart)) {
+          continue;
+        }
+
+        final eventId = (row['event_id'] ?? '').toString();
+        if (eventId.isNotEmpty) trainingEventsWithEvaluation.add(eventId);
+
+        final tipo = (row['tipo'] ?? '').toString().toLowerCase().trim();
+        if (tipo != 'completa') continue;
+
+        final athleteId = (row['athlete_id'] ?? '').toString();
+        if (athleteId.isNotEmpty && activeAthleteIds.contains(athleteId)) {
+          evaluatedAthleteIdsThisMonth.add(athleteId);
+        }
+      }
+
+      final championshipEventsWithScout = <String>{};
+      for (final row in matchScouts) {
+        final eventId = (row['event_id'] ?? '').toString();
+        if (eventId.isNotEmpty) championshipEventsWithScout.add(eventId);
+      }
+
+      final pendingEvaluations =
+          (activeAthleteIds.length - evaluatedAthleteIdsThisMonth.length)
+              .clamp(0, activeAthleteIds.length)
+              .toInt();
+
+      final unplannedTrainings = trainingEventIdsNextSevenDays
+          .where((id) => !trainingEventsWithEvaluation.contains(id))
+          .length;
+
+      final championshipsWithoutScout = competitionEventIds
+          .where((id) => !championshipEventsWithScout.contains(id))
+          .length;
+
+      if (!mounted) return;
+      setState(() {
+        _activeAthletesCount = activeAthleteIds.length;
+        _todayTrainingsCount = todayTrainings;
+        _weekTrainingsCount = weekTrainings;
+        _activeCompetitionsCount = activeCompetitions;
+        _pendingEvaluationsCount = pendingEvaluations;
+        _unplannedTrainingsCount = unplannedTrainings;
+        _championshipsWithoutScoutCount = championshipsWithoutScout;
+      });
+    } catch (e) {
+      debugPrint('Erro ao carregar inteligência do dashboard: $e');
+    }
+  }
+
   Future<void> _loadCompetitionNewCount() async {
     try {
       final response = await supabase
@@ -192,7 +446,68 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     }
   }
 
+  Future<void> _loadUnreadMessagesCount(
+      {required bool showNotification}) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      if (mounted) {
+        setState(() => _unreadMessagesCount = 0);
+      }
+      return;
+    }
+
+    try {
+      final response = await supabase
+          .from('app_message_participants')
+          .select('unread_count')
+          .eq('user_id', user.id);
+
+      var total = 0;
+      for (final row in List<Map<String, dynamic>>.from(response)) {
+        final value = row['unread_count'];
+        if (value is int) {
+          total += value;
+        } else if (value is num) {
+          total += value.toInt();
+        } else {
+          total += int.tryParse((value ?? '0').toString()) ?? 0;
+        }
+      }
+
+      final previous = _unreadMessagesCount;
+      if (!mounted) return;
+      setState(() => _unreadMessagesCount = total);
+
+      if (showNotification && total > previous) {
+        final now = DateTime.now();
+        final canNotify = _lastMessageNotificationAt == null ||
+            now.difference(_lastMessageNotificationAt!).inSeconds >= 4;
+
+        if (canNotify) {
+          _lastMessageNotificationAt = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                total == 1
+                    ? 'Você tem 1 nova mensagem.'
+                    : 'Você tem $total mensagens não lidas.',
+              ),
+              action: SnackBarAction(
+                label: 'Abrir',
+                onPressed: _navigateToMessages,
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar badge de mensagens: $e');
+    }
+  }
+
   void _setupRealtimeListeners() {
+    final user = supabase.auth.currentUser;
+
     _competitionsRealtimeChannel ??=
         supabase.channel('coach-dashboard-competitions')
           ..onPostgresChanges(
@@ -201,9 +516,85 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
             table: 'events',
             callback: (_) {
               _loadCompetitionNewCount();
+              _loadDashboardIntelligence();
             },
           )
           ..subscribe();
+
+    if (user == null) return;
+
+    // Realtime robusto para mensagens:
+    // 1) O badge é calculado sempre no banco, pela tabela app_message_participants.
+    // 2) Evitei depender apenas do filtro do Realtime, porque em alguns projetos
+    //    o filtro por UUID/string pode não disparar como esperado no Flutter Web.
+    // 3) O polling leve abaixo é fallback de segurança caso o websocket caia.
+    _messageParticipantsRealtimeChannel ??= supabase
+        .channel('coach-dashboard-message-participants-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'app_message_participants',
+          callback: (_) {
+            _loadUnreadMessagesCount(showNotification: true);
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint(
+        'Realtime app_message_participants status: $status error: $error',
+      );
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        _loadUnreadMessagesCount(showNotification: false);
+      }
+    });
+
+    _messagesRealtimeChannel ??= supabase
+        .channel('coach-dashboard-messages-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'app_messages',
+          callback: (_) {
+            _loadUnreadMessagesCount(showNotification: true);
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint('Realtime app_messages status: $status error: $error');
+    });
+
+    _messageThreadsRealtimeChannel ??= supabase
+        .channel('coach-dashboard-message-threads-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'app_message_threads',
+          callback: (_) {
+            _loadUnreadMessagesCount(showNotification: true);
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint(
+        'Realtime app_message_threads status: $status error: $error',
+      );
+    });
+
+    _messagesBadgeFallbackTimer ??= Timer.periodic(
+      const Duration(seconds: 8),
+      (_) => _loadUnreadMessagesCount(showNotification: true),
+    );
+  }
+
+  void _navigateToEditCoachProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CoachCompleteProfilePage(
+          isEditing: true,
+        ),
+      ),
+    ).then((_) {
+      _loadCoachProfile();
+      _loadDashboardIntelligence();
+    });
   }
 
   void _navigateToCompetitions() {
@@ -265,6 +656,15 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     );
   }
 
+  void _navigateToMessages() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CoachMessagesPage(),
+      ),
+    ).then((_) => _loadUnreadMessagesCount(showNotification: false));
+  }
+
   void _navigateToRanking() {
     Navigator.push(
       context,
@@ -287,31 +687,58 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const CoachAthleteEvaluationsPage(),
+        builder: (context) => const CoachAthleteEvaluationTeamSelectPage(),
       ),
     );
   }
 
+  void _navigateToEvaluationsHub() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CoachEvaluationsHubPage(
+          pendingEvaluationsCount: _visiblePendingEvaluationsCount,
+        ),
+      ),
+    );
+  }
+
+  void _navigateToPendingCenter() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CoachPendingCenterPage(
+          pendingEvaluationsCount: _visiblePendingEvaluationsCount,
+          unplannedTrainingsCount: _unplannedTrainingsCount,
+          championshipsWithoutScoutCount: _championshipsWithoutScoutCount,
+          unreadMessagesCount: _unreadMessagesCount,
+          onOpenEvaluations: _navigateToEvaluationsHub,
+          onOpenPlanning: _navigateToTrainingPlanningDashboard,
+          onOpenMessages: _navigateToMessages,
+        ),
+      ),
+    ).then((_) => _loadDashboardIntelligence());
+  }
+
   Widget _buildPremiumDashboardBackground() {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: Image.asset(
+    return SizedBox.expand(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
             'assets/images/monte_olimpo_v2.png',
+            width: double.infinity,
+            height: double.infinity,
             fit: BoxFit.cover,
             alignment: Alignment.center,
             errorBuilder: (context, error, stackTrace) {
               return Container(color: const Color(0xFF102845));
             },
           ),
-        ),
-        Positioned.fill(
-          child: Container(
+          Container(
             color: Colors.black.withOpacity(0.10),
           ),
-        ),
-        Positioned.fill(
-          child: Container(
+          Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
@@ -324,9 +751,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
               ),
             ),
           ),
-        ),
-        Positioned.fill(
-          child: Container(
+          Container(
             decoration: BoxDecoration(
               gradient: RadialGradient(
                 center: const Alignment(0, -0.62),
@@ -339,36 +764,458 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  String _profileRoleLabel(String value) {
+    final normalized = value.trim().toLowerCase();
+
+    if (normalized == 'coach' ||
+        normalized == 'tecnico' ||
+        normalized == 'técnico' ||
+        normalized == 'treinador') {
+      return 'Técnico';
+    }
+
+    if (normalized == 'admin') return 'Administrador';
+    if (normalized == 'athlete' || normalized == 'atleta') return 'Atleta';
+
+    return value.trim().isEmpty ? 'Técnico' : value.trim();
+  }
+
+  String _coachFirstName() {
+    final parts = _coachFullName.trim().split(RegExp(r'\s+'));
+    return parts.isEmpty || parts.first.isEmpty ? 'Técnico' : parts.first;
+  }
+
+  String _coachInitials() {
+    final parts = _coachFullName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList();
+
+    if (parts.isEmpty) return 'T';
+    if (parts.length == 1) return parts.first.characters.first.toUpperCase();
+
+    return '${parts.first.characters.first}${parts.last.characters.first}'
+        .toUpperCase();
+  }
+
+  Widget _buildCoachAvatar() {
+    final hasPhoto = _coachAvatarUrl.trim().isNotEmpty;
+
+    return Container(
+      width: 92,
+      height: 92,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(26),
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFFF0D771),
+            Color(0xFFB48A23),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: olympusGold.withOpacity(0.45),
+            blurRadius: 14,
+            spreadRadius: 1,
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.22),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(3),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(23),
+        child: Container(
+          color: const Color(0xFF113457),
+          child: hasPhoto
+              ? Image.network(
+                  _coachAvatarUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildCoachInitialsFallback(),
+                )
+              : _buildCoachInitialsFallback(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCoachInitialsFallback() {
+    return Center(
+      child: Text(
+        _coachInitials(),
+        style: const TextStyle(
+          color: Color(0xFFFFF2B8),
+          fontSize: 28,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.8,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCoachMetricPill({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: Colors.white.withOpacity(0.08),
+        border: Border.all(color: Colors.white.withOpacity(0.14)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: const Color(0xFFFFF2B8), size: 14),
+          const SizedBox(width: 5),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.78),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCoachStatsWrap() {
+    return Wrap(
+      spacing: 7,
+      runSpacing: 7,
+      children: [
+        _buildCoachMetricPill(
+          icon: Icons.groups_rounded,
+          value: '$_activeAthletesCount',
+          label: 'atletas',
+        ),
+        _buildCoachMetricPill(
+          icon: Icons.calendar_month_rounded,
+          value: '$_weekTrainingsCount',
+          label: 'treinos/7d',
+        ),
+        _buildCoachMetricPill(
+          icon: Icons.mark_chat_unread_rounded,
+          value: '$_unreadMessagesCount',
+          label: 'msgs',
         ),
       ],
     );
   }
 
-  Widget _buildCoachInfoCard() {
-    final fullName = supabase.auth.currentUser?.userMetadata?['full_name']
-        ?.toString()
-        .trim();
-    final firstName = (fullName != null && fullName.isNotEmpty)
-        ? fullName.split(' ').first
-        : 'Técnico';
+  int get _daysUntilEndOfCurrentMonth {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final lastDayOfMonth = DateTime(now.year, now.month + 1, 0);
+    return lastDayOfMonth.difference(today).inDays;
+  }
 
+  bool get _shouldShowMonthlyClosingReminder {
+    return _pendingEvaluationsCount > 0 && _daysUntilEndOfCurrentMonth <= 7;
+  }
+
+  bool get _isUrgentMonthlyClosingReminder {
+    return _pendingEvaluationsCount > 0 && _daysUntilEndOfCurrentMonth <= 3;
+  }
+
+  bool get _isMonthlyEvaluationReminderWindow {
+    return _daysUntilEndOfCurrentMonth <= 7;
+  }
+
+  int get _visiblePendingEvaluationsCount {
+    return _isMonthlyEvaluationReminderWindow ? _pendingEvaluationsCount : 0;
+  }
+
+  String get _monthlyClosingReminderTitle {
+    if (_isUrgentMonthlyClosingReminder) {
+      return 'Fechamento mensal urgente';
+    }
+    return 'Fechamento mensal se aproximando';
+  }
+
+  String get _monthlyClosingReminderText {
+    final days = _daysUntilEndOfCurrentMonth;
+    final dayLabel = days == 1 ? '1 dia' : '$days dias';
+    final count = _visiblePendingEvaluationsCount;
+    final athleteLabel = count == 1
+        ? '1 atleta ainda está sem avaliação mensal completa.'
+        : '$count atletas ainda estão sem avaliação mensal completa.';
+
+    if (_isUrgentMonthlyClosingReminder) {
+      return 'Último aviso: faltam $dayLabel para fechar o mês. $athleteLabel';
+    }
+
+    return 'Lembrete: faltam $dayLabel para fechar o mês. $athleteLabel';
+  }
+
+  Widget _buildMonthlyClosingReminder() {
+    if (!_shouldShowMonthlyClosingReminder) return const SizedBox.shrink();
+
+    final color = _isUrgentMonthlyClosingReminder
+        ? const Color(0xFFDC2626)
+        : const Color(0xFFF59E0B);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.20),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.42)),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.14),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            _isUrgentMonthlyClosingReminder
+                ? Icons.notification_important_rounded
+                : Icons.notifications_active_outlined,
+            color: Colors.white,
+            size: 23,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _monthlyClosingReminderTitle,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13.2,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _monthlyClosingReminderText,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.88),
+                    fontSize: 12.2,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSmartSummaryCard() {
+    final visiblePendingEvaluations = _visiblePendingEvaluationsCount;
+    final pendingTotal = visiblePendingEvaluations + _unplannedTrainingsCount;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(22),
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFFFFF4C7).withOpacity(0.34),
+                  const Color(0xFFD4AF37).withOpacity(0.20),
+                  Colors.white.withOpacity(0.12),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              border: Border.all(color: olympusGold.withOpacity(0.34)),
+              boxShadow: [
+                BoxShadow(
+                  color: olympusGold.withOpacity(0.16),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.18),
+                  blurRadius: 16,
+                  offset: const Offset(0, 7),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: olympusGold.withOpacity(0.16),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: olympusGold.withOpacity(0.30),
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.auto_awesome_rounded,
+                        color: Color(0xFFFFF2B8),
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Resumo inteligente de hoje',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            pendingTotal > 0
+                                ? '$pendingTotal pendência(s) pedem atenção.'
+                                : 'Nenhuma pendência crítica encontrada.',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.82),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildSummaryBadge(
+                      icon: Icons.fitness_center_rounded,
+                      value: '$_todayTrainingsCount',
+                      label: 'treinos hoje',
+                      color: const Color(0xFF3B82F6),
+                    ),
+                    _buildSummaryBadge(
+                      icon: Icons.mark_chat_unread_rounded,
+                      value: '$_unreadMessagesCount',
+                      label: 'mensagens',
+                      color: const Color(0xFF2563EB),
+                    ),
+                    if (visiblePendingEvaluations > 0)
+                      _buildSummaryBadge(
+                        icon: Icons.warning_amber_rounded,
+                        value: '$visiblePendingEvaluations',
+                        label: 'sem avaliação no mês',
+                        color: const Color(0xFFF59E0B),
+                      ),
+                  ],
+                ),
+                _buildMonthlyClosingReminder(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryBadge({
+    required IconData icon,
+    required String value,
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: color.withOpacity(0.14),
+        border: Border.all(color: color.withOpacity(0.26)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 15),
+          const SizedBox(width: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.84),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCoachInfoCard() {
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: Colors.white.withOpacity(0.20),
+          color: Colors.white.withOpacity(0.22),
           width: 1.2,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.25),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
+            color: Colors.black.withOpacity(0.28),
+            blurRadius: 20,
+            offset: const Offset(0, 9),
           ),
           BoxShadow(
-            color: olympusGold.withOpacity(0.12),
-            blurRadius: 24,
+            color: olympusGold.withOpacity(0.14),
+            blurRadius: 26,
             spreadRadius: 1,
           ),
         ],
@@ -383,15 +1230,15 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         ),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         child: Stack(
           children: [
             Positioned(
-              top: -40,
+              top: -42,
               right: -30,
               child: Container(
-                width: 140,
-                height: 140,
+                width: 142,
+                height: 142,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: Colors.white.withOpacity(0.08),
@@ -399,127 +1246,141 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
               ),
             ),
             Positioned(
-              bottom: -50,
-              left: -30,
+              bottom: -54,
+              left: -34,
               child: Container(
-                width: 120,
-                height: 120,
+                width: 122,
+                height: 122,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: olympusGold.withOpacity(0.08),
                 ),
               ),
             ),
+            Positioned(
+              right: 18,
+              bottom: 16,
+              child: Icon(
+                Icons.verified_rounded,
+                color: Colors.white.withOpacity(0.10),
+                size: 44,
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
               child: Row(
                 children: [
-                  Container(
-                    width: 90,
-                    height: 90,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(24),
-                      gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFFF0D771),
-                          Color(0xFFB48A23),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: olympusGold.withOpacity(0.45),
-                          blurRadius: 12,
-                          spreadRadius: 1,
-                        ),
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.18),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    padding: const EdgeInsets.all(2.6),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(22),
-                        color: const Color(0xFF113457),
-                      ),
-                      child: const Icon(
-                        Icons.sports,
-                        size: 42,
-                        color: Color(0xFFFFF2B8),
-                      ),
-                    ),
-                  ),
+                  _buildCoachAvatar(),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Olá, $firstName!',
+                          'Olá, ${_coachFirstName()}!',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 18,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w900,
                             color: Colors.white,
-                            height: 1.1,
+                            height: 1.08,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          _coachFullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white.withOpacity(0.90),
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Text(
-                          'Área do Técnico',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white.withOpacity(0.88),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(22),
-                            gradient: const LinearGradient(
-                              colors: [
-                                Color(0xFFD7E3EE),
-                                Color(0xFFBFCFDD),
-                              ],
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                            ),
-                            border: Border.all(
-                              color: const Color(0xFF90A9BF),
-                              width: 1.2,
-                            ),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.verified_user_outlined,
-                                size: 15,
-                                color: Color(0xFF42576B),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 7,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 7,
                               ),
-                              SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  'Painel premium do técnico',
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF2E4053),
-                                  ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(999),
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xFFD7E3EE),
+                                    Color(0xFFBFCFDD),
+                                  ],
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                ),
+                                border: Border.all(
+                                  color: const Color(0xFF90A9BF),
+                                  width: 1.1,
                                 ),
                               ),
-                            ],
-                          ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.verified_user_outlined,
+                                    size: 14,
+                                    color: Color(0xFF42576B),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _coachRoleLabel,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF2E4053),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 7,
+                              ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(999),
+                                color: olympusGold.withOpacity(0.15),
+                                border: Border.all(
+                                  color: olympusGold.withOpacity(0.28),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(
+                                    Icons.workspace_premium_outlined,
+                                    size: 14,
+                                    color: Color(0xFFFFF2B8),
+                                  ),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'Painel premium',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFFFFF2B8),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
+                        const SizedBox(height: 10),
+                        _buildCoachStatsWrap(),
                         const SizedBox(height: 10),
                         Container(
                           width: double.infinity,
@@ -528,18 +1389,21 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                             vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            color: Colors.white.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(13),
+                            color: Colors.white.withOpacity(0.07),
                             border: Border.all(
-                              color: olympusGold.withOpacity(0.22),
+                              color: olympusGold.withOpacity(0.23),
                             ),
                           ),
                           child: Text(
                             'Gerencie treinos, avaliações e acompanhe as novidades do painel.',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.88),
+                              color: Colors.white.withOpacity(0.90),
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
+                              height: 1.24,
                             ),
                           ),
                         ),
@@ -785,13 +1649,24 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     if (_competitionsRealtimeChannel != null) {
       supabase.removeChannel(_competitionsRealtimeChannel!);
     }
+    if (_messageParticipantsRealtimeChannel != null) {
+      supabase.removeChannel(_messageParticipantsRealtimeChannel!);
+    }
+    if (_messagesRealtimeChannel != null) {
+      supabase.removeChannel(_messagesRealtimeChannel!);
+    }
+    if (_messageThreadsRealtimeChannel != null) {
+      supabase.removeChannel(_messageThreadsRealtimeChannel!);
+    }
+    _messagesBadgeFallbackTimer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF102845),
+      extendBody: true,
+      backgroundColor: Colors.transparent,
       appBar: _isLoading
           ? null
           : AppBar(
@@ -800,86 +1675,644 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
               foregroundColor: Colors.white,
               actions: [
                 IconButton(
+                  icon: const Icon(Icons.edit_note_rounded),
+                  tooltip: 'Editar meus dados',
+                  onPressed: _navigateToEditCoachProfile,
+                ),
+                IconButton(
                   icon: const Icon(Icons.logout),
                   tooltip: 'Sair',
                   onPressed: _redirectToLogin,
                 ),
               ],
             ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: _buildPremiumDashboardBackground(),
-          ),
-          if (_isLoading)
-            const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+      body: SizedBox.expand(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _buildPremiumDashboardBackground(),
+            if (_isLoading)
+              const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            else
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          _buildCoachInfoCard(),
+                          _buildSmartSummaryCard(),
+                          _buildDashboardCard(
+                            icon: Icons.fact_check_outlined,
+                            title: 'Avaliações',
+                            subtitle: 'Avaliação de atletas e campeonatos',
+                            color: const Color(0xFF8B5CF6),
+                            onTap: _navigateToEvaluationsHub,
+                            badgeCount: _visiblePendingEvaluationsCount > 0
+                                ? _visiblePendingEvaluationsCount
+                                : null,
+                          ),
+                          _buildDashboardCard(
+                            icon: Icons.emoji_events_outlined,
+                            title: 'Competições',
+                            subtitle: 'Veja ligas, campeonatos e amistosos',
+                            color: const Color(0xFF2C5F8D),
+                            onTap: _navigateToCompetitions,
+                            badgeCount: _competitionNewCount > 0
+                                ? _competitionNewCount
+                                : null,
+                          ),
+                          _buildDashboardCard(
+                            icon: Icons.analytics_outlined,
+                            title: 'Dashboard de Planejamento',
+                            subtitle:
+                                'Tempo mensal por Fundamentos, Tático e Físico',
+                            color: const Color(0xFFD4AF37),
+                            onTap: _navigateToTrainingPlanningDashboard,
+                          ),
+                          _buildDashboardCard(
+                            icon: Icons.mark_chat_unread_outlined,
+                            title: 'Mensagens',
+                            subtitle: 'Mensagens enviadas pelo administrador',
+                            color: const Color(0xFF2563EB),
+                            onTap: _navigateToMessages,
+                            badgeCount: _unreadMessagesCount > 0
+                                ? _unreadMessagesCount
+                                : null,
+                          ),
+                          _buildDashboardCard(
+                            icon: Icons.bar_chart_rounded,
+                            title: 'Ranking dos atletas',
+                            subtitle:
+                                'Desempenho com base nas avaliações salvas',
+                            color: const Color(0xFF0EA5A4),
+                            onTap: _navigateToRanking,
+                          ),
+                          _buildDashboardCard(
+                            icon: Icons.insights_rounded,
+                            title: 'Smart Dashboard',
+                            subtitle:
+                                'Geral, treinos, campeonatos e radar da equipe',
+                            color: const Color(0xFFF59E0B),
+                            onTap: _navigateToSmartDashboard,
+                          ),
+                          const SizedBox(height: 28),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
-            )
-          else
-            SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CoachPendingCenterPage extends StatelessWidget {
+  const CoachPendingCenterPage({
+    super.key,
+    required this.pendingEvaluationsCount,
+    required this.unplannedTrainingsCount,
+    required this.championshipsWithoutScoutCount,
+    required this.unreadMessagesCount,
+    required this.onOpenEvaluations,
+    required this.onOpenPlanning,
+    required this.onOpenMessages,
+  });
+
+  final int pendingEvaluationsCount;
+  final int unplannedTrainingsCount;
+  final int championshipsWithoutScoutCount;
+  final int unreadMessagesCount;
+  final VoidCallback onOpenEvaluations;
+  final VoidCallback onOpenPlanning;
+  final VoidCallback onOpenMessages;
+
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  static const Color olympusGold = Color(0xFFD4AF37);
+
+  int get _total =>
+      pendingEvaluationsCount + unplannedTrainingsCount + unreadMessagesCount;
+
+  Widget _background() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset(
+          'assets/images/monte_olimpo_v2.png',
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          errorBuilder: (_, __, ___) {
+            return Container(color: const Color(0xFF102845));
+          },
+        ),
+        Container(color: Colors.black.withOpacity(0.26)),
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                olympusBlue.withOpacity(0.68),
+                olympusLightBlue.withOpacity(0.25),
+                Colors.black.withOpacity(0.68),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _pendingCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required int count,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    final hasPending = count > 0;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 9, 16, 9),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(22),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.white.withOpacity(0.24),
+                      Colors.white.withOpacity(0.14),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  border: Border.all(color: Colors.white.withOpacity(0.30)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.20),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(hasPending ? 0.22 : 0.10),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: color.withOpacity(0.28)),
+                      ),
+                      child: Icon(icon, color: Colors.white, size: 30),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            subtitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.84),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minWidth: 38,
+                        minHeight: 34,
+                      ),
+                      child: Container(
+                        height: 34,
+                        alignment: Alignment.center,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: hasPending
+                              ? color.withOpacity(0.24)
+                              : Colors.white.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: hasPending
+                                ? color.withOpacity(0.38)
+                                : Colors.white.withOpacity(0.16),
+                          ),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      extendBody: true,
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('Pendências'),
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+      ),
+      body: SizedBox.expand(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _background(),
+            SafeArea(
+              child: ListView(
+                padding: const EdgeInsets.only(top: 14, bottom: 28),
                 children: [
-                  _buildCoachInfoCard(),
-                  _buildDashboardCard(
-                    icon: Icons.insights_rounded,
-                    title: 'Smart Dashboard',
-                    subtitle: 'Geral, treinos, campeonatos e radar da equipe',
-                    color: const Color(0xFFF59E0B),
-                    onTap: _navigateToSmartDashboard,
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.16),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: Colors.white.withOpacity(0.26)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.notifications_active_outlined,
+                          color: olympusGold,
+                          size: 30,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _total > 0
+                                    ? '$_total item(ns) exigem atenção'
+                                    : 'Tudo em dia',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _total > 0
+                                    ? 'Priorize os pontos abaixo para manter a equipe organizada.'
+                                    : 'Nenhuma pendência crítica encontrada no momento.',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.82),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  _buildDashboardCard(
-                    icon: Icons.calendar_month_outlined,
-                    title: 'Planejamento de treinos',
+                  _pendingCard(
+                    icon: Icons.assignment_late_outlined,
+                    title: 'Atletas sem avaliação do mês',
                     subtitle:
-                        'Planejamento e avaliação rápida dos treinos marcados',
+                        'Atletas ativos sem avaliação mensal completa no mês corrente.',
+                    count: pendingEvaluationsCount,
+                    color: const Color(0xFFF59E0B),
+                    onTap: onOpenEvaluations,
+                  ),
+                  _pendingCard(
+                    icon: Icons.calendar_month_outlined,
+                    title: 'Treinos sem planejamento',
+                    subtitle:
+                        'Treinos próximos ainda sem avaliação ou planejamento.',
+                    count: unplannedTrainingsCount,
                     color: const Color(0xFF3B82F6),
-                    onTap: _navigateToTrainingPlanner,
+                    onTap: onOpenPlanning,
                   ),
-                  _buildDashboardCard(
-                    icon: Icons.emoji_events_outlined,
-                    title: 'Avaliar Campeonatos',
-                    subtitle: 'Avalie jogos de campeonatos separadamente',
-                    color: const Color(0xFF7C3AED),
-                    onTap: _navigateToChampionshipEvaluations,
+                  _pendingCard(
+                    icon: Icons.mark_chat_unread_outlined,
+                    title: 'Mensagens não lidas',
+                    subtitle:
+                        'Comunicados do administrador aguardando leitura.',
+                    count: unreadMessagesCount,
+                    color: const Color(0xFF2563EB),
+                    onTap: onOpenMessages,
                   ),
-                  _buildDashboardCard(
-                    icon: Icons.analytics_outlined,
-                    title: 'Dashboard de Planejamento',
-                    subtitle: 'Tempo mensal por Fundamentos, Tático e Físico',
-                    color: const Color(0xFFD4AF37),
-                    onTap: _navigateToTrainingPlanningDashboard,
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CoachEvaluationsHubPage extends StatelessWidget {
+  const CoachEvaluationsHubPage({
+    super.key,
+    this.pendingEvaluationsCount = 0,
+  });
+
+  final int pendingEvaluationsCount;
+
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  static const Color olympusGold = Color(0xFFD4AF37);
+
+  void _openAthleteEvaluations(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const CoachAthleteEvaluationTeamSelectPage(),
+      ),
+    );
+  }
+
+  void _openChampionshipEvaluations(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const CoachTrainingSessionsPage(
+          initialTipoEvento: 'campeonato',
+          lockTipoEvento: true,
+        ),
+      ),
+    );
+  }
+
+  Widget _background() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset(
+          'assets/images/monte_olimpo_v2.png',
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          errorBuilder: (_, __, ___) {
+            return Container(color: const Color(0xFF102845));
+          },
+        ),
+        Container(color: Colors.black.withOpacity(0.22)),
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                olympusBlue.withOpacity(0.62),
+                olympusLightBlue.withOpacity(0.24),
+                Colors.black.withOpacity(0.64),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _optionCard({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+    int? badgeCount,
+  }) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(22),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(22),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(22),
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.white.withOpacity(0.24),
+                          Colors.white.withOpacity(0.15),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      border: Border.all(color: Colors.white.withOpacity(0.32)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.22),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 58,
+                          height: 58,
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.22),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                                color: Colors.white.withOpacity(0.18)),
+                          ),
+                          child: Icon(icon, color: Colors.white, size: 30),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                subtitle,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.88),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.08),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: Colors.white.withOpacity(0.14)),
+                          ),
+                          child: Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            color: Colors.white.withOpacity(0.82),
+                            size: 18,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  _buildDashboardCard(
+                ),
+              ),
+            ),
+          ),
+          if (badgeCount != null && badgeCount > 0)
+            Positioned(
+              right: 8,
+              top: 2,
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 26, minHeight: 24),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.white, width: 1.8),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.red.withOpacity(0.38),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  badgeCount > 99 ? '99+' : badgeCount.toString(),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      extendBody: true,
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('Avaliações'),
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+      ),
+      body: SizedBox.expand(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _background(),
+            SafeArea(
+              child: ListView(
+                padding: const EdgeInsets.only(top: 14, bottom: 28),
+                children: [
+                  _optionCard(
+                    context: context,
                     icon: Icons.assignment_turned_in_outlined,
                     title: 'Avaliação de Atletas',
                     subtitle: 'Avaliação rápida e completa por ciclo',
                     color: const Color(0xFF8B5CF6),
-                    onTap: _navigateToAthleteEvaluations,
+                    onTap: () => _openAthleteEvaluations(context),
+                    badgeCount: pendingEvaluationsCount > 0
+                        ? pendingEvaluationsCount
+                        : null,
                   ),
-                  _buildDashboardCard(
-                    icon: Icons.bar_chart_rounded,
-                    title: 'Ranking dos atletas',
-                    subtitle: 'Desempenho com base nas avaliações salvas',
-                    color: const Color(0xFF0EA5A4),
-                    onTap: _navigateToRanking,
-                  ),
-                  _buildDashboardCard(
+                  _optionCard(
+                    context: context,
                     icon: Icons.emoji_events_outlined,
-                    title: 'Competições',
-                    subtitle: 'Veja ligas, campeonatos e amistosos',
-                    color: const Color(0xFF2C5F8D),
-                    onTap: _navigateToCompetitions,
-                    badgeCount:
-                        _competitionNewCount > 0 ? _competitionNewCount : null,
+                    title: 'Avaliar Campeonatos',
+                    subtitle: 'Avalie jogos de campeonatos separadamente',
+                    color: const Color(0xFF7C3AED),
+                    onTap: () => _openChampionshipEvaluations(context),
                   ),
-                  const SizedBox(height: 100),
                 ],
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1018,8 +2451,10 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
           'id, event_id, coach_id, athlete_id, set_number, '
               'saque_ponto, saque_erro, '
               'recepcao_boa, recepcao_erro, '
+              'passe_bom, passe_erro, '
               'levantamento_bom, levantamento_erro, '
               'ataque_ponto, ataque_erro, '
+              'largada_bola_boa, largada_bola_erro, '
               'bloqueio_ponto, bloqueio_erro, '
               'defesa_boa, defesa_erro, '
               'observacao, created_at, updated_at',
@@ -1274,8 +2709,10 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
   int _positiveActionsFor(Map<String, dynamic> row) {
     return _toInt(row['saque_ponto']) +
         _toInt(row['recepcao_boa']) +
+        _toInt(row['passe_bom']) +
         _toInt(row['levantamento_bom']) +
         _toInt(row['ataque_ponto']) +
+        _toInt(row['largada_bola_boa']) +
         _toInt(row['bloqueio_ponto']) +
         _toInt(row['defesa_boa']);
   }
@@ -1283,8 +2720,10 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
   int _errorsFor(Map<String, dynamic> row) {
     return _toInt(row['saque_erro']) +
         _toInt(row['recepcao_erro']) +
+        _toInt(row['passe_erro']) +
         _toInt(row['levantamento_erro']) +
         _toInt(row['ataque_erro']) +
+        _toInt(row['largada_bola_erro']) +
         _toInt(row['bloqueio_erro']) +
         _toInt(row['defesa_erro']);
   }
@@ -3390,6 +4829,91 @@ class _CoachTrainingPlanningDashboardPageState
     );
   }
 
+  void _openTrainingPlanner() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const CoachTrainingSessionsPage(
+          initialTipoEvento: 'treino',
+          lockTipoEvento: true,
+        ),
+      ),
+    );
+  }
+
+  Widget _trainingPlannerAccessCard() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _openTrainingPlanner,
+          borderRadius: BorderRadius.circular(22),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.96),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: olympusBorder),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.12),
+                  blurRadius: 16,
+                  offset: const Offset(0, 7),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: olympusBlue.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.calendar_month_outlined,
+                    color: olympusBlue,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Planejamento de Treinos',
+                        style: TextStyle(
+                          color: olympusBlue,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'Planejamento e avaliação rápida dos treinos marcados',
+                        style: TextStyle(
+                          color: olympusMuted,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.arrow_forward_ios_rounded,
+                    color: olympusBlue, size: 18),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _emptyState() {
     return Center(
       child: Container(
@@ -3459,7 +4983,9 @@ class _CoachTrainingPlanningDashboardPageState
               onRefresh: _loadDashboard,
               child: ListView(
                 children: [
-                  SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+                  const SizedBox(height: 16),
+                  _trainingPlannerAccessCard(),
+                  SizedBox(height: MediaQuery.of(context).size.height * 0.18),
                   _emptyState(),
                 ],
               ),
@@ -3471,6 +4997,7 @@ class _CoachTrainingPlanningDashboardPageState
                 padding: const EdgeInsets.only(bottom: 8),
                 children: [
                   _header(),
+                  _trainingPlannerAccessCard(),
                   _overviewCard(),
                   _categoryCards(),
                   _rankingSection(),
@@ -3668,8 +5195,275 @@ class _CategoryDistributionPainter extends CustomPainter {
   }
 }
 
+class CoachAthleteEvaluationTeamSelectPage extends StatefulWidget {
+  const CoachAthleteEvaluationTeamSelectPage({super.key});
+
+  @override
+  State<CoachAthleteEvaluationTeamSelectPage> createState() =>
+      _CoachAthleteEvaluationTeamSelectPageState();
+}
+
+class _CoachAthleteEvaluationTeamSelectPageState
+    extends State<CoachAthleteEvaluationTeamSelectPage> {
+  static const Color olympusBlue = Color(0xFF1E3A5F);
+  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  static const Color olympusGold = Color(0xFFD4AF37);
+  static const Color olympusPurple = Color(0xFF7C3AED);
+  static const Color olympusBg = Color(0xFFF4F7FB);
+
+  final PermissionService _permissionService = PermissionService();
+  bool _loadingScope = true;
+  String _coachTeamGender = 'all';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCoachScope();
+  }
+
+  Future<void> _loadCoachScope() async {
+    try {
+      final scope = await _permissionService.getCoachTeamGender();
+      if (!mounted) return;
+      setState(() {
+        _coachTeamGender = scope;
+        _loadingScope = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _coachTeamGender = 'all';
+        _loadingScope = false;
+      });
+    }
+  }
+
+  bool _canOpenGender(String gender) {
+    final normalized = _coachTeamGender.trim().toLowerCase();
+    if (normalized == 'all' || normalized == 'ambos' || normalized.isEmpty) {
+      return true;
+    }
+    return normalized == gender.trim().toLowerCase();
+  }
+
+  String get _scopeLabel {
+    switch (_coachTeamGender.trim().toLowerCase()) {
+      case 'feminino':
+        return 'Time Feminino';
+      case 'masculino':
+        return 'Time Masculino';
+      default:
+        return 'Times Feminino e Masculino';
+    }
+  }
+
+  void _openTeam(BuildContext context, String gender) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CoachAthleteEvaluationsPage(
+          initialGenderFilter: gender,
+        ),
+      ),
+    );
+  }
+
+  Widget _background() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/monte_olimpo_v2.png',
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) {
+              return Container(color: const Color(0xFF102845));
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: Container(color: Colors.black.withOpacity(0.34)),
+        ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  olympusBlue.withOpacity(0.88),
+                  olympusLightBlue.withOpacity(0.44),
+                  Colors.black.withOpacity(0.76),
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _heroCard() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(26),
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF071A30),
+            Color(0xFF123861),
+            Color(0xFF2C5F8D),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: olympusGold, width: 1.1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.30),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Avaliação de Atletas',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 23,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Escopo liberado para este treinador: $_scopeLabel.',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _teamButton({
+    required BuildContext context,
+    required String title,
+    required String gender,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _openTeam(context, gender),
+          borderRadius: BorderRadius.circular(24),
+          child: Ink(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.96),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: color.withOpacity(0.35)),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.20),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: color.withOpacity(0.15),
+                  ),
+                  child: Icon(icon, color: color, size: 32),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: olympusBlue,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: color,
+                  size: 18,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: olympusBg,
+      appBar: AppBar(
+        title: const Text('Avaliação de Atletas'),
+        backgroundColor: olympusBlue,
+        foregroundColor: Colors.white,
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _background()),
+          if (_loadingScope)
+            const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            )
+          else
+            ListView(
+              padding: const EdgeInsets.only(bottom: 28),
+              children: [
+                _heroCard(),
+                if (_canOpenGender('Feminino'))
+                  _teamButton(
+                    context: context,
+                    title: 'Time Feminino',
+                    gender: 'Feminino',
+                    icon: Icons.female_rounded,
+                    color: olympusPurple,
+                  ),
+                if (_canOpenGender('Masculino'))
+                  _teamButton(
+                    context: context,
+                    title: 'Time Masculino',
+                    gender: 'Masculino',
+                    icon: Icons.male_rounded,
+                    color: olympusBlue,
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class CoachAthleteEvaluationsPage extends StatefulWidget {
-  const CoachAthleteEvaluationsPage({super.key});
+  const CoachAthleteEvaluationsPage({super.key, this.initialGenderFilter});
+
+  final String? initialGenderFilter;
 
   @override
   State<CoachAthleteEvaluationsPage> createState() =>
@@ -3678,6 +5472,8 @@ class CoachAthleteEvaluationsPage extends StatefulWidget {
 
 class _CoachAthleteEvaluationsPageState
     extends State<CoachAthleteEvaluationsPage> {
+  String _completeEvaluationFilter = 'Todas';
+
   final SupabaseClient _supabase = Supabase.instance.client;
   final PermissionService _permissionService = PermissionService();
 
@@ -3700,6 +5496,17 @@ class _CoachAthleteEvaluationsPageState
   @override
   void initState() {
     super.initState();
+    if (widget.initialGenderFilter != null &&
+        widget.initialGenderFilter!.trim().isNotEmpty) {
+      final initialGender = widget.initialGenderFilter!;
+      if (initialGender == 'Feminino' || initialGender == 'Masculino') {
+        _genderFilter = initialGender;
+      }
+    }
+
+    if (widget.initialGenderFilter != null &&
+        widget.initialGenderFilter!.trim().isNotEmpty) {}
+
     _carregarAtletasVisiveis();
   }
 
@@ -3726,22 +5533,34 @@ class _CoachAthleteEvaluationsPageState
       _athletes.where((a) => !a.hasMonthlyComplete).length;
 
   List<AthleteEvaluationStatus> get _filteredAthletes {
-    if (_genderFilter == 'Todos') return _athletes;
+    Iterable<AthleteEvaluationStatus> base = _athletes;
 
-    final filter = _genderFilter.toLowerCase();
-    return _athletes.where((athlete) {
-      final gender = athlete.gender.toLowerCase().trim();
+    if (_genderFilter != 'Todos') {
+      final filter = _genderFilter.toLowerCase();
+      base = base.where((athlete) {
+        final gender = athlete.gender.toLowerCase().trim();
 
-      if (filter == 'feminino') {
-        return gender == 'feminino' || gender == 'female' || gender == 'f';
-      }
+        if (filter == 'feminino') {
+          return gender == 'feminino' || gender == 'female' || gender == 'f';
+        }
 
-      if (filter == 'masculino') {
-        return gender == 'masculino' || gender == 'male' || gender == 'm';
-      }
+        if (filter == 'masculino') {
+          return gender == 'masculino' || gender == 'male' || gender == 'm';
+        }
 
-      return true;
-    }).toList();
+        return true;
+      });
+    }
+
+    final filtered = base.where(_matchesCompleteEvaluationFilter).toList()
+      ..sort(
+        (a, b) => a.athleteName
+            .toLowerCase()
+            .trim()
+            .compareTo(b.athleteName.toLowerCase().trim()),
+      );
+
+    return filtered;
   }
 
   List<DateTime> _monthOptions() {
@@ -3805,8 +5624,12 @@ class _CoachAthleteEvaluationsPageState
           .eq('user_type', 'athlete')
           .order('full_name', ascending: true);
 
-      final profiles =
+      final loadedProfiles =
           List<Map<String, dynamic>>.from(profilesResponse as List);
+
+      final profiles = await _permissionService.filterAthletesForCurrentCoach(
+        loadedProfiles,
+      );
 
       final athleteIds = profiles
           .map((profile) => (profile['id'] ?? '').toString())
@@ -4057,24 +5880,6 @@ class _CoachAthleteEvaluationsPageState
               );
             },
           ),
-          ...['Todos', 'Feminino', 'Masculino'].map((gender) {
-            final selected = _genderFilter == gender;
-            return ChoiceChip(
-              label: Text(gender),
-              selected: selected,
-              showCheckmark: false,
-              selectedColor: olympusBlue,
-              backgroundColor: Colors.white,
-              side: BorderSide(
-                color: selected ? olympusBlue : olympusBorder,
-              ),
-              labelStyle: TextStyle(
-                color: selected ? Colors.white : olympusBlue,
-                fontWeight: FontWeight.w800,
-              ),
-              onSelected: (_) => setState(() => _genderFilter = gender),
-            );
-          }),
         ],
       ),
     );
@@ -4203,6 +6008,102 @@ class _CoachAthleteEvaluationsPageState
     await _carregarAtletasVisiveis();
   }
 
+  bool _hasCompleteMonthlyEvaluation(AthleteEvaluationStatus athlete) {
+    return athlete.hasMonthlyComplete;
+  }
+
+  bool _matchesCompleteEvaluationFilter(AthleteEvaluationStatus athlete) {
+    if (_completeEvaluationFilter == 'Todas') return true;
+    if (_completeEvaluationFilter == 'Realizadas') {
+      return _hasCompleteMonthlyEvaluation(athlete);
+    }
+    if (_completeEvaluationFilter == 'Pendentes') {
+      return !_hasCompleteMonthlyEvaluation(athlete);
+    }
+    return true;
+  }
+
+  Widget _buildCompleteEvaluationFilterChip(String label) {
+    final selected = _completeEvaluationFilter == label;
+
+    final icon = label == 'Realizadas'
+        ? Icons.check_circle_outline_rounded
+        : label == 'Pendentes'
+            ? Icons.pending_actions_rounded
+            : Icons.list_alt_rounded;
+
+    return ChoiceChip(
+      avatar: Icon(
+        icon,
+        size: 16,
+        color: selected ? Colors.white : olympusBlue,
+      ),
+      label: Text(label),
+      selected: selected,
+      showCheckmark: false,
+      selectedColor: olympusBlue,
+      backgroundColor: const Color(0xFFF7FAFC),
+      side: BorderSide(
+        color: selected ? olympusBlue : olympusBorder,
+      ),
+      labelStyle: TextStyle(
+        color: selected ? Colors.white : olympusBlue,
+        fontWeight: FontWeight.w900,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+      onSelected: (_) {
+        setState(() => _completeEvaluationFilter = label);
+      },
+    );
+  }
+
+  Widget _buildCompleteEvaluationFilterBar() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.96),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: olympusBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.10),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 10),
+            child: Text(
+              'Avaliação completa',
+              style: TextStyle(
+                color: olympusBlue,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildCompleteEvaluationFilterChip('Todas'),
+                const SizedBox(width: 8),
+                _buildCompleteEvaluationFilterChip('Realizadas'),
+                const SizedBox(width: 8),
+                _buildCompleteEvaluationFilterChip('Pendentes'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredAthletes;
@@ -4225,6 +6126,7 @@ class _CoachAthleteEvaluationsPageState
           Column(
             children: [
               _buildFilters(),
+              _buildCompleteEvaluationFilterBar(),
               _buildMonthlyReminder(),
               Expanded(
                 child: _loading
@@ -4248,7 +6150,7 @@ class _CoachAthleteEvaluationsPageState
                                 child: Padding(
                                   padding: EdgeInsets.all(24),
                                   child: Text(
-                                    'Nenhuma atleta visível para avaliações.',
+                                    'Nenhum atleta encontrado para o mês e status selecionados.',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
                                       color: Colors.white,
@@ -5432,951 +7334,6 @@ class _AthleteEvaluationFormPageState extends State<AthleteEvaluationFormPage> {
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class CoachCompleteMonthlyEvaluationPage extends StatefulWidget {
-  const CoachCompleteMonthlyEvaluationPage({
-    super.key,
-    required this.athletes,
-  });
-
-  final List<AthleteEvaluationStatus> athletes;
-
-  @override
-  State<CoachCompleteMonthlyEvaluationPage> createState() =>
-      _CoachCompleteMonthlyEvaluationPageState();
-}
-
-class _CoachCompleteMonthlyEvaluationPageState
-    extends State<CoachCompleteMonthlyEvaluationPage> {
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusBg = Color(0xFFF4F7FB);
-  static const Color olympusCard = Colors.white;
-  static const Color olympusText = Color(0xFF17324D);
-  static const Color olympusMuted = Color(0xFF53657B);
-  static const Color olympusSubtle = Color(0xFF6A7E94);
-  static const Color olympusBorder = Color(0xFFE4EDF5);
-  static const Color olympusSuccess = Color(0xFF16A34A);
-  static const Color olympusWarning = Color(0xFFF59E0B);
-  static const Color olympusDanger = Color(0xFFDC2626);
-
-  final SupabaseClient _supabase = Supabase.instance.client;
-
-  bool _saving = false;
-  bool _sendToAthlete = false;
-  String? _selectedAthleteId;
-
-  final TextEditingController _mensagemAtletaController =
-      TextEditingController();
-  final TextEditingController _observacaoGeralController =
-      TextEditingController();
-  final TextEditingController _pontoForteController = TextEditingController();
-  final TextEditingController _pontoMelhorarController =
-      TextEditingController();
-
-  String _evolucaoGeral = 'Estável';
-  String _prioridade = 'Média';
-
-  final List<String> _fundamentos = const [
-    'Saque',
-    'Recepção',
-    'Toque',
-    'Ataque',
-    'Bloqueio',
-    'Defesa',
-    'Posicionamento tático',
-    'Condicionamento físico',
-  ];
-
-  final Map<String, int> _notas = {};
-  final Map<String, String> _tendencias = {};
-  final Map<String, TextEditingController> _observacoesPorFundamento = {};
-
-  @override
-  void initState() {
-    super.initState();
-
-    _selectedAthleteId =
-        widget.athletes.isNotEmpty ? widget.athletes.first.athleteId : null;
-
-    for (final fundamento in _fundamentos) {
-      _notas[fundamento] = 3;
-      _tendencias[fundamento] = 'Estável';
-      _observacoesPorFundamento[fundamento] = TextEditingController();
-    }
-
-    if (_selectedAthleteId != null) {
-      _carregarAvaliacaoExistente(_selectedAthleteId!);
-    }
-  }
-
-  @override
-  void dispose() {
-    _mensagemAtletaController.dispose();
-    _observacaoGeralController.dispose();
-    _pontoForteController.dispose();
-    _pontoMelhorarController.dispose();
-
-    for (final controller in _observacoesPorFundamento.values) {
-      controller.dispose();
-    }
-
-    super.dispose();
-  }
-
-  bool _isMobile(BuildContext context) {
-    return MediaQuery.of(context).size.width < 600;
-  }
-
-  bool get _isLastFourDaysOfMonth {
-    final now = DateTime.now();
-    final lastDay = DateTime(now.year, now.month + 1, 0).day;
-    return now.day >= lastDay - 3;
-  }
-
-  String get _janelaAvaliacaoLabel {
-    final now = DateTime.now();
-    final lastDay = DateTime(now.year, now.month + 1, 0).day;
-    final startDay = lastDay - 3;
-    return '$startDay ao $lastDay';
-  }
-
-  AthleteEvaluationStatus? get _selectedAthlete {
-    if (_selectedAthleteId == null) return null;
-
-    for (final athlete in widget.athletes) {
-      if (athlete.athleteId == _selectedAthleteId) return athlete;
-    }
-
-    return null;
-  }
-
-  Future<void> _carregarAvaliacaoExistente(String athleteId) async {
-    try {
-      final now = DateTime.now();
-      final start = DateTime(now.year, now.month, 1);
-      final end = DateTime(now.year, now.month + 1, 1);
-
-      final rows = await _supabase
-          .from('training_evaluations')
-          .select('slot, fundamento, motivo, observacao, score, created_at')
-          .eq('athlete_id', athleteId)
-          .eq('tipo', 'completa')
-          .gte('created_at', start.toIso8601String())
-          .lt('created_at', end.toIso8601String())
-          .order('created_at', ascending: false);
-
-      _limparFormulario(manterAtleta: true);
-
-      final list = List<Map<String, dynamic>>.from(rows as List);
-      if (list.isEmpty) return;
-
-      for (final row in list) {
-        final slot = (row['slot'] ?? '').toString();
-
-        if (slot == 'resumo_mensal') {
-          final motivo = (row['motivo'] ?? '').toString();
-          final parts = motivo.split('|').map((e) => e.trim()).toList();
-
-          if (parts.isNotEmpty && parts[0].isNotEmpty) {
-            _evolucaoGeral = parts[0];
-          }
-          if (parts.length > 1 && parts[1].isNotEmpty) {
-            _prioridade = parts[1];
-          }
-          if (parts.length > 2) {
-            _pontoForteController.text = parts[2];
-          }
-          if (parts.length > 3) {
-            _pontoMelhorarController.text = parts[3];
-          }
-
-          _observacaoGeralController.text =
-              (row['observacao'] ?? '').toString();
-          continue;
-        }
-
-        final fundamento = (row['fundamento'] ?? '').toString();
-        if (!_fundamentos.contains(fundamento)) continue;
-
-        final score = row['score'];
-        if (score is int) {
-          _notas[fundamento] = score.clamp(1, 5);
-        } else if (score is num) {
-          _notas[fundamento] = score.toInt().clamp(1, 5);
-        }
-
-        final motivo = (row['motivo'] ?? '').toString();
-        if (['Melhorando', 'Estável', 'Piorou'].contains(motivo)) {
-          _tendencias[fundamento] = motivo;
-        }
-
-        _observacoesPorFundamento[fundamento]?.text =
-            (row['observacao'] ?? '').toString();
-      }
-
-      if (mounted) setState(() {});
-    } catch (_) {
-      // Se não carregar histórico, mantém formulário disponível.
-    }
-  }
-
-  void _limparFormulario({bool manterAtleta = false}) {
-    _mensagemAtletaController.clear();
-    _observacaoGeralController.clear();
-    _pontoForteController.clear();
-    _pontoMelhorarController.clear();
-    _evolucaoGeral = 'Estável';
-    _prioridade = 'Média';
-
-    for (final fundamento in _fundamentos) {
-      _notas[fundamento] = 3;
-      _tendencias[fundamento] = 'Estável';
-      _observacoesPorFundamento[fundamento]?.clear();
-    }
-
-    if (!manterAtleta) _selectedAthleteId = null;
-
-    if (mounted) setState(() {});
-  }
-
-  int _mediaNotasArredondada() {
-    if (_notas.isEmpty) return 3;
-    final total = _notas.values.fold<int>(0, (sum, value) => sum + value);
-    return (total / _notas.length).round().clamp(1, 5);
-  }
-
-  DateTime? _parseEventDate(dynamic value) {
-    final raw = (value ?? '').toString().trim();
-    if (raw.isEmpty) return null;
-
-    try {
-      final parts = raw.split('/');
-      if (parts.length == 3) {
-        return DateTime(
-          int.parse(parts[2]),
-          int.parse(parts[1]),
-          int.parse(parts[0]),
-        );
-      }
-
-      return DateTime.tryParse(raw);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<Map<String, dynamic>> _buscarEventoBaseParaAvaliacaoMensal(
-    String athleteId,
-  ) async {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, 1);
-    final end = DateTime(now.year, now.month + 1, 1);
-
-    final checkinsResponse = await _supabase.from('checkins').select('''
-event_id,
-check_in_status,
-events:event_id (
-  id,
-  event_name,
-  event_type,
-  event_date,
-  event_time
-)
-''').eq('user_id', athleteId).inFilter('check_in_status', [
-          'realizado',
-          'realizado com sucesso',
-          'checked_in',
-          'checkin_realizado',
-          'ok',
-          'success',
-          'completed',
-          'done',
-        ]);
-
-    final checkins = List<Map<String, dynamic>>.from(checkinsResponse as List);
-
-    final eventos = <Map<String, dynamic>>[];
-
-    for (final checkin in checkins) {
-      final rawEvent = checkin['events'];
-      if (rawEvent == null || rawEvent is! Map) continue;
-
-      final event = Map<String, dynamic>.from(rawEvent);
-      final eventId = (event['id'] ?? checkin['event_id'] ?? '').toString();
-      if (eventId.isEmpty) continue;
-
-      final eventType =
-          (event['event_type'] ?? '').toString().toLowerCase().trim();
-
-      if (eventType != 'treino') continue;
-
-      final eventDate = _parseEventDate(event['event_date']);
-      if (eventDate == null) continue;
-
-      if (eventDate.isBefore(start) || !eventDate.isBefore(end)) continue;
-
-      eventos.add({
-        'id': eventId,
-        'event_name': (event['event_name'] ?? 'Avaliação mensal').toString(),
-        'event_date': (event['event_date'] ?? '').toString(),
-        'event_time': (event['event_time'] ?? '').toString(),
-        'eventDate': eventDate,
-      });
-    }
-
-    if (eventos.isEmpty) {
-      throw Exception(
-        'Não foi encontrado nenhum treino com check-in realizado neste mês para vincular a avaliação completa.',
-      );
-    }
-
-    eventos.sort((a, b) {
-      final ad = a['eventDate'] as DateTime;
-      final bd = b['eventDate'] as DateTime;
-      return bd.compareTo(ad);
-    });
-
-    return eventos.first;
-  }
-
-  Future<void> _salvarAvaliacaoCompleta() async {
-    if (!_isLastFourDaysOfMonth) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'A avaliação completa só pode ser feita nos últimos 4 dias do mês ($_janelaAvaliacaoLabel).',
-          ),
-          backgroundColor: olympusWarning,
-        ),
-      );
-      return;
-    }
-
-    final user = _supabase.auth.currentUser;
-    final athlete = _selectedAthlete;
-
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Usuário não autenticado.')),
-      );
-      return;
-    }
-
-    if (athlete == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecione uma atleta.')),
-      );
-      return;
-    }
-
-    if (_pontoMelhorarController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Informe o principal ponto a melhorar.')),
-      );
-      return;
-    }
-
-    setState(() => _saving = true);
-
-    try {
-      final athleteId = athlete.athleteId;
-      final now = DateTime.now();
-      final start = DateTime(now.year, now.month, 1);
-      final end = DateTime(now.year, now.month + 1, 1);
-      final eventoBase = await _buscarEventoBaseParaAvaliacaoMensal(athleteId);
-      final eventId = (eventoBase['id'] ?? '').toString();
-      final eventName =
-          (eventoBase['event_name'] ?? 'Avaliação mensal').toString();
-      final eventDate = (eventoBase['event_date'] ?? '').toString();
-
-      if (eventId.isEmpty) {
-        throw Exception(
-            'Evento base inválido para salvar a avaliação completa.');
-      }
-
-      final existing = await _supabase
-          .from('training_evaluations')
-          .select('id')
-          .eq('athlete_id', athleteId)
-          .eq('tipo', 'completa')
-          .gte('created_at', start.toIso8601String())
-          .lt('created_at', end.toIso8601String());
-
-      final existingIds = List<Map<String, dynamic>>.from(existing as List)
-          .map((row) => (row['id'] ?? '').toString())
-          .where((id) => id.isNotEmpty)
-          .toList();
-
-      if (existingIds.isNotEmpty) {
-        await _supabase
-            .from('training_evaluations')
-            .delete()
-            .inFilter('id', existingIds);
-      }
-
-      final rows = <Map<String, dynamic>>[];
-
-      rows.add({
-        'event_id': eventId,
-        'event_name': eventName,
-        'event_date': eventDate,
-        'coach_id': user.id,
-        'athlete_id': athleteId,
-        'tipo': 'completa',
-        'slot': 'resumo_mensal',
-        'motivo':
-            '$_evolucaoGeral | $_prioridade | ${_pontoForteController.text.trim()} | ${_pontoMelhorarController.text.trim()}',
-        'fundamento': 'Resumo mensal',
-        'observacao': _observacaoGeralController.text.trim(),
-        'score': _mediaNotasArredondada(),
-      });
-
-      for (final fundamento in _fundamentos) {
-        rows.add({
-          'event_id': eventId,
-          'event_name': eventName,
-          'event_date': eventDate,
-          'coach_id': user.id,
-          'athlete_id': athleteId,
-          'tipo': 'completa',
-          'slot': 'completa_${fundamento.toLowerCase().replaceAll(' ', '_')}',
-          'motivo': _tendencias[fundamento] ?? 'Estável',
-          'fundamento': fundamento,
-          'observacao':
-              _observacoesPorFundamento[fundamento]?.text.trim() ?? '',
-          'score': _notas[fundamento] ?? 3,
-        });
-      }
-
-      await _supabase.from('training_evaluations').insert(rows);
-
-      if (_sendToAthlete) {
-        final message = _mensagemAtletaController.text.trim().isEmpty
-            ? 'Sua avaliação completa mensal foi registrada. Evolução: $_evolucaoGeral. Prioridade: $_prioridade. Ponto principal: ${_pontoMelhorarController.text.trim()}.'
-            : _mensagemAtletaController.text.trim();
-
-        await sendEvaluationMessageToAthlete(
-          supabase: _supabase,
-          athleteId: athleteId,
-          title: 'Avaliação completa mensal',
-          body: message,
-        );
-      }
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content:
-              Text('Avaliação completa salva para ${athlete.athleteName}.'),
-          backgroundColor: olympusSuccess,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao salvar avaliação completa: $e'),
-          backgroundColor: olympusDanger,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  Widget _buildBackground() {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
-            fit: BoxFit.cover,
-          ),
-        ),
-        Positioned.fill(
-          child: Container(color: Colors.black.withOpacity(0.35)),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildWindowInfo(bool isMobile) {
-    final opened = _isLastFourDaysOfMonth;
-
-    return Container(
-      padding: EdgeInsets.all(isMobile ? 12 : 14),
-      decoration: BoxDecoration(
-        color: opened
-            ? olympusSuccess.withOpacity(0.12)
-            : olympusWarning.withOpacity(0.14),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: opened
-              ? olympusSuccess.withOpacity(0.28)
-              : olympusWarning.withOpacity(0.35),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            opened ? Icons.check_circle_outline : Icons.lock_clock_rounded,
-            color: opened ? olympusSuccess : olympusWarning,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              opened
-                  ? 'Janela mensal aberta. Você pode preencher a avaliação completa.'
-                  : 'Liberada apenas nos últimos 4 dias do mês ($_janelaAvaliacaoLabel).',
-              style: TextStyle(
-                color: opened ? olympusSuccess : olympusBlue,
-                fontWeight: FontWeight.w900,
-                fontSize: isMobile ? 12 : 13,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCard({
-    required List<Widget> children,
-    EdgeInsetsGeometry? padding,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: padding ?? const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: olympusCard.withOpacity(0.96),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: olympusBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: children,
-      ),
-    );
-  }
-
-  Widget _buildHeader(bool isMobile) {
-    return _buildCard(
-      padding: EdgeInsets.all(isMobile ? 14 : 16),
-      children: [
-        Text(
-          'Avaliação completa mensal',
-          style: TextStyle(
-            color: olympusBlue,
-            fontSize: isMobile ? 19 : 21,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Avaliação aprofundada por atleta, feita no fechamento do mês.',
-          style: TextStyle(
-            color: olympusMuted,
-            fontSize: isMobile ? 12 : 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 12),
-        _buildWindowInfo(isMobile),
-      ],
-    );
-  }
-
-  Widget _buildAthleteSelector(bool isMobile) {
-    return _buildCard(
-      padding: EdgeInsets.all(isMobile ? 14 : 16),
-      children: [
-        Text(
-          'Atleta',
-          style: TextStyle(
-            color: olympusBlue,
-            fontSize: isMobile ? 15 : 16,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          value: _selectedAthleteId,
-          decoration: const InputDecoration(
-            labelText: 'Selecionar atleta',
-            border: OutlineInputBorder(),
-          ),
-          items: widget.athletes.map((athlete) {
-            return DropdownMenuItem<String>(
-              value: athlete.athleteId,
-              child: Text(athlete.athleteName),
-            );
-          }).toList(),
-          onChanged: _saving
-              ? null
-              : (value) async {
-                  setState(() => _selectedAthleteId = value);
-                  if (value != null) {
-                    await _carregarAvaliacaoExistente(value);
-                  }
-                },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSummaryCard(bool isMobile) {
-    return _buildCard(
-      padding: EdgeInsets.all(isMobile ? 14 : 16),
-      children: [
-        Text(
-          'Resumo geral',
-          style: TextStyle(
-            color: olympusBlue,
-            fontSize: isMobile ? 15 : 16,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          value: _evolucaoGeral,
-          decoration: const InputDecoration(
-            labelText: 'Evolução geral',
-            border: OutlineInputBorder(),
-          ),
-          items: const [
-            DropdownMenuItem(value: 'Melhorando', child: Text('Melhorando')),
-            DropdownMenuItem(value: 'Estável', child: Text('Estável')),
-            DropdownMenuItem(
-              value: 'Precisa de atenção',
-              child: Text('Precisa de atenção'),
-            ),
-          ],
-          onChanged: _saving
-              ? null
-              : (value) {
-                  if (value == null) return;
-                  setState(() => _evolucaoGeral = value);
-                },
-        ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          value: _prioridade,
-          decoration: const InputDecoration(
-            labelText: 'Prioridade de acompanhamento',
-            border: OutlineInputBorder(),
-          ),
-          items: const [
-            DropdownMenuItem(value: 'Baixa', child: Text('Baixa')),
-            DropdownMenuItem(value: 'Média', child: Text('Média')),
-            DropdownMenuItem(value: 'Alta', child: Text('Alta')),
-          ],
-          onChanged: _saving
-              ? null
-              : (value) {
-                  if (value == null) return;
-                  setState(() => _prioridade = value);
-                },
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _pontoForteController,
-          enabled: !_saving,
-          decoration: const InputDecoration(
-            labelText: 'Ponto forte',
-            hintText: 'Ex: liderança, saque, regularidade',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _pontoMelhorarController,
-          enabled: !_saving,
-          decoration: const InputDecoration(
-            labelText: 'Principal ponto a melhorar',
-            hintText: 'Ex: recepção, tomada de decisão',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _observacaoGeralController,
-          enabled: !_saving,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            labelText: 'Observação geral',
-            hintText: 'Resumo mensal da atleta',
-            border: OutlineInputBorder(),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFundamentoCard(String fundamento, bool isMobile) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: EdgeInsets.all(isMobile ? 12 : 14),
-      decoration: BoxDecoration(
-        color: olympusCard,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: olympusBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            fundamento,
-            style: TextStyle(
-              color: olympusText,
-              fontSize: isMobile ? 14 : 15,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final narrow = constraints.maxWidth < 380;
-
-              final notaField = DropdownButtonFormField<int>(
-                value: _notas[fundamento],
-                decoration: const InputDecoration(
-                  labelText: 'Nota',
-                  border: OutlineInputBorder(),
-                ),
-                items: List.generate(
-                  5,
-                  (index) => DropdownMenuItem<int>(
-                    value: index + 1,
-                    child: Text('${index + 1}'),
-                  ),
-                ),
-                onChanged: _saving
-                    ? null
-                    : (value) {
-                        if (value == null) return;
-                        setState(() => _notas[fundamento] = value);
-                      },
-              );
-
-              final tendenciaField = DropdownButtonFormField<String>(
-                value: _tendencias[fundamento],
-                decoration: const InputDecoration(
-                  labelText: 'Tendência',
-                  border: OutlineInputBorder(),
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'Melhorando',
-                    child: Text('Melhorando'),
-                  ),
-                  DropdownMenuItem(value: 'Estável', child: Text('Estável')),
-                  DropdownMenuItem(value: 'Piorou', child: Text('Piorou')),
-                ],
-                onChanged: _saving
-                    ? null
-                    : (value) {
-                        if (value == null) return;
-                        setState(() => _tendencias[fundamento] = value);
-                      },
-              );
-
-              if (narrow) {
-                return Column(
-                  children: [
-                    notaField,
-                    const SizedBox(height: 10),
-                    tendenciaField,
-                  ],
-                );
-              }
-
-              return Row(
-                children: [
-                  Expanded(child: notaField),
-                  const SizedBox(width: 10),
-                  Expanded(child: tendenciaField),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _observacoesPorFundamento[fundamento],
-            enabled: !_saving,
-            maxLines: 2,
-            decoration: const InputDecoration(
-              labelText: 'Observação do fundamento',
-              border: OutlineInputBorder(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSendToAthleteCard(bool isMobile) {
-    return _buildCard(
-      padding: EdgeInsets.all(isMobile ? 14 : 16),
-      children: [
-        SwitchListTile(
-          value: _sendToAthlete,
-          contentPadding: EdgeInsets.zero,
-          activeColor: olympusBlue,
-          secondary: const Icon(
-            Icons.send_outlined,
-            color: olympusBlue,
-          ),
-          title: const Text(
-            'Enviar para atleta',
-            style: TextStyle(
-              color: olympusBlue,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          subtitle: const Text(
-            'Ao salvar, a atleta receberá uma mensagem com o resumo mensal.',
-            style: TextStyle(
-              color: olympusMuted,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          onChanged: _saving
-              ? null
-              : (value) {
-                  setState(() => _sendToAthlete = value);
-                },
-        ),
-        if (_sendToAthlete) ...[
-          const SizedBox(height: 12),
-          TextField(
-            controller: _mensagemAtletaController,
-            enabled: !_saving,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              labelText: 'Mensagem para atleta',
-              hintText:
-                  'Ex: Parabéns pela evolução no saque. Para o próximo mês, o foco será recepção e tomada de decisão.',
-              border: OutlineInputBorder(),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildFundamentosSection(bool isMobile) {
-    return _buildCard(
-      padding: EdgeInsets.all(isMobile ? 14 : 16),
-      children: [
-        Text(
-          'Fundamentos',
-          style: TextStyle(
-            color: olympusBlue,
-            fontSize: isMobile ? 15 : 16,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Dê nota de 1 a 5 e registre a tendência de evolução.',
-          style: TextStyle(
-            color: olympusMuted,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 12),
-        ..._fundamentos.map((item) => _buildFundamentoCard(item, isMobile)),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isMobile = _isMobile(context);
-
-    return Scaffold(
-      backgroundColor: olympusBg,
-      appBar: AppBar(
-        title: const Text('Avaliação completa'),
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
-      ),
-      body: Stack(
-        children: [
-          Positioned.fill(child: _buildBackground()),
-          SafeArea(
-            child: widget.athletes.isEmpty
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        'Nenhuma atleta visível para avaliação completa.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  )
-                : ListView(
-                    padding: EdgeInsets.all(isMobile ? 12 : 16),
-                    children: [
-                      _buildHeader(isMobile),
-                      const SizedBox(height: 14),
-                      _buildAthleteSelector(isMobile),
-                      const SizedBox(height: 14),
-                      _buildSendToAthleteCard(isMobile),
-                      const SizedBox(height: 14),
-                      _buildSummaryCard(isMobile),
-                      const SizedBox(height: 14),
-                      _buildFundamentosSection(isMobile),
-                      const SizedBox(height: 18),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: _saving || !_isLastFourDaysOfMonth
-                              ? null
-                              : _salvarAvaliacaoCompleta,
-                          icon: _saving
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
-                                    ),
-                                  ),
-                                )
-                              : const Icon(Icons.save_outlined),
-                          label: Text(
-                            _saving
-                                ? 'Salvando...'
-                                : 'Salvar avaliação completa',
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: olympusBlue,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor:
-                                Colors.grey.withOpacity(0.35),
-                            padding: const EdgeInsets.symmetric(vertical: 15),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-                    ],
-                  ),
           ),
         ],
       ),

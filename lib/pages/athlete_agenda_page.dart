@@ -737,7 +737,7 @@ enable_ride_logistics
       case 'amistoso':
         return 'Amistosos';
       case 'campeonato':
-        return 'Liga / Campeonatos';
+        return 'Liga / Camp.';
       default:
         return tipo;
     }

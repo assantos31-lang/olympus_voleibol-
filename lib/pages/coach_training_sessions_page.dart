@@ -1377,6 +1377,22 @@ events!convocations_event_id_fkey (
     required List<DropdownMenuItem<dynamic>> items,
     required ValueChanged<dynamic> onChanged,
   }) {
+    final seenValues = <dynamic>{};
+    final safeItems = <DropdownMenuItem<dynamic>>[];
+
+    for (final item in items) {
+      final itemValue = item.value;
+      if (itemValue == null) continue;
+      if (seenValues.add(itemValue)) {
+        safeItems.add(item);
+      }
+    }
+
+    final valueMatches = value == null
+        ? 0
+        : safeItems.where((item) => item.value == value).length;
+    final safeValue = valueMatches == 1 ? value : null;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1419,14 +1435,14 @@ events!convocations_event_id_fkey (
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<dynamic>(
-                value: value,
+                value: safeValue,
                 hint: Text(
                   hint,
                   style: TextStyle(color: Colors.grey[600], fontSize: 13),
                 ),
                 isExpanded: true,
-                items: items,
-                onChanged: onChanged,
+                items: safeItems,
+                onChanged: safeItems.isEmpty ? null : onChanged,
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,

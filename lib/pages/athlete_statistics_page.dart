@@ -415,7 +415,7 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
         continue;
       }
 
-      // Falta só nasce de treino ACEITO cujo prazo de check-in já fechou.
+      // Falta nasce de treino convocado sem check-in após 30 minutos.
       // Recusados e pendentes seguem a mesma regra da Agenda: não viram falta.
       if (!convokedTrainingEventDates.containsKey(eventId)) continue;
 
@@ -2942,9 +2942,6 @@ class _AthleteStatisticsDetailPageState
         .where((row) {
           if (!_isSelectedStatsEvent(row, start: start)) return false;
 
-          final status = (row['status'] ?? '').toString().toLowerCase().trim();
-          if (status != 'accepted') return false;
-
           final eventId = (row['event_id'] ?? '').toString();
           if (eventId.isEmpty || doneEventIds.contains(eventId)) return false;
 
@@ -3047,14 +3044,10 @@ class _AthleteStatisticsDetailPageState
         continue;
       }
 
-      // Falta só nasce de treino ACEITO cujo prazo de check-in já fechou.
-      // Recusados e pendentes seguem a mesma regra da Agenda: não viram falta.
+      // ❌ Falta = treino convocado sem check-in após 30 minutos.
+      // Aceitos, pendentes, recusados ou qualquer outro status sem check-in
+      // entram como falta após o prazo.
       if (!selectedEventDates.containsKey(eventId)) continue;
-
-      final convocation = _convocationForEventId(eventId);
-      final status =
-          (convocation?['status'] ?? '').toString().toLowerCase().trim();
-      if (status != 'accepted') continue;
 
       final checkinClosed = today.isAfter(
         eventDate.add(const Duration(minutes: 30)),

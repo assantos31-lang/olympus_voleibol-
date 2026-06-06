@@ -14,6 +14,7 @@ import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
 import 'athlete_messages_page.dart';
 import 'athlete_statistics_page.dart';
+import 'athlete_coach_evaluation_page.dart';
 import 'chat_rooms_page.dart';
 import 'admin_competitions_page.dart';
 import 'admin_birthdays_page.dart';
@@ -2111,17 +2112,10 @@ event_time
           continue;
         }
 
-        final isAcceptedButAbsent = status == 'accepted';
-        final isExpiredRejectedAbsence =
-            status == 'rejected' && justification == 'prazo expirado';
+        final isConvokedWithoutCheckin = !hasValidCheckin;
 
-        if (isAcceptedButAbsent) {
+        if (isConvokedWithoutCheckin) {
           acceptedButAbsent++;
-          monthlyAbsence++;
-          continue;
-        }
-
-        if (isExpiredRejectedAbsence) {
           monthlyAbsence++;
         }
       }
@@ -2593,6 +2587,15 @@ event_time
       context,
       MaterialPageRoute(
         builder: (context) => const AthleteStatisticsPage(),
+      ),
+    );
+  }
+
+  void _navigateToCoachEvaluation() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AthleteCoachEvaluationPage(),
       ),
     );
   }
@@ -3750,7 +3753,7 @@ event_time
               Expanded(
                 child: _buildPresenceMetric(
                   icon: Icons.person_off_rounded,
-                  label: 'Ausência após aceite',
+                  label: 'Ausência sem check-in',
                   value: _acceptedButAbsentCount,
                   color: Colors.red,
                 ),
@@ -4432,6 +4435,13 @@ event_time
                     subtitle: 'Evolução, avaliações e feedbacks do técnico',
                     color: olympusGold,
                     onTap: _navigateToStatistics,
+                  ),
+                  _buildDashboardCard(
+                    icon: Icons.rate_review_rounded,
+                    title: 'Avaliar Treinador',
+                    subtitle: 'Avalie o treino e envie seu feedback',
+                    color: const Color(0xFF64FFDA),
+                    onTap: _navigateToCoachEvaluation,
                   ),
                   _buildDashboardCard(
                     icon: Icons.mark_chat_unread_rounded,

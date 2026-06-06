@@ -27,6 +27,8 @@ class _CoachRankingPageState extends State<CoachRankingPage> {
   String _periodo = 'mes';
   String _generoFiltro = 'todos';
   String _fundamentoFiltro = 'todos';
+  String _coachTeamGender = 'ambos';
+  bool _showGenderFilter = true;
 
   int _pesoDestaque = 2;
   int _pesoAtencao = -1;
@@ -158,8 +160,67 @@ class _CoachRankingPageState extends State<CoachRankingPage> {
   }
 
   Future<void> _carregarTudo() async {
+    await _carregarCoachTeamGender();
     await _carregarPesos();
     await _carregarRanking();
+  }
+
+  String _normalizarCoachTeamGender(dynamic value) {
+    final raw = (value ?? '').toString().trim().toLowerCase();
+
+    if (raw.contains('fem') || raw == 'f' || raw == 'female') {
+      return 'feminino';
+    }
+
+    if (raw.contains('masc') || raw == 'm' || raw == 'male') {
+      return 'masculino';
+    }
+
+    return 'ambos';
+  }
+
+  Future<void> _carregarCoachTeamGender() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+
+    String scope = 'ambos';
+
+    try {
+      final profile = await _supabase
+          .from('profiles')
+          .select('coach_team_gender')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      scope = _normalizarCoachTeamGender(profile?['coach_team_gender']);
+    } catch (_) {
+      try {
+        final profile = await _supabase
+            .from('profiles')
+            .select('team_scope')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        scope = _normalizarCoachTeamGender(profile?['team_scope']);
+      } catch (_) {
+        scope = 'ambos';
+      }
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _coachTeamGender = scope;
+      _showGenderFilter = scope == 'ambos';
+
+      if (!_showGenderFilter) {
+        _generoFiltro = scope;
+      } else if (_generoFiltro != 'todos' &&
+          _generoFiltro != 'feminino' &&
+          _generoFiltro != 'masculino') {
+        _generoFiltro = 'todos';
+      }
+    });
   }
 
   Future<void> _carregarPesos() async {
@@ -268,12 +329,13 @@ class _CoachRankingPageState extends State<CoachRankingPage> {
       try {
         final rows = await _supabase
             .from('profiles')
-            .select('id, full_name, avatar_url, gender, $column')
+            .select('id, full_name, avatar_url, gender, is_active, $column')
             .eq(column, value);
 
         return List<Map<String, dynamic>>.from(rows as List).where((profile) {
           final id = (profile['id'] ?? '').toString();
-          return id.isNotEmpty && id != currentUserId;
+          final isActive = profile['is_active'] != false;
+          return id.isNotEmpty && id != currentUserId && isActive;
         }).toList();
       } catch (_) {
         return [];
@@ -302,12 +364,13 @@ class _CoachRankingPageState extends State<CoachRankingPage> {
 
     final allProfiles = await _safeSelect(
       'profiles',
-      'id, full_name, avatar_url, gender',
+      'id, full_name, avatar_url, gender, is_active',
     );
 
     return allProfiles.where((profile) {
       final id = (profile['id'] ?? '').toString();
-      if (id.isEmpty || id == currentUserId) return false;
+      final isActive = profile['is_active'] != false;
+      if (id.isEmpty || id == currentUserId || !isActive) return false;
       if (idsComHistorico.isEmpty) return false;
       return idsComHistorico.contains(id);
     }).toList();
@@ -773,18 +836,47 @@ class _CoachRankingPageState extends State<CoachRankingPage> {
             setState(() => _periodo = v);
             _carregarRanking();
           }),
-          const SizedBox(height: 12),
-          _buildFilterSection(
-              'Gênero',
-              const [
-                {'value': 'todos', 'label': 'Todos'},
-                {'value': 'feminino', 'label': 'Feminino'},
-                {'value': 'masculino', 'label': 'Masculino'},
-              ],
-              _generoFiltro, (v) {
-            setState(() => _generoFiltro = v);
-            _carregarRanking();
-          }),
+          if (_showGenderFilter) ...[
+            const SizedBox(height: 12),
+            _buildFilterSection(
+                'Gênero',
+                const [
+                  {'value': 'todos', 'label': 'Todos'},
+                  {'value': 'feminino', 'label': 'Feminino'},
+                  {'value': 'masculino', 'label': 'Masculino'},
+                ],
+                _generoFiltro, (v) {
+              setState(() => _generoFiltro = v);
+              _carregarRanking();
+            }),
+          ] else ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: olympusGold.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: olympusGold.withOpacity(0.24)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lock_outline, color: olympusGold, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Ranking filtrado automaticamente para ${_generoLabel(_coachTeamGender)}',
+                      style: const TextStyle(
+                        color: olympusBlue,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           _buildFilterSection(
               'Fundamento',

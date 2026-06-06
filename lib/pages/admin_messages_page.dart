@@ -1259,9 +1259,21 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
   ];
 
   static const Map<String, String> _fixedProfileLabels = {
+    'athlete': 'Atleta',
     'coach': 'Técnico',
     'member': 'Membro',
-    'athlete': 'Atleta',
+  };
+
+  static const Map<String, String> _profileAliases = {
+    'athlete': 'athlete',
+    'atleta': 'athlete',
+    'coach': 'coach',
+    'tecnico': 'coach',
+    'técnico': 'coach',
+    'treinador': 'coach',
+    'trainer': 'coach',
+    'member': 'member',
+    'membro': 'member',
   };
 
   static const Map<String, String> _deliveryChannelLabels = {
@@ -1322,11 +1334,13 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
   }
 
   String _normalizeProfileValue(String value) {
-    return value.trim().toLowerCase();
+    final normalized = value.trim().toLowerCase();
+    return _profileAliases[normalized] ?? normalized;
   }
 
   String _profileLabelFromValue(String value) {
-    return _fixedProfileLabels[_normalizeProfileValue(value)] ?? value.trim();
+    final normalized = _normalizeProfileValue(value);
+    return _fixedProfileLabels[normalized] ?? value.trim();
   }
 
   bool _matchesProfile(dynamic userType, String? selectedProfile) {

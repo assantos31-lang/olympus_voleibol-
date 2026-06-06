@@ -85,12 +85,28 @@ class _CoachChampionshipScoutEvaluationPageState
       icon: Icons.front_hand_rounded,
     ),
     ScoutMetric(
+      title: 'Passe',
+      positiveLabel: 'Bom',
+      negativeLabel: 'Erro',
+      positiveField: 'passe_bom',
+      negativeField: 'passe_erro',
+      icon: Icons.swap_horiz_rounded,
+    ),
+    ScoutMetric(
       title: 'Ataque',
       positiveLabel: 'Ponto',
       negativeLabel: 'Erro',
       positiveField: 'ataque_ponto',
       negativeField: 'ataque_erro',
       icon: Icons.bolt_rounded,
+    ),
+    ScoutMetric(
+      title: 'Largada de bola',
+      positiveLabel: 'Boa',
+      negativeLabel: 'Erro',
+      positiveField: 'largada_bola_boa',
+      negativeField: 'largada_bola_erro',
+      icon: Icons.touch_app_rounded,
     ),
     ScoutMetric(
       title: 'Bloqueio',
@@ -150,8 +166,12 @@ class _CoachChampionshipScoutEvaluationPageState
       'saque_erro': 0,
       'recepcao_boa': 0,
       'recepcao_erro': 0,
+      'passe_bom': 0,
+      'passe_erro': 0,
       'ataque_ponto': 0,
       'ataque_erro': 0,
+      'largada_bola_boa': 0,
+      'largada_bola_erro': 0,
       'bloqueio_ponto': 0,
       'bloqueio_erro': 0,
       'defesa_boa': 0,
@@ -935,8 +955,8 @@ class _CoachChampionshipScoutEvaluationPageState
     );
   }
 
-  void _abrirAvaliacaoAtletas() {
-    Navigator.push(
+  Future<void> _abrirAvaliacaoAtletas() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => CoachChampionshipAthleteEvaluationPage(
@@ -945,6 +965,9 @@ class _CoachChampionshipScoutEvaluationPageState
         ),
       ),
     );
+
+    if (!mounted) return;
+    await _carregarAtletasEScout();
   }
 
   Future<void> _selecionarQuantidadeSets() async {
@@ -1681,47 +1704,52 @@ class _CoachChampionshipScoutEvaluationPageState
     required double width,
   }) {
     final resolvedHeight =
-        value == 0 ? 8.0 : height.clamp(18.0, 220.0).toDouble();
+        value == 0 ? 6.0 : height.clamp(14.0, 150.0).toDouble();
 
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Text(
-          '$value',
-          style: TextStyle(
-            color: color,
-            fontSize: 10,
-            fontWeight: FontWeight.w900,
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.bottomCenter,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text(
+            '$value',
+            style: TextStyle(
+              color: color,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w900,
+            ),
           ),
-        ),
-        const SizedBox(height: 5),
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 320),
-          curve: Curves.easeOutCubic,
-          width: width,
-          height: resolvedHeight,
-          decoration: BoxDecoration(
-            gradient: value == 0
-                ? null
-                : LinearGradient(
-                    colors: [color, gradientEnd],
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                  ),
-            color: value == 0 ? color.withOpacity(0.16) : null,
-            borderRadius: BorderRadius.circular(999),
-            boxShadow: value == 0
-                ? []
-                : [
-                    BoxShadow(
-                      color: color.withOpacity(0.22),
-                      blurRadius: 9,
-                      offset: const Offset(0, 5),
+          const SizedBox(height: 3),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutCubic,
+            width: width,
+            height: resolvedHeight,
+            decoration: BoxDecoration(
+              gradient: value == 0
+                  ? null
+                  : LinearGradient(
+                      colors: [color, gradientEnd],
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
                     ),
-                  ],
+              color: value == 0 ? color.withOpacity(0.16) : null,
+              borderRadius: BorderRadius.circular(999),
+              boxShadow: value == 0
+                  ? []
+                  : [
+                      BoxShadow(
+                        color: color.withOpacity(0.20),
+                        blurRadius: 7,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1861,10 +1889,10 @@ class _CoachChampionshipScoutEvaluationPageState
           ),
           const SizedBox(height: 18),
           SizedBox(
-            height: isMobile ? 250 : 280,
+            height: isMobile ? 270 : 300,
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final chartHeight = constraints.maxHeight - 72;
+                final chartHeight = constraints.maxHeight - 112;
 
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -2089,10 +2117,10 @@ class _CoachChampionshipScoutEvaluationPageState
           ),
           const SizedBox(height: 18),
           SizedBox(
-            height: isMobile ? 315 : 340,
+            height: isMobile ? 340 : 365,
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final chartHeight = constraints.maxHeight - 104;
+                final chartHeight = constraints.maxHeight - 152;
 
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.end,

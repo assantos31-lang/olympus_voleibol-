@@ -29,6 +29,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
   static const Color olympusSuccess = Color(0xFF16A34A);
   static const Color olympusWarning = Color(0xFFF59E0B);
   static const Color olympusPurple = Color(0xFF7C3AED);
+  static const Color olympusSubtle = Color(0xFF64748B);
 
   bool _loading = true;
   String? _error;
@@ -38,6 +39,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
 
   String _selectedMonth = '';
   String _selectedCoachId = '';
+  String _selectedGender = '';
   TrendMode _trendMode = TrendMode.weekly;
 
   final Map<String, int> _categoryGoals = {
@@ -46,11 +48,25 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
     'Físico': 25,
   };
 
+  final ScrollController _quickSummaryScrollController = ScrollController();
+  final ScrollController _categoriesScrollController = ScrollController();
+  final ScrollController _foundationsScrollController = ScrollController();
+  final ScrollController _coachesScrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
     _setCurrentMonth();
     _loadDashboard();
+  }
+
+  @override
+  void dispose() {
+    _quickSummaryScrollController.dispose();
+    _categoriesScrollController.dispose();
+    _foundationsScrollController.dispose();
+    _coachesScrollController.dispose();
+    super.dispose();
   }
 
   void _setCurrentMonth() {
@@ -161,6 +177,37 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
     if (time.isEmpty) return date;
 
     return '$date • $time';
+  }
+
+  String _normalizeGender(dynamic value) {
+    final raw = _asString(value).toLowerCase();
+
+    if (raw == 'f' ||
+        raw == 'female' ||
+        raw == 'feminino' ||
+        raw.contains('feminino')) {
+      return 'feminino';
+    }
+
+    if (raw == 'm' ||
+        raw == 'male' ||
+        raw == 'masculino' ||
+        raw.contains('masculino')) {
+      return 'masculino';
+    }
+
+    return raw;
+  }
+
+  String _genderLabel(String value) {
+    switch (_normalizeGender(value)) {
+      case 'feminino':
+        return 'Feminino';
+      case 'masculino':
+        return 'Masculino';
+      default:
+        return 'Todos os gêneros';
+    }
   }
 
   String _monthLabel(String monthYear) {
@@ -408,6 +455,12 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
       }).toList();
     }
 
+    if (_selectedGender.isNotEmpty) {
+      list = list.where((event) {
+        return _normalizeGender(event['gender']) == _selectedGender;
+      }).toList();
+    }
+
     return list;
   }
 
@@ -636,6 +689,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
     int count = 0;
     if (_selectedMonth.isNotEmpty) count++;
     if (_selectedCoachId.isNotEmpty) count++;
+    if (_selectedGender.isNotEmpty) count++;
     return count;
   }
 
@@ -643,6 +697,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
     setState(() {
       _selectedMonth = '';
       _selectedCoachId = '';
+      _selectedGender = '';
     });
   }
 
@@ -656,6 +711,10 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
     )
         ? _selectedCoachId
         : '';
+    String tempGender =
+        (_selectedGender == 'feminino' || _selectedGender == 'masculino')
+            ? _selectedGender
+            : '';
 
     showModalBottomSheet<void>(
       context: context,
@@ -734,7 +793,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                                   ),
                                   SizedBox(height: 2),
                                   Text(
-                                    'Refine por mês e técnico sem ocupar a tela.',
+                                    'Refine por mês, técnico e gênero.',
                                     style: TextStyle(
                                       color: olympusMuted,
                                       fontSize: 12,
@@ -795,6 +854,31 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                             });
                           },
                         ),
+                        const SizedBox(height: 12),
+                        _modernDropdown(
+                          label: 'Gênero',
+                          icon: Icons.groups_2_rounded,
+                          value: tempGender,
+                          items: const [
+                            DropdownMenuItem<String>(
+                              value: '',
+                              child: Text('Todos os gêneros'),
+                            ),
+                            DropdownMenuItem<String>(
+                              value: 'feminino',
+                              child: Text('Feminino'),
+                            ),
+                            DropdownMenuItem<String>(
+                              value: 'masculino',
+                              child: Text('Masculino'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            setModalState(() {
+                              tempGender = value ?? '';
+                            });
+                          },
+                        ),
                         const SizedBox(height: 18),
                         Row(
                           children: [
@@ -804,6 +888,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                                   setModalState(() {
                                     tempMonth = '';
                                     tempCoach = '';
+                                    tempGender = '';
                                   });
                                 },
                                 icon: const Icon(Icons.close_rounded, size: 18),
@@ -827,6 +912,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                                   setState(() {
                                     _selectedMonth = tempMonth;
                                     _selectedCoachId = tempCoach;
+                                    _selectedGender = tempGender;
                                   });
                                   Navigator.pop(context);
                                 },
@@ -1071,6 +1157,20 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
       ),
     );
 
+    chips.add(
+      _filterChip(
+        icon: Icons.groups_2_rounded,
+        label: _genderLabel(_selectedGender),
+        onDeleted: _selectedGender.isEmpty
+            ? null
+            : () {
+                setState(() {
+                  _selectedGender = '';
+                });
+              },
+      ),
+    );
+
     if (_activeFiltersCount() > 0) {
       chips.add(
         TextButton.icon(
@@ -1225,6 +1325,34 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
             ),
           );
 
+          final genderDropdown = _whiteDropdown(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedGender,
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(
+                    value: '',
+                    child: Text('Todos os gêneros'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'feminino',
+                    child: Text('Feminino'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'masculino',
+                    child: Text('Masculino'),
+                  ),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedGender = value ?? '';
+                  });
+                },
+              ),
+            ),
+          );
+
           final button = ElevatedButton.icon(
             onPressed: () async {
               await Navigator.push(
@@ -1251,6 +1379,8 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                 const SizedBox(height: 10),
                 SizedBox(width: double.infinity, child: coachDropdown),
                 const SizedBox(height: 10),
+                SizedBox(width: double.infinity, child: genderDropdown),
+                const SizedBox(height: 10),
                 SizedBox(width: double.infinity, child: button),
               ],
             );
@@ -1261,6 +1391,8 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
               Expanded(child: monthDropdown),
               const SizedBox(width: 10),
               Expanded(child: coachDropdown),
+              const SizedBox(width: 10),
+              Expanded(child: genderDropdown),
               const SizedBox(width: 10),
               button,
             ],
@@ -1510,14 +1642,21 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
       ),
     ];
 
-    return SizedBox(
-      height: 112,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        itemCount: cards.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (context, index) => cards[index],
+    return Scrollbar(
+      controller: _quickSummaryScrollController,
+      thumbVisibility: true,
+      interactive: true,
+      child: SizedBox(
+        height: 124,
+        child: ListView.separated(
+          controller: _quickSummaryScrollController,
+          padding: const EdgeInsets.only(bottom: 12),
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          itemCount: cards.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (context, index) => cards[index],
+        ),
       ),
     );
   }
@@ -1583,6 +1722,292 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
     );
   }
 
+  void _showDrillDown({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required List<Map<String, dynamic>> items,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return SafeArea(
+          top: false,
+          child: DraggableScrollableSheet(
+            initialChildSize: 0.72,
+            minChildSize: 0.42,
+            maxChildSize: 0.92,
+            builder: (context, scrollController) {
+              return Container(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: olympusBorder,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(icon, color: color),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: const TextStyle(
+                                  color: olympusBlue,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                subtitle,
+                                style: const TextStyle(
+                                  color: olympusMuted,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Expanded(
+                      child: items.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'Nenhum detalhe encontrado para este filtro.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: olympusMuted,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              controller: scrollController,
+                              itemCount: items.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 10),
+                              itemBuilder: (context, index) {
+                                final item = items[index];
+                                final minutes = item['minutes'] as int? ?? 0;
+                                final description =
+                                    _asString(item['description']);
+                                final extra = _asString(item['extra']);
+
+                                return Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: olympusBg,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: olympusBorder),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        width: 32,
+                                        height: 32,
+                                        decoration: BoxDecoration(
+                                          color: color.withOpacity(0.10),
+                                          borderRadius:
+                                              BorderRadius.circular(11),
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            '${index + 1}',
+                                            style: TextStyle(
+                                              color: color,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              _asString(item['title']),
+                                              style: const TextStyle(
+                                                color: olympusBlue,
+                                                fontSize: 13.5,
+                                                fontWeight: FontWeight.w900,
+                                              ),
+                                            ),
+                                            if (description.isNotEmpty) ...[
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                description,
+                                                style: const TextStyle(
+                                                  color: olympusMuted,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ],
+                                            if (extra.isNotEmpty) ...[
+                                              const SizedBox(height: 5),
+                                              Text(
+                                                extra,
+                                                style: const TextStyle(
+                                                  color: olympusSubtle,
+                                                  fontSize: 11.5,
+                                                  fontWeight: FontWeight.w600,
+                                                  height: 1.25,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _formatDuration(minutes),
+                                        style: TextStyle(
+                                          color: color,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  List<Map<String, dynamic>> _drillDownItemsForField(
+    List<Map<String, dynamic>> plans,
+    String field,
+    String value,
+  ) {
+    final items = <Map<String, dynamic>>[];
+
+    for (final plan in plans) {
+      final coachName = _asString(plan['coach_name']).isEmpty
+          ? 'Técnico'
+          : _asString(plan['coach_name']);
+      final blocks = List<Map<String, dynamic>>.from(plan['blocks'] as List);
+
+      for (final block in blocks) {
+        final label = _asString(block[field]).isEmpty
+            ? 'Não informado'
+            : _asString(block[field]);
+
+        if (label != value) continue;
+
+        final minutes = _blockMinutes(block);
+        if (minutes <= 0) continue;
+
+        final type = _asString(block['type']);
+        final category = _asString(block['category']);
+        final start = _normalizeTime(block['start_time']);
+        final end = _normalizeTime(block['end_time']);
+        final observation = _asString(block['observation']);
+
+        items.add({
+          'title': type.isEmpty ? label : type,
+          'description':
+              '$coachName • ${category.isEmpty ? 'Sem categoria' : category}',
+          'extra': [
+            if (start.isNotEmpty || end.isNotEmpty)
+              '${start.isEmpty ? '--:--' : start} às ${end.isEmpty ? '--:--' : end}',
+            if (observation.isNotEmpty) observation,
+          ].join(' • '),
+          'minutes': minutes,
+        });
+      }
+    }
+
+    items.sort((a, b) => (b['minutes'] as int).compareTo(a['minutes'] as int));
+    return items;
+  }
+
+  List<Map<String, dynamic>> _drillDownItemsForCoach(
+    List<Map<String, dynamic>> plans,
+    String coachNameFilter,
+  ) {
+    final items = <Map<String, dynamic>>[];
+
+    for (final plan in plans) {
+      final coachName = _asString(plan['coach_name']).isEmpty
+          ? 'Técnico'
+          : _asString(plan['coach_name']);
+
+      if (coachName != coachNameFilter) continue;
+
+      final blocks = List<Map<String, dynamic>>.from(plan['blocks'] as List);
+
+      for (final block in blocks) {
+        final minutes = _blockMinutes(block);
+        if (minutes <= 0) continue;
+
+        final type = _asString(block['type']);
+        final category = _asString(block['category']);
+        final start = _normalizeTime(block['start_time']);
+        final end = _normalizeTime(block['end_time']);
+        final observation = _asString(block['observation']);
+
+        items.add({
+          'title': type.isEmpty ? 'Bloco de treino' : type,
+          'description': category.isEmpty ? 'Sem categoria' : category,
+          'extra': [
+            if (start.isNotEmpty || end.isNotEmpty)
+              '${start.isEmpty ? '--:--' : start} às ${end.isEmpty ? '--:--' : end}',
+            if (observation.isNotEmpty) observation,
+          ].join(' • '),
+          'minutes': minutes,
+        });
+      }
+    }
+
+    items.sort((a, b) => (b['minutes'] as int).compareTo(a['minutes'] as int));
+    return items;
+  }
+
   Widget _premiumHorizontalFoundations(List<Map<String, dynamic>> plans) {
     final data = _timeByField(plans, 'type');
     final entries = data.entries.toList();
@@ -1593,26 +2018,40 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
 
     final maxValue = entries.first.value;
 
-    return SizedBox(
-      height: 138,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        itemCount: entries.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (context, index) {
-          final entry = entries[index];
-          final percent = maxValue <= 0 ? 0.0 : entry.value / maxValue;
+    return Scrollbar(
+      controller: _foundationsScrollController,
+      thumbVisibility: true,
+      interactive: true,
+      child: SizedBox(
+        height: 150,
+        child: ListView.separated(
+          controller: _foundationsScrollController,
+          padding: const EdgeInsets.only(bottom: 12),
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          itemCount: entries.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (context, index) {
+            final entry = entries[index];
+            final percent = maxValue <= 0 ? 0.0 : entry.value / maxValue;
 
-          return _premiumDataCard(
-            title: entry.key,
-            value: _formatDuration(entry.value),
-            icon: Icons.sports_volleyball_rounded,
-            color: olympusPurple,
-            percent: percent,
-            rank: index + 1,
-          );
-        },
+            return _premiumDataCard(
+              title: entry.key,
+              value: _formatDuration(entry.value),
+              icon: Icons.sports_volleyball_rounded,
+              color: olympusPurple,
+              percent: percent,
+              rank: index + 1,
+              onTap: () => _showDrillDown(
+                title: entry.key,
+                subtitle: 'Blocos de treino deste fundamento',
+                icon: Icons.sports_volleyball_rounded,
+                color: olympusPurple,
+                items: _drillDownItemsForField(plans, 'type', entry.key),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -1627,26 +2066,40 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
 
     final maxValue = entries.first.value;
 
-    return SizedBox(
-      height: 132,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        itemCount: entries.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (context, index) {
-          final entry = entries[index];
-          final percent = maxValue <= 0 ? 0.0 : entry.value / maxValue;
+    return Scrollbar(
+      controller: _categoriesScrollController,
+      thumbVisibility: true,
+      interactive: true,
+      child: SizedBox(
+        height: 144,
+        child: ListView.separated(
+          controller: _categoriesScrollController,
+          padding: const EdgeInsets.only(bottom: 12),
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          itemCount: entries.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (context, index) {
+            final entry = entries[index];
+            final percent = maxValue <= 0 ? 0.0 : entry.value / maxValue;
 
-          return _premiumDataCard(
-            title: entry.key,
-            value: _formatDuration(entry.value),
-            icon: Icons.category_rounded,
-            color: olympusBlue,
-            percent: percent,
-            rank: index + 1,
-          );
-        },
+            return _premiumDataCard(
+              title: entry.key,
+              value: _formatDuration(entry.value),
+              icon: Icons.category_rounded,
+              color: olympusBlue,
+              percent: percent,
+              rank: index + 1,
+              onTap: () => _showDrillDown(
+                title: entry.key,
+                subtitle: 'Blocos de treino desta categoria',
+                icon: Icons.category_rounded,
+                color: olympusBlue,
+                items: _drillDownItemsForField(plans, 'category', entry.key),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -1667,26 +2120,42 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
 
     final maxValue = entries.first.value;
 
-    return SizedBox(
-      height: 138,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        itemCount: entries.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (context, index) {
-          final entry = entries[index];
-          final percent = maxValue <= 0 ? 0.0 : entry.value / maxValue;
+    return Scrollbar(
+      controller: _coachesScrollController,
+      thumbVisibility: true,
+      interactive: true,
+      child: SizedBox(
+        height: 150,
+        child: ListView.separated(
+          controller: _coachesScrollController,
+          padding: const EdgeInsets.only(bottom: 12),
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          itemCount: entries.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (context, index) {
+            final entry = entries[index];
+            final percent = maxValue <= 0 ? 0.0 : entry.value / maxValue;
 
-          return _premiumDataCard(
-            title: entry.key,
-            value: _formatDuration(entry.value),
-            icon: Icons.person_rounded,
-            color: index == 0 ? olympusGold : olympusBlue,
-            percent: percent,
-            rank: index + 1,
-          );
-        },
+            final cardColor = index == 0 ? olympusGold : olympusBlue;
+
+            return _premiumDataCard(
+              title: entry.key,
+              value: _formatDuration(entry.value),
+              icon: Icons.person_rounded,
+              color: cardColor,
+              percent: percent,
+              rank: index + 1,
+              onTap: () => _showDrillDown(
+                title: entry.key,
+                subtitle: 'Blocos programados por este técnico',
+                icon: Icons.person_rounded,
+                color: cardColor,
+                items: _drillDownItemsForCoach(plans, entry.key),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -1698,88 +2167,97 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
     required Color color,
     required double percent,
     required int rank,
+    VoidCallback? onTap,
   }) {
-    return Container(
-      width: 158,
-      padding: const EdgeInsets.all(13),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: olympusBorder),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.06),
-            blurRadius: 14,
-            offset: const Offset(0, 7),
+        child: Container(
+          width: 158,
+          padding: const EdgeInsets.all(13),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: olympusBorder),
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.06),
+                blurRadius: 14,
+                offset: const Offset(0, 7),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(12),
+              Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: color, size: 18),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.09),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '$rankº',
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: olympusText,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
                 ),
-                child: Icon(icon, color: color, size: 18),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
               const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.09),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  '$rankº',
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w900,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  height: 8,
+                  color: color.withOpacity(0.10),
+                  child: FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: percent.clamp(0.0, 1.0),
+                    child: Container(color: color.withOpacity(0.78)),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: olympusText,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              color: color,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const Spacer(),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: Container(
-              height: 8,
-              color: color.withOpacity(0.10),
-              child: FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor: percent.clamp(0.0, 1.0),
-                child: Container(color: color.withOpacity(0.78)),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1910,6 +2388,269 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
     );
   }
 
+  Widget _smartInsightsCard(
+    List<Map<String, dynamic>> events,
+    List<Map<String, dynamic>> plans,
+  ) {
+    int totalMinutes = 0;
+    int totalBlocks = 0;
+
+    for (final plan in plans) {
+      totalMinutes += (plan['total_minutes'] ?? 0) as int;
+      final blocks = List<Map<String, dynamic>>.from(plan['blocks'] as List);
+      totalBlocks += blocks.length;
+    }
+
+    final byCategory = _timeByCategoryWithGoals(plans);
+    final totalCategoryMinutes =
+        byCategory.values.fold<int>(0, (sum, value) => sum + value);
+
+    final insights = <Map<String, dynamic>>[];
+
+    if (events.isEmpty || plans.isEmpty) {
+      insights.add({
+        'icon': Icons.info_outline_rounded,
+        'title': 'Sem programação suficiente',
+        'text': 'Ainda não há dados suficientes para gerar alertas.',
+        'color': olympusMuted,
+      });
+    } else {
+      final averagePerTraining =
+          events.isEmpty ? 0 : totalMinutes ~/ events.length;
+      insights.add({
+        'icon': Icons.timer_rounded,
+        'title': 'Média por treino',
+        'text':
+            'Cada treino tem em média ${_formatDuration(averagePerTraining)} planejados.',
+        'color': olympusBlue,
+      });
+
+      if (totalBlocks > 0 && events.isNotEmpty) {
+        final averageBlocks = totalBlocks / events.length;
+        insights.add({
+          'icon': Icons.dashboard_customize_rounded,
+          'title': 'Volume de blocos',
+          'text':
+              'Média de ${averageBlocks.toStringAsFixed(1)} bloco(s) por treino.',
+          'color': olympusPurple,
+        });
+      }
+
+      for (final entry in byCategory.entries) {
+        final goal = _categoryGoals[entry.key];
+        if (goal == null || totalCategoryMinutes <= 0) continue;
+
+        final actual = (entry.value / totalCategoryMinutes) * 100;
+        final delta = actual - goal;
+
+        if (delta.abs() > 10) {
+          insights.add({
+            'icon': delta > 0
+                ? Icons.trending_up_rounded
+                : Icons.trending_down_rounded,
+            'title': '${entry.key} fora da meta',
+            'text':
+                '${actual.toStringAsFixed(1)}% real contra ${goal.toStringAsFixed(0)}% de meta.',
+            'color': delta > 0 ? olympusWarning : olympusDanger,
+          });
+        }
+      }
+
+      final byCoach = _coachComparisonByFoundation(plans);
+      if (byCoach.length > 1) {
+        final ranked = byCoach.entries.map((entry) {
+          final total =
+              entry.value.values.fold<int>(0, (sum, value) => sum + value);
+          return MapEntry(entry.key, total);
+        }).toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+
+        if (ranked.isNotEmpty) {
+          insights.add({
+            'icon': Icons.emoji_events_rounded,
+            'title': 'Técnico com maior volume',
+            'text':
+                '${ranked.first.key} lidera com ${_formatDuration(ranked.first.value)}.',
+            'color': olympusGold,
+          });
+        }
+      }
+    }
+
+    final visibleInsights = insights.take(5).toList();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle(
+            'Insights automáticos',
+            subtitle: 'Leitura rápida dos dados do filtro atual',
+            icon: Icons.auto_awesome_rounded,
+          ),
+          const SizedBox(height: 12),
+          ...visibleInsights.map((insight) {
+            final color = insight['color'] as Color;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 9),
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.07),
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: color.withOpacity(0.14)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(insight['icon'] as IconData, color: color, size: 20),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          insight['title'].toString(),
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          insight['text'].toString(),
+                          style: const TextStyle(
+                            color: olympusMuted,
+                            fontSize: 11.8,
+                            fontWeight: FontWeight.w600,
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _weeklyHeatmapCard(List<Map<String, dynamic>> events) {
+    final totals = <int, int>{
+      DateTime.monday: 0,
+      DateTime.tuesday: 0,
+      DateTime.wednesday: 0,
+      DateTime.thursday: 0,
+      DateTime.friday: 0,
+      DateTime.saturday: 0,
+      DateTime.sunday: 0,
+    };
+
+    for (final event in events) {
+      final date = _parseEventDate(event);
+      if (date == null) continue;
+
+      int minutes = 0;
+      for (final plan in _plansForEvent(_asString(event['id']))) {
+        minutes += (plan['total_minutes'] ?? 0) as int;
+      }
+
+      totals[date.weekday] = (totals[date.weekday] ?? 0) + minutes;
+    }
+
+    final maxValue = totals.values.isEmpty
+        ? 0
+        : totals.values.reduce((a, b) => a > b ? a : b);
+
+    const labels = {
+      DateTime.monday: 'Seg',
+      DateTime.tuesday: 'Ter',
+      DateTime.wednesday: 'Qua',
+      DateTime.thursday: 'Qui',
+      DateTime.friday: 'Sex',
+      DateTime.saturday: 'Sáb',
+      DateTime.sunday: 'Dom',
+    };
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle(
+            'Mapa semanal',
+            subtitle: 'Distribuição do volume por dia da semana',
+            icon: Icons.calendar_view_week_rounded,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: labels.entries.map((entry) {
+              final minutes = totals[entry.key] ?? 0;
+              final percent = maxValue <= 0 ? 0.0 : minutes / maxValue;
+              final height = 34.0 + (74.0 * percent);
+
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        _formatDuration(minutes),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: olympusMuted,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        height: height,
+                        decoration: BoxDecoration(
+                          color: minutes == 0
+                              ? olympusBorder.withOpacity(0.65)
+                              : olympusBlue
+                                  .withOpacity(0.18 + (0.62 * percent)),
+                          borderRadius: BorderRadius.circular(13),
+                          border: Border.all(
+                            color: minutes == 0
+                                ? olympusBorder
+                                : olympusBlue.withOpacity(0.20),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        entry.value,
+                        style: const TextStyle(
+                          color: olympusBlue,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDashboard(List<Map<String, dynamic>> events) {
     final plans = _filteredPlansForSummary(events);
 
@@ -1942,6 +2683,10 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
           ),
           const SizedBox(height: 10),
           _premiumQuickSummary(events),
+          const SizedBox(height: 18),
+          _smartInsightsCard(events, plans),
+          const SizedBox(height: 18),
+          _weeklyHeatmapCard(events),
           const SizedBox(height: 18),
           _sectionTitle(
             'Categorias',
