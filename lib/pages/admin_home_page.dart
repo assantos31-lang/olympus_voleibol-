@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -19,7 +20,8 @@ class AdminHomePage extends StatefulWidget {
   State<AdminHomePage> createState() => _AdminHomePageState();
 }
 
-class _AdminHomePageState extends State<AdminHomePage> {
+class _AdminHomePageState extends State<AdminHomePage>
+    with WidgetsBindingObserver {
   final supabase = Supabase.instance.client;
 
   List<Map<String, dynamic>> monthBirthdays = [];
@@ -31,24 +33,73 @@ class _AdminHomePageState extends State<AdminHomePage> {
   int pendingFinancialRecordsCount = 0;
   RealtimeChannel? _adminNotificationsChannel;
   RealtimeChannel? _financialReceiptsChannel;
+  RealtimeChannel? _birthdaysRealtimeChannel;
+  RealtimeChannel? _messagesParticipantsRealtimeChannel;
+  RealtimeChannel? _messagesRealtimeChannel;
+  RealtimeChannel? _eventsRealtimeChannel;
+  Timer? _adminBadgesFallbackTimer;
+  int unreadMessagesCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _fetchMonthBirthdays();
-    _fetchUnreadNotificationsCount();
-    _fetchPendingFinancialReceiptsCount();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshRealtimeBadges();
+    _setupRealtimeListeners();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshRealtimeBadges();
+    }
+  }
+
+  Future<void> _refreshRealtimeBadges() async {
+    if (!mounted) return;
+
+    await Future.wait([
+      _fetchMonthBirthdays(),
+      _fetchUnreadNotificationsCount(),
+      _fetchPendingFinancialReceiptsCount(),
+      _fetchUnreadMessagesCount(),
+    ]);
+  }
+
+  void _setupRealtimeListeners() {
     _listenForAdminNotifications();
     _listenForFinancialReceipts();
+    _listenForBirthdays();
+    _listenForAdminMessages();
+    _listenForEvents();
+
+    _adminBadgesFallbackTimer ??= Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _refreshRealtimeBadges(),
+    );
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _adminBadgesFallbackTimer?.cancel();
     if (_adminNotificationsChannel != null) {
       supabase.removeChannel(_adminNotificationsChannel!);
     }
     if (_financialReceiptsChannel != null) {
       supabase.removeChannel(_financialReceiptsChannel!);
+    }
+    if (_birthdaysRealtimeChannel != null) {
+      supabase.removeChannel(_birthdaysRealtimeChannel!);
+    }
+    if (_messagesParticipantsRealtimeChannel != null) {
+      supabase.removeChannel(_messagesParticipantsRealtimeChannel!);
+    }
+    if (_messagesRealtimeChannel != null) {
+      supabase.removeChannel(_messagesRealtimeChannel!);
+    }
+    if (_eventsRealtimeChannel != null) {
+      supabase.removeChannel(_eventsRealtimeChannel!);
     }
     super.dispose();
   }
@@ -76,12 +127,12 @@ class _AdminHomePageState extends State<AdminHomePage> {
 
   void _listenForAdminNotifications() {
     final user = supabase.auth.currentUser;
-    if (user == null) return;
+    if (user == null || _adminNotificationsChannel != null) return;
 
     _adminNotificationsChannel = supabase
         .channel('admin_home_notifications_${user.id}')
         .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
+          event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'admin_notifications',
           filter: PostgresChangeFilter(
@@ -91,18 +142,12 @@ class _AdminHomePageState extends State<AdminHomePage> {
           ),
           callback: (_) => _fetchUnreadNotificationsCount(),
         )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'admin_notifications',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'admin_id',
-            value: user.id,
-          ),
-          callback: (_) => _fetchUnreadNotificationsCount(),
-        )
-        .subscribe();
+        .subscribe((status, [error]) {
+      debugPrint('Realtime admin_notifications status: $status error: $error');
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        _fetchUnreadNotificationsCount();
+      }
+    });
   }
 
   Future<void> _fetchPendingFinancialReceiptsCount() async {
@@ -151,27 +196,123 @@ class _AdminHomePageState extends State<AdminHomePage> {
   }
 
   void _listenForFinancialReceipts() {
+    if (_financialReceiptsChannel != null) return;
+
     _financialReceiptsChannel = supabase
         .channel('admin_home_financial_receipts')
         .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
+          event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'financial_records',
           callback: (_) => _fetchPendingFinancialReceiptsCount(),
         )
+        .subscribe((status, [error]) {
+      debugPrint('Realtime financial_records status: $status error: $error');
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        _fetchPendingFinancialReceiptsCount();
+      }
+    });
+  }
+
+  void _listenForBirthdays() {
+    if (_birthdaysRealtimeChannel != null) return;
+
+    _birthdaysRealtimeChannel = supabase
+        .channel('admin_home_birthdays_profiles')
         .onPostgresChanges(
-          event: PostgresChangeEvent.update,
+          event: PostgresChangeEvent.all,
           schema: 'public',
-          table: 'financial_records',
-          callback: (_) => _fetchPendingFinancialReceiptsCount(),
+          table: 'profiles',
+          callback: (_) => _fetchMonthBirthdays(),
         )
+        .subscribe((status, [error]) {
+      debugPrint('Realtime profiles/birthdays status: $status error: $error');
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        _fetchMonthBirthdays();
+      }
+    });
+  }
+
+  void _listenForAdminMessages() {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    _messagesParticipantsRealtimeChannel ??= supabase
+        .channel('admin_home_message_participants_${user.id}')
         .onPostgresChanges(
-          event: PostgresChangeEvent.delete,
+          event: PostgresChangeEvent.all,
           schema: 'public',
-          table: 'financial_records',
-          callback: (_) => _fetchPendingFinancialReceiptsCount(),
+          table: 'app_message_participants',
+          callback: (_) => _fetchUnreadMessagesCount(),
         )
-        .subscribe();
+        .subscribe((status, [error]) {
+      debugPrint(
+          'Realtime app_message_participants status: $status error: $error');
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        _fetchUnreadMessagesCount();
+      }
+    });
+
+    _messagesRealtimeChannel ??= supabase
+        .channel('admin_home_messages_${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'app_messages',
+          callback: (_) => _fetchUnreadMessagesCount(),
+        )
+        .subscribe((status, [error]) {
+      debugPrint('Realtime app_messages status: $status error: $error');
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        _fetchUnreadMessagesCount();
+      }
+    });
+  }
+
+  void _listenForEvents() {
+    if (_eventsRealtimeChannel != null) return;
+
+    _eventsRealtimeChannel = supabase
+        .channel('admin_home_events')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'events',
+          callback: (_) {
+            _fetchMonthBirthdays();
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint('Realtime events status: $status error: $error');
+    });
+  }
+
+  Future<void> _fetchUnreadMessagesCount() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final response = await supabase
+          .from('app_message_participants')
+          .select('unread_count')
+          .eq('user_id', user.id);
+
+      final unreadTotal = List<Map<String, dynamic>>.from(response as List)
+          .fold<int>(0, (sum, row) {
+        final value = row['unread_count'];
+        if (value is int) return sum + value;
+        if (value is num) return sum + value.toInt();
+        return sum + (int.tryParse((value ?? '0').toString()) ?? 0);
+      });
+
+      if (mounted) {
+        setState(() {
+          unreadMessagesCount = unreadTotal;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar mensagens não lidas do admin: $e');
+    }
   }
 
   Future<void> _fetchMonthBirthdays() async {
@@ -978,14 +1119,21 @@ class _AdminHomePageState extends State<AdminHomePage> {
                               label: 'Mensagens',
                               icon: Icons.mark_chat_unread_outlined,
                               accentColor: const Color(0xFFFFD166),
-                              onTap: () {
-                                Navigator.push(
+                              badgeCount: unreadMessagesCount,
+                              badgeTooltip: unreadMessagesCount == 1
+                                  ? '1 mensagem não lida'
+                                  : '$unreadMessagesCount mensagens não lidas',
+                              badgeColor: Colors.redAccent,
+                              badgeIcon: Icons.mark_chat_unread_rounded,
+                              onTap: () async {
+                                await Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (context) =>
                                         const AdminMessagesPage(),
                                   ),
                                 );
+                                _fetchUnreadMessagesCount();
                               },
                             ),
                             const SizedBox(height: 12),

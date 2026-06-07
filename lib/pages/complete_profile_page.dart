@@ -334,8 +334,36 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
     return text.replaceAll(RegExp(r'\D'), '');
   }
 
+  bool _isFullName(String value) {
+    final name = value.trim();
+
+    if (name.isEmpty) return false;
+
+    final parts = name
+        .split(RegExp(r'\s+'))
+        .where((part) => part.trim().isNotEmpty)
+        .toList();
+
+    if (parts.length < 2) return false;
+
+    final validNamePattern = RegExp(r"^[A-Za-zÀ-ÖØ-öø-ÿ' -]+$");
+    if (!validNamePattern.hasMatch(name)) return false;
+
+    return parts.every((part) => part.trim().length >= 2);
+  }
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (!_isFullName(_fullNameController.text)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Informe nome completo válido (nome e sobrenome)'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     if (_selectedImage == null && _existingAvatarUrl.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -474,9 +502,19 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.person),
                 ),
-                validator: (value) => value?.isEmpty ?? true
-                    ? 'Pendente preenchimento do campo Nome Completo'
-                    : null,
+                validator: (value) {
+                  final name = value?.trim() ?? '';
+
+                  if (name.isEmpty) {
+                    return 'Pendente preenchimento do campo Nome Completo';
+                  }
+
+                  if (!_isFullName(name)) {
+                    return 'Informe nome completo válido';
+                  }
+
+                  return null;
+                },
               ),
               const SizedBox(height: 12),
 

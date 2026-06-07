@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -61,10 +63,16 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   bool _isMonthlyHistoryExpanded = false;
   DateTime? _lastCompetitionsViewedAt;
   RealtimeChannel? _messagesRealtimeChannel;
+  RealtimeChannel? _messageThreadsRealtimeChannel;
+  RealtimeChannel? _messageParticipantsRealtimeChannel;
   RealtimeChannel? _competitionsRealtimeChannel;
   RealtimeChannel? _convocationsRealtimeChannel;
   RealtimeChannel? _financialRealtimeChannel;
   RealtimeChannel? _checkinsRealtimeChannel;
+  RealtimeChannel? _profilesRealtimeChannel;
+  RealtimeChannel? _monthlyHistoryRealtimeChannel;
+  RealtimeChannel? _trainingEvaluationsRealtimeChannel;
+  Timer? _dashboardBadgeFallbackTimer;
 
   int _confirmedPresenceCount = 0;
   int _acceptedButAbsentCount = 0;
@@ -441,92 +449,202 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
-    _messagesRealtimeChannel ??=
-        supabase.channel('athlete-dashboard-messages-${user.id}')
-          ..onPostgresChanges(
-            event: PostgresChangeEvent.all,
-            schema: 'public',
-            table: 'app_message_participants',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'user_id',
-              value: user.id,
-            ),
-            callback: (_) {
-              _loadMessageUnreadCount();
-            },
-          )
-          ..subscribe();
+    // Realtime dos badges:
+    // - Usa canais sem filtro quando possível para evitar falhas silenciosas
+    //   de filtro por UUID em alguns ambientes.
+    // - Cada callback recarrega apenas os contadores afetados.
+    // - O timer é fallback leve para quando o websocket oscila no celular.
 
-    _competitionsRealtimeChannel ??=
-        supabase.channel('athlete-dashboard-competitions')
-          ..onPostgresChanges(
-            event: PostgresChangeEvent.all,
-            schema: 'public',
-            table: 'events',
-            callback: (_) {
-              _loadCompetitionNewCount();
-            },
-          )
-          ..subscribe();
+    _messageParticipantsRealtimeChannel ??= supabase
+        .channel('athlete-dashboard-message-participants-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'app_message_participants',
+          callback: (_) {
+            _loadMessageUnreadCount();
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint(
+        'Realtime app_message_participants status: $status error: $error',
+      );
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        _loadMessageUnreadCount();
+      }
+    });
 
-    _convocationsRealtimeChannel ??=
-        supabase.channel('athlete-dashboard-convocations-${user.id}')
-          ..onPostgresChanges(
-            event: PostgresChangeEvent.all,
-            schema: 'public',
-            table: 'convocations',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'user_id',
-              value: user.id,
-            ),
-            callback: (_) {
-              _loadPendingCount();
-              _loadWeekEvents();
-              _loadAttendanceAndPerformance();
-              _loadGenderRanking(_profile);
-              _loadMonthlyHistory();
-            },
-          )
-          ..subscribe();
+    _messagesRealtimeChannel ??= supabase
+        .channel('athlete-dashboard-messages-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'app_messages',
+          callback: (_) {
+            _loadMessageUnreadCount();
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint('Realtime app_messages status: $status error: $error');
+    });
 
-    _financialRealtimeChannel ??=
-        supabase.channel('athlete-dashboard-financial-${user.id}')
-          ..onPostgresChanges(
-            event: PostgresChangeEvent.all,
-            schema: 'public',
-            table: 'financial_records',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'athlete_id',
-              value: user.id,
-            ),
-            callback: (_) {
-              _loadOverdueFinancialCount();
-              _loadNewFinancialCount();
-            },
-          )
-          ..subscribe();
+    _messageThreadsRealtimeChannel ??= supabase
+        .channel('athlete-dashboard-message-threads-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'app_message_threads',
+          callback: (_) {
+            _loadMessageUnreadCount();
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint(
+        'Realtime app_message_threads status: $status error: $error',
+      );
+    });
 
-    _checkinsRealtimeChannel ??=
-        supabase.channel('athlete-dashboard-checkins-${user.id}')
-          ..onPostgresChanges(
-            event: PostgresChangeEvent.all,
-            schema: 'public',
-            table: 'checkins',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'user_id',
-              value: user.id,
-            ),
-            callback: (_) {
-              _loadAttendanceAndPerformance();
-              _loadGenderRanking(_profile);
-              _loadMonthlyHistory();
-            },
-          )
-          ..subscribe();
+    _competitionsRealtimeChannel ??= supabase
+        .channel('athlete-dashboard-events-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'events',
+          callback: (_) {
+            _loadCompetitionNewCount();
+            _loadPendingCount();
+            _loadWeekEvents();
+            _loadAttendanceAndPerformance();
+            _loadGenderRanking(_profile);
+            _loadMonthlyHistory();
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint('Realtime events status: $status error: $error');
+    });
+
+    _convocationsRealtimeChannel ??= supabase
+        .channel('athlete-dashboard-convocations-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'convocations',
+          callback: (_) {
+            _loadPendingCount();
+            _loadWeekEvents();
+            _loadAttendanceAndPerformance();
+            _loadGenderRanking(_profile);
+            _loadMonthlyHistory();
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint('Realtime convocations status: $status error: $error');
+    });
+
+    _financialRealtimeChannel ??= supabase
+        .channel('athlete-dashboard-financial-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'financial_records',
+          callback: (_) {
+            _loadOverdueFinancialCount();
+            _loadNewFinancialCount();
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint('Realtime financial_records status: $status error: $error');
+    });
+
+    _checkinsRealtimeChannel ??= supabase
+        .channel('athlete-dashboard-checkins-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'checkins',
+          callback: (_) {
+            _loadAttendanceAndPerformance();
+            _loadGenderRanking(_profile);
+            _loadMonthlyHistory();
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint('Realtime checkins status: $status error: $error');
+    });
+
+    _profilesRealtimeChannel ??= supabase
+        .channel('athlete-dashboard-profiles-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'profiles',
+          callback: (_) {
+            _loadProfile();
+            _loadTodayBirthdays();
+            _loadBirthdaysPermission();
+            _loadGenderRanking(_profile);
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint('Realtime profiles status: $status error: $error');
+    });
+
+    _monthlyHistoryRealtimeChannel ??= supabase
+        .channel('athlete-dashboard-monthly-history-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'athlete_monthly_history',
+          callback: (_) {
+            _loadMonthlyHistory();
+            _loadGenderRanking(_profile);
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint(
+        'Realtime athlete_monthly_history status: $status error: $error',
+      );
+    });
+
+    _trainingEvaluationsRealtimeChannel ??= supabase
+        .channel('athlete-dashboard-training-evaluations-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'training_evaluations',
+          callback: (_) {
+            _loadGenderRanking(_profile);
+            _loadMonthlyHistory();
+          },
+        )
+        .subscribe((status, [error]) {
+      debugPrint(
+        'Realtime training_evaluations status: $status error: $error',
+      );
+    });
+
+    _dashboardBadgeFallbackTimer ??= Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _refreshRealtimeBadgesFallback(),
+    );
+  }
+
+  Future<void> _refreshRealtimeBadgesFallback() async {
+    if (!mounted) return;
+
+    await Future.wait([
+      _loadMessageUnreadCount(),
+      _loadCompetitionNewCount(),
+      _loadPendingCount(),
+      _loadOverdueFinancialCount(),
+      _loadNewFinancialCount(),
+      _loadWeekEvents(),
+      _loadAttendanceAndPerformance(),
+      _loadGenderRanking(_profile),
+      _loadMonthlyHistory(),
+      _loadTodayBirthdays(),
+      _loadBirthdaysPermission(),
+    ]);
   }
 
   Future<void> _loadMessageUnreadCount() async {
@@ -4348,6 +4466,12 @@ event_time
     if (_messagesRealtimeChannel != null) {
       supabase.removeChannel(_messagesRealtimeChannel!);
     }
+    if (_messageThreadsRealtimeChannel != null) {
+      supabase.removeChannel(_messageThreadsRealtimeChannel!);
+    }
+    if (_messageParticipantsRealtimeChannel != null) {
+      supabase.removeChannel(_messageParticipantsRealtimeChannel!);
+    }
     if (_competitionsRealtimeChannel != null) {
       supabase.removeChannel(_competitionsRealtimeChannel!);
     }
@@ -4360,6 +4484,16 @@ event_time
     if (_checkinsRealtimeChannel != null) {
       supabase.removeChannel(_checkinsRealtimeChannel!);
     }
+    if (_profilesRealtimeChannel != null) {
+      supabase.removeChannel(_profilesRealtimeChannel!);
+    }
+    if (_monthlyHistoryRealtimeChannel != null) {
+      supabase.removeChannel(_monthlyHistoryRealtimeChannel!);
+    }
+    if (_trainingEvaluationsRealtimeChannel != null) {
+      supabase.removeChannel(_trainingEvaluationsRealtimeChannel!);
+    }
+    _dashboardBadgeFallbackTimer?.cancel();
     super.dispose();
   }
 

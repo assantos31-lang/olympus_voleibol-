@@ -108,10 +108,29 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
   int _activeAthletesCount = 0;
   int _todayTrainingsCount = 0;
   int _weekTrainingsCount = 0;
+  String _nextCommitmentTitle = '';
+  String _nextCommitmentMeta = '';
+  IconData _nextCommitmentIcon = Icons.event_available_rounded;
   int _activeCompetitionsCount = 0;
   int _pendingEvaluationsCount = 0;
   int _unplannedTrainingsCount = 0;
   int _championshipsWithoutScoutCount = 0;
+
+  double get _monthlyEvaluationProgress {
+    if (_activeAthletesCount <= 0) return 0;
+
+    final completed = (_activeAthletesCount - _pendingEvaluationsCount)
+        .clamp(0, _activeAthletesCount)
+        .toInt();
+
+    return completed / _activeAthletesCount;
+  }
+
+  int get _monthlyEvaluationsCompletedCount {
+    return (_activeAthletesCount - _pendingEvaluationsCount)
+        .clamp(0, _activeAthletesCount)
+        .toInt();
+  }
 
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
@@ -329,6 +348,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       var activeCompetitions = 0;
       final trainingEventIdsNextSevenDays = <String>{};
       final competitionEventIds = <String>{};
+      Map<String, dynamic>? nextCommitment;
+      DateTime? nextCommitmentDate;
 
       for (final event in events) {
         final id = (event['id'] ?? '').toString();
@@ -358,6 +379,43 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
           }
           if (id.isNotEmpty) competitionEventIds.add(id);
         }
+
+        if ((_isTrainingType(type) || _isCompetitionType(type)) &&
+            !date.isBefore(today)) {
+          if (nextCommitmentDate == null ||
+              date.isBefore(nextCommitmentDate!)) {
+            nextCommitmentDate = date;
+            nextCommitment = event;
+          }
+        }
+      }
+
+      String nextCommitmentTitle = '';
+      String nextCommitmentMeta = '';
+      IconData nextCommitmentIcon = Icons.event_available_rounded;
+
+      if (nextCommitment != null && nextCommitmentDate != null) {
+        final type = (nextCommitment!['event_type'] ?? '').toString();
+        final eventName = (nextCommitment!['event_name'] ??
+                nextCommitment!['championship_name'] ??
+                '')
+            .toString()
+            .trim();
+        final time = (nextCommitment!['event_time'] ?? '').toString().trim();
+        final date = nextCommitmentDate!;
+        final dateLabel = _isSameDay(date, today)
+            ? 'Hoje'
+            : '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
+
+        nextCommitmentTitle = eventName.isNotEmpty
+            ? eventName
+            : _isTrainingType(type)
+                ? 'Próximo treino'
+                : 'Próximo jogo';
+        nextCommitmentMeta = time.isNotEmpty ? '$dateLabel • $time' : dateLabel;
+        nextCommitmentIcon = _isTrainingType(type)
+            ? Icons.fitness_center_rounded
+            : Icons.emoji_events_rounded;
       }
 
       final evaluatedAthleteIdsThisMonth = <String>{};
@@ -406,6 +464,9 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         _activeAthletesCount = activeAthleteIds.length;
         _todayTrainingsCount = todayTrainings;
         _weekTrainingsCount = weekTrainings;
+        _nextCommitmentTitle = nextCommitmentTitle;
+        _nextCommitmentMeta = nextCommitmentMeta;
+        _nextCommitmentIcon = nextCommitmentIcon;
         _activeCompetitionsCount = activeCompetitions;
         _pendingEvaluationsCount = pendingEvaluations;
         _unplannedTrainingsCount = unplannedTrainings;
@@ -1198,24 +1259,250 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     );
   }
 
+  String _smartGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Bom dia';
+    if (hour < 18) return 'Boa tarde';
+    return 'Boa noite';
+  }
+
+  String _coachTeamLabel() {
+    final normalized =
+        _permissionService.normalizeCoachTeamGender(_coachTeamGender);
+    switch (normalized) {
+      case 'feminino':
+        return 'Time feminino';
+      case 'masculino':
+        return 'Time masculino';
+      default:
+        return 'Todos os times';
+    }
+  }
+
+  IconData _coachTeamIcon() {
+    final normalized =
+        _permissionService.normalizeCoachTeamGender(_coachTeamGender);
+    if (normalized == 'feminino') return Icons.female_rounded;
+    if (normalized == 'masculino') return Icons.male_rounded;
+    return Icons.groups_rounded;
+  }
+
+  Widget _buildGlassPill({
+    required IconData icon,
+    required String label,
+    Color? color,
+  }) {
+    final pillColor = color ?? Colors.white;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: Colors.black.withOpacity(0.18),
+        border: Border.all(color: pillColor.withOpacity(0.30)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.18),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: pillColor, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.96),
+              fontSize: 11.2,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMonthlyEvaluationProgressPanel() {
+    final completed = _monthlyEvaluationsCompletedCount;
+    final total = _activeAthletesCount;
+    final progress = _monthlyEvaluationProgress.clamp(0.0, 1.0);
+    final percent = (progress * 100).round();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(15),
+        color: Colors.black.withOpacity(0.18),
+        border: Border.all(
+          color: olympusGold.withOpacity(0.28),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: olympusGold.withOpacity(0.18),
+                  border: Border.all(color: olympusGold.withOpacity(0.24)),
+                ),
+                child: const Icon(
+                  Icons.assignment_turned_in_rounded,
+                  color: Color(0xFFFFF2B8),
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Avaliações Mensais',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12.8,
+                        fontWeight: FontWeight.w900,
+                        height: 1.1,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      total <= 0
+                          ? 'Nenhum atleta ativo no momento'
+                          : '$completed de $total atletas avaliados • $percent%',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.82),
+                        fontSize: 11.4,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 8,
+              backgroundColor: Colors.white.withOpacity(0.18),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                _isUrgentMonthlyClosingReminder
+                    ? const Color(0xFFDC2626)
+                    : olympusGold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNextCommitmentPanel() {
+    final hasCommitment = _nextCommitmentTitle.trim().isNotEmpty;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(15),
+        color: Colors.black.withOpacity(0.18),
+        border: Border.all(color: olympusGold.withOpacity(0.28)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: olympusGold.withOpacity(0.18),
+              border: Border.all(color: olympusGold.withOpacity(0.24)),
+            ),
+            child: Icon(
+              hasCommitment
+                  ? _nextCommitmentIcon
+                  : Icons.event_available_outlined,
+              color: const Color(0xFFFFF2B8),
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  hasCommitment
+                      ? _nextCommitmentTitle
+                      : 'Nenhum compromisso próximo',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12.2,
+                    fontWeight: FontWeight.w900,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  hasCommitment
+                      ? _nextCommitmentMeta
+                      : 'Agenda livre para novos planejamentos',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.82),
+                    fontSize: 11.2,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCoachInfoCard() {
+    final hasBackgroundPhoto = _coachAvatarUrl.trim().isNotEmpty;
+
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color: Colors.white.withOpacity(0.22),
+          color: Colors.white.withOpacity(0.24),
           width: 1.2,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.28),
-            blurRadius: 20,
-            offset: const Offset(0, 9),
+            color: Colors.black.withOpacity(0.34),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
           ),
           BoxShadow(
-            color: olympusGold.withOpacity(0.14),
-            blurRadius: 26,
+            color: olympusGold.withOpacity(0.16),
+            blurRadius: 30,
             spreadRadius: 1,
           ),
         ],
@@ -1230,187 +1517,220 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         ),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(26),
         child: Stack(
           children: [
-            Positioned(
-              top: -42,
-              right: -30,
+            if (hasBackgroundPhoto)
+              Positioned.fill(
+                child: Opacity(
+                  opacity: 0.20,
+                  child: Image.network(
+                    _coachAvatarUrl.trim(),
+                    fit: BoxFit.cover,
+                    alignment: const Alignment(0, -0.86),
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+            if (hasBackgroundPhoto)
+              Positioned.fill(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 1.15, sigmaY: 1.15),
+                  child: Container(color: Colors.transparent),
+                ),
+              ),
+            Positioned.fill(
               child: Container(
-                width: 142,
-                height: 142,
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.08),
+                  gradient: LinearGradient(
+                    colors: hasBackgroundPhoto
+                        ? [
+                            const Color(0xFF071B31).withOpacity(0.78),
+                            const Color(0xFF123861).withOpacity(0.62),
+                            const Color(0xFF235E94).withOpacity(0.42),
+                            Colors.black.withOpacity(0.22),
+                          ]
+                        : const [
+                            Color(0xFF0D223B),
+                            Color(0xFF123861),
+                            Color(0xFF235E94),
+                          ],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(0.90, -0.72),
+                    radius: 0.90,
+                    colors: [
+                      Colors.white.withOpacity(0.17),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.black.withOpacity(0.04),
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.18),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
                 ),
               ),
             ),
             Positioned(
-              bottom: -54,
-              left: -34,
+              top: -44,
+              right: -28,
               child: Container(
-                width: 122,
-                height: 122,
+                width: 150,
+                height: 150,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: olympusGold.withOpacity(0.08),
+                  color: Colors.white.withOpacity(0.09),
                 ),
               ),
             ),
             Positioned(
-              right: 18,
-              bottom: 16,
-              child: Icon(
-                Icons.verified_rounded,
-                color: Colors.white.withOpacity(0.10),
-                size: 44,
+              bottom: -58,
+              left: -36,
+              child: Container(
+                width: 132,
+                height: 132,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: olympusGold.withOpacity(0.09),
+                ),
               ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-              child: Row(
-                children: [
-                  _buildCoachAvatar(),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Olá, ${_coachFirstName()}!',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                            height: 1.08,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          _coachFullName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white.withOpacity(0.90),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 7,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 7,
-                              ),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(999),
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xFFD7E3EE),
-                                    Color(0xFFBFCFDD),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isCompact = constraints.maxWidth < 360;
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildCoachAvatar(),
+                          SizedBox(width: isCompact ? 12 : 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '${_smartGreeting()}, ${_coachFirstName()}!',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: isCompact ? 17 : 19,
+                                              fontWeight: FontWeight.w900,
+                                              color: Colors.white,
+                                              height: 1.05,
+                                              shadows: [
+                                                Shadow(
+                                                  color: Colors.black
+                                                      .withOpacity(0.38),
+                                                  blurRadius: 8,
+                                                  offset: const Offset(0, 2),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(height: 5),
+                                          Text(
+                                            _coachFullName,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: isCompact ? 12 : 13,
+                                              fontWeight: FontWeight.w800,
+                                              color: Colors.white
+                                                  .withOpacity(0.92),
+                                              height: 1.14,
+                                              shadows: [
+                                                Shadow(
+                                                  color: Colors.black
+                                                      .withOpacity(0.30),
+                                                  blurRadius: 6,
+                                                  offset: const Offset(0, 1),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _buildGlassPill(
+                                      icon: Icons.verified_user_outlined,
+                                      label: _coachRoleLabel,
+                                      color: const Color(0xFFFFF2B8),
+                                    ),
                                   ],
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
                                 ),
-                                border: Border.all(
-                                  color: const Color(0xFF90A9BF),
-                                  width: 1.1,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.verified_user_outlined,
-                                    size: 14,
-                                    color: Color(0xFF42576B),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    _coachRoleLabel,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w900,
-                                      color: Color(0xFF2E4053),
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 7,
+                                  runSpacing: 7,
+                                  children: [
+                                    _buildGlassPill(
+                                      icon: _coachTeamIcon(),
+                                      label: _coachTeamLabel(),
+                                      color: const Color(0xFFFFF2B8),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 7,
-                              ),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(999),
-                                color: olympusGold.withOpacity(0.15),
-                                border: Border.all(
-                                  color: olympusGold.withOpacity(0.28),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: const [
-                                  Icon(
-                                    Icons.workspace_premium_outlined,
-                                    size: 14,
-                                    color: Color(0xFFFFF2B8),
-                                  ),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'Painel premium',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w900,
-                                      color: Color(0xFFFFF2B8),
+                                    _buildGlassPill(
+                                      icon: Icons.groups_rounded,
+                                      label: '$_activeAthletesCount atletas',
+                                      color: Colors.white,
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        _buildCoachStatsWrap(),
-                        const SizedBox(height: 10),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(13),
-                            color: Colors.white.withOpacity(0.07),
-                            border: Border.all(
-                              color: olympusGold.withOpacity(0.23),
+                                    _buildGlassPill(
+                                      icon: Icons.calendar_month_rounded,
+                                      label: '$_weekTrainingsCount treinos/7d',
+                                      color: Colors.white,
+                                    ),
+                                    _buildGlassPill(
+                                      icon: Icons.mark_chat_unread_rounded,
+                                      label: '$_unreadMessagesCount msgs',
+                                      color: Colors.white,
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
                           ),
-                          child: Text(
-                            'Gerencie treinos, avaliações e acompanhe as novidades do painel.',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.90),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              height: 1.24,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      _buildMonthlyEvaluationProgressPanel(),
+                      const SizedBox(height: 10),
+                      _buildNextCommitmentPanel(),
+                      _buildMonthlyClosingReminder(),
+                    ],
+                  );
+                },
               ),
             ),
           ],
@@ -1710,7 +2030,6 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           _buildCoachInfoCard(),
-                          _buildSmartSummaryCard(),
                           _buildDashboardCard(
                             icon: Icons.fact_check_outlined,
                             title: 'Avaliações',
@@ -5490,6 +5809,7 @@ class _CoachAthleteEvaluationsPageState
   String? _error;
   String _genderFilter = 'Todos';
   DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  DateTime? _coachFirstAllowedMonth;
 
   List<AthleteEvaluationStatus> _athletes = [];
 
@@ -5563,18 +5883,71 @@ class _CoachAthleteEvaluationsPageState
     return filtered;
   }
 
+  DateTime _monthOnly(DateTime value) {
+    return DateTime(value.year, value.month, 1);
+  }
+
+  Future<void> _loadCoachFirstAllowedMonth() async {
+    if (_coachFirstAllowedMonth != null) return;
+
+    final user = _supabase.auth.currentUser;
+    final now = DateTime.now();
+    DateTime fallback = DateTime(now.year, now.month, 1);
+
+    if (user == null) {
+      _coachFirstAllowedMonth = fallback;
+      _selectedMonth = fallback;
+      return;
+    }
+
+    DateTime? createdAt;
+
+    try {
+      final profile = await _supabase
+          .from('profiles')
+          .select('created_at')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      createdAt = DateTime.tryParse(
+        (profile?['created_at'] ?? '').toString(),
+      )?.toLocal();
+    } catch (_) {
+      createdAt = null;
+    }
+
+    createdAt ??= DateTime.tryParse(user.createdAt)?.toLocal();
+
+    final firstAllowed = createdAt == null ? fallback : _monthOnly(createdAt);
+    final currentMonth = DateTime(now.year, now.month, 1);
+
+    _coachFirstAllowedMonth = firstAllowed;
+
+    final selectedMonth = _monthOnly(_selectedMonth);
+    if (selectedMonth.isBefore(firstAllowed)) {
+      _selectedMonth =
+          currentMonth.isBefore(firstAllowed) ? firstAllowed : currentMonth;
+    } else {
+      _selectedMonth = selectedMonth;
+    }
+  }
+
   List<DateTime> _monthOptions() {
     final now = DateTime.now();
-    final months = List.generate(
-      12,
-      (index) => DateTime(now.year, now.month - index, 1),
-    );
+    final currentMonth = DateTime(now.year, now.month, 1);
+    final firstAllowedMonth = _coachFirstAllowedMonth ?? currentMonth;
 
-    months.sort((a, b) {
-      final yearCompare = a.year.compareTo(b.year);
-      if (yearCompare != 0) return yearCompare;
-      return a.month.compareTo(b.month);
-    });
+    final months = <DateTime>[];
+    var cursor = firstAllowedMonth;
+
+    while (!cursor.isAfter(currentMonth)) {
+      months.add(cursor);
+      cursor = DateTime(cursor.year, cursor.month + 1, 1);
+    }
+
+    if (months.isEmpty) {
+      months.add(currentMonth);
+    }
 
     return months;
   }
@@ -5605,6 +5978,8 @@ class _CoachAthleteEvaluationsPageState
     });
 
     try {
+      await _loadCoachFirstAllowedMonth();
+
       final visibleIds =
           await _permissionService.getVisibleUserIdsForPage('avaliacoes');
 
