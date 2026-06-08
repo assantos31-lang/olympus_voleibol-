@@ -400,133 +400,364 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
   }
 
-  Future<void> _showResetPasswordDialog(Map<String, dynamic> profile) async {
-    final emailCtrl = TextEditingController(
-      text: (profile['email'] ?? profile['email_address'] ?? '').toString(),
+  Future<void> _copyAdminPasswordMessage({
+    required String userName,
+    required String email,
+    required String password,
+  }) async {
+    final message = email.trim().isEmpty
+        ? 'Olá, $userName!\n\nSua nova senha de acesso ao Olympus Voleibol é:\n$password\n\nApós entrar, recomendamos alterar sua senha.'
+        : 'Olá, $userName!\n\nE-mail: $email\nNova senha de acesso ao Olympus Voleibol: $password\n\nApós entrar, recomendamos alterar sua senha.';
+
+    await Clipboard.setData(ClipboardData(text: message));
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Mensagem com a nova senha copiada!'),
+        backgroundColor: olympusBlue,
+      ),
     );
-    bool isSubmitting = false;
+  }
+
+  Future<void> _copyAdminPasswordOnly(String password) async {
+    await Clipboard.setData(ClipboardData(text: password));
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Senha copiada!'),
+        backgroundColor: olympusBlue,
+      ),
+    );
+  }
+
+  Future<String> _resetUserPasswordByFunction({
+    required String userId,
+  }) async {
+    final session = supabase.auth.currentSession;
+
+    if (session == null) {
+      throw Exception('Sessão expirada. Faça login novamente.');
+    }
+
+    final response = await supabase.functions.invoke(
+      'reset-user-password',
+      headers: {
+        'Authorization': 'Bearer ${session.accessToken}',
+      },
+      body: {
+        'user_id': userId,
+      },
+    );
+
+    if (response.status < 200 || response.status >= 300) {
+      final data = response.data;
+      final errorMessage = data is Map && data['error'] != null
+          ? data['error'].toString()
+          : 'Falha ao atualizar senha no Supabase.';
+      throw Exception(errorMessage);
+    }
+
+    final data = response.data;
+    final password = data is Map ? data['password']?.toString().trim() : null;
+
+    if (password == null || password.isEmpty) {
+      throw Exception(
+        'A função reset-user-password não retornou a senha gerada.',
+      );
+    }
+
+    return password;
+  }
+
+  Future<void> _showResetPasswordDialog(Map<String, dynamic> profile) async {
+    final userId = (profile['id'] ?? '').toString().trim();
+    final userName = (profile['full_name'] ?? 'Usuário').toString().trim();
+    final email =
+        (profile['email'] ?? profile['email_address'] ?? '').toString().trim();
+
+    if (userId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Usuário inválido: ID não encontrado.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    String generatedPassword = '';
+    bool isLoading = true;
+    bool isSaved = false;
+    String? errorMessage;
+
+    Future<void> executeReset(StateSetter setDialogState) async {
+      setDialogState(() {
+        isLoading = true;
+        isSaved = false;
+        errorMessage = null;
+        generatedPassword = '';
+      });
+
+      try {
+        final functionPassword = await _resetUserPasswordByFunction(
+          userId: userId,
+        );
+
+        if (!mounted) return;
+
+        setDialogState(() {
+          generatedPassword = functionPassword;
+          isLoading = false;
+          isSaved = true;
+        });
+
+        await _copyAdminPasswordMessage(
+          userName: userName,
+          email: email,
+          password: functionPassword,
+        );
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Senha de $userName atualizada no Supabase.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        debugPrint('❌ Erro ao redefinir senha pelo admin: $e');
+
+        if (!mounted) return;
+
+        setDialogState(() {
+          isLoading = false;
+          isSaved = false;
+          errorMessage = e.toString().replaceFirst('Exception: ', '');
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao redefinir senha: $errorMessage'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
 
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.lock_reset, color: olympusGold),
-              const SizedBox(width: 8),
-              const Text('Resetar senha'),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                profile['full_name'] ?? 'Usuário',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: olympusBlue,
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: emailCtrl,
-                enabled: !isSubmitting,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  labelText: 'E-mail do usuário',
-                  prefixIcon: const Icon(Icons.email, color: olympusGold),
-                  border: const OutlineInputBorder(),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: olympusGold, width: 2),
-                    borderRadius: BorderRadius.circular(4),
+      builder: (dialogContext) {
+        bool started = false;
+
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            if (!started) {
+              started = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                executeReset(setDialogState);
+              });
+            }
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(
+                    isSaved
+                        ? Icons.check_circle_outline
+                        : Icons.lock_reset_rounded,
+                    color: isSaved ? Colors.green : olympusGold,
                   ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      isLoading
+                          ? 'Resetando senha'
+                          : isSaved
+                              ? 'Senha atualizada'
+                              : 'Erro ao atualizar senha',
+                    ),
+                  ),
+                ],
+              ),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      userName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: olympusBlue,
+                      ),
+                    ),
+                    if (email.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        email,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    if (isLoading) ...[
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.4,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                olympusGold,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'A função reset-user-password está gerando e salvando a senha no Supabase...',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else if (errorMessage != null) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.redAccent),
+                        ),
+                        child: Text(
+                          errorMessage!,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'A senha só será exibida quando a Edge Function confirmar que ela foi gravada no Supabase.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ] else ...[
+                      const Text(
+                        'Nova senha salva no Supabase:',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF4F6FA),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: olympusGold.withOpacity(0.65),
+                          ),
+                        ),
+                        child: SelectableText(
+                          generatedPassword,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.1,
+                            color: olympusBlue,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: generatedPassword.isEmpty
+                                  ? null
+                                  : () => _copyAdminPasswordOnly(
+                                        generatedPassword,
+                                      ),
+                              icon: const Icon(Icons.copy),
+                              label: const Text('Copiar senha'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: generatedPassword.isEmpty
+                                  ? null
+                                  : () => _copyAdminPasswordMessage(
+                                        userName: userName,
+                                        email: email,
+                                        password: generatedPassword,
+                                      ),
+                              icon: const Icon(Icons.message_outlined),
+                              label: const Text('Copiar mensagem'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Esta é a senha ativa retornada pela Edge Function e gravada no Supabase.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.green[700],
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              const SizedBox(height: 10),
-              const Text(
-                'O Supabase enviará um link de recuperação para este e-mail.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed:
-                  isSubmitting ? null : () => Navigator.pop(dialogContext),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton.icon(
-              onPressed: isSubmitting
-                  ? null
-                  : () async {
-                      final email = emailCtrl.text.trim();
-                      if (email.isEmpty || !email.contains('@')) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Informe um e-mail válido.'),
-                            backgroundColor: Colors.orange,
-                          ),
-                        );
-                        return;
-                      }
-
-                      setDialogState(() {
-                        isSubmitting = true;
-                      });
-
-                      try {
-                        await supabase.auth.resetPasswordForEmail(email);
-
-                        if (!mounted) return;
-                        Navigator.pop(dialogContext);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                                'Link de reset de senha enviado para $email'),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      } catch (e) {
-                        debugPrint('❌ Erro ao resetar senha: $e');
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Erro ao resetar senha: $e'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      } finally {
-                        if (mounted) {
-                          setDialogState(() {
-                            isSubmitting = false;
-                          });
-                        }
-                      }
+              actions: [
+                TextButton(
+                  onPressed:
+                      isLoading ? null : () => Navigator.pop(dialogContext),
+                  child: const Text('Fechar'),
+                ),
+                if (!isLoading && errorMessage != null)
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      executeReset(setDialogState);
                     },
-              icon: isSubmitting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(olympusBlue),
-                      ),
-                    )
-                  : const Icon(Icons.send),
-              label: Text(isSubmitting ? 'Enviando...' : 'Enviar link'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: olympusGold,
-                foregroundColor: olympusBlue,
-              ),
-            ),
-          ],
-        ),
-      ),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Tentar novamente'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: olympusGold,
+                      foregroundColor: olympusBlue,
+                    ),
+                  ),
+                if (!isLoading && isSaved)
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      await executeReset(setDialogState);
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Resetar novamente'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: olympusGold,
+                      foregroundColor: olympusBlue,
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
     );
-
-    emailCtrl.dispose();
   }
 
   Future<void> _showPermissionsDialog(Map<String, dynamic> profile) async {
