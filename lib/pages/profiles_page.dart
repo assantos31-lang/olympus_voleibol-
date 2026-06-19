@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'dart:math';
 import '../services/auth_service.dart';
 import '../services/permission_service.dart';
+import '../widgets/role_manager_widget.dart';
 
 class ProfilesPage extends StatefulWidget {
   const ProfilesPage({super.key});
@@ -826,12 +827,14 @@ class _ProfilesPageState extends State<ProfilesPage> {
     bool showInRanking = visibilityPermissions['show_in_ranking'] ?? false;
     bool showInEvaluations =
         visibilityPermissions['show_in_evaluations'] ?? false;
-    final isAthleteProfile =
-        (profile['user_type'] ?? '').toString().trim() == 'athlete';
-    final isCoachProfile =
-        (profile['user_type'] ?? '').toString().trim() == 'coach';
+
     String selectedCoachTeamGender =
         _normalizeCoachTeamGender(profile['coach_team_gender']);
+
+    // ── Estado local reativo para o papel primário ───────────────────────────
+    String currentUserType =
+        (profile['user_type'] ?? 'member').toString().trim();
+    // ────────────────────────────────────────────────────────────────────────
 
     bool showMonthFilter = agendaFilters['show_month_filter'] ?? true;
     bool showStatusFilter = agendaFilters['show_status_filter'] ?? true;
@@ -927,9 +930,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
             ],
           ),
           content: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 560,
-            ),
+            constraints: const BoxConstraints(maxWidth: 560),
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -937,13 +938,44 @@ class _ProfilesPageState extends State<ProfilesPage> {
                 children: [
                   Text(
                     'Usuário: $userName',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: olympusBlue,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (isCoachProfile)
+
+                  // ✅ RoleManagerWidget com onRolesSaved CORRIGIDO
+                  RoleManagerWidget(
+                    userId: userId,
+                    userName: userName,
+                    currentPrimaryRole: currentUserType,
+                    onRolesSaved: (newPrimaryRole) {
+                      // 1. Atualiza o estado do dialog imediatamente (síncrono)
+                      setDialogState(() {
+                        currentUserType = newPrimaryRole;
+                        profile['user_type'] = newPrimaryRole;
+                      });
+
+                      // 2. Exibe o snackbar com o context atual do dialog
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Papéis atualizados! Perfil principal: ${_getTypeLabel(newPrimaryRole)}.',
+                          ),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+
+                      // 3. Atualiza a lista em background sem bloquear o dialog
+                      fetchProfiles();
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ✅ USA currentUserType — reativo ao RoleManagerWidget
+                  if (currentUserType == 'coach')
                     _buildCoachTeamPermissionsCard(
                       selectedValue: selectedCoachTeamGender,
                       onSelected: (value) async {
@@ -976,6 +1008,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         }
                       },
                     ),
+
                   const Text(
                     'Permissões de Acesso:',
                     style: TextStyle(
@@ -1029,7 +1062,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       },
                     );
                   }).toList(),
-                  if (isAthleteProfile) ...[
+
+                  // ✅ USA currentUserType — reativo ao RoleManagerWidget
+                  if (currentUserType == 'athlete') ...[
                     const SizedBox(height: 16),
                     Divider(color: Colors.grey[300]),
                     const SizedBox(height: 8),
@@ -1120,6 +1155,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       },
                     ),
                   ],
+
                   if (permissionValues['agenda'] == true) ...[
                     const SizedBox(height: 16),
                     Divider(color: Colors.grey[300]),
@@ -1179,18 +1215,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        {
-                          'value': 'treino',
-                          'label': 'Treino',
-                        },
-                        {
-                          'value': 'amistoso',
-                          'label': 'Amistoso',
-                        },
-                        {
-                          'value': 'campeonato',
-                          'label': 'Campeonatos',
-                        },
+                        {'value': 'treino', 'label': 'Treino'},
+                        {'value': 'amistoso', 'label': 'Amistoso'},
+                        {'value': 'campeonato', 'label': 'Campeonatos'},
                       ].map((item) {
                         final value = item['value']!;
                         final selected = allowedEventTypes.contains(value);
@@ -1203,9 +1230,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                             final updated =
                                 List<String>.from(allowedEventTypes);
                             if (enabled) {
-                              if (!updated.contains(value)) {
-                                updated.add(value);
-                              }
+                              if (!updated.contains(value)) updated.add(value);
                             } else {
                               updated.remove(value);
                             }
@@ -1292,18 +1317,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          {
-                            'value': 'accepted',
-                            'label': 'Aceitou',
-                          },
-                          {
-                            'value': 'rejected',
-                            'label': 'Recusou',
-                          },
-                          {
-                            'value': 'pending',
-                            'label': 'Pendentes',
-                          },
+                          {'value': 'accepted', 'label': 'Aceitou'},
+                          {'value': 'rejected', 'label': 'Recusou'},
+                          {'value': 'pending', 'label': 'Pendentes'},
                         ].map((item) {
                           final value = item['value']!;
                           final selected =
@@ -1314,9 +1330,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                             selectedColor: olympusGold.withOpacity(0.2),
                             checkmarkColor: olympusBlue,
                             onSelected: (enabled) async {
-                              final updated = List<String>.from(
-                                allowedConvocationStatuses,
-                              );
+                              final updated =
+                                  List<String>.from(allowedConvocationStatuses);
                               if (enabled) {
                                 if (!updated.contains(value)) {
                                   updated.add(value);
@@ -1360,6 +1375,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       ),
                     ],
                   ],
+
                   if (permissionValues['agenda'] == true) ...[
                     const SizedBox(height: 16),
                     Divider(color: Colors.grey[300]),
@@ -1451,6 +1467,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       },
                     ),
                   ],
+
                   if (permissionValues['financeiro'] == true) ...[
                     const SizedBox(height: 16),
                     Divider(color: Colors.grey[300]),
@@ -1472,22 +1489,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        {
-                          'value': 'monthly',
-                          'label': 'Mensalidade',
-                        },
-                        {
-                          'value': 'games',
-                          'label': 'Jogos',
-                        },
-                        {
-                          'value': 'maintenance',
-                          'label': 'Manutenção',
-                        },
-                        {
-                          'value': 'other',
-                          'label': 'Outros',
-                        },
+                        {'value': 'monthly', 'label': 'Mensalidade'},
+                        {'value': 'games', 'label': 'Jogos'},
+                        {'value': 'maintenance', 'label': 'Manutenção'},
+                        {'value': 'other', 'label': 'Outros'},
                       ].map((item) {
                         final value = item['value']!;
                         final selected = allowedFinancialTypes.contains(value);
@@ -1500,9 +1505,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                             final updated =
                                 List<String>.from(allowedFinancialTypes);
                             if (enabled) {
-                              if (!updated.contains(value)) {
-                                updated.add(value);
-                              }
+                              if (!updated.contains(value)) updated.add(value);
                             } else {
                               updated.remove(value);
                             }
@@ -1779,9 +1782,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       ? null
                       : (val) {
                           if (val != null) {
-                            setDialogState(() {
-                              selectedType = val;
-                            });
+                            setDialogState(() => selectedType = val);
                           }
                         },
                 ),
@@ -1814,9 +1815,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           supabase.auth.currentSession?.refreshToken;
                       final adminUserId = supabase.auth.currentUser?.id;
 
-                      setDialogState(() {
-                        isSubmitting = true;
-                      });
+                      setDialogState(() => isSubmitting = true);
 
                       try {
                         final response = await supabase.auth.signUp(
@@ -1831,8 +1830,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         if (adminRefreshToken != null) {
                           await supabase.auth.setSession(adminRefreshToken);
                           await Future.delayed(
-                            const Duration(milliseconds: 300),
-                          );
+                              const Duration(milliseconds: 300));
                         }
 
                         if (adminUserId != null &&
@@ -1867,8 +1865,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                             await supabase.auth.setSession(adminRefreshToken);
                           } catch (restoreError) {
                             debugPrint(
-                              '❌ Erro ao restaurar sessão do admin: $restoreError',
-                            );
+                                '❌ Erro ao restaurar sessão do admin: $restoreError');
                           }
                         }
 
@@ -1896,9 +1893,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         );
                       } finally {
                         if (mounted) {
-                          setDialogState(() {
-                            isSubmitting = false;
-                          });
+                          setDialogState(() => isSubmitting = false);
                         }
                       }
                     },
@@ -1976,9 +1971,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.12),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.18),
-          ),
+          border: Border.all(color: Colors.white.withOpacity(0.18)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2014,15 +2007,11 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(
-                    color: Colors.white.withOpacity(0.12),
-                  ),
+                  borderSide: BorderSide(color: Colors.white.withOpacity(0.12)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(
-                    color: Colors.white.withOpacity(0.12),
-                  ),
+                  borderSide: BorderSide(color: Colors.white.withOpacity(0.12)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderSide: const BorderSide(color: olympusGold, width: 1.8),
@@ -2117,9 +2106,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                 ],
                 onChanged: (value) {
                   if (value == null) return;
-                  setState(() {
-                    _selectedGenderFilter = value;
-                  });
+                  setState(() => _selectedGenderFilter = value);
                 },
               ),
               const SizedBox(width: 10),
@@ -2137,9 +2124,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                 ],
                 onChanged: (value) {
                   if (value == null) return;
-                  setState(() {
-                    _selectedUserTypeFilter = value;
-                  });
+                  setState(() => _selectedUserTypeFilter = value);
                 },
               ),
             ],
@@ -2152,11 +2137,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   icon: Icons.verified_user_outlined,
                   title: 'Usuários Ativos',
                   selected: !_showInactiveUsers,
-                  onTap: () {
-                    setState(() {
-                      _showInactiveUsers = false;
-                    });
-                  },
+                  onTap: () => setState(() => _showInactiveUsers = false),
                 ),
               ),
               const SizedBox(width: 10),
@@ -2165,11 +2146,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   icon: Icons.person_off_outlined,
                   title: 'Usuários Inativos',
                   selected: _showInactiveUsers,
-                  onTap: () {
-                    setState(() {
-                      _showInactiveUsers = true;
-                    });
-                  },
+                  onTap: () => setState(() => _showInactiveUsers = true),
                 ),
               ),
             ],
@@ -2181,9 +2158,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.10),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.14),
-              ),
+              border: Border.all(color: Colors.white.withOpacity(0.14)),
             ),
             child: Row(
               children: [
@@ -2205,9 +2180,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   decoration: BoxDecoration(
                     color: olympusGold.withOpacity(0.18),
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: olympusGold.withOpacity(0.28),
-                    ),
+                    border: Border.all(color: olympusGold.withOpacity(0.28)),
                   ),
                   child: Text(
                     '$resultsCount resultado${resultsCount == 1 ? '' : 's'}',
@@ -2244,9 +2217,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
       cardColor = Colors.white;
     }
 
-    if (!isActive) {
-      cardColor = Colors.grey;
-    }
+    if (!isActive) cardColor = Colors.grey;
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
@@ -2306,7 +2277,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         child: avatarUrl == null || avatarUrl.toString().isEmpty
                             ? Text(
                                 profile['full_name']?[0]?.toUpperCase() ?? '?',
-                                style: TextStyle(
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 22,
@@ -2334,139 +2305,29 @@ class _ProfilesPageState extends State<ProfilesPage> {
                             spacing: 8,
                             runSpacing: 8,
                             children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _getColorForType(userType)
-                                      .withOpacity(0.10),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: _getColorForType(userType)
-                                        .withOpacity(0.20),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.badge_outlined,
-                                      size: 14,
-                                      color: _getColorForType(userType),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      _getTypeLabel(userType),
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              _buildBadge(
+                                icon: Icons.badge_outlined,
+                                label: _getTypeLabel(userType),
+                                color: _getColorForType(userType),
                               ),
                               if (!isActive)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.redAccent.withOpacity(0.18),
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: Colors.redAccent.withOpacity(0.35),
-                                    ),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.block_rounded,
-                                        size: 14,
-                                        color: Colors.white,
-                                      ),
-                                      SizedBox(width: 6),
-                                      Text(
-                                        'Inativo',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                _buildBadge(
+                                  icon: Icons.block_rounded,
+                                  label: 'Inativo',
+                                  color: Colors.redAccent,
                                 ),
                               if (gender.isNotEmpty)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: cardColor.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: cardColor.withOpacity(0.25),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.wc,
-                                        size: 14,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        gender,
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                _buildBadge(
+                                  icon: Icons.wc,
+                                  label: gender,
+                                  color: cardColor,
                                 ),
                               if (userType == 'coach')
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: olympusGold.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: olympusGold.withOpacity(0.28),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.groups_2_outlined,
-                                        size: 14,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        _getCoachTeamGenderLabel(
-                                            coachTeamGender),
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                _buildBadge(
+                                  icon: Icons.groups_2_outlined,
+                                  label:
+                                      _getCoachTeamGenderLabel(coachTeamGender),
+                                  color: olympusGold,
                                 ),
                             ],
                           ),
@@ -2504,26 +2365,16 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         }
                       },
                       itemBuilder: (context) => const [
+                        PopupMenuItem(value: 'edit', child: Text('Editar')),
+                        PopupMenuItem(value: 'delete', child: Text('Excluir')),
                         PopupMenuItem(
-                          value: 'edit',
-                          child: Text('Editar'),
-                        ),
+                            value: 'permissions', child: Text('Permissões')),
                         PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Excluir'),
-                        ),
+                            value: 'reset_password',
+                            child: Text('Resetar senha')),
                         PopupMenuItem(
-                          value: 'permissions',
-                          child: Text('Permissões'),
-                        ),
-                        PopupMenuItem(
-                          value: 'reset_password',
-                          child: Text('Resetar senha'),
-                        ),
-                        PopupMenuItem(
-                          value: 'toggle_active',
-                          child: Text('Alterar status'),
-                        ),
+                            value: 'toggle_active',
+                            child: Text('Alterar status')),
                       ],
                     ),
                   ],
@@ -2532,6 +2383,36 @@ class _ProfilesPageState extends State<ProfilesPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildBadge({
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.20)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2566,15 +2447,12 @@ class _ProfilesPageState extends State<ProfilesPage> {
             'assets/images/monte_olimpo_v2.png',
             fit: BoxFit.cover,
             alignment: Alignment.center,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(color: const Color(0xFF102845));
-            },
+            errorBuilder: (context, error, stackTrace) =>
+                Container(color: const Color(0xFF102845)),
           ),
         ),
         Positioned.fill(
-          child: Container(
-            color: Colors.black.withOpacity(0.14),
-          ),
+          child: Container(color: Colors.black.withOpacity(0.14)),
         ),
         Positioned.fill(
           child: Container(
@@ -2659,7 +2537,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.people_outline, size: 80, color: Colors.white70),
+          const Icon(Icons.people_outline, size: 80, color: Colors.white70),
           const SizedBox(height: 16),
           Text(
             'Nenhum perfil encontrado para os filtros selecionados',
@@ -2681,11 +2559,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
 
     if (_isCheckingAccess) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
+        body: Center(child: CircularProgressIndicator()),
       );
     }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
@@ -2762,8 +2639,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 itemCount: filteredProfiles.length,
                                 padding: const EdgeInsets.all(8),
                                 itemBuilder: (context, index) {
-                                  final profile = filteredProfiles[index];
-                                  return _buildProfileCard(profile);
+                                  return _buildProfileCard(
+                                      filteredProfiles[index]);
                                 },
                               ),
                       ),
@@ -2842,9 +2719,14 @@ class _ProfilesPageState extends State<ProfilesPage> {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// ProfileFormDialog
+// ════════════════════════════════════════════════════════════════════════════
+
 class ProfileFormDialog extends StatefulWidget {
   final Map<String, dynamic>? profile;
   final Future<void> Function(Map<String, dynamic> data) onSave;
+
   const ProfileFormDialog({
     super.key,
     this.profile,
@@ -2878,9 +2760,11 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
   bool _isLoading = false;
   bool _isFetchingCep = false;
   bool _isUploading = false;
+
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
+
   final Map<String, List<Map<String, String>>> _positions = {
     'Masculino': [
       {'value': 'Ponteiro', 'label': 'Ponteiro'},
@@ -2966,9 +2850,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
     } catch (e) {
       debugPrint('Erro ao buscar CEP: $e');
     } finally {
-      if (mounted) {
-        setState(() => _isFetchingCep = false);
-      }
+      if (mounted) setState(() => _isFetchingCep = false);
     }
   }
 
@@ -2980,11 +2862,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
         maxHeight: 800,
         imageQuality: 85,
       );
-      if (image != null) {
-        setState(() {
-          _selectedImage = image;
-        });
-      }
+      if (image != null) setState(() => _selectedImage = image);
     } catch (e) {
       debugPrint('Erro ao selecionar imagem: $e');
       if (mounted) {
@@ -3000,9 +2878,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
 
   Future<String?> _uploadImage() async {
     if (_selectedImage == null) return null;
-    if (mounted) {
-      setState(() => _isUploading = true);
-    }
+    if (mounted) setState(() => _isUploading = true);
     try {
       final fileName =
           '${DateTime.now().millisecondsSinceEpoch}_${_fullNameController.text.replaceAll(RegExp(r"\D"), "")}.jpg';
@@ -3011,8 +2887,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
       if (fileBytes == null) return null;
       await supabase.storage.from('avatars').uploadBinary(fileName, fileBytes,
           fileOptions: const FileOptions(upsert: true));
-      final publicUrl = supabase.storage.from('avatars').getPublicUrl(fileName);
-      return publicUrl;
+      return supabase.storage.from('avatars').getPublicUrl(fileName);
     } catch (e) {
       debugPrint('Erro ao fazer upload: $e');
       if (mounted) {
@@ -3025,9 +2900,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
       }
       return null;
     } finally {
-      if (mounted) {
-        setState(() => _isUploading = false);
-      }
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 
@@ -3037,17 +2910,15 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
       initialDate: DateTime.now(),
       firstDate: DateTime(1900),
       lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: olympusGold,
-              onPrimary: Colors.white,
-            ),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: olympusGold,
+            onPrimary: Colors.white,
           ),
-          child: child!,
-        );
-      },
+        ),
+        child: child!,
+      ),
     );
     if (picked != null && mounted) {
       setState(() {
@@ -3141,9 +3012,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                           shape: BoxShape.circle,
                           border: Border.all(color: olympusGold, width: 3),
                         ),
-                        child: ClipOval(
-                          child: _getAvatarImage(),
-                        ),
+                        child: ClipOval(child: _getAvatarImage()),
                       ),
                     ),
                   ),
@@ -3152,41 +3021,23 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                     child: TextButton.icon(
                       onPressed: _pickImage,
                       icon: const Icon(Icons.photo_camera, color: olympusGold),
-                      label: const Text(
-                        'Selecionar Foto',
-                        style: TextStyle(color: olympusBlue),
-                      ),
+                      label: const Text('Selecionar Foto',
+                          style: TextStyle(color: olympusBlue)),
                     ),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _fullNameController,
-                    decoration: InputDecoration(
-                      labelText: 'Nome Completo *',
-                      border: const OutlineInputBorder(),
-                      prefixIcon: const Icon(Icons.person, color: olympusGold),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide:
-                            const BorderSide(color: olympusGold, width: 2),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    validator: (value) =>
-                        value?.isEmpty ?? true ? 'Campo obrigatório' : null,
+                    decoration: _inputDecoration(
+                        'Nome Completo *', Icons.person, olympusGold),
+                    validator: (v) =>
+                        v?.isEmpty ?? true ? 'Campo obrigatório' : null,
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     value: _selectedUserType,
-                    decoration: InputDecoration(
-                      labelText: 'Tipo de Usuário *',
-                      border: const OutlineInputBorder(),
-                      prefixIcon: const Icon(Icons.badge, color: olympusGold),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide:
-                            const BorderSide(color: olympusGold, width: 2),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
+                    decoration: _inputDecoration(
+                        'Tipo de Usuário *', Icons.badge, olympusGold),
                     items: const [
                       DropdownMenuItem(value: 'member', child: Text('Membro')),
                       DropdownMenuItem(value: 'athlete', child: Text('Atleta')),
@@ -3203,8 +3054,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                         }
                       });
                     },
-                    validator: (value) =>
-                        value == null ? 'Campo obrigatório' : null,
+                    validator: (v) => v == null ? 'Campo obrigatório' : null,
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -3212,19 +3062,10 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                       Expanded(
                         child: TextFormField(
                           controller: _cpfController,
-                          decoration: InputDecoration(
-                            labelText: 'CPF *',
-                            border: const OutlineInputBorder(),
-                            prefixIcon: const Icon(Icons.credit_card,
-                                color: olympusGold),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(
-                                  color: olympusGold, width: 2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
+                          decoration: _inputDecoration(
+                              'CPF *', Icons.credit_card, olympusGold),
                           keyboardType: TextInputType.number,
-                          validator: (value) => _removeMask(value).length != 11
+                          validator: (v) => _removeMask(v).length != 11
                               ? 'CPF inválido'
                               : null,
                         ),
@@ -3233,21 +3074,11 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                       Expanded(
                         child: TextFormField(
                           controller: _rgController,
-                          decoration: InputDecoration(
-                            labelText: 'RG *',
-                            border: const OutlineInputBorder(),
-                            prefixIcon: const Icon(Icons.credit_card,
-                                color: olympusGold),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(
-                                  color: olympusGold, width: 2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
+                          decoration: _inputDecoration(
+                              'RG *', Icons.credit_card, olympusGold),
                           keyboardType: TextInputType.number,
-                          validator: (value) => value?.isEmpty ?? true
-                              ? 'Campo obrigatório'
-                              : null,
+                          validator: (v) =>
+                              v?.isEmpty ?? true ? 'Campo obrigatório' : null,
                         ),
                       ),
                     ],
@@ -3258,19 +3089,10 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                       Expanded(
                         child: TextFormField(
                           controller: _phoneController,
-                          decoration: InputDecoration(
-                            labelText: 'Telefone *',
-                            border: const OutlineInputBorder(),
-                            prefixIcon:
-                                const Icon(Icons.phone, color: olympusGold),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(
-                                  color: olympusGold, width: 2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
+                          decoration: _inputDecoration(
+                              'Telefone *', Icons.phone, olympusGold),
                           keyboardType: TextInputType.phone,
-                          validator: (value) => _removeMask(value).length < 10
+                          validator: (v) => _removeMask(v).length < 10
                               ? 'Telefone inválido'
                               : null,
                         ),
@@ -3281,31 +3103,20 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                           value: _selectedGender.isNotEmpty
                               ? _selectedGender
                               : null,
-                          decoration: InputDecoration(
-                            labelText: 'Gênero *',
-                            border: const OutlineInputBorder(),
-                            prefixIcon: const Icon(Icons.transgender,
-                                color: olympusGold),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(
-                                  color: olympusGold, width: 2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
+                          decoration: _inputDecoration(
+                              'Gênero *', Icons.transgender, olympusGold),
                           items: const [
                             DropdownMenuItem(
                                 value: 'Masculino', child: Text('Masculino')),
                             DropdownMenuItem(
                                 value: 'Feminino', child: Text('Feminino')),
                           ],
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedGender = value ?? '';
-                              _selectedPosition = '';
-                            });
-                          },
-                          validator: (value) =>
-                              value == null ? 'Campo obrigatório' : null,
+                          onChanged: (value) => setState(() {
+                            _selectedGender = value ?? '';
+                            _selectedPosition = '';
+                          }),
+                          validator: (v) =>
+                              v == null ? 'Campo obrigatório' : null,
                         ),
                       ),
                     ],
@@ -3338,17 +3149,8 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                       value: _selectedPosition.isNotEmpty
                           ? _selectedPosition
                           : null,
-                      decoration: InputDecoration(
-                        labelText: 'Posição na Quadra',
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.sports_volleyball,
-                            color: olympusGold),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide:
-                              const BorderSide(color: olympusGold, width: 2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
+                      decoration: _inputDecoration('Posição na Quadra',
+                          Icons.sports_volleyball, olympusGold),
                       items: _positions[_selectedGender]!
                           .map((pos) => DropdownMenuItem(
                                 value: pos['value'],
@@ -3361,7 +3163,8 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      Icon(Icons.location_on, color: olympusGold, size: 20),
+                      const Icon(Icons.location_on,
+                          color: olympusGold, size: 20),
                       const SizedBox(width: 8),
                       const Text('Endereço',
                           style: TextStyle(
@@ -3398,8 +3201,8 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                     ),
                     keyboardType: TextInputType.number,
                     maxLength: 9,
-                    validator: (value) =>
-                        _removeMask(value).length != 8 ? 'CEP inválido' : null,
+                    validator: (v) =>
+                        _removeMask(v).length != 8 ? 'CEP inválido' : null,
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -3408,37 +3211,21 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                         flex: 3,
                         child: TextFormField(
                           controller: _streetController,
-                          decoration: InputDecoration(
-                            labelText: 'Rua *',
-                            border: const OutlineInputBorder(),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(
-                                  color: olympusGold, width: 2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                          validator: (value) => value?.isEmpty ?? true
-                              ? 'Campo obrigatório'
-                              : null,
+                          decoration: _inputDecoration(
+                              'Rua *', Icons.home, olympusGold),
+                          validator: (v) =>
+                              v?.isEmpty ?? true ? 'Campo obrigatório' : null,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: TextFormField(
                           controller: _streetNumberController,
-                          decoration: InputDecoration(
-                            labelText: 'Número *',
-                            border: const OutlineInputBorder(),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(
-                                  color: olympusGold, width: 2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
+                          decoration: _inputDecoration(
+                              'Número *', Icons.numbers, olympusGold),
                           keyboardType: TextInputType.number,
-                          validator: (value) => value?.isEmpty ?? true
-                              ? 'Campo obrigatório'
-                              : null,
+                          validator: (v) =>
+                              v?.isEmpty ?? true ? 'Campo obrigatório' : null,
                         ),
                       ),
                     ],
@@ -3446,30 +3233,16 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _complementController,
-                    decoration: InputDecoration(
-                      labelText: 'Complemento',
-                      border: const OutlineInputBorder(),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide:
-                            const BorderSide(color: olympusGold, width: 2),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
+                    decoration: _inputDecoration(
+                        'Complemento', Icons.info_outline, olympusGold),
                   ),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _neighborhoodController,
-                    decoration: InputDecoration(
-                      labelText: 'Bairro *',
-                      border: const OutlineInputBorder(),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide:
-                            const BorderSide(color: olympusGold, width: 2),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    validator: (value) =>
-                        value?.isEmpty ?? true ? 'Campo obrigatório' : null,
+                    decoration: _inputDecoration(
+                        'Bairro *', Icons.location_city, olympusGold),
+                    validator: (v) =>
+                        v?.isEmpty ?? true ? 'Campo obrigatório' : null,
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -3478,37 +3251,21 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                         flex: 2,
                         child: TextFormField(
                           controller: _cityController,
-                          decoration: InputDecoration(
-                            labelText: 'Cidade *',
-                            border: const OutlineInputBorder(),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(
-                                  color: olympusGold, width: 2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                          validator: (value) => value?.isEmpty ?? true
-                              ? 'Campo obrigatório'
-                              : null,
+                          decoration: _inputDecoration(
+                              'Cidade *', Icons.location_city, olympusGold),
+                          validator: (v) =>
+                              v?.isEmpty ?? true ? 'Campo obrigatório' : null,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: TextFormField(
                           controller: _stateController,
-                          decoration: InputDecoration(
-                            labelText: 'Estado *',
-                            border: const OutlineInputBorder(),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(
-                                  color: olympusGold, width: 2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
+                          decoration: _inputDecoration(
+                              'Estado *', Icons.map, olympusGold),
                           maxLength: 2,
-                          validator: (value) => value?.isEmpty ?? true
-                              ? 'Campo obrigatório'
-                              : null,
+                          validator: (v) =>
+                              v?.isEmpty ?? true ? 'Campo obrigatório' : null,
                         ),
                       ),
                     ],
@@ -3545,8 +3302,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                      borderRadius: BorderRadius.circular(8)),
                 ),
                 child: _isLoading || _isUploading
                     ? const SizedBox(
@@ -3561,15 +3317,26 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                     : Text(
                         widget.profile == null ? 'Cadastrar' : 'Salvar',
                         style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
+                            fontWeight: FontWeight.bold, fontSize: 14),
                       ),
               ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  InputDecoration _inputDecoration(
+      String label, IconData icon, Color iconColor) {
+    return InputDecoration(
+      labelText: label,
+      border: const OutlineInputBorder(),
+      prefixIcon: Icon(icon, color: iconColor),
+      focusedBorder: OutlineInputBorder(
+        borderSide: BorderSide(color: iconColor, width: 2),
+        borderRadius: BorderRadius.circular(4),
+      ),
     );
   }
 
@@ -3603,9 +3370,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
     String? avatarUrl = _avatarUrlController.text.trim();
     if (_selectedImage != null) {
       final uploadedUrl = await _uploadImage();
-      if (uploadedUrl != null) {
-        avatarUrl = uploadedUrl;
-      }
+      if (uploadedUrl != null) avatarUrl = uploadedUrl;
     }
     if (!mounted) return;
     final data = <String, dynamic>{
@@ -3626,12 +3391,10 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
       'neighborhood': _neighborhoodController.text.trim(),
       'city': _cityController.text.trim(),
       'state': _stateController.text.trim().toUpperCase(),
-      if (avatarUrl.isNotEmpty) 'avatar_url': avatarUrl,
+      if (avatarUrl != null && avatarUrl.isNotEmpty) 'avatar_url': avatarUrl,
     };
     await widget.onSave(data);
-    if (mounted) {
-      Navigator.pop(context);
-    }
+    if (mounted) Navigator.pop(context);
   }
 
   @override

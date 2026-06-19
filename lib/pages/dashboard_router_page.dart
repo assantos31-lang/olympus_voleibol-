@@ -1,9 +1,12 @@
+// lib/pages/dashboard_router_page.dart
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../main.dart';
+import '../services/role_service.dart';
 import 'athlete_dashboard_page.dart';
 import 'complete_profile_page.dart';
 import 'admin_home_page.dart';
@@ -19,11 +22,17 @@ class DashboardRouterPage extends StatefulWidget {
 
 class _DashboardRouterPageState extends State<DashboardRouterPage> {
   final SupabaseClient supabase = Supabase.instance.client;
+  final RoleService _roleService = RoleService();
+
   StreamSubscription<AuthState>? _authSubscription;
 
   bool _isLoading = true;
   bool _isRedirecting = false;
   Widget? _dashboardWidget;
+
+  // Papéis disponíveis para o usuário logado
+  List<String> _availableRoles = [];
+  String _activeRole = '';
 
   @override
   void initState() {
@@ -44,6 +53,8 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
 
     _loadDashboard();
   }
+
+  // ─── Helpers (mantidos idênticos ao original) ───────────────────────────────
 
   bool _isBlank(dynamic value) {
     return value == null || value.toString().trim().isEmpty;
@@ -97,11 +108,9 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
 
   Future<void> _restrictInactiveUser() async {
     await supabase.auth.signOut();
-
     if (!mounted || _isRedirecting) return;
 
     _isRedirecting = true;
-
     Navigator.pushNamedAndRemoveUntil(
       context,
       '/login',
@@ -117,6 +126,24 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
       ),
     );
   }
+
+  // ─── Roteamento por papel ───────────────────────────────────────────────────
+
+  Widget _widgetForRole(String role) {
+    switch (role) {
+      case 'admin':
+        return const AdminHomePage();
+      case 'coach':
+      case 'tecnico':
+      case 'técnico':
+      case 'treinador':
+        return const CoachDashboardPage();
+      default:
+        return const AthleteDashboardPage();
+    }
+  }
+
+  // ─── Carregamento principal ─────────────────────────────────────────────────
 
   Future<void> _loadDashboard() async {
     try {
@@ -144,13 +171,16 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
       final profile = await supabase
           .from('profiles')
           .select(
-            'user_type, full_name, cpf, phone, rg, avatar_url, is_active, coach_team_gender, cep, address_street, address_number, address_neighborhood, address_city, address_state',
+            'user_type, full_name, cpf, phone, rg, avatar_url, is_active, '
+            'coach_team_gender, cep, address_street, address_number, '
+            'address_neighborhood, address_city, address_state',
           )
           .eq('id', user.id)
           .maybeSingle();
 
       if (!mounted) return;
 
+      // Usuário inativo → bloqueia (lógica original intacta)
       if (_isInactive(profile)) {
         await _restrictInactiveUser();
         return;
@@ -158,6 +188,7 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
 
       final userType = (profile?['user_type'] ?? 'member').toString();
 
+      // Completar cadastro obrigatório (lógica original intacta)
       if (_needsCompleteProfile(userType: userType, profile: profile)) {
         final normalizedType = userType.trim().toLowerCase();
         final isCoach = normalizedType == 'coach' ||
@@ -179,34 +210,128 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
         return;
       }
 
-      Widget dashboard;
-      switch (userType) {
-        case 'admin':
-          dashboard = const AdminHomePage();
-          break;
-        case 'coach':
-        case 'tecnico':
-        case 'técnico':
-        case 'treinador':
-          dashboard = const CoachDashboardPage();
-          break;
-        default:
-          dashboard = const AthleteDashboardPage();
-      }
+      // ── NOVO: carrega múltiplos papéis ──────────────────────────────────────
+      final roles = await _roleService.getUserRoles(user.id);
+
+      // Garante ao menos um papel (fallback para user_type original)
+      final effectiveRoles = roles.isNotEmpty ? roles : [userType];
+
+      // Papel ativo inicial = papel primário (user_type)
+      final initialRole =
+          effectiveRoles.contains(userType) ? userType : effectiveRoles.first;
 
       if (!mounted) return;
 
       setState(() {
-        _dashboardWidget = dashboard;
+        _availableRoles = effectiveRoles;
+        _activeRole = initialRole;
+        _dashboardWidget = _widgetForRole(initialRole);
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
 
       setState(() {
+        _availableRoles = ['athlete'];
+        _activeRole = 'athlete';
         _dashboardWidget = const AthleteDashboardPage();
         _isLoading = false;
       });
+    }
+  }
+
+  // ─── Troca de papel em runtime ──────────────────────────────────────────────
+
+  void _switchRole(String role) {
+    if (role == _activeRole) return;
+
+    setState(() {
+      _activeRole = role;
+      _dashboardWidget = _widgetForRole(role);
+    });
+  }
+
+  void _showRoleSwitcher() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Trocar perfil',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1E3A5F),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Você possui ${_availableRoles.length} perfil(is) disponível(is).',
+                  style: const TextStyle(fontSize: 13, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                ..._availableRoles.map((role) {
+                  final isActive = role == _activeRole;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: isActive
+                          ? const Color(0xFFD4AF37)
+                          : Colors.grey.shade200,
+                      child: Icon(
+                        _iconForRole(role),
+                        color: isActive ? const Color(0xFF1E3A5F) : Colors.grey,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      RoleService.roleLabels[role] ?? role,
+                      style: TextStyle(
+                        fontWeight:
+                            isActive ? FontWeight.w800 : FontWeight.w500,
+                        color:
+                            isActive ? const Color(0xFF1E3A5F) : Colors.black87,
+                      ),
+                    ),
+                    trailing: isActive
+                        ? const Icon(
+                            Icons.check_circle,
+                            color: Color(0xFFD4AF37),
+                          )
+                        : null,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _switchRole(role);
+                    },
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  IconData _iconForRole(String role) {
+    switch (role) {
+      case 'admin':
+        return Icons.admin_panel_settings;
+      case 'coach':
+        return Icons.sports;
+      case 'athlete':
+        return Icons.sports_volleyball;
+      default:
+        return Icons.person;
     }
   }
 
@@ -219,18 +344,42 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const PremiumLoadingScreen(
-        text: 'Carregando dashboard...',
-      );
+      return const PremiumLoadingScreen(text: 'Carregando dashboard...');
     }
 
     if (_dashboardWidget == null) {
       return const LoginPageFallback();
     }
 
-    return _dashboardWidget!;
+    // Só exibe o FAB de troca de papel se o usuário tiver mais de um papel
+    if (_availableRoles.length <= 1) {
+      return _dashboardWidget!;
+    }
+
+    return Stack(
+      children: [
+        _dashboardWidget!,
+        Positioned(
+          bottom: 24,
+          right: 16,
+          child: FloatingActionButton.extended(
+            heroTag: 'role_switcher',
+            onPressed: _showRoleSwitcher,
+            backgroundColor: const Color(0xFFD4AF37),
+            foregroundColor: const Color(0xFF1E3A5F),
+            icon: const Icon(Icons.swap_horiz_rounded),
+            label: Text(
+              RoleService.roleLabels[_activeRole] ?? _activeRole,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
+
+// ─── Fallback (idêntico ao original) ───────────────────────────────────────────
 
 class LoginPageFallback extends StatelessWidget {
   const LoginPageFallback({super.key});
@@ -245,8 +394,6 @@ class LoginPageFallback extends StatelessWidget {
       );
     });
 
-    return const PremiumLoadingScreen(
-      text: 'Redirecionando...',
-    );
+    return const PremiumLoadingScreen(text: 'Redirecionando...');
   }
 }

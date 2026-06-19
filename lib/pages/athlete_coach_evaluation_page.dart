@@ -194,7 +194,9 @@ class _AthleteCoachEvaluationPageState
 
     try {
       final coaches = await _service.loadCoachesForTraining(eventId: eventId);
+
       if (!mounted) return;
+
       setState(() {
         _coaches = coaches;
         _selectedCoachId =
@@ -202,7 +204,10 @@ class _AthleteCoachEvaluationPageState
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'Erro ao carregar treinadores: $e');
+
+      setState(() {
+        _error = 'Erro ao carregar treinadores: $e';
+      });
     }
   }
 
@@ -654,7 +659,7 @@ class _AthleteCoachEvaluationPageState
 
   Widget _monthFilter() {
     return DropdownButtonFormField<String>(
-      initialValue: _selectedMonthValue,
+      value: _selectedMonthValue,
       decoration: InputDecoration(
         labelText: 'Mês',
         filled: true,
@@ -728,7 +733,6 @@ class _AthleteCoachEvaluationPageState
       return ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
         children: [
-          _backToMenuButton(),
           const SizedBox(height: 14),
           _monthFilter(),
           const SizedBox(height: 24),
@@ -747,7 +751,6 @@ class _AthleteCoachEvaluationPageState
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
-        _backToMenuButton(),
         const SizedBox(height: 14),
         const Text(
           'Avaliar treino',
@@ -766,7 +769,7 @@ class _AthleteCoachEvaluationPageState
         _monthFilter(),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          initialValue: _selectedEventId.isEmpty ? null : _selectedEventId,
+          value: _selectedEventId.isEmpty ? null : _selectedEventId,
           decoration: InputDecoration(
             labelText: 'Treino',
             filled: true,
@@ -783,7 +786,7 @@ class _AthleteCoachEvaluationPageState
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          initialValue: _selectedCoachId.isEmpty ? null : _selectedCoachId,
+          value: _selectedCoachId.isEmpty ? null : _selectedCoachId,
           decoration: InputDecoration(
             labelText: 'Treinador',
             filled: true,
@@ -872,7 +875,6 @@ class _AthleteCoachEvaluationPageState
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
-        _backToMenuButton(),
         const SizedBox(height: 14),
         const Text(
           'Avaliação mensal',
@@ -891,7 +893,7 @@ class _AthleteCoachEvaluationPageState
         _monthFilter(),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          initialValue:
+          value:
               _selectedMonthlyCoachId.isEmpty ? null : _selectedMonthlyCoachId,
           decoration: InputDecoration(
             labelText: 'Treinador',
@@ -1014,18 +1016,9 @@ class _AthleteCoachEvaluationPageState
     );
   }
 
+  // Remove ou deixe vazio caso não use mais:
   Widget _backToMenuButton() {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: TextButton.icon(
-        onPressed: () => setState(() => _mode = _CoachEvaluationMode.menu),
-        icon: const Icon(Icons.arrow_back_rounded),
-        label: const Text('Voltar'),
-        style: TextButton.styleFrom(
-          foregroundColor: olympusBlue,
-        ),
-      ),
-    );
+    return const SizedBox.shrink();
   }
 
   Widget _content() {

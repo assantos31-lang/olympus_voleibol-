@@ -14,12 +14,10 @@ class CoachEvaluationService {
         .select('value')
         .eq('key', settingKey)
         .maybeSingle();
-
     final value = row?['value'];
     if (value is Map) {
       return Map<String, dynamic>.from(value);
     }
-
     return <String, dynamic>{};
   }
 
@@ -31,21 +29,18 @@ class CoachEvaluationService {
   Future<List<String>> loadMonthlyEnabledCoachIds() async {
     final value = await loadEvaluationSettings();
     final raw = value['monthly_enabled_coach_ids'];
-
     if (raw is List) {
       return raw
           .map((item) => item.toString().trim())
           .where((item) => item.isNotEmpty)
           .toList();
     }
-
     return <String>[];
   }
 
   Future<void> setMonthlyEvaluationEnabled(bool enabled) async {
     final current = await loadEvaluationSettings();
     final currentIds = current['monthly_enabled_coach_ids'];
-
     await _client.from('app_settings').upsert(
       {
         'key': settingKey,
@@ -64,7 +59,6 @@ class CoachEvaluationService {
 
   Future<void> setMonthlyEnabledCoachIds(List<String> coachIds) async {
     final current = await loadEvaluationSettings();
-
     await _client.from('app_settings').upsert(
       {
         'key': settingKey,
@@ -79,26 +73,25 @@ class CoachEvaluationService {
   }
 
   Future<List<Map<String, dynamic>>> loadCoaches() async {
+    // Corrigido: Busca ESTRITAMENTE treinadores, removendo qualquer chance de trazer 'admin'
     final rows = await _client
         .from('profiles')
         .select('id, full_name, avatar_url, user_type')
         .eq('user_type', 'coach')
-        .order('full_name', ascending: true);
-
-    return List<Map<String, dynamic>>.from(rows as List);
+        .order('full_name');
+    return List<Map<String, dynamic>>.from(rows);
   }
 
   Future<List<Map<String, dynamic>>> loadMonthlyEnabledCoaches() async {
     final ids = await loadMonthlyEnabledCoachIds();
-    if (ids.isEmpty) return <Map<String, dynamic>>[];
-
+    if (ids.isEmpty) return [];
     final rows = await _client
         .from('profiles')
         .select('id, full_name, avatar_url, user_type')
         .inFilter('id', ids)
-        .order('full_name', ascending: true);
-
-    return List<Map<String, dynamic>>.from(rows as List);
+        .eq('user_type', 'coach') // Garantia extra para não trazer admin
+        .order('full_name');
+    return List<Map<String, dynamic>>.from(rows);
   }
 
   Future<List<Map<String, dynamic>>> loadEligibleTrainingsForAthleteByMonth({
@@ -107,86 +100,84 @@ class CoachEvaluationService {
     required int year,
   }) async {
     final minimumDate = DateTime(2026, 5, 1);
-
     if (year < 2026 || (year == 2026 && month < 5)) {
-      return <Map<String, dynamic>>[];
+      return [];
     }
-
-    // 1) busca SOMENTE eventos em que o atleta realmente fez check-in.
-    // Não depende de relacionamento FK entre tabelas.
     final checkinRows = await _client
         .from('checkins')
         .select('event_id, check_in_status, user_id')
         .eq('user_id', athleteId);
-
     final checkedEventIds = <String>{};
-
-    for (final row in List<Map<String, dynamic>>.from(checkinRows as List)) {
+    for (final row in List<Map<String, dynamic>>.from(checkinRows)) {
       final eventId = (row['event_id'] ?? '').toString().trim();
       if (eventId.isEmpty) continue;
-
       final status =
           (row['check_in_status'] ?? '').toString().trim().toLowerCase();
-
-      final negative = status == 'absent' ||
-          status == 'ausente' ||
-          status == 'faltou' ||
-          status == 'falta' ||
-          status == 'no_show' ||
-          status == 'cancelled' ||
-          status == 'canceled';
-
+      final negative = [
+        'absent',
+        'ausente',
+        'faltou',
+        'falta',
+        'no_show',
+        'cancelled',
+        'canceled'
+      ].contains(status);
       if (!negative) {
         checkedEventIds.add(eventId);
       }
     }
+    if (checkedEventIds.isEmpty) return [];
 
-    if (checkedEventIds.isEmpty) return <Map<String, dynamic>>[];
-
-    // 2) garante que o atleta também foi convocado para esses eventos.
-    final convocationRows = await _client.from('convocations').select('''
-id,
-event_id,
-status,
-events!convocations_event_id_fkey (
-id,
-event_name,
-event_type,
-event_date,
-event_time,
-gender,
-city,
-state
-)
-''').eq('user_id', athleteId).inFilter('event_id', checkedEventIds.toList());
+    final convocationRows = await _client
+        .from('convocations')
+        .select('''
+          id,
+          event_id,
+          status,
+          events!convocations_event_id_fkey (
+            id,
+            event_name,
+            event_type,
+            event_date,
+            event_time,
+            gender,
+            city,
+            state
+          )
+        ''')
+        .eq('user_id', athleteId)
+        .inFilter('event_id', checkedEventIds.toList());
 
     final now = DateTime.now();
     final result = <Map<String, dynamic>>[];
 
-    for (final raw
-        in List<Map<String, dynamic>>.from(convocationRows as List)) {
+    for (final raw in List<Map<String, dynamic>>.from(convocationRows)) {
       final eventId = (raw['event_id'] ?? '').toString().trim();
       if (!checkedEventIds.contains(eventId)) continue;
-
       final eventRaw = raw['events'];
       if (eventRaw is! Map) continue;
-
       final event = Map<String, dynamic>.from(eventRaw);
       final type = (event['event_type'] ?? '').toString().trim().toLowerCase();
-      if (type != 'treino') continue;
-
+      if (!type.contains('trein')) continue;
       final eventDate =
           parseEventDateTime(event['event_date'], event['event_time']);
       if (eventDate == null) continue;
-
       final eventDay = DateTime(eventDate.year, eventDate.month, eventDate.day);
       if (eventDay.isBefore(minimumDate)) continue;
-
       if (eventDate.month != month || eventDate.year != year) continue;
-
       final alreadyClosed =
           now.isAfter(eventDate.add(const Duration(minutes: 30)));
       if (!alreadyClosed) continue;
+
+      // Verifica se o atleta já avaliou este evento; se sim, pula
+      final evaluations = await _client
+          .from('coach_evaluations')
+          .select('id')
+          .eq('athlete_id', athleteId)
+          .eq('event_id', eventId)
+          .eq('evaluation_type', 'training')
+          .limit(1);
+      if (evaluations.isNotEmpty) continue;
 
       result.add({
         ...event,
@@ -202,50 +193,54 @@ state
           DateTime.fromMillisecondsSinceEpoch(0);
       return bd.compareTo(ad);
     });
-
     return result;
   }
 
   Future<List<Map<String, dynamic>>> loadCoachesForTraining({
     required String eventId,
   }) async {
-    final ids = <String>{};
-
     try {
-      final blockRows = await _client
-          .from('training_plan_blocks')
-          .select('coach_id')
+      // 1. Tenta buscar os IDs na tabela de convocações do evento específico
+      final convocationRows = await _client
+          .from('convocations')
+          .select('user_id')
           .eq('event_id', eventId);
 
-      for (final row in List<Map<String, dynamic>>.from(blockRows as List)) {
-        final id = (row['coach_id'] ?? '').toString().trim();
-        if (id.isNotEmpty) ids.add(id);
+      if (convocationRows.isNotEmpty) {
+        final userIds = List<Map<String, dynamic>>.from(convocationRows)
+            .map((row) => row['user_id'].toString())
+            .toList();
+
+        if (userIds.isNotEmpty) {
+          // 2. Busca na tabela de perfis apenas os convocados que SÃO TREINADORES ('coach')
+          final eventCoaches = await _client
+              .from('profiles')
+              .select('id, full_name, avatar_url, user_type')
+              .inFilter('id', userIds)
+              .eq('user_type', 'coach') // Mantém a regra de barrar admin
+              .order('full_name');
+
+          // Se encontrou o treinador vinculado ao treino, retorna ele
+          if (eventCoaches.isNotEmpty) {
+            return List<Map<String, dynamic>>.from(eventCoaches);
+          }
+        }
       }
-    } catch (_) {}
 
-    try {
-      final noteRows = await _client
-          .from('training_plan_notes')
-          .select('coach_id')
-          .eq('event_id', eventId);
+      // 3. FALLBACK (A Correção): Se a lista ficou vazia (como na sua imagem),
+      // é porque o treinador não estava na tabela 'convocations'.
+      // Para o dropdown não ficar inútil/travado, buscamos a lista de todos os treinadores.
+      final allCoachesRows = await _client
+          .from('profiles')
+          .select('id, full_name, avatar_url, user_type')
+          .eq('user_type', 'coach')
+          .order('full_name');
 
-      for (final row in List<Map<String, dynamic>>.from(noteRows as List)) {
-        final id = (row['coach_id'] ?? '').toString().trim();
-        if (id.isNotEmpty) ids.add(id);
-      }
-    } catch (_) {}
-
-    if (ids.isEmpty) {
-      return loadCoaches();
+      return List<Map<String, dynamic>>.from(allCoachesRows);
+    } catch (e) {
+      print('Erro ao carregar treinadores: $e');
+      return <Map<String, dynamic>>[];
     }
-
-    final rows = await _client
-        .from('profiles')
-        .select('id, full_name, avatar_url, user_type')
-        .inFilter('id', ids.toList())
-        .order('full_name', ascending: true);
-
-    return List<Map<String, dynamic>>.from(rows as List);
   }
 
   Future<void> submitTrainingEvaluation({
@@ -263,6 +258,17 @@ state
     required String comment,
     required bool anonymousToCoach,
   }) async {
+    final existing = await _client
+        .from('coach_evaluations')
+        .select('id')
+        .eq('athlete_id', athleteId)
+        .eq('coach_id', coachId)
+        .eq('event_id', eventId)
+        .eq('evaluation_type', 'training')
+        .maybeSingle();
+    if (existing != null) {
+      throw Exception('Você já avaliou este treinador neste treino.');
+    }
     await _client.from('coach_evaluations').insert({
       'athlete_id': athleteId,
       'coach_id': coachId,
@@ -349,65 +355,61 @@ state
 
   Future<List<Map<String, dynamic>>> loadAdminEvaluations() async {
     final rows = await _client.from('coach_evaluations').select('''
-id,
-athlete_id,
-coach_id,
-event_id,
-evaluation_type,
-reference_month,
-reference_year,
-rating_general,
-rating_clarity,
-rating_respect,
-rating_training_quality,
-rating_motivation,
-rating_organization,
-rating_evolution,
-rating_communication,
-positive_point,
-improvement_point,
-communication_comment,
-suggestion,
-comment,
-anonymous,
-anonymous_to_coach,
-visible_to_coach,
-admin_review_status,
-created_at,
-athlete:profiles!coach_evaluations_athlete_id_fkey (
-id,
-full_name,
-avatar_url
-),
-coach:profiles!coach_evaluations_coach_id_fkey (
-id,
-full_name,
-avatar_url
-),
-events!coach_evaluations_event_id_fkey (
-id,
-event_name,
-event_date,
-event_time,
-city,
-state
-)
-''').order('created_at', ascending: false);
-
-    return List<Map<String, dynamic>>.from(rows as List);
+          id,
+          athlete_id,
+          coach_id,
+          event_id,
+          evaluation_type,
+          reference_month,
+          reference_year,
+          rating_general,
+          rating_clarity,
+          rating_respect,
+          rating_training_quality,
+          rating_motivation,
+          rating_organization,
+          rating_evolution,
+          rating_communication,
+          positive_point,
+          improvement_point,
+          communication_comment,
+          suggestion,
+          comment,
+          anonymous,
+          anonymous_to_coach,
+          visible_to_coach,
+          admin_review_status,
+          created_at,
+          athlete: profiles!coach_evaluations_athlete_id_fkey (
+            id,
+            full_name,
+            avatar_url
+          ),
+          coach: profiles!coach_evaluations_coach_id_fkey (
+            id,
+            full_name,
+            avatar_url
+          ),
+          events!coach_evaluations_event_id_fkey (
+            id,
+            event_name,
+            event_date,
+            event_time,
+            city,
+            state
+          )
+        ''').order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows);
   }
 
   static DateTime? parseEventDateTime(dynamic dateValue, dynamic timeValue) {
     final rawDate = (dateValue ?? '').toString().trim();
     final rawTime = (timeValue ?? '').toString().trim();
-
     if (rawDate.isEmpty) return null;
-
     try {
       if (rawDate.contains('/')) {
         final d = rawDate.split('/');
         final t = rawTime.isEmpty ? ['0', '0'] : rawTime.split(':');
-
         if (d.length == 3 && t.length >= 2) {
           return DateTime(
             int.parse(d[2]),
@@ -418,12 +420,9 @@ state
           );
         }
       }
-
       final parsed = DateTime.tryParse(rawDate);
       if (parsed == null) return null;
-
       if (rawTime.isEmpty) return parsed.toLocal();
-
       final t = rawTime.split(':');
       if (t.length >= 2) {
         return DateTime(
@@ -434,7 +433,6 @@ state
           int.parse(t[1]),
         );
       }
-
       return parsed.toLocal();
     } catch (_) {
       return null;

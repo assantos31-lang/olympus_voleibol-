@@ -12,6 +12,7 @@ import 'coach_complete_profile_page.dart';
 import '../coach/pages/coach_complete_monthly_evaluation_page.dart';
 import '../coach/pages/coach_messages_page.dart';
 import '../services/permission_service.dart';
+import 'coach_received_evaluations_page.dart';
 
 Future<void> sendEvaluationMessageToAthlete({
   required SupabaseClient supabase,
@@ -2626,6 +2627,21 @@ class CoachEvaluationsHubPage extends StatelessWidget {
                     subtitle: 'Avalie jogos de campeonatos separadamente',
                     color: const Color(0xFF7C3AED),
                     onTap: () => _openChampionshipEvaluations(context),
+                  ),
+                  _optionCard(
+                    context: context,
+                    icon: Icons.rate_review_outlined,
+                    title: 'Avaliações Recebidas',
+                    subtitle: 'Feedbacks liberados pelo administrador',
+                    color: const Color(0xFFD4AF37),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const CoachReceivedEvaluationsPage(),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),

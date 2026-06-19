@@ -1,5 +1,5 @@
+// coach_smart_dashboard_page.dart
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -20,7 +20,6 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
 
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
 
   bool _loading = true;
   String? _error;
@@ -34,16 +33,14 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     _loadDashboard();
   }
 
+  // ─── PERÍODO ───────────────────────────────────────────────────────────────
+
   DateTime? _getPeriodoInicio() {
     final now = DateTime.now();
-
     switch (_periodo) {
       case 'semana':
-        return DateTime(
-          now.year,
-          now.month,
-          now.day,
-        ).subtract(const Duration(days: 7));
+        return DateTime(now.year, now.month, now.day)
+            .subtract(const Duration(days: 7));
       case 'mes':
         return DateTime(now.year, now.month, 1);
       case 'geral':
@@ -55,15 +52,12 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
 
   DateTime? _getPeriodoAnteriorInicio(DateTime? atualInicio) {
     if (atualInicio == null) return null;
-
     if (_periodo == 'semana') {
       return atualInicio.subtract(const Duration(days: 7));
     }
-
     if (_periodo == 'mes') {
       return DateTime(atualInicio.year, atualInicio.month - 1, 1);
     }
-
     return null;
   }
 
@@ -80,9 +74,10 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     }
   }
 
+  // ─── UTILITÁRIOS ───────────────────────────────────────────────────────────
+
   String _normalizarFundamento(dynamic value) {
     final raw = (value ?? '').toString().trim().toLowerCase();
-
     if (raw.contains('saque')) return 'Saque';
     if (raw.contains('recep')) return 'Recepção';
     if (raw.contains('ataque')) return 'Ataque';
@@ -90,10 +85,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     if (raw.contains('bloqueio')) return 'Bloqueio';
     if (raw.contains('fis') ||
         raw.contains('fís') ||
-        raw.contains('condicionamento')) {
-      return 'Físico';
-    }
-
+        raw.contains('condicionamento')) return 'Físico';
     return raw.isEmpty ? 'Sem fundamento' : _capitalize(raw);
   }
 
@@ -104,7 +96,6 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
 
   bool _isCheckinRealizado(dynamic status) {
     final raw = (status ?? '').toString().trim().toLowerCase();
-
     return raw == 'realizado' ||
         raw == 'ok' ||
         raw == 'success' ||
@@ -117,40 +108,39 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
   DateTime? _parseDate(dynamic value) {
     final text = (value ?? '').toString().trim();
     if (text.isEmpty) return null;
-
     final iso = DateTime.tryParse(text);
     if (iso != null) return iso;
-
     final parts = text.split('/');
     if (parts.length == 3) {
       final day = int.tryParse(parts[0]);
       final month = int.tryParse(parts[1]);
       final year = int.tryParse(parts[2]);
-
       if (day != null && month != null && year != null) {
         return DateTime(year, month, day);
       }
     }
-
     return null;
   }
 
   bool _isInsidePeriod(dynamic dateValue, DateTime? inicio, {DateTime? fim}) {
     final parsed = _parseDate(dateValue);
     if (parsed == null) return false;
-
     final local = parsed.toLocal();
-
     if (inicio != null && local.isBefore(inicio)) return false;
     if (fim != null && !local.isBefore(fim)) return false;
-
     return true;
   }
 
+  DateTime? _latestDate(DateTime? a, DateTime? b) {
+    if (a == null) return b;
+    if (b == null) return a;
+    return a.isAfter(b) ? a : b;
+  }
+
+  // ─── DADOS ─────────────────────────────────────────────────────────────────
+
   Future<List<Map<String, dynamic>>> _safeSelect(
-    String table,
-    String columns,
-  ) async {
+      String table, String columns) async {
     try {
       final rows = await _supabase.from(table).select(columns);
       return List<Map<String, dynamic>>.from(rows as List);
@@ -160,6 +150,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
   }
 
   Future<void> _loadDashboard() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -167,7 +158,6 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
 
     try {
       final data = await _buildDashboardData();
-
       if (!mounted) return;
       setState(() {
         _data = data;
@@ -188,7 +178,6 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
 
     final visibleRankingIds =
         (await _permissionService.getVisibleUserIdsForPage('ranking')).toSet();
-
     final visibleEvaluationIds =
         (await _permissionService.getVisibleUserIdsForPage('avaliacoes'))
             .toSet();
@@ -231,28 +220,23 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
       'training_evaluations',
       'athlete_id, tipo, score, fundamento, motivo, observacao, created_at',
     );
-
     final checkins = await _safeSelect(
       'checkins',
       'user_id, event_id, check_in_status, created_at',
     );
-
     final events = await _safeSelect(
       'events',
       'id, event_type, event_date, event_name',
     );
-
     final convocations = await _safeSelect(
       'convocations',
       'event_id, user_id, status',
     );
 
     final athleteMap = <String, _AthleteSmartMetric>{};
-
     for (final profile in profiles) {
       final id = (profile['id'] ?? '').toString();
       if (id.isEmpty) continue;
-
       athleteMap[id] = _AthleteSmartMetric(
         athleteId: id,
         name: (profile['full_name'] ?? 'Atleta').toString(),
@@ -265,7 +249,6 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     int totalAvaliacoes = 0;
     final attentionByFundament = <String, int>{};
     final scoreByDay = <DateTime, int>{};
-
     int currentScore = 0;
     int previousScore = 0;
 
@@ -341,30 +324,25 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     for (final row in checkins) {
       final eventId = (row['event_id'] ?? '').toString();
       final userId = (row['user_id'] ?? '').toString();
-
       if (!treinoEventIds.contains(eventId)) continue;
       if (!athleteMap.containsKey(userId)) continue;
       if (!_isCheckinRealizado(row['check_in_status'])) continue;
-
       checkedInKeys.add('$eventId|$userId');
       athleteMap[userId]!.presencas++;
       athleteMap[userId]!.score++;
     }
 
     int totalExpectedPresence = 0;
-    int totalPresence = checkedInKeys.length;
+    final int totalPresence = checkedInKeys.length;
 
     for (final row in convocations) {
       final eventId = (row['event_id'] ?? '').toString();
       final userId = (row['user_id'] ?? '').toString();
       final status = (row['status'] ?? '').toString().toLowerCase();
-
       if (!treinoEventIds.contains(eventId)) continue;
       if (!athleteMap.containsKey(userId)) continue;
       if (status != 'accepted') continue;
-
       totalExpectedPresence++;
-
       final key = '$eventId|$userId';
       if (!checkedInKeys.contains(key)) {
         athleteMap[userId]!.faltas++;
@@ -379,9 +357,8 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
           athlete.latestEvaluationTypes.take(3).toList();
 
       if (athlete.latestEvaluationTypes.length >= 3 &&
-          athlete.latestEvaluationTypes.every(
-            (tipo) => tipo == 'atencao' || tipo == 'atenção',
-          )) {
+          athlete.latestEvaluationTypes
+              .every((t) => t == 'atencao' || t == 'atenção')) {
         athlete.riskReasons.add('3 pontos de atenção seguidos');
       }
 
@@ -394,9 +371,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
       final attendanceTotal = athlete.presencas + athlete.faltas;
       if (attendanceTotal >= 3) {
         final rate = athlete.presencas / attendanceTotal;
-        if (rate < 0.6) {
-          athlete.riskReasons.add('Presença baixa');
-        }
+        if (rate < 0.6) athlete.riskReasons.add('Presença baixa');
       }
 
       if (athlete.atencoes >= 3 && athlete.atencoes > athlete.destaques) {
@@ -406,43 +381,34 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
 
     final athletes = athleteMap.values.toList();
 
-    final topAthletes = athletes.where((e) {
-      return e.destaques > 0 || e.score > 0 || e.presencas > 0;
-    }).toList()
+    final topAthletes = athletes
+        .where((e) => e.destaques > 0 || e.score > 0 || e.presencas > 0)
+        .toList()
       ..sort((a, b) {
-        final scoreCompare = b.score.compareTo(a.score);
-        if (scoreCompare != 0) return scoreCompare;
-
-        final destaqueCompare = b.destaques.compareTo(a.destaques);
-        if (destaqueCompare != 0) return destaqueCompare;
-
+        final s = b.score.compareTo(a.score);
+        if (s != 0) return s;
+        final d = b.destaques.compareTo(a.destaques);
+        if (d != 0) return d;
         return a.name.compareTo(b.name);
       });
 
     final riskAthletes =
         athletes.where((e) => e.riskReasons.isNotEmpty).toList()
           ..sort((a, b) {
-            final riskCompare =
-                b.riskReasons.length.compareTo(a.riskReasons.length);
-            if (riskCompare != 0) return riskCompare;
-
-            final scoreCompare = a.score.compareTo(b.score);
-            if (scoreCompare != 0) return scoreCompare;
-
+            final r = b.riskReasons.length.compareTo(a.riskReasons.length);
+            if (r != 0) return r;
+            final s = a.score.compareTo(b.score);
+            if (s != 0) return s;
             return a.name.compareTo(b.name);
           });
 
-    final criticalFundamentEntry = attentionByFundament.entries.isEmpty
-        ? null
-        : (attentionByFundament.entries.toList()
-              ..sort((a, b) => b.value.compareTo(a.value)))
-            .first;
+    final sortedDesc = attentionByFundament.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final sortedAsc = attentionByFundament.entries.toList()
+      ..sort((a, b) => a.value.compareTo(b.value));
 
-    final bestFundamentEntry = attentionByFundament.entries.isEmpty
-        ? null
-        : (attentionByFundament.entries.toList()
-              ..sort((a, b) => a.value.compareTo(b.value)))
-            .first;
+    final criticalFundamentEntry = sortedDesc.isEmpty ? null : sortedDesc.first;
+    final bestFundamentEntry = sortedAsc.isEmpty ? null : sortedAsc.first;
 
     final presenceAverage = totalExpectedPresence == 0
         ? 0.0
@@ -473,83 +439,70 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     final actions = <String>[];
 
     if (presenceAverage < 0.6 && totalExpectedPresence >= 3) {
-      insights.add(
-        _SmartInsight(
-          icon: Icons.warning_amber_rounded,
-          title: 'Presença abaixo do ideal',
-          message:
-              'A presença média está em ${(presenceAverage * 100).round()}%.',
-          severity: _InsightSeverity.risk,
-        ),
-      );
+      insights.add(_SmartInsight(
+        icon: Icons.warning_amber_rounded,
+        title: 'Presença abaixo do ideal',
+        message:
+            'A presença média está em ${(presenceAverage * 100).round()}%.',
+        severity: _InsightSeverity.risk,
+      ));
       actions.add(
           'Conversar com atletas de baixa presença antes do próximo treino.');
     } else if (totalExpectedPresence > 0) {
-      insights.add(
-        _SmartInsight(
-          icon: Icons.check_circle_outline,
-          title: 'Presença sob controle',
-          message:
-              'A presença média está em ${(presenceAverage * 100).round()}%.',
-          severity: _InsightSeverity.good,
-        ),
-      );
+      insights.add(_SmartInsight(
+        icon: Icons.check_circle_outline,
+        title: 'Presença sob controle',
+        message:
+            'A presença média está em ${(presenceAverage * 100).round()}%.',
+        severity: _InsightSeverity.good,
+      ));
     }
 
     if (criticalFundamentEntry != null) {
-      insights.add(
-        _SmartInsight(
-          icon: Icons.sports_volleyball,
-          title: '${criticalFundamentEntry.key} exige atenção',
-          message:
-              '${criticalFundamentEntry.value} ponto(s) de atenção foram registrados nesse fundamento.',
-          severity: _InsightSeverity.warning,
-        ),
-      );
+      insights.add(_SmartInsight(
+        icon: Icons.sports_volleyball,
+        title: '${criticalFundamentEntry.key} exige atenção',
+        message:
+            '${criticalFundamentEntry.value} ponto(s) de atenção foram registrados nesse fundamento.',
+        severity: _InsightSeverity.warning,
+      ));
       actions.add(
           'Priorizar ${criticalFundamentEntry.key.toLowerCase()} no próximo treino.');
     }
 
     if (riskAthletes.isNotEmpty) {
-      insights.add(
-        _SmartInsight(
-          icon: Icons.health_and_safety_outlined,
-          title: '${riskAthletes.length} atleta(s) em risco',
-          message:
-              'Há atletas com baixa presença, atenção recorrente ou sem avaliação recente.',
-          severity: _InsightSeverity.risk,
-        ),
-      );
+      insights.add(_SmartInsight(
+        icon: Icons.health_and_safety_outlined,
+        title: '${riskAthletes.length} atleta(s) em risco',
+        message:
+            'Há atletas com baixa presença, atenção recorrente ou sem avaliação recente.',
+        severity: _InsightSeverity.risk,
+      ));
       actions.add('Revisar individualmente atletas classificados como risco.');
     }
 
     if (topAthletes.isNotEmpty) {
-      insights.add(
-        _SmartInsight(
-          icon: Icons.emoji_events_outlined,
-          title: '${topAthletes.first.name} lidera o período',
-          message: 'Maior combinação de score, destaques e presença no painel.',
-          severity: _InsightSeverity.good,
-        ),
-      );
+      insights.add(_SmartInsight(
+        icon: Icons.emoji_events_outlined,
+        title: '${topAthletes.first.name} lidera o período',
+        message: 'Maior combinação de score, destaques e presença no painel.',
+        severity: _InsightSeverity.good,
+      ));
     }
 
     if (_periodo != 'geral') {
-      insights.add(
-        _SmartInsight(
-          icon: evolutionDelta >= 0
-              ? Icons.trending_up_rounded
-              : Icons.trending_down_rounded,
-          title: 'Evolução do time: $evolutionLabel',
-          message: evolutionDelta == 0
-              ? 'Pontuação similar ao período anterior.'
-              : 'Variação de ${evolutionDelta > 0 ? '+' : ''}$evolutionDelta ponto(s) contra o período anterior.',
-          severity: evolutionDelta >= 0
-              ? _InsightSeverity.good
-              : _InsightSeverity.warning,
-        ),
-      );
-
+      insights.add(_SmartInsight(
+        icon: evolutionDelta >= 0
+            ? Icons.trending_up_rounded
+            : Icons.trending_down_rounded,
+        title: 'Evolução do time: $evolutionLabel',
+        message: evolutionDelta == 0
+            ? 'Pontuação similar ao período anterior.'
+            : 'Variação de ${evolutionDelta > 0 ? '+' : ''}$evolutionDelta ponto(s) contra o período anterior.',
+        severity: evolutionDelta >= 0
+            ? _InsightSeverity.good
+            : _InsightSeverity.warning,
+      ));
       if (evolutionDelta < 0) {
         actions
             .add('Reduzir volume e focar fundamentos críticos nesta semana.');
@@ -600,29 +553,21 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     required int athleteCount,
   }) {
     if (athleteCount == 0) return 0;
-
     final presencePart = presenceAverage * 55;
     final evaluationCoverage =
         math.min(1.0, totalAvaliacoes / math.max(1, athleteCount)) * 25;
-
     final positiveBalance = totalDestaques + totalAtencoes == 0
         ? 0.5
         : totalDestaques / (totalDestaques + totalAtencoes);
-
     final performancePart = positiveBalance * 20;
-
     return (presencePart + evaluationCoverage + performancePart).clamp(0, 100);
   }
 
   List<_TrendPoint> _buildTrendPoints(
-    Map<DateTime, int> scoreByDay,
-    DateTime? periodoInicio,
-  ) {
+      Map<DateTime, int> scoreByDay, DateTime? periodoInicio) {
     final entries = scoreByDay.entries.toList()
       ..sort((a, b) => a.key.compareTo(b.key));
-
     if (entries.isEmpty) return [];
-
     int cumulative = 0;
     return entries.map((entry) {
       cumulative += entry.value;
@@ -630,98 +575,92 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     }).toList();
   }
 
-  DateTime? _latestDate(DateTime? a, DateTime? b) {
-    if (a == null) return b;
-    if (b == null) return a;
-    return a.isAfter(b) ? a : b;
-  }
+  // ─── MODAIS ────────────────────────────────────────────────────────────────
 
   void _showDashboardHelp() {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 46,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 46,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(999),
                     ),
                   ),
-                  const SizedBox(height: 18),
-                  const Text(
-                    'Como interpretar este painel',
-                    style: TextStyle(
-                      color: olympusBlue,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Como interpretar este painel',
+                  style: TextStyle(
+                    color: olympusBlue,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
                   ),
-                  const SizedBox(height: 14),
-                  _helpItem(
-                    icon: Icons.groups_rounded,
-                    title: 'Presença média',
-                    text:
-                        'Mostra o percentual de check-ins realizados em relação às convocações aceitas nos treinos do período.',
-                  ),
-                  _helpItem(
-                    icon: Icons.bolt_rounded,
-                    title: 'Engajamento',
-                    text:
-                        'Combina presença, quantidade de avaliações e equilíbrio entre destaques e pontos de atenção.',
-                  ),
-                  _helpItem(
-                    icon: Icons.trending_up_rounded,
-                    title: 'Evolução do time',
-                    text:
-                        'Compara a pontuação do período atual com o período anterior. Destaque soma, atenção reduz.',
-                  ),
-                  _helpItem(
-                    icon: Icons.emoji_events_outlined,
-                    title: 'Atletas em destaque',
-                    text:
-                        'Lista atletas com melhor combinação de score, presença e avaliações positivas.',
-                  ),
-                  _helpItem(
-                    icon: Icons.warning_amber_rounded,
-                    title: 'Atletas em risco',
-                    text:
-                        'Identifica atletas com baixa presença, pontos de atenção recorrentes ou sem avaliação recente.',
-                  ),
-                  _helpItem(
-                    icon: Icons.sports_volleyball,
-                    title: 'Fundamento crítico',
-                    text:
-                        'Mostra o fundamento com mais pontos de atenção registrados no período.',
-                  ),
-                  _helpItem(
-                    icon: Icons.lightbulb_outline,
-                    title: 'Ações recomendadas',
-                    text:
-                        'Sugestões práticas geradas a partir dos dados para orientar o próximo treino.',
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 14),
+                _helpItem(
+                  icon: Icons.groups_rounded,
+                  title: 'Presença média',
+                  text:
+                      'Mostra o percentual de check-ins realizados em relação às convocações aceitas nos treinos do período.',
+                ),
+                _helpItem(
+                  icon: Icons.bolt_rounded,
+                  title: 'Engajamento',
+                  text:
+                      'Combina presença, quantidade de avaliações e equilíbrio entre destaques e pontos de atenção.',
+                ),
+                _helpItem(
+                  icon: Icons.trending_up_rounded,
+                  title: 'Evolução do time',
+                  text:
+                      'Compara a pontuação do período atual com o período anterior. Destaque soma, atenção reduz.',
+                ),
+                _helpItem(
+                  icon: Icons.emoji_events_outlined,
+                  title: 'Atletas em destaque',
+                  text:
+                      'Lista atletas com melhor combinação de score, presença e avaliações positivas.',
+                ),
+                _helpItem(
+                  icon: Icons.warning_amber_rounded,
+                  title: 'Atletas em risco',
+                  text:
+                      'Identifica atletas com baixa presença, pontos de atenção recorrentes ou sem avaliação recente.',
+                ),
+                _helpItem(
+                  icon: Icons.sports_volleyball,
+                  title: 'Fundamento crítico',
+                  text:
+                      'Mostra o fundamento com mais pontos de atenção registrados no período.',
+                ),
+                _helpItem(
+                  icon: Icons.lightbulb_outline,
+                  title: 'Ações recomendadas',
+                  text:
+                      'Sugestões práticas geradas a partir dos dados para orientar o próximo treino.',
+                ),
+              ],
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -741,6 +680,8 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     );
   }
 
+  // ─── WIDGETS AUXILIARES ────────────────────────────────────────────────────
+
   Widget _helpItem({
     required IconData icon,
     required String title,
@@ -757,24 +698,20 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: olympusBlue,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+                Text(title,
+                    style: const TextStyle(
+                      color: olympusBlue,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    )),
                 const SizedBox(height: 3),
-                Text(
-                  text,
-                  style: const TextStyle(
-                    color: Color(0xFF53657B),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    height: 1.35,
-                  ),
-                ),
+                Text(text,
+                    style: const TextStyle(
+                      color: Color(0xFF53657B),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    )),
               ],
             ),
           ),
@@ -794,12 +731,14 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
         ),
         Positioned.fill(
           child: Container(
-            color: Colors.black.withValues(alpha: 0.35),
+            color: Colors.black.withOpacity(0.35),
           ),
         ),
       ],
     );
   }
+
+  // ─── HEADER ────────────────────────────────────────────────────────────────
 
   Widget _buildHeader() {
     return Container(
@@ -852,7 +791,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Insights automáticos da equipe • ${_data.periodLabel}',
+            'Insights inteligentes • ${_data.periodLabel}',
             style: TextStyle(
               color: Colors.white.withOpacity(0.86),
               fontSize: 13,
@@ -860,13 +799,14 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
             ),
           ),
           const SizedBox(height: 14),
+          // ✅ CORREÇÃO: Wrap substitui Row para evitar overflow e chips cortados
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              _periodChip('semana', 'Semana'),
-              _periodChip('mes', 'Mês'),
               _periodChip('geral', 'Geral'),
+              _periodChip('mes', 'Mês'),
+              _periodChip('semana', 'Semana'),
             ],
           ),
         ],
@@ -874,37 +814,50 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     );
   }
 
+  // ✅ CORREÇÃO: Removido ValueKey do AnimatedContainer para evitar
+  // destruição/recriação desnecessária que causava texto sumindo.
   Widget _periodChip(String value, String label) {
     final selected = _periodo == value;
 
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) {
+    return GestureDetector(
+      onTap: () {
         if (selected) return;
         setState(() => _periodo = value);
         _loadDashboard();
       },
-      selectedColor: olympusGold,
-      backgroundColor: olympusBlue.withValues(alpha: 0.30),
-      disabledColor: olympusBlue.withValues(alpha: 0.18),
-      side: BorderSide(
-        color: selected ? olympusGold : Colors.white.withValues(alpha: 0.28),
-        width: selected ? 1.4 : 1,
-      ),
-      labelStyle: TextStyle(
-        color: selected ? olympusBlue : Colors.white,
-        fontWeight: FontWeight.w900,
-      ),
-      showCheckmark: false,
-      elevation: selected ? 2 : 0,
-      pressElevation: 0,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? olympusGold : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? olympusGold : Colors.white,
+            width: 1.5,
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: olympusGold.withOpacity(0.40),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : [],
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : olympusBlue,
+            fontWeight: FontWeight.w900,
+            fontSize: 13,
+          ),
+        ),
       ),
     );
   }
+
+  // ─── CARDS DE MÉTRICAS ─────────────────────────────────────────────────────
 
   Widget _metricCard({
     required IconData icon,
@@ -959,23 +912,19 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
               ],
             ),
             const SizedBox(height: 12),
-            Text(
-              value,
-              style: const TextStyle(
-                color: olympusBlue,
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
+            Text(value,
+                style: const TextStyle(
+                  color: olympusBlue,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                )),
             const SizedBox(height: 5),
-            Text(
-              title,
-              style: const TextStyle(
-                color: olympusBlue,
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
+            Text(title,
+                style: const TextStyle(
+                  color: olympusBlue,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                )),
             const SizedBox(height: 4),
             Text(
               subtitle,
@@ -1004,91 +953,41 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
           if (isSmall) {
             return Column(
               children: [
-                _metricCard(
-                  icon: Icons.groups_rounded,
-                  title: 'Atletas ativos',
-                  value: '${_data.athleteCount}',
-                  subtitle: 'Habilitados em ranking/avaliações',
-                  color: const Color(0xFF2563EB),
-                  explanation: 'Total de atletas visíveis para o técnico.',
-                ),
-                const SizedBox(height: 10),
-                _metricCard(
-                  icon: Icons.fact_check_outlined,
-                  title: 'Presença média',
-                  value: '${(_data.presenceAverage * 100).round()}%',
-                  subtitle: 'Check-ins / convocações',
-                  color: const Color(0xFF16A34A),
-                  explanation: 'Percentual de presenças confirmadas.',
-                ),
-                const SizedBox(height: 10),
-                _metricCard(
-                  icon: Icons.bolt_rounded,
-                  title: 'Engajamento',
-                  value: '${_data.engagementScore.round()}%',
-                  subtitle: 'Participação geral',
-                  color: const Color(0xFFF59E0B),
-                  explanation: 'Score de envolvimento dos atletas.',
-                ),
-                const SizedBox(height: 10),
-                _metricCard(
-                  icon: _data.evolutionDelta >= 0
-                      ? Icons.trending_up_rounded
-                      : Icons.trending_down_rounded,
-                  title: 'Evolução',
-                  value: _data.evolutionDelta == 0
-                      ? '0'
-                      : '${_data.evolutionDelta > 0 ? '+' : ''}${_data.evolutionDelta}',
-                  subtitle: _data.evolutionLabel,
-                  color: _data.evolutionDelta >= 0
-                      ? const Color(0xFF0EA5A4)
-                      : const Color(0xFFDC2626),
-                  explanation: 'Comparação com período anterior.',
-                ),
-              ],
-            );
-          }
-
-          return Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                      child: _metricCard(
+                Row(children: [
+                  _metricCard(
                     icon: Icons.groups_rounded,
                     title: 'Atletas ativos',
                     value: '${_data.athleteCount}',
-                    subtitle: 'Habilitados',
+                    subtitle: 'Habilitados em ranking/avaliações',
                     color: const Color(0xFF2563EB),
-                    explanation: 'Total de atletas visíveis.',
-                  )),
-                  const SizedBox(width: 10),
-                  Expanded(
-                      child: _metricCard(
+                    explanation: 'Total de atletas visíveis para o técnico.',
+                  ),
+                ]),
+                const SizedBox(height: 10),
+                Row(children: [
+                  _metricCard(
                     icon: Icons.fact_check_outlined,
                     title: 'Presença média',
                     value: '${(_data.presenceAverage * 100).round()}%',
-                    subtitle: 'Check-ins',
+                    subtitle: 'Check-ins / convocações',
                     color: const Color(0xFF16A34A),
-                    explanation: 'Percentual de presença.',
-                  )),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                      child: _metricCard(
+                    explanation: 'Percentual de presenças confirmadas.',
+                  ),
+                ]),
+                const SizedBox(height: 10),
+                Row(children: [
+                  _metricCard(
                     icon: Icons.bolt_rounded,
                     title: 'Engajamento',
                     value: '${_data.engagementScore.round()}%',
-                    subtitle: 'Participação',
+                    subtitle: 'Participação geral',
                     color: const Color(0xFFF59E0B),
-                    explanation: 'Score geral.',
-                  )),
-                  const SizedBox(width: 10),
-                  Expanded(
-                      child: _metricCard(
+                    explanation: 'Score de envolvimento dos atletas.',
+                  ),
+                ]),
+                const SizedBox(height: 10),
+                Row(children: [
+                  _metricCard(
                     icon: _data.evolutionDelta >= 0
                         ? Icons.trending_up_rounded
                         : Icons.trending_down_rounded,
@@ -1101,7 +1000,61 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
                         ? const Color(0xFF0EA5A4)
                         : const Color(0xFFDC2626),
                     explanation: 'Comparação com período anterior.',
-                  )),
+                  ),
+                ]),
+              ],
+            );
+          }
+
+          return Column(
+            children: [
+              Row(
+                children: [
+                  _metricCard(
+                    icon: Icons.groups_rounded,
+                    title: 'Atletas ativos',
+                    value: '${_data.athleteCount}',
+                    subtitle: 'Habilitados',
+                    color: const Color(0xFF2563EB),
+                    explanation: 'Total de atletas visíveis.',
+                  ),
+                  const SizedBox(width: 10),
+                  _metricCard(
+                    icon: Icons.fact_check_outlined,
+                    title: 'Presença média',
+                    value: '${(_data.presenceAverage * 100).round()}%',
+                    subtitle: 'Check-ins',
+                    color: const Color(0xFF16A34A),
+                    explanation: 'Percentual de presença.',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  _metricCard(
+                    icon: Icons.bolt_rounded,
+                    title: 'Engajamento',
+                    value: '${_data.engagementScore.round()}%',
+                    subtitle: 'Participação',
+                    color: const Color(0xFFF59E0B),
+                    explanation: 'Score geral.',
+                  ),
+                  const SizedBox(width: 10),
+                  _metricCard(
+                    icon: _data.evolutionDelta >= 0
+                        ? Icons.trending_up_rounded
+                        : Icons.trending_down_rounded,
+                    title: 'Evolução',
+                    value: _data.evolutionDelta == 0
+                        ? '0'
+                        : '${_data.evolutionDelta > 0 ? '+' : ''}${_data.evolutionDelta}',
+                    subtitle: _data.evolutionLabel,
+                    color: _data.evolutionDelta >= 0
+                        ? const Color(0xFF0EA5A4)
+                        : const Color(0xFFDC2626),
+                    explanation: 'Comparação com período anterior.',
+                  ),
                 ],
               ),
             ],
@@ -1110,6 +1063,8 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
       ),
     );
   }
+
+  // ─── SECTION CARD ──────────────────────────────────────────────────────────
 
   Widget _sectionCard({
     required String title,
@@ -1141,14 +1096,12 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
               Icon(icon, color: olympusGold),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: olympusBlue,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+                child: Text(title,
+                    style: const TextStyle(
+                      color: olympusBlue,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    )),
               ),
               if (trailing != null) trailing,
             ],
@@ -1160,9 +1113,10 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     );
   }
 
+  // ─── INSIGHTS ──────────────────────────────────────────────────────────────
+
   Widget _buildInsightsSection() {
     final insights = _data.insights;
-
     if (insights.isEmpty) {
       return _sectionCard(
         title: 'Insights inteligentes',
@@ -1171,14 +1125,11 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
           Text(
             'Ainda não há dados suficientes para gerar insights.',
             style: TextStyle(
-              color: Color(0xFF53657B),
-              fontWeight: FontWeight.w600,
-            ),
+                color: Color(0xFF53657B), fontWeight: FontWeight.w600),
           ),
         ],
       );
     }
-
     return _sectionCard(
       title: 'Insights inteligentes',
       icon: Icons.lightbulb_outline,
@@ -1187,7 +1138,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
   }
 
   Widget _insightTile(_SmartInsight insight) {
-    Color color;
+    final Color color;
     switch (insight.severity) {
       case _InsightSeverity.good:
         color = const Color(0xFF16A34A);
@@ -1217,24 +1168,20 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  insight.title,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+                Text(insight.title,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    )),
                 const SizedBox(height: 3),
-                Text(
-                  insight.message,
-                  style: const TextStyle(
-                    color: Color(0xFF53657B),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    height: 1.3,
-                  ),
-                ),
+                Text(insight.message,
+                    style: const TextStyle(
+                      color: Color(0xFF53657B),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    )),
               ],
             ),
           ),
@@ -1242,6 +1189,8 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
       ),
     );
   }
+
+  // ─── TREND ─────────────────────────────────────────────────────────────────
 
   Widget _buildTrendSection() {
     return _sectionCard(
@@ -1255,9 +1204,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
                   child: Text(
                     'Sem dados de evolução no período.',
                     style: TextStyle(
-                      color: Color(0xFF53657B),
-                      fontWeight: FontWeight.w600,
-                    ),
+                        color: Color(0xFF53657B), fontWeight: FontWeight.w600),
                   ),
                 )
               : CustomPaint(
@@ -1282,6 +1229,8 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     );
   }
 
+  // ─── FUNDAMENTOS ───────────────────────────────────────────────────────────
+
   Widget _buildFundamentsSection() {
     final entries = _data.attentionByFundament.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
@@ -1301,15 +1250,12 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
           const Text(
             'Sem pontos de atenção por fundamento neste período.',
             style: TextStyle(
-              color: Color(0xFF53657B),
-              fontWeight: FontWeight.w600,
-            ),
+                color: Color(0xFF53657B), fontWeight: FontWeight.w600),
           )
         else
           ...entries.take(6).map((entry) {
             final maxValue = entries.first.value;
             final percent = maxValue == 0 ? 0.0 : entry.value / maxValue;
-
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Column(
@@ -1318,21 +1264,17 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          entry.key,
+                        child: Text(entry.key,
+                            style: const TextStyle(
+                              color: olympusBlue,
+                              fontWeight: FontWeight.w800,
+                            )),
+                      ),
+                      Text('${entry.value}',
                           style: const TextStyle(
-                            color: olympusBlue,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        '${entry.value}',
-                        style: const TextStyle(
-                          color: Color(0xFFDC2626),
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
+                            color: Color(0xFFDC2626),
+                            fontWeight: FontWeight.w900,
+                          )),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -1343,8 +1285,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
                       minHeight: 8,
                       backgroundColor: const Color(0xFFE4EDF5),
                       valueColor: const AlwaysStoppedAnimation<Color>(
-                        Color(0xFFDC2626),
-                      ),
+                          Color(0xFFDC2626)),
                     ),
                   ),
                 ],
@@ -1354,6 +1295,8 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
       ],
     );
   }
+
+  // ─── ATLETAS ───────────────────────────────────────────────────────────────
 
   Widget _buildAthletesSection({
     required String title,
@@ -1371,9 +1314,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
                 ? 'Nenhum atleta em risco neste período.'
                 : 'Nenhum destaque identificado neste período.',
             style: const TextStyle(
-              color: Color(0xFF53657B),
-              fontWeight: FontWeight.w600,
-            ),
+                color: Color(0xFF53657B), fontWeight: FontWeight.w600),
           )
         else
           ...athletes.take(5).map((athlete) {
@@ -1416,14 +1357,12 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          athlete.name,
-                          style: const TextStyle(
-                            color: olympusBlue,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
+                        Text(athlete.name,
+                            style: const TextStyle(
+                              color: olympusBlue,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                            )),
                         const SizedBox(height: 3),
                         Text(
                           risk
@@ -1442,10 +1381,8 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
                   ),
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 9,
-                      vertical: 6,
-                    ),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
                     decoration: BoxDecoration(
                       color: risk
                           ? Colors.red.withOpacity(0.10)
@@ -1471,6 +1408,8 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     );
   }
 
+  // ─── AÇÕES ─────────────────────────────────────────────────────────────────
+
   Widget _buildActionsSection() {
     return _sectionCard(
       title: 'Ações recomendadas',
@@ -1485,15 +1424,13 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
                   color: olympusGold, size: 21),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  action,
-                  style: const TextStyle(
-                    color: Color(0xFF53657B),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    height: 1.3,
-                  ),
-                ),
+                child: Text(action,
+                    style: const TextStyle(
+                      color: Color(0xFF53657B),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      height: 1.3,
+                    )),
               ),
             ],
           ),
@@ -1501,6 +1438,8 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
       }).toList(),
     );
   }
+
+  // ─── EMPTY STATE ───────────────────────────────────────────────────────────
 
   Widget _buildEmptyState() {
     return Center(
@@ -1524,6 +1463,8 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
       ),
     );
   }
+
+  // ─── BUILD ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -1603,6 +1544,10 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DATA MODELS
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _TeamDashboardData {
   _TeamDashboardData({
@@ -1719,21 +1664,17 @@ class _SmartInsight {
   final _InsightSeverity severity;
 }
 
-enum _InsightSeverity {
-  good,
-  warning,
-  risk,
-}
+enum _InsightSeverity { good, warning, risk }
 
 class _TrendPoint {
-  _TrendPoint({
-    required this.date,
-    required this.value,
-  });
-
+  _TrendPoint({required this.date, required this.value});
   final DateTime date;
   final int value;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHART PAINTER
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _TrendChartPainter extends CustomPainter {
   _TrendChartPainter({
@@ -1750,7 +1691,7 @@ class _TrendChartPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (points.isEmpty || size.width <= 0 || size.height <= 0) return;
 
-    final padding = const EdgeInsets.fromLTRB(28, 12, 12, 26);
+    const padding = EdgeInsets.fromLTRB(28, 12, 12, 26);
     final chartWidth = size.width - padding.left - padding.right;
     final chartHeight = size.height - padding.top - padding.bottom;
 
@@ -1759,12 +1700,12 @@ class _TrendChartPainter extends CustomPainter {
     final maxValue = values.reduce(math.max);
     final range = math.max(1, maxValue - minValue);
 
-    final axisPaint = Paint()
-      ..color = const Color(0xFFE4EDF5)
-      ..strokeWidth = 1;
-
     final gridPaint = Paint()
       ..color = const Color(0xFFE4EDF5).withOpacity(0.70)
+      ..strokeWidth = 1;
+
+    final axisPaint = Paint()
+      ..color = const Color(0xFFE4EDF5)
       ..strokeWidth = 1;
 
     for (int i = 0; i <= 3; i++) {
@@ -1788,21 +1729,17 @@ class _TrendChartPainter extends CustomPainter {
     );
 
     final chartPoints = <Offset>[];
-
     for (int i = 0; i < points.length; i++) {
       final x = points.length == 1
           ? padding.left + chartWidth / 2
           : padding.left + chartWidth * (i / (points.length - 1));
-
       final normalized = (points[i].value - minValue) / range;
       final y = padding.top + chartHeight - (normalized * chartHeight);
-
       chartPoints.add(Offset(x, y));
     }
 
     if (chartPoints.length == 1) {
-      final dotPaint = Paint()..color = lineColor;
-      canvas.drawCircle(chartPoints.first, 4, dotPaint);
+      canvas.drawCircle(chartPoints.first, 4, Paint()..color = lineColor);
       return;
     }
 
@@ -1818,21 +1755,19 @@ class _TrendChartPainter extends CustomPainter {
 
     canvas.drawPath(fillPath, Paint()..color = fillColor);
 
-    final linePaint = Paint()
-      ..color = lineColor
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    canvas.drawPath(linePath, linePaint);
-
-    final dotPaint = Paint()..color = lineColor;
-    final dotBorderPaint = Paint()..color = Colors.white;
+    canvas.drawPath(
+      linePath,
+      Paint()
+        ..color = lineColor
+        ..strokeWidth = 3
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
 
     for (final point in chartPoints) {
-      canvas.drawCircle(point, 5, dotBorderPaint);
-      canvas.drawCircle(point, 3.5, dotPaint);
+      canvas.drawCircle(point, 5, Paint()..color = Colors.white);
+      canvas.drawCircle(point, 3.5, Paint()..color = lineColor);
     }
   }
 
