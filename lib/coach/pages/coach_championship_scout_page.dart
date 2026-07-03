@@ -332,6 +332,24 @@ class _CoachChampionshipScoutEvaluationPageState
         );
   }
 
+  Future<void> _notificarAtletaSobreFeedback(String athleteId) async {
+    try {
+      await _supabase.functions.invoke(
+        'send-push-notification',
+        body: {
+          'userId': athleteId,
+          'title': 'Novo feedback do treinador',
+          'body':
+              'Seu treinador registrou um novo feedback. Consulte no aplicativo.',
+          'type': 'athlete_coach_feedback',
+          'eventId': _eventId,
+        },
+      );
+    } catch (e) {
+      debugPrint('Erro ao notificar atleta sobre feedback: $e');
+    }
+  }
+
   bool _isNegativeField(String field) {
     return _metrics.any((metric) => metric.negativeField == field);
   }
@@ -504,6 +522,7 @@ class _CoachChampionshipScoutEvaluationPageState
         _saving = true;
       });
       await _salvarScout(athleteId);
+      await _notificarAtletaSobreFeedback(athleteId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Observação salva')),

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'athlete_training_history_page.dart';
-import '../services/permission_service.dart';
+import '../../pages/athlete_training_history_page.dart';
+import '../../services/permission_service.dart';
 
 class CoachRankingPage extends StatefulWidget {
   const CoachRankingPage({super.key});

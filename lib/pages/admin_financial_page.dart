@@ -2585,6 +2585,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                         ? '${descriptionController.text.trim()}\n$pixDescription'
                         : pixDescription;
 
+                    List<Map<String, dynamic>> insertedRecords = [];
+
                     if (selectedAthleteId == 'all') {
                       final targetAthletes = selectMultipleUsers
                           ? _athletes
@@ -2609,12 +2611,16 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                               })
                           .toList();
 
-                      await _supabase
+                      final response = await _supabase
                           .from('financial_records')
                           .insert(records)
                           .select();
+
+                      insertedRecords =
+                          List<Map<String, dynamic>>.from(response);
                     } else {
-                      await _supabase.from('financial_records').insert({
+                      final response =
+                          await _supabase.from('financial_records').insert({
                         'athlete_id': selectedAthleteId,
                         'type': selectedType,
                         'value': double.parse(numericValue),
@@ -2627,6 +2633,38 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                         'status': 'pending',
                         'created_at': DateTime.now().toIso8601String(),
                       }).select();
+
+                      insertedRecords =
+                          List<Map<String, dynamic>>.from(response);
+                    }
+
+                    final userIds = insertedRecords
+                        .map((record) => record['athlete_id']?.toString())
+                        .whereType<String>()
+                        .where((id) => id.isNotEmpty)
+                        .toSet()
+                        .toList();
+
+                    if (userIds.isNotEmpty) {
+                      try {
+                        await _supabase.functions.invoke(
+                          'send-push-notification',
+                          body: {
+                            'userIds': userIds,
+                            'title': 'Nova pendencia financeira',
+                            'body':
+                                'Uma nova pendencia financeira foi cadastrada. Confira no app.',
+                            'type': 'financial',
+                            'recordId': insertedRecords.length == 1
+                                ? insertedRecords.first['id']?.toString() ?? ''
+                                : '',
+                          },
+                        );
+                      } catch (e) {
+                        debugPrint(
+                          'Erro ao enviar notificacao financeira: $e',
+                        );
+                      }
                     }
 
                     if (mounted) {
@@ -2711,13 +2749,51 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
     }
   }
 
+  Future<void> _notifyPaymentStatus({
+    required String athleteId,
+    required String recordId,
+    required bool approved,
+  }) async {
+    if (athleteId.isEmpty) return;
+
+    try {
+      await _supabase.functions.invoke(
+        'send-push-notification',
+        body: {
+          'userId': athleteId,
+          'title': approved ? 'Pagamento aprovado' : 'Pagamento recusado',
+          'body': approved
+              ? 'Seu comprovante foi aprovado. Consulte os detalhes no aplicativo.'
+              : 'Seu comprovante nao foi aprovado. Consulte os detalhes no aplicativo.',
+          'type': approved
+              ? 'financial_payment_approved'
+              : 'financial_payment_rejected',
+          'recordId': recordId,
+        },
+      );
+    } catch (e) {
+      debugPrint('Erro ao enviar notificacao do pagamento: $e');
+    }
+  }
+
   Future<void> _approvePayment(String recordId) async {
     try {
-      await _supabase.from('financial_records').update({
-        'status': 'approved',
-        'approved_by': _supabase.auth.currentUser!.id,
-        'approved_at': DateTime.now().toIso8601String(),
-      }).eq('id', recordId);
+      final updated = await _supabase
+          .from('financial_records')
+          .update({
+            'status': 'approved',
+            'approved_by': _supabase.auth.currentUser!.id,
+            'approved_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', recordId)
+          .select('athlete_id')
+          .single();
+
+      await _notifyPaymentStatus(
+        athleteId: updated['athlete_id']?.toString() ?? '',
+        recordId: recordId,
+        approved: true,
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -2731,11 +2807,22 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
 
   Future<void> _rejectPayment(String recordId) async {
     try {
-      await _supabase.from('financial_records').update({
-        'status': 'rejected',
-        'approved_by': _supabase.auth.currentUser!.id,
-        'approved_at': DateTime.now().toIso8601String(),
-      }).eq('id', recordId);
+      final updated = await _supabase
+          .from('financial_records')
+          .update({
+            'status': 'rejected',
+            'approved_by': _supabase.auth.currentUser!.id,
+            'approved_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', recordId)
+          .select('athlete_id')
+          .single();
+
+      await _notifyPaymentStatus(
+        athleteId: updated['athlete_id']?.toString() ?? '',
+        recordId: recordId,
+        approved: false,
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(

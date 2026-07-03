@@ -32,6 +32,7 @@ class _AddEventPageState extends State<AddEventPage> {
   EventType _selectedType = EventType.treino;
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
+  final _endTimeController = TextEditingController();
   final _opponentController = TextEditingController();
   final _championshipNameController = TextEditingController();
   final _cepController = TextEditingController();
@@ -88,6 +89,7 @@ class _AddEventPageState extends State<AddEventPage> {
 
         _dateController.text = widget.evento!['event_date'] ?? '';
         _timeController.text = widget.evento!['event_time'] ?? '';
+        _endTimeController.text = widget.evento!['event_end_time'] ?? '';
         _setsFormat = widget.evento!['set_format'] ?? '1 Set';
         _cepController.text = widget.evento!['cep'] ?? '';
         _ruaController.text = widget.evento!['street'] ?? '';
@@ -273,6 +275,7 @@ class _AddEventPageState extends State<AddEventPage> {
   void dispose() {
     _dateController.dispose();
     _timeController.dispose();
+    _endTimeController.dispose();
     _opponentController.dispose();
     _championshipNameController.dispose();
     _cepController.dispose();
@@ -500,6 +503,57 @@ class _AddEventPageState extends State<AddEventPage> {
     }
   }
 
+  Future<void> _selectEndTime(BuildContext context) async {
+    final startParts = _timeController.text.split(':');
+    final initial = startParts.length == 2
+        ? TimeOfDay(
+            hour: int.tryParse(startParts[0]) ?? TimeOfDay.now().hour,
+            minute: int.tryParse(startParts[1]) ?? TimeOfDay.now().minute,
+          )
+        : TimeOfDay.now();
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: ColorScheme.light(
+            primary: goldenColor,
+            onPrimary: Colors.white,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() => _endTimeController.text = picked.format(context));
+    }
+  }
+
+  DateTime? _buildEventStartAt() {
+    final dateParts = _dateController.text.trim().split('/');
+    final timeParts = _timeController.text.trim().split(':');
+
+    if (dateParts.length != 3 || timeParts.length != 2) {
+      return null;
+    }
+
+    final day = int.tryParse(dateParts[0]);
+    final month = int.tryParse(dateParts[1]);
+    final year = int.tryParse(dateParts[2]);
+    final hour = int.tryParse(timeParts[0]);
+    final minute = int.tryParse(timeParts[1]);
+
+    if (day == null ||
+        month == null ||
+        year == null ||
+        hour == null ||
+        minute == null) {
+      return null;
+    }
+
+    return DateTime(year, month, day, hour, minute);
+  }
+
   List<Map<String, String>> _getFilteredAthletes() {
     if (_filtroGeneroAtleta == 'Todos') return _athletesList;
 
@@ -588,6 +642,22 @@ class _AddEventPageState extends State<AddEventPage> {
         return;
       }
 
+      final eventStartAt = _buildEventStartAt();
+
+      if (eventStartAt == null) {
+        if (mounted) {
+          setState(() => _isSaving = false);
+        }
+        _showError('Data ou hora do evento inválida');
+        return;
+      }
+
+      if (_endTimeController.text.trim().isEmpty) {
+        if (mounted) setState(() => _isSaving = false);
+        _showError('Informe o horário de término do evento');
+        return;
+      }
+
       final eventData = {
         'user_id': user.id,
         'event_name': _opponentController.text.isNotEmpty
@@ -596,6 +666,8 @@ class _AddEventPageState extends State<AddEventPage> {
         'event_type': _selectedType.name,
         'event_date': _dateController.text,
         'event_time': _timeController.text,
+        'event_end_time': _endTimeController.text,
+        'event_start_at': eventStartAt.toUtc().toIso8601String(),
         'cep': _cepController.text,
         'street': _ruaController.text,
         'street_number': _numeroController.text,
@@ -671,6 +743,29 @@ class _AddEventPageState extends State<AddEventPage> {
             .toList();
 
         await supabase.from('convocations').insert(newConvocations);
+      }
+
+// ==========================================================
+// DISPARA A EDGE FUNCTION PARA ENVIAR AS NOTIFICAÇÕES
+// ==========================================================
+
+      try {
+        final notificationResponse = await supabase.functions.invoke(
+          'send-event-notification',
+          body: {
+            'eventId': eventId,
+          },
+        );
+
+        debugPrint("==========================================");
+        debugPrint("SEND EVENT NOTIFICATION");
+        debugPrint(notificationResponse.data.toString());
+        debugPrint("==========================================");
+      } catch (e) {
+        debugPrint("==========================================");
+        debugPrint("ERRO AO CHAMAR send-event-notification");
+        debugPrint(e.toString());
+        debugPrint("==========================================");
       }
 
       if (mounted) {
@@ -1282,7 +1377,7 @@ class _AddEventPageState extends State<AddEventPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Hora',
+                'Início',
                 style: TextStyle(
                   color: Color(0xFF0A2463),
                   fontSize: 16,
@@ -1313,6 +1408,61 @@ class _AddEventPageState extends State<AddEventPage> {
                               : _timeController.text,
                           style: TextStyle(
                             color: _timeController.text.isEmpty
+                                ? Colors.grey[500]
+                                : const Color(0xFF0A2463),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Término',
+                style: TextStyle(
+                  color: Color(0xFF0A2463),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () => _selectEndTime(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF0A2463).withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.timer_outlined,
+                        color: Color(0xFFD4AF37),
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _endTimeController.text.isEmpty
+                              ? '--:--'
+                              : _endTimeController.text,
+                          style: TextStyle(
+                            color: _endTimeController.text.isEmpty
                                 ? Colors.grey[500]
                                 : const Color(0xFF0A2463),
                           ),

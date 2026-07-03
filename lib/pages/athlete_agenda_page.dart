@@ -320,8 +320,14 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
 
   bool _isEventoPassado(Map<String, dynamic> evento) {
     final dataHora = _parseEventoDateTime(evento);
+
     if (dataHora == null) return false;
-    return dataHora.isBefore(DateTime.now());
+
+    final limiteCheckin = dataHora.add(
+      const Duration(minutes: 40),
+    );
+
+    return DateTime.now().isAfter(limiteCheckin);
   }
 
   bool _isMesmaData(DateTime a, DateTime b) {

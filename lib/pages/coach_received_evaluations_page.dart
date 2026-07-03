@@ -71,6 +71,15 @@ athlete:profiles!coach_evaluations_athlete_id_fkey (
         _evaluations = List<Map<String, dynamic>>.from(rows);
         _loading = false;
       });
+
+      if (rows.isNotEmpty) {
+        try {
+          await _supabase.rpc('mark_coach_evaluations_viewed');
+        } catch (_) {
+          // O SQL de atualização cria coach_viewed_at. A tela continua funcional
+          // enquanto a migration ainda não tiver sido executada.
+        }
+      }
     } catch (e) {
       if (!mounted) return;
 

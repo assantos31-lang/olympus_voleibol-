@@ -6,12 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../main.dart';
+import '../coach/pages/coach_complete_profile_page.dart';
+import '../coach/pages/coach_dashboard_page.dart';
 import '../services/role_service.dart';
 import 'athlete_dashboard_page.dart';
 import 'complete_profile_page.dart';
 import 'admin_home_page.dart';
-import 'coach_dashboard_page.dart';
-import 'coach_complete_profile_page.dart';
 
 class DashboardRouterPage extends StatefulWidget {
   const DashboardRouterPage({super.key});

@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -13,10 +17,14 @@ import 'firebase_options.dart';
 import 'pages/admin_home_page.dart';
 import 'pages/admin_athletes_statistics_list_page.dart';
 import 'pages/admin_coach_evaluations_page.dart';
+import 'pages/athlete_agenda_page.dart';
 import 'pages/athlete_dashboard_page.dart';
+import 'pages/athlete_financial_page.dart';
+import 'pages/athlete_statistics_page.dart';
 import 'pages/athlete_coach_evaluation_page.dart';
 import 'pages/chat_rooms_page.dart';
 import 'pages/complete_profile_page.dart';
+import 'pages/coach_received_evaluations_page.dart';
 import 'pages/dashboard_router_page.dart';
 import 'pages/login_page.dart';
 import 'pages/profiles_page.dart';
@@ -24,11 +32,67 @@ import 'services/auth_service.dart';
 import 'services/badge_service.dart';
 import 'services/push_token_service.dart';
 
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+
+bool _handledInitialMessage = false;
+Map<String, dynamic>? _pendingNotificationData;
+
+const AndroidNotificationChannel channel = AndroidNotificationChannel(
+  'messages_channel',
+  'Messages',
+  description: 'Canal de notificações do Olympus',
+  importance: Importance.max,
+  showBadge: true,
+);
+
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+}
+
+bool _isBrokenAndroidEncryptedStorageError(Object error) {
+  final text = error.toString();
+
+  return text.contains('BadPaddingException') ||
+      text.contains('BAD_DECRYPT') ||
+      text.contains('Failed to unwrap key') ||
+      text.contains('InvalidKeyException') ||
+      text.contains('javax.crypto');
+}
+
+Future<void> _clearBrokenSecureStorage() async {
+  if (kIsWeb || !Platform.isAndroid) return;
+
+  try {
+    await _secureStorage.deleteAll();
+  } catch (e) {
+    debugPrint('Erro ao limpar storage seguro: $e');
+  }
+}
+
+Future<void> _initializeSupabase() async {
+  try {
+    await Supabase.initialize(
+      url: 'https://wucxbbspybemvkqgqtou.supabase.co',
+      anonKey: 'sb_publishable_jfe15-g7mYFo0mSI9tuDtw_dI6qrnx4',
+    );
+  } on PlatformException catch (e) {
+    if (!_isBrokenAndroidEncryptedStorageError(e)) rethrow;
+
+    await _clearBrokenSecureStorage();
+
+    await Supabase.initialize(
+      url: 'https://wucxbbspybemvkqgqtou.supabase.co',
+      anonKey: 'sb_publishable_jfe15-g7mYFo0mSI9tuDtw_dI6qrnx4',
+    );
+  }
 }
 
 Future<void> main() async {
@@ -38,16 +102,35 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  await flutterLocalNotificationsPlugin.initialize(
+    InitializationSettings(
+      android: const AndroidInitializationSettings('@mipmap/ic_launcher'),
+    ),
+    onDidReceiveNotificationResponse: (NotificationResponse response) {
+      final payload = response.payload;
+      if (payload == null || payload.isEmpty) return;
+
+      try {
+        final data = Map<String, dynamic>.from(jsonDecode(payload) as Map);
+        _navigateFromNotificationData(data);
+      } catch (e) {
+        debugPrint('Erro ao processar payload da notificação local: $e');
+      }
+    },
+  );
+
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+
   if (!kIsWeb) {
     FirebaseMessaging.onBackgroundMessage(
       _firebaseMessagingBackgroundHandler,
     );
   }
 
-  await Supabase.initialize(
-    url: 'https://wucxbbspybemvkqgqtou.supabase.co',
-    anonKey: 'sb_publishable_jfe15-g7mYFo0mSI9tuDtw_dI6qrnx4',
-  );
+  await _initializeSupabase();
 
   runApp(
     MultiProvider(
@@ -70,6 +153,7 @@ Future<void> _setupPushNotifications() async {
     sound: true,
     provisional: false,
   );
+
   debugPrint('Permissão push: ${settings.authorizationStatus}');
 
   await messaging.setAutoInitEnabled(true);
@@ -82,15 +166,160 @@ Future<void> _setupPushNotifications() async {
 
   FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
     debugPrint('Push em foreground: ${message.notification?.title}');
+
+    final notification = message.notification;
+
+    if (notification != null) {
+      await flutterLocalNotificationsPlugin.show(
+        notification.hashCode,
+        notification.title,
+        notification.body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            'messages_channel',
+            'Messages',
+            channelDescription: 'Canal de notificações do Olympus',
+            importance: Importance.max,
+            priority: Priority.high,
+          ),
+        ),
+        payload: jsonEncode(message.data),
+      );
+    }
+
     await BadgeService.updateBadge();
   });
 
   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
     debugPrint('Push aberto pelo usuário: ${message.messageId}');
     await BadgeService.updateBadge();
+    _handleNotificationTap(message);
   });
 
+  if (!_handledInitialMessage) {
+    _handledInitialMessage = true;
+
+    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+
+    if (initialMessage != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await Future<void>.delayed(const Duration(milliseconds: 700));
+        _handleNotificationTap(initialMessage);
+      });
+    }
+  }
+
   await PushTokenService.instance.init();
+}
+
+void _handleNotificationTap(RemoteMessage message) {
+  debugPrint('Notification tap data: ${message.data}');
+  _navigateFromNotificationData(message.data);
+}
+
+void _navigateFromNotificationData(Map<String, dynamic> data) {
+  final type = (data['type'] ?? data['notification_type'] ?? '')
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replaceAll('-', '_');
+
+  final eventId = (data['eventId'] ?? data['event_id'])?.toString();
+  final threadId = (data['threadId'] ?? data['thread_id'])?.toString();
+
+  if (Supabase.instance.client.auth.currentSession == null ||
+      navigatorKey.currentState == null) {
+    _pendingNotificationData = Map<String, dynamic>.from(data);
+    return;
+  }
+
+  _pendingNotificationData = null;
+
+  const eventNotificationTypes = {
+    'event',
+    'new_event',
+    'event_created',
+    'event_reminder',
+    'convocation',
+    'convocation_reminder',
+    'checkin',
+    'checkin_open',
+    'checkin_last_10',
+  };
+
+  if (eventNotificationTypes.contains(type)) {
+    _openAthleteAgenda(eventId: eventId);
+    return;
+  }
+
+  if (type.startsWith('financial_') ||
+      type == 'financial' ||
+      type == 'finance' ||
+      type == 'financial_record' ||
+      type == 'new_financial_record') {
+    navigatorKey.currentState?.pushNamed('/athlete-financial');
+    return;
+  }
+
+  if (type == 'admin_evaluation_pending' ||
+      type == 'evaluation_pending' ||
+      type == 'coach_evaluation_pending') {
+    navigatorKey.currentState?.pushNamed('/admin-coach-evaluations');
+    return;
+  }
+
+  if (type == 'coach_evaluation_approved' ||
+      type == 'coach_evaluation_received' ||
+      type == 'evaluation_approved') {
+    navigatorKey.currentState?.pushNamed('/coach-received-evaluations');
+    return;
+  }
+
+  if (type == 'athlete_coach_feedback' ||
+      type == 'athlete_feedback' ||
+      type == 'coach_feedback') {
+    navigatorKey.currentState?.pushNamed('/athlete-statistics');
+    return;
+  }
+
+  if (type == 'message') {
+    navigatorKey.currentState?.pushNamed(
+      '/chat-rooms',
+      arguments: {
+        'threadId': threadId,
+      },
+    );
+    return;
+  }
+}
+
+void _flushPendingNotification() {
+  final pendingData = _pendingNotificationData;
+  if (pendingData == null) return;
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    Future<void>.delayed(const Duration(milliseconds: 500), () {
+      _navigateFromNotificationData(pendingData);
+    });
+  });
+}
+
+void _openAthleteAgenda({String? eventId}) {
+  final navigator = navigatorKey.currentState;
+
+  if (navigator == null) {
+    Future<void>.delayed(const Duration(milliseconds: 500), () {
+      _openAthleteAgenda(eventId: eventId);
+    });
+    return;
+  }
+
+  navigator.pushNamed(
+    '/athlete-agenda',
+    arguments: {
+      'eventId': eventId,
+    },
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -99,6 +328,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Olympus Voleibol',
       debugShowCheckedModeBanner: false,
       locale: const Locale('pt', 'BR'),
@@ -121,6 +351,9 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const LoginPage(),
         '/profiles': (context) => const AdminOnlyProfilesRoute(),
         '/athlete-dashboard': (context) => const AthleteDashboardPage(),
+        '/athlete-agenda': (context) => const AthleteAgendaPage(),
+        '/athlete-financial': (context) => const AthleteFinancialPage(),
+        '/athlete-statistics': (context) => const AthleteStatisticsPage(),
         '/complete-profile': (context) => const CompleteProfilePage(),
         '/dashboard': (context) => const DashboardRouterPage(),
         '/admin-home': (context) => const AdminHomePage(),
@@ -130,6 +363,8 @@ class MyApp extends StatelessWidget {
             const AthleteCoachEvaluationPage(),
         '/admin-coach-evaluations': (context) =>
             const AdminCoachEvaluationsPage(),
+        '/coach-received-evaluations': (context) =>
+            const CoachReceivedEvaluationsPage(),
         '/chat-rooms': (context) => const ChatRoomsPage(),
       },
     );
@@ -165,6 +400,19 @@ class _AppBootstrapPageState extends State<AppBootstrapPage> {
       });
     } catch (e) {
       debugPrint('Erro no bootstrap do app: $e');
+
+      if (_isBrokenAndroidEncryptedStorageError(e)) {
+        await _clearBrokenSecureStorage();
+
+        if (!mounted) return;
+
+        setState(() {
+          _isReady = true;
+          _hasError = false;
+          _errorMessage = '';
+        });
+        return;
+      }
 
       if (!mounted) return;
 
@@ -318,6 +566,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     Future<void>.delayed(const Duration(milliseconds: 1200), () {
       if (!mounted) return;
+
       setState(() {
         _initialAuthResolved = true;
       });
@@ -342,7 +591,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             PushTokenService.instance.syncCurrentUserTokenIfPossible();
             BadgeService.updateBadge();
+            _flushPendingNotification();
           });
+
           return const DashboardRouterPage();
         }
 
@@ -417,6 +668,7 @@ class _AdminOnlyProfilesRouteState extends State<AdminOnlyProfilesRoute> {
       });
     } catch (_) {
       if (!mounted) return;
+
       Navigator.pushNamedAndRemoveUntil(
         context,
         '/dashboard',

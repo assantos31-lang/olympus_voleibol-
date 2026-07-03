@@ -78,21 +78,21 @@ class PushTokenService {
     _tokenRefreshSub?.cancel();
 
     _tokenRefreshSub = _messaging.onTokenRefresh.listen((token) async {
-      debugPrint('[PushTokenService] 🔁 token refresh');
+      debugPrint('[PushTokenService] token refresh');
 
       try {
         if (Platform.isIOS) {
           final apns = await _messaging.getAPNSToken();
 
           if (apns == null || apns.isEmpty) {
-            debugPrint('[PushTokenService] ❌ refresh ignorado (sem APNS)');
+            debugPrint('[PushTokenService] refresh ignorado sem APNS');
             return;
           }
         }
 
         final user = _supabase.auth.currentUser;
         if (user == null) {
-          debugPrint('[PushTokenService] ❌ refresh ignorado (sem user)');
+          debugPrint('[PushTokenService] refresh ignorado sem user');
           return;
         }
 
@@ -186,6 +186,7 @@ class PushTokenService {
     debugPrint('[PushTokenService] sync user=${user.id}');
 
     final permission = await requestPermissionIfNeeded();
+
     debugPrint(
       '[PushTokenService] PERMISSION: ${permission.authorizationStatus}',
     );
@@ -207,16 +208,17 @@ class PushTokenService {
       }
 
       if (apns == null || apns.isEmpty) {
-        debugPrint('[PushTokenService] ❌ APNS NÃO DISPONÍVEL - abortando sync');
+        debugPrint('[PushTokenService] APNS nao disponivel, abortando sync');
         return;
       }
     }
 
     final token = await _obtainTokenRobustly();
+
     debugPrint('[PushTokenService] TOKEN: $token');
 
     if (token == null || token.isEmpty) {
-      debugPrint('[PushTokenService] token NULL ❌');
+      debugPrint('[PushTokenService] token null');
       return;
     }
 
@@ -233,7 +235,7 @@ class PushTokenService {
     final user = _supabase.auth.currentUser;
 
     if (user == null) {
-      debugPrint('[PushTokenService] sem user no upsert ❌');
+      debugPrint('[PushTokenService] sem user no upsert');
       return;
     }
 
@@ -254,9 +256,8 @@ class PushTokenService {
       'app_version': version,
     };
 
-    debugPrint('[PushTokenService] 🔥 VAI SALVAR TOKEN: $token');
-    debugPrint('[PushTokenService] 🔥 USER NO UPSERT: ${user.id}');
-    debugPrint('[PushTokenService] UPSERT...');
+    debugPrint('[PushTokenService] vai salvar token');
+    debugPrint('[PushTokenService] user no upsert: ${user.id}');
     debugPrint(payload.toString());
 
     try {
@@ -271,10 +272,10 @@ class PushTokenService {
         },
       );
 
-      debugPrint('[PushTokenService] ✅ salvo via RPC');
+      debugPrint('[PushTokenService] salvo via RPC');
     } catch (rpcError, rpcStack) {
       debugPrint(
-          '[PushTokenService] ❌ erro RPC register_user_push_token: $rpcError');
+          '[PushTokenService] erro RPC register_user_push_token: $rpcError');
       debugPrintStack(stackTrace: rpcStack);
 
       try {
@@ -282,11 +283,28 @@ class PushTokenService {
             .from('user_push_tokens')
             .upsert(payload, onConflict: 'installation_id');
 
-        debugPrint('[PushTokenService] ✅ salvo via fallback upsert');
+        debugPrint('[PushTokenService] salvo via fallback upsert');
       } catch (e, st) {
-        debugPrint('[PushTokenService] ❌ erro fallback upsert: $e');
+        debugPrint('[PushTokenService] erro fallback upsert: $e');
         debugPrintStack(stackTrace: st);
       }
+    }
+
+    await _syncProfilePushToken(user.id, token);
+  }
+
+  Future<void> _syncProfilePushToken(String userId, String token) async {
+    try {
+      await _supabase.from('profiles').update({
+        'push_token': token,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', userId);
+
+      debugPrint('[PushTokenService] profiles.push_token atualizado');
+    } catch (e, st) {
+      debugPrint(
+          '[PushTokenService] erro ao atualizar profiles.push_token: $e');
+      debugPrintStack(stackTrace: st);
     }
   }
 
@@ -303,11 +321,11 @@ class PushTokenService {
     final user = _supabase.auth.currentUser;
 
     if (user == null) {
-      debugPrint('[PushTokenService] ❌ USER AINDA NULL');
+      debugPrint('[PushTokenService] user ainda null');
       return;
     }
 
-    debugPrint('[PushTokenService] ✅ USER OK: ${user.id}');
+    debugPrint('[PushTokenService] user OK: ${user.id}');
 
     await syncCurrentUserTokenIfPossible();
   }
@@ -349,7 +367,7 @@ class PushTokenService {
           tokenError = e.toString();
         }
       } else {
-        tokenError = 'APNS token ainda não disponível no device';
+        tokenError = 'APNS token ainda nao disponivel no device';
       }
     } else {
       try {

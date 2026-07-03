@@ -250,7 +250,7 @@ class _AthleteMessagesPageState extends State<AthleteMessagesPage> {
     final threadId = (thread['thread_id'] ?? thread['id'] ?? '').toString();
     if (threadId.isEmpty) return;
 
-    await Navigator.of(context).push<bool>(
+    final updated = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => AthleteMessageThreadPage(
           threadId: threadId,
@@ -259,6 +259,21 @@ class _AthleteMessagesPageState extends State<AthleteMessagesPage> {
         ),
       ),
     );
+
+    if (updated == true && mounted) {
+      setState(() {
+        final index = _threads.indexWhere(
+          (t) => (t['thread_id'] ?? t['id']).toString() == threadId,
+        );
+
+        if (index != -1) {
+          _threads[index] = {
+            ..._threads[index],
+            'unread_count': 0,
+          };
+        }
+      });
+    }
 
     await _loadThreads(showLoader: false);
   }
@@ -703,12 +718,14 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
+
   final TextEditingController _replyController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
   bool _loading = true;
   bool _sending = false;
   bool _hasShownReadConfirmation = false;
+
   List<Map<String, dynamic>> _messages = [];
   RealtimeChannel? _threadChannel;
 
@@ -728,9 +745,11 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
   void dispose() {
     _replyController.dispose();
     _scrollController.dispose();
+
     if (_threadChannel != null) {
       supabase.removeChannel(_threadChannel!);
     }
+
     super.dispose();
   }
 
@@ -740,7 +759,9 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
 
   Future<void> _handleBack() async {
     await _markThreadAsRead();
+
     if (!mounted) return;
+
     Navigator.of(context).pop(true);
   }
 
@@ -797,7 +818,7 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            '✓ Mensagem visualizada. O administrador foi notificado.',
+            'Mensagem visualizada. O administrador foi notificado.',
           ),
           duration: Duration(seconds: 3),
         ),
@@ -814,6 +835,7 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
           .order('created_at', ascending: true);
 
       if (!mounted) return;
+
       setState(() {
         _messages = List<Map<String, dynamic>>.from(response);
         _loading = false;
@@ -826,6 +848,7 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
       });
     } catch (e) {
       _showSnack('Erro ao carregar conversa: $e');
+
       if (mounted) {
         setState(() => _loading = false);
       }
@@ -868,12 +891,14 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
 
   Future<void> _sendReply() async {
     final user = _currentUser();
+
     if (user == null) {
-      _showSnack('Usuário não autenticado.');
+      _showSnack('Usuario nao autenticado.');
       return;
     }
 
     final body = _replyController.text.trim();
+
     if (body.isEmpty) {
       _showSnack('Digite uma mensagem.');
       return;
@@ -884,7 +909,7 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
     try {
       final profile = await _loadSenderProfile(user.id);
 
-      final senderName = (profile?['full_name'] ?? 'Usuário').toString();
+      final senderName = (profile?['full_name'] ?? 'Usuario').toString();
       final senderType = (profile?['user_type'] ?? 'athlete').toString();
       final now = DateTime.now().toUtc().toIso8601String();
 
@@ -909,6 +934,7 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
 
       for (final row in List<Map<String, dynamic>>.from(participants)) {
         final participantId = (row['user_id'] ?? '').toString();
+
         if (participantId.isEmpty) continue;
 
         if (participantId == user.id) {
@@ -922,10 +948,11 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
               })
               .eq('thread_id', widget.threadId)
               .eq('user_id', participantId);
+
           continue;
         }
 
-        final currentUnread = (row['unread_count'] ?? 0) as int;
+        final currentUnread = ((row['unread_count'] ?? 0) as num).toInt();
 
         await supabase
             .from('app_message_participants')
@@ -938,7 +965,14 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
             .eq('user_id', participantId);
       }
 
+      await _sendPushToThreadParticipants(
+        senderId: user.id,
+        senderName: senderName,
+        body: body,
+      );
+
       _replyController.clear();
+
       await _markThreadAsRead();
       await _loadMessages();
       await BadgeService.updateBadge();
@@ -951,25 +985,97 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
     }
   }
 
+  Future<void> _sendPushToThreadParticipants({
+    required String senderId,
+    required String senderName,
+    required String body,
+  }) async {
+    try {
+      final participants = await supabase
+          .from('app_message_participants')
+          .select('user_id')
+          .eq('thread_id', widget.threadId);
+
+      final recipientIds = List<Map<String, dynamic>>.from(participants)
+          .map((row) => (row['user_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty && id != senderId)
+          .toList();
+
+      if (recipientIds.isEmpty) {
+        debugPrint('[Push] Nenhum destinatario encontrado');
+        return;
+      }
+
+      final tokenRows = await supabase
+          .from('user_push_tokens')
+          .select('device_token')
+          .inFilter('user_id', recipientIds);
+
+      final tokens = <String>{};
+
+      for (final row in List<Map<String, dynamic>>.from(tokenRows)) {
+        final token = (row['device_token'] ?? '').toString().trim();
+
+        if (token.isNotEmpty) {
+          tokens.add(token);
+        }
+      }
+
+      if (tokens.isEmpty) {
+        debugPrint('[Push] Nenhum device_token encontrado');
+        return;
+      }
+
+      final preview = body.trim().isEmpty ? 'Nova mensagem' : body.trim();
+
+      for (final token in tokens) {
+        await supabase.functions.invoke(
+          'send-push-notification',
+          body: {
+            'token': token,
+            'title': senderName,
+            'body': preview,
+            'type': 'message',
+            'threadId': widget.threadId,
+            'senderId': senderId,
+            'senderName': senderName,
+          },
+        );
+      }
+
+      debugPrint('[Push] Enviado para ${tokens.length} token(s)');
+    } catch (e, st) {
+      debugPrint('[Push] Erro ao enviar notificacao: $e');
+      debugPrintStack(stackTrace: st);
+    }
+  }
+
   String _buildPreview(String body) {
     final normalized = body.replaceAll('\n', ' ').trim();
+
     if (normalized.length <= 120) return normalized;
+
     return '${normalized.substring(0, 120)}...';
   }
 
   bool _isCurrentUser(Map<String, dynamic> message) {
     final user = _currentUser();
+
     if (user == null) return false;
+
     return (message['sender_id'] ?? '').toString() == user.id;
   }
 
   String _formatDateTime(dynamic value) {
     final date = DateTime.tryParse((value ?? '').toString())?.toLocal();
+
     if (date == null) return '';
+
     final day = date.day.toString().padLeft(2, '0');
     final month = date.month.toString().padLeft(2, '0');
     final hour = date.hour.toString().padLeft(2, '0');
     final minute = date.minute.toString().padLeft(2, '0');
+
     return '$day/$month $hour:$minute';
   }
 
@@ -1084,8 +1190,8 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
                   children: [
                     Text(
                       senderName.isEmpty
-                          ? (isMine ? 'Você' : 'Administrador')
-                          : (isMine ? 'Você' : senderName),
+                          ? (isMine ? 'Voce' : 'Administrador')
+                          : (isMine ? 'Voce' : senderName),
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: isCompact ? 12.5 : 13.2,
@@ -1237,7 +1343,8 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                   valueColor: AlwaysStoppedAnimation<Color>(
-                                      olympusBlue),
+                                    olympusBlue,
+                                  ),
                                 ),
                               )
                             : const Icon(Icons.send_rounded),
@@ -1255,6 +1362,7 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
 
   void _showSnack(String text) {
     if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(text)),
     );
@@ -1291,8 +1399,9 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
                   Expanded(
                     child: _loading
                         ? const Center(
-                            child:
-                                CircularProgressIndicator(color: Colors.white),
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
                           )
                         : _messages.isEmpty
                             ? Center(
@@ -1322,6 +1431,7 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
                                 itemCount: _messages.length,
                                 itemBuilder: (context, index) {
                                   final message = _messages[index];
+
                                   return _buildMessageBubble(
                                     context,
                                     message,

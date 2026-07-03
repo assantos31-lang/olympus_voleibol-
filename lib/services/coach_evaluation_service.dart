@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CoachEvaluationService {
@@ -7,6 +8,63 @@ class CoachEvaluationService {
   final SupabaseClient _client;
 
   static const String settingKey = 'coach_evaluation';
+
+  Future<void> _notifyAdminsAboutPendingEvaluation({
+    required String evaluationId,
+  }) async {
+    try {
+      final rows =
+          await _client.from('profiles').select('id').eq('user_type', 'admin');
+
+      final adminIds = List<Map<String, dynamic>>.from(rows)
+          .map((row) => row['id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      if (adminIds.isEmpty) {
+        debugPrint('Nenhum administrador encontrado para receber avaliacao.');
+        return;
+      }
+
+      await _client.functions.invoke(
+        'send-push-notification',
+        body: {
+          'userIds': adminIds,
+          'title': 'Nova avaliacao pendente',
+          'body':
+              'Um atleta enviou uma avaliacao. Revise e aprove no aplicativo.',
+          'type': 'admin_evaluation_pending',
+          'recordId': evaluationId,
+        },
+      );
+    } catch (e) {
+      debugPrint('Erro ao notificar administradores sobre avaliacao: $e');
+    }
+  }
+
+  Future<void> _notifyCoachAboutApprovedEvaluation({
+    required String evaluationId,
+    required String coachId,
+  }) async {
+    if (coachId.trim().isEmpty) return;
+
+    try {
+      await _client.functions.invoke(
+        'send-push-notification',
+        body: {
+          'userId': coachId,
+          'title': 'Nova avaliacao recebida',
+          'body': 'Uma avaliacao foi aprovada e esta disponivel para consulta.',
+          'type': 'coach_evaluation_approved',
+          'recordId': evaluationId,
+        },
+      );
+    } catch (e) {
+      debugPrint('Erro ao notificar treinador sobre avaliacao: $e');
+    }
+  }
 
   Future<Map<String, dynamic>> loadEvaluationSettings() async {
     final row = await _client
@@ -82,13 +140,41 @@ class CoachEvaluationService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
-  Future<List<Map<String, dynamic>>> loadMonthlyEnabledCoaches() async {
+  Future<List<Map<String, dynamic>>> loadMonthlyEnabledCoaches({
+    String? athleteId,
+  }) async {
     final ids = await loadMonthlyEnabledCoachIds();
     if (ids.isEmpty) return [];
+    var allowedIds = ids.toSet();
+
+    if (athleteId != null && athleteId.trim().isNotEmpty) {
+      final athleteConvocations = await _client
+          .from('convocations')
+          .select('event_id')
+          .eq('user_id', athleteId);
+      final eventIds = List<Map<String, dynamic>>.from(athleteConvocations)
+          .map((row) => (row['event_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      if (eventIds.isEmpty) return [];
+
+      final eventConvocations = await _client
+          .from('convocations')
+          .select('user_id')
+          .inFilter('event_id', eventIds);
+      final convocatedIds = List<Map<String, dynamic>>.from(eventConvocations)
+          .map((row) => (row['user_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      allowedIds = allowedIds.intersection(convocatedIds);
+    }
+
+    if (allowedIds.isEmpty) return [];
     final rows = await _client
         .from('profiles')
         .select('id, full_name, avatar_url, user_type')
-        .inFilter('id', ids)
+        .inFilter('id', allowedIds.toList())
         .eq('user_type', 'coach') // Garantia extra para não trazer admin
         .order('full_name');
     return List<Map<String, dynamic>>.from(rows);
@@ -227,20 +313,54 @@ class CoachEvaluationService {
         }
       }
 
-      // 3. FALLBACK (A Correção): Se a lista ficou vazia (como na sua imagem),
-      // é porque o treinador não estava na tabela 'convocations'.
-      // Para o dropdown não ficar inútil/travado, buscamos a lista de todos os treinadores.
-      final allCoachesRows = await _client
-          .from('profiles')
-          .select('id, full_name, avatar_url, user_type')
-          .eq('user_type', 'coach')
-          .order('full_name');
-
-      return List<Map<String, dynamic>>.from(allCoachesRows);
+      // Sem fallback: o atleta só pode avaliar treinadores convocados.
+      return <Map<String, dynamic>>[];
     } catch (e) {
       print('Erro ao carregar treinadores: $e');
       return <Map<String, dynamic>>[];
     }
+  }
+
+  Future<List<Map<String, dynamic>>> loadCompletedEvaluationsForAthlete({
+    required String athleteId,
+  }) async {
+    final rows = await _client.from('coach_evaluations').select('''
+      id,
+      coach_id,
+      event_id,
+      evaluation_type,
+      reference_month,
+      reference_year,
+      rating_general,
+      rating_clarity,
+      rating_respect,
+      rating_training_quality,
+      rating_motivation,
+      rating_organization,
+      rating_evolution,
+      rating_communication,
+      positive_point,
+      improvement_point,
+      communication_comment,
+      suggestion,
+      comment,
+      anonymous_to_coach,
+      admin_review_status,
+      created_at,
+      coach: profiles!coach_evaluations_coach_id_fkey (
+        id,
+        full_name,
+        avatar_url
+      ),
+      events!coach_evaluations_event_id_fkey (
+        id,
+        event_name,
+        event_date,
+        event_time
+      )
+    ''').eq('athlete_id', athleteId).order('created_at', ascending: false);
+
+    return List<Map<String, dynamic>>.from(rows);
   }
 
   Future<void> submitTrainingEvaluation({
@@ -269,27 +389,35 @@ class CoachEvaluationService {
     if (existing != null) {
       throw Exception('Você já avaliou este treinador neste treino.');
     }
-    await _client.from('coach_evaluations').insert({
-      'athlete_id': athleteId,
-      'coach_id': coachId,
-      'event_id': eventId,
-      'evaluation_type': 'training',
-      'reference_month': referenceMonth,
-      'reference_year': referenceYear,
-      'rating_general': ratingGeneral,
-      'rating_clarity': ratingClarity,
-      'rating_respect': ratingRespect,
-      'rating_training_quality': ratingTrainingQuality,
-      'positive_point':
-          positivePoint.trim().isEmpty ? null : positivePoint.trim(),
-      'improvement_point':
-          improvementPoint.trim().isEmpty ? null : improvementPoint.trim(),
-      'comment': comment.trim().isEmpty ? null : comment.trim(),
-      'anonymous': anonymousToCoach,
-      'anonymous_to_coach': anonymousToCoach,
-      'visible_to_coach': false,
-      'admin_review_status': 'pending',
-    });
+    final inserted = await _client
+        .from('coach_evaluations')
+        .insert({
+          'athlete_id': athleteId,
+          'coach_id': coachId,
+          'event_id': eventId,
+          'evaluation_type': 'training',
+          'reference_month': referenceMonth,
+          'reference_year': referenceYear,
+          'rating_general': ratingGeneral,
+          'rating_clarity': ratingClarity,
+          'rating_respect': ratingRespect,
+          'rating_training_quality': ratingTrainingQuality,
+          'positive_point':
+              positivePoint.trim().isEmpty ? null : positivePoint.trim(),
+          'improvement_point':
+              improvementPoint.trim().isEmpty ? null : improvementPoint.trim(),
+          'comment': comment.trim().isEmpty ? null : comment.trim(),
+          'anonymous': anonymousToCoach,
+          'anonymous_to_coach': anonymousToCoach,
+          'visible_to_coach': false,
+          'admin_review_status': 'pending',
+        })
+        .select('id')
+        .single();
+
+    await _notifyAdminsAboutPendingEvaluation(
+      evaluationId: inserted['id'].toString(),
+    );
   }
 
   Future<void> submitMonthlyEvaluation({
@@ -311,46 +439,69 @@ class CoachEvaluationService {
     required String suggestion,
     required bool anonymousToCoach,
   }) async {
-    await _client.from('coach_evaluations').insert({
-      'athlete_id': athleteId,
-      'coach_id': coachId,
-      'event_id': null,
-      'evaluation_type': 'monthly',
-      'reference_month': referenceMonth,
-      'reference_year': referenceYear,
-      'rating_general': ratingGeneral,
-      'rating_clarity': ratingClarity,
-      'rating_respect': ratingRespect,
-      'rating_training_quality': ratingTrainingQuality,
-      'rating_motivation': ratingMotivation,
-      'rating_organization': ratingOrganization,
-      'rating_evolution': ratingEvolution,
-      'rating_communication': ratingCommunication,
-      'positive_point':
-          positivePoint.trim().isEmpty ? null : positivePoint.trim(),
-      'improvement_point':
-          improvementPoint.trim().isEmpty ? null : improvementPoint.trim(),
-      'communication_comment': communicationComment.trim().isEmpty
-          ? null
-          : communicationComment.trim(),
-      'suggestion': suggestion.trim().isEmpty ? null : suggestion.trim(),
-      'comment': suggestion.trim().isEmpty ? null : suggestion.trim(),
-      'anonymous': anonymousToCoach,
-      'anonymous_to_coach': anonymousToCoach,
-      'visible_to_coach': false,
-      'admin_review_status': 'pending',
-    });
+    final inserted = await _client
+        .from('coach_evaluations')
+        .insert({
+          'athlete_id': athleteId,
+          'coach_id': coachId,
+          'event_id': null,
+          'evaluation_type': 'monthly',
+          'reference_month': referenceMonth,
+          'reference_year': referenceYear,
+          'rating_general': ratingGeneral,
+          'rating_clarity': ratingClarity,
+          'rating_respect': ratingRespect,
+          'rating_training_quality': ratingTrainingQuality,
+          'rating_motivation': ratingMotivation,
+          'rating_organization': ratingOrganization,
+          'rating_evolution': ratingEvolution,
+          'rating_communication': ratingCommunication,
+          'positive_point':
+              positivePoint.trim().isEmpty ? null : positivePoint.trim(),
+          'improvement_point':
+              improvementPoint.trim().isEmpty ? null : improvementPoint.trim(),
+          'communication_comment': communicationComment.trim().isEmpty
+              ? null
+              : communicationComment.trim(),
+          'suggestion': suggestion.trim().isEmpty ? null : suggestion.trim(),
+          'comment': suggestion.trim().isEmpty ? null : suggestion.trim(),
+          'anonymous': anonymousToCoach,
+          'anonymous_to_coach': anonymousToCoach,
+          'visible_to_coach': false,
+          'admin_review_status': 'pending',
+        })
+        .select('id')
+        .single();
+
+    await _notifyAdminsAboutPendingEvaluation(
+      evaluationId: inserted['id'].toString(),
+    );
   }
 
   Future<void> setEvaluationVisibleToCoach({
     required String evaluationId,
     required bool visible,
   }) async {
+    final evaluation = await _client
+        .from('coach_evaluations')
+        .select('coach_id')
+        .eq('id', evaluationId)
+        .maybeSingle();
+
     await _client.from('coach_evaluations').update({
       'visible_to_coach': visible,
       'admin_review_status': visible ? 'approved' : 'pending',
       'admin_reviewed_at': DateTime.now().toIso8601String(),
     }).eq('id', evaluationId);
+
+    final coachId = evaluation?['coach_id']?.toString() ?? '';
+
+    if (visible && coachId.isNotEmpty) {
+      await _notifyCoachAboutApprovedEvaluation(
+        evaluationId: evaluationId,
+        coachId: coachId,
+      );
+    }
   }
 
   Future<List<Map<String, dynamic>>> loadAdminEvaluations() async {

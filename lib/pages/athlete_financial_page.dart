@@ -414,6 +414,44 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
     await _localNotifications.cancel(_notificationIdFor(record, 'overdue'));
   }
 
+  Future<void> _notifyAdminsAboutReceipt({
+    required FinancialRecord record,
+  }) async {
+    try {
+      final rows = await _supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_type', 'admin');
+
+      final adminIds = List<Map<String, dynamic>>.from(rows)
+          .map((row) => row['id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      if (adminIds.isEmpty) {
+        debugPrint('Nenhum administrador encontrado para receber comprovante.');
+        return;
+      }
+
+      await _supabase.functions.invoke(
+        'send-push-notification',
+        body: {
+          'userIds': adminIds,
+          'title': 'Novo comprovante anexado',
+          'body':
+              'Um atleta anexou um comprovante de pagamento. Revise no Financeiro.',
+          'type': 'admin_receipt_attached',
+          'recordId': record.id,
+        },
+      );
+    } catch (e) {
+      // O comprovante ja foi salvo; uma falha no push nao pode desfazer o envio.
+      debugPrint('Erro ao notificar administradores sobre comprovante: $e');
+    }
+  }
+
   Future<void> _uploadReceipt(FinancialRecord record) async {
     try {
       final XFile? image = await _picker.pickImage(
@@ -438,6 +476,8 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
         'receipt_url': filePath,
         'status': 'pending',
       }).eq('id', record.id);
+
+      await _notifyAdminsAboutReceipt(record: record);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/coach_evaluation_service.dart';
+import 'athlete_coach_evaluation_history_page.dart';
 
 enum _CoachEvaluationMode {
   menu,
@@ -121,7 +122,9 @@ class _AthleteCoachEvaluationPageState
         year: _selectedYear,
       );
 
-      final monthlyCoaches = await _service.loadMonthlyEnabledCoaches();
+      final monthlyCoaches = await _service.loadMonthlyEnabledCoaches(
+        athleteId: user.id,
+      );
 
       if (!mounted) return;
       setState(() {
@@ -255,6 +258,8 @@ class _AthleteCoachEvaluationPageState
         _anonymous = false;
         _saving = false;
       });
+
+      await _loadTrainingsForSelectedMonth();
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -711,8 +716,12 @@ class _AthleteCoachEvaluationPageState
           badge: _monthlyEnabled ? 'Liberado' : 'Bloqueado',
           onTap: _monthlyEnabled
               ? () async {
+                  final user = Supabase.instance.client.auth.currentUser;
+                  if (user == null) return;
                   final enabledCoaches =
-                      await _service.loadMonthlyEnabledCoaches();
+                      await _service.loadMonthlyEnabledCoaches(
+                    athleteId: user.id,
+                  );
                   if (!mounted) return;
                   setState(() {
                     _monthlyCoaches = enabledCoaches;
@@ -723,6 +732,17 @@ class _AthleteCoachEvaluationPageState
                   });
                 }
               : null,
+        ),
+        _modeButton(
+          icon: Icons.history_rounded,
+          title: 'Avaliações realizadas',
+          subtitle: 'Consulte suas avaliações anteriores, organizadas por mês.',
+          color: olympusSuccess,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const AthleteCoachEvaluationHistoryPage(),
+            ),
+          ),
         ),
       ],
     );
@@ -1083,7 +1103,34 @@ class _AthleteCoachEvaluationPageState
             ),
           ],
         ),
-        body: _content(),
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: Image.asset(
+                'assets/images/monte_olimpo_v2.png',
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(color: olympusBlue),
+              ),
+            ),
+            Positioned.fill(
+              child: Container(color: olympusBlue.withOpacity(0.58)),
+            ),
+            Positioned.fill(
+              child: SafeArea(
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.94),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white.withOpacity(0.45)),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: _content(),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -305,8 +305,15 @@ class _AgendaPageState extends State<AgendaPage> {
 
   bool _isEventoPassado(Map<String, dynamic> evento) {
     final dataHora = _parseEventoDateTime(evento);
+
     if (dataHora == null) return false;
-    return dataHora.isBefore(DateTime.now());
+
+    // Mantém o evento em FUTURO durante a janela de check-in
+    final limiteCheckin = dataHora.add(
+      const Duration(minutes: 40),
+    );
+
+    return DateTime.now().isAfter(limiteCheckin);
   }
 
   int _getEventosPassadosCount() {
