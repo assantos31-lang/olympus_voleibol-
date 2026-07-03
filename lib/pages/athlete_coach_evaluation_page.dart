@@ -826,6 +826,25 @@ class _AthleteCoachEvaluationPageState
           }).toList(),
           onChanged: (value) => setState(() => _selectedCoachId = value ?? ''),
         ),
+        if (_coaches.isEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: olympusGold.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: olympusGold.withOpacity(0.28)),
+            ),
+            child: const Text(
+              'Nenhum treinador foi encontrado entre os convocados deste treino.',
+              style: TextStyle(
+                color: olympusBlue,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 18),
         _ratingRow(
           label: 'Nota geral',

@@ -9,6 +9,55 @@ class CoachEvaluationService {
 
   static const String settingKey = 'coach_evaluation';
 
+  Future<List<Map<String, dynamic>>> _loadCoachProfilesByIds(
+    Iterable<String> rawIds,
+  ) async {
+    final ids = rawIds.where((id) => id.trim().isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return [];
+
+    final profilesResponse = await _client
+        .from('profiles')
+        .select('id, full_name, avatar_url, user_type')
+        .inFilter('id', ids)
+        .order('full_name');
+    final profiles = List<Map<String, dynamic>>.from(profilesResponse);
+
+    final coachIds = profiles
+        .where((profile) {
+          final type =
+              (profile['user_type'] ?? '').toString().trim().toLowerCase();
+          return const {
+            'coach',
+            'treinador',
+            'tecnico',
+            'técnico',
+            'technician',
+          }.contains(type);
+        })
+        .map((profile) => (profile['id'] ?? '').toString())
+        .toSet();
+
+    try {
+      final roleRows = await _client
+          .from('user_roles')
+          .select('user_id, role, is_active')
+          .inFilter('user_id', ids)
+          .eq('role', 'coach')
+          .eq('is_active', true);
+      coachIds.addAll(
+        List<Map<String, dynamic>>.from(roleRows)
+            .map((row) => (row['user_id'] ?? '').toString())
+            .where((id) => id.isNotEmpty),
+      );
+    } catch (_) {
+      // Projetos sem user_roles continuam usando profiles.user_type.
+    }
+
+    return profiles
+        .where((profile) => coachIds.contains((profile['id'] ?? '').toString()))
+        .toList();
+  }
+
   Future<void> _notifyAdminsAboutPendingEvaluation({
     required String evaluationId,
   }) async {
@@ -131,13 +180,24 @@ class CoachEvaluationService {
   }
 
   Future<List<Map<String, dynamic>>> loadCoaches() async {
-    // Corrigido: Busca ESTRITAMENTE treinadores, removendo qualquer chance de trazer 'admin'
-    final rows = await _client
-        .from('profiles')
-        .select('id, full_name, avatar_url, user_type')
-        .eq('user_type', 'coach')
-        .order('full_name');
-    return List<Map<String, dynamic>>.from(rows);
+    try {
+      final roleRows = await _client
+          .from('user_roles')
+          .select('user_id')
+          .eq('role', 'coach')
+          .eq('is_active', true);
+      return _loadCoachProfilesByIds(
+        List<Map<String, dynamic>>.from(roleRows)
+            .map((row) => (row['user_id'] ?? '').toString()),
+      );
+    } catch (_) {
+      final rows = await _client
+          .from('profiles')
+          .select('id, full_name, avatar_url, user_type')
+          .eq('user_type', 'coach')
+          .order('full_name');
+      return List<Map<String, dynamic>>.from(rows);
+    }
   }
 
   Future<List<Map<String, dynamic>>> loadMonthlyEnabledCoaches({
@@ -171,13 +231,7 @@ class CoachEvaluationService {
     }
 
     if (allowedIds.isEmpty) return [];
-    final rows = await _client
-        .from('profiles')
-        .select('id, full_name, avatar_url, user_type')
-        .inFilter('id', allowedIds.toList())
-        .eq('user_type', 'coach') // Garantia extra para não trazer admin
-        .order('full_name');
-    return List<Map<String, dynamic>>.from(rows);
+    return _loadCoachProfilesByIds(allowedIds);
   }
 
   Future<List<Map<String, dynamic>>> loadEligibleTrainingsForAthleteByMonth({
@@ -286,6 +340,19 @@ class CoachEvaluationService {
     required String eventId,
   }) async {
     try {
+      // A RPC usa security definer para atravessar a RLS com segurança:
+      // ela só retorna dados quando o usuário autenticado está convocado.
+      try {
+        final rpcRows = await _client.rpc(
+          'get_event_coaches_for_athlete_evaluation',
+          params: {'p_event_id': eventId},
+        );
+        final coaches = List<Map<String, dynamic>>.from(rpcRows as List);
+        if (coaches.isNotEmpty) return coaches;
+      } catch (_) {
+        // Compatibilidade enquanto o SQL ainda não foi executado.
+      }
+
       // 1. Tenta buscar os IDs na tabela de convocações do evento específico
       final convocationRows = await _client
           .from('convocations')
@@ -298,13 +365,8 @@ class CoachEvaluationService {
             .toList();
 
         if (userIds.isNotEmpty) {
-          // 2. Busca na tabela de perfis apenas os convocados que SÃO TREINADORES ('coach')
-          final eventCoaches = await _client
-              .from('profiles')
-              .select('id, full_name, avatar_url, user_type')
-              .inFilter('id', userIds)
-              .eq('user_type', 'coach') // Mantém a regra de barrar admin
-              .order('full_name');
+          // Considera o papel principal e também papéis múltiplos em user_roles.
+          final eventCoaches = await _loadCoachProfilesByIds(userIds);
 
           // Se encontrou o treinador vinculado ao treino, retorna ele
           if (eventCoaches.isNotEmpty) {
@@ -313,7 +375,23 @@ class CoachEvaluationService {
         }
       }
 
-      // Sem fallback: o atleta só pode avaliar treinadores convocados.
+      // Eventos antigos nem sempre salvaram o treinador em convocations.
+      // O coach_id do planejamento identifica com segurança quem conduziu
+      // aquele treino, sem abrir acesso aos demais treinadores.
+      final planningRows = await _client
+          .from('training_plan_blocks')
+          .select('coach_id')
+          .eq('event_id', eventId);
+      final planningCoachIds = List<Map<String, dynamic>>.from(planningRows)
+          .map((row) => (row['coach_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      if (planningCoachIds.isNotEmpty) {
+        final planningCoaches = await _loadCoachProfilesByIds(planningCoachIds);
+        if (planningCoaches.isNotEmpty) return planningCoaches;
+      }
+
+      // Sem vínculo no evento, não exibe uma lista geral de treinadores.
       return <Map<String, dynamic>>[];
     } catch (e) {
       print('Erro ao carregar treinadores: $e');

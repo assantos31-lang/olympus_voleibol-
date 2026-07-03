@@ -104,6 +104,7 @@ class _CoachTrainingPlanDetailPageState
   RealtimeChannel? _trainingPlanRealtimeChannel;
   Timer? _realtimeReloadTimer;
   bool _editingBlock = false;
+  final Map<int, Future<void>> _blockSaveQueues = {};
 
   String get _eventId => (widget.treino['id'] ?? '').toString();
 
@@ -484,6 +485,20 @@ class _CoachTrainingPlanDetailPageState
   }
 
   Future<void> _salvarBlocoNoSupabase(int index) async {
+    final previous = _blockSaveQueues[index] ?? Future<void>.value();
+    final queued = previous.then((_) => _persistirBlocoNoSupabase(index));
+    _blockSaveQueues[index] = queued;
+    try {
+      await queued;
+    } finally {
+      if (identical(_blockSaveQueues[index], queued)) {
+        _blockSaveQueues.remove(index);
+      }
+    }
+  }
+
+  Future<void> _persistirBlocoNoSupabase(int index) async {
+    if (index < 0 || index >= _blocos.length) return;
     final user = _supabase.auth.currentUser;
     if (user == null) {
       throw Exception('Usuário não autenticado.');
@@ -514,11 +529,32 @@ class _CoachTrainingPlanDetailPageState
     final blocoId = (bloco['id'] ?? '').toString();
 
     if (blocoId.isEmpty || blocoId == 'null') {
-      final inserted = await _supabase
-          .from('training_plan_blocks')
-          .insert(payload)
-          .select('id')
-          .single();
+      Map<String, dynamic> inserted;
+      try {
+        inserted = await _supabase
+            .from('training_plan_blocks')
+            .insert(payload)
+            .select('id')
+            .single();
+      } on PostgrestException catch (error) {
+        if (error.code != '23505') rethrow;
+
+        final existing = await _supabase
+            .from('training_plan_blocks')
+            .select('id')
+            .eq('event_id', _eventId)
+            .eq('coach_id', user.id)
+            .eq('position', index)
+            .maybeSingle();
+        final existingId = (existing?['id'] ?? '').toString();
+        if (existingId.isEmpty) rethrow;
+
+        await _supabase
+            .from('training_plan_blocks')
+            .update(payload)
+            .eq('id', existingId);
+        inserted = {'id': existingId};
+      }
 
       if (!mounted) return;
 
@@ -716,6 +752,7 @@ class _CoachTrainingPlanDetailPageState
     StateSetter? atualizarModal;
     bool salvandoAutomaticamente = false;
     bool salvoAutomaticamente = false;
+    String? validationError;
 
     void sincronizarEAgendarSalvamento() {
       tipoSelecionado = _serializeTipoTreino(
@@ -725,9 +762,10 @@ class _CoachTrainingPlanDetailPageState
         fundamentos: fundamentosSelecionados,
       );
 
+      final currentBlockId = _blocos[index]['id'] ?? bloco['id'];
       setState(() {
         _blocos[index] = {
-          'id': bloco['id'],
+          'id': currentBlockId,
           'categoria': categoriaSelecionada,
           'tipo': tipoSelecionado,
           'inicio': horarioInicio.trim(),
@@ -752,6 +790,8 @@ class _CoachTrainingPlanDetailPageState
       }
 
       salvoAutomaticamente = false;
+      validationError = null;
+      atualizarModal?.call(() {});
       autoSaveTimer = Timer(const Duration(milliseconds: 600), () async {
         salvandoAutomaticamente = true;
         atualizarModal?.call(() {});
@@ -764,7 +804,8 @@ class _CoachTrainingPlanDetailPageState
           }
           salvoAutomaticamente = true;
         } catch (e) {
-          _showError('Erro ao salvar bloco automaticamente: $e');
+          validationError = 'Erro ao salvar automaticamente. $e';
+          atualizarModal?.call(() {});
         } finally {
           salvandoAutomaticamente = false;
           atualizarModal?.call(() {});
@@ -1215,6 +1256,41 @@ class _CoachTrainingPlanDetailPageState
                             hintText: 'Detalhes do bloco',
                           ),
                         ),
+                        if (validationError != null) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(11),
+                            decoration: BoxDecoration(
+                              color: olympusDanger.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: olympusDanger.withOpacity(0.28),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(
+                                  Icons.info_outline_rounded,
+                                  color: olympusDanger,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    validationError!,
+                                    style: const TextStyle(
+                                      color: olympusDanger,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
@@ -1226,51 +1302,58 @@ class _CoachTrainingPlanDetailPageState
                                     final inicio = _parseHorario(horarioInicio);
                                     final fim = _parseHorario(horarioFim);
                                     if (!_blocoEstaCompleto(_blocos[index])) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Selecione o tipo de treino, a posição em quadra e a atividade.',
-                                          ),
-                                        ),
-                                      );
+                                      setModalState(() {
+                                        validationError = posicoesSelecionadas
+                                                .isEmpty
+                                            ? 'Selecione ao menos uma posição em quadra.'
+                                            : categoriaSelecionada ==
+                                                    'Fundamentos'
+                                                ? 'Selecione ao menos um fundamento para a posição escolhida.'
+                                                : 'Selecione uma atividade para este tipo de treino.';
+                                      });
                                       return;
                                     }
                                     if (inicio == null ||
                                         fim == null ||
                                         !fim.isAfter(inicio)) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'O horário final precisa ser maior que o horário inicial.',
-                                          ),
-                                        ),
-                                      );
+                                      setModalState(() {
+                                        validationError =
+                                            'O horário final precisa ser maior que o horário inicial.';
+                                      });
                                       return;
                                     }
                                     if (_ultrapassaFimDoEvento(horarioFim)) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'O bloco não pode terminar depois do horário final do evento.',
-                                          ),
-                                        ),
-                                      );
+                                      setModalState(() {
+                                        validationError =
+                                            'O bloco não pode terminar depois do horário final do evento.';
+                                      });
                                       return;
                                     }
                                     autoSaveTimer?.cancel();
-                                    await _salvarBlocoNoSupabase(index);
-                                    for (int i = index + 1;
-                                        i < _blocos.length;
-                                        i++) {
-                                      if (_blocoEstaCompleto(_blocos[i])) {
-                                        await _salvarBlocoNoSupabase(i);
+                                    setModalState(() {
+                                      validationError = null;
+                                      salvandoAutomaticamente = true;
+                                    });
+                                    try {
+                                      await _salvarBlocoNoSupabase(index);
+                                      for (int i = index + 1;
+                                          i < _blocos.length;
+                                          i++) {
+                                        if (_blocoEstaCompleto(_blocos[i])) {
+                                          await _salvarBlocoNoSupabase(i);
+                                        }
                                       }
-                                    }
-                                    if (context.mounted) {
-                                      Navigator.pop(context, true);
+                                      if (context.mounted) {
+                                        Navigator.pop(context, true);
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        setModalState(() {
+                                          salvandoAutomaticamente = false;
+                                          validationError =
+                                              'Não foi possível salvar o bloco. $e';
+                                        });
+                                      }
                                     }
                                   },
                             style: ElevatedButton.styleFrom(

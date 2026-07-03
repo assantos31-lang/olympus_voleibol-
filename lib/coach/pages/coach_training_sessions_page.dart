@@ -1930,7 +1930,89 @@ events!convocations_event_id_fkey (
     );
   }
 
-  Widget _buildResumoTreinosSection() {
+  Widget _buildResumoTreinosSection({bool compact = false}) {
+    if (compact) {
+      final total = _getEventosDoTipoSelecionado().length;
+      final pending = _filtroTipoEvento == 'treino'
+          ? _getTreinosSemPlanejamentoDoMes().length
+          : 0;
+
+      return Container(
+        margin: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.96),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.blue.withOpacity(0.20)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.07),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: _colorTipoEvento(_filtroTipoEvento).withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                _iconTipoEvento(_filtroTipoEvento),
+                color: _colorTipoEvento(_filtroTipoEvento),
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${_labelTipoEvento(_filtroTipoEvento)} no mês',
+                    style: const TextStyle(
+                      color: olympusBlue,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    '$total evento(s)',
+                    style: const TextStyle(
+                      color: olympusMuted,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (pending > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: olympusDanger.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$pending sem plano',
+                  style: const TextStyle(
+                    color: olympusDanger,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: Container(
@@ -2063,54 +2145,128 @@ events!convocations_event_id_fkey (
   }
 
   Widget _buildFiltersAndSummary() {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [olympusBlue, olympusLightBlue],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-            borderRadius: BorderRadius.only(
-              bottomLeft: Radius.circular(16),
-              bottomRight: Radius.circular(16),
-            ),
-          ),
-          child: Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final mobile = constraints.maxWidth < 600;
+
+        if (mobile) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              _buildVisaoGeralButton(),
-              const SizedBox(height: 10),
-              _buildModernDropdown(
-                icon: Icons.calendar_month,
-                value: _filtroMes.isEmpty ? null : _filtroMes,
-                hint: 'Mês',
-                items: _getMesesDisponiveis().map((mes) {
-                  return DropdownMenuItem(
-                    value: mes,
-                    child: Text(
-                      _formatarNomeMes(mes),
-                      style: TextStyle(
-                        fontWeight: _filtroMes == mes
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        color: _filtroMes == mes ? olympusBlue : Colors.black,
+              Container(
+                padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [olympusBlue, olympusLightBlue],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(14),
+                    bottomRight: Radius.circular(14),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 46,
+                      height: 46,
+                      child: IconButton.filled(
+                        tooltip: _isVisaoGeral
+                            ? 'Voltar para o mês atual'
+                            : 'Ativar visão geral',
+                        onPressed: _alternarVisaoGeral,
+                        style: IconButton.styleFrom(
+                          backgroundColor:
+                              _isVisaoGeral ? olympusGold : Colors.white,
+                          foregroundColor: olympusBlue,
+                        ),
+                        icon: Icon(
+                          _isVisaoGeral
+                              ? Icons.calendar_month_rounded
+                              : Icons.dashboard_customize_rounded,
+                          size: 20,
+                        ),
                       ),
                     ),
-                  );
-                }).toList(),
-                onChanged: (valor) {
-                  if (valor != null) {
-                    _selecionarMes(valor.toString());
-                  }
-                },
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: _buildModernDropdown(
+                        icon: Icons.calendar_month,
+                        value: _filtroMes.isEmpty ? null : _filtroMes,
+                        hint: 'Mês',
+                        items: _getMesesDisponiveis().map((mes) {
+                          return DropdownMenuItem(
+                            value: mes,
+                            child: Text(_formatarNomeMes(mes)),
+                          );
+                        }).toList(),
+                        onChanged: (valor) {
+                          if (valor != null) {
+                            _selecionarMes(valor.toString());
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              _buildResumoTreinosSection(compact: true),
             ],
-          ),
-        ),
-        _buildResumoTreinosSection(),
-      ],
+          );
+        }
+
+        return Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [olympusBlue, olympusLightBlue],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(16),
+                  bottomRight: Radius.circular(16),
+                ),
+              ),
+              child: Column(
+                children: [
+                  _buildVisaoGeralButton(),
+                  const SizedBox(height: 10),
+                  _buildModernDropdown(
+                    icon: Icons.calendar_month,
+                    value: _filtroMes.isEmpty ? null : _filtroMes,
+                    hint: 'Mês',
+                    items: _getMesesDisponiveis().map((mes) {
+                      return DropdownMenuItem(
+                        value: mes,
+                        child: Text(
+                          _formatarNomeMes(mes),
+                          style: TextStyle(
+                            fontWeight: _filtroMes == mes
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            color:
+                                _filtroMes == mes ? olympusBlue : Colors.black,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (valor) {
+                      if (valor != null) {
+                        _selecionarMes(valor.toString());
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            _buildResumoTreinosSection(),
+          ],
+        );
+      },
     );
   }
 
