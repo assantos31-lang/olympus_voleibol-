@@ -216,6 +216,7 @@ class ChatService {
     final response = await supabase
         .from('profiles')
         .select('id, full_name, user_type, phone, avatar_url')
+        .eq('is_active', true)
         .order('full_name');
 
     return response.map<Map<String, dynamic>>((e) {

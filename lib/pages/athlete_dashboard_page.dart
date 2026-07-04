@@ -2332,6 +2332,7 @@ event_time
     return eventDateTime.difference(now).inMinutes >= (horasLimite * 60);
   }
 
+  // ignore: unused_element
   String _getAgendaSubtitle() {
     if (_weekEvents.isEmpty) {
       return 'Veja suas convocações e eventos';
@@ -2808,6 +2809,7 @@ event_time
       final response = await supabase
           .from('profiles')
           .select('full_name, birth_date, avatar_url, court_position')
+          .eq('is_active', true)
           .not('birth_date', 'is', null);
 
       final now = DateTime.now();
@@ -3927,6 +3929,7 @@ event_time
     );
   }
 
+  // ignore: unused_element
   Widget _buildDashboardCard({
     required IconData icon,
     required String title,
@@ -4410,13 +4413,16 @@ event_time
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
-            fit: BoxFit.cover,
-            alignment: Alignment.center,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(color: const Color(0xFF102845));
-            },
+          child: Opacity(
+            opacity: 0.72,
+            child: Image.asset(
+              'assets/images/monte_olimpo_v2.png',
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+              errorBuilder: (context, error, stackTrace) {
+                return Container(color: const Color(0xFF102845));
+              },
+            ),
           ),
         ),
         Positioned.fill(
@@ -4455,6 +4461,417 @@ event_time
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildAthleteCommandCenter() {
+    final pendingInvites = _pendingCompetitionCount +
+        _pendingTrainingCount +
+        _pendingFriendlyCount;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            decoration: BoxDecoration(
+              color: const Color(0xFF081D33).withOpacity(0.88),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white.withOpacity(0.12)),
+            ),
+            child: Row(
+              children: [
+                _buildAthleteStatusMetric(
+                  value: '$pendingInvites',
+                  label: 'Convocações',
+                  color: olympusGold,
+                ),
+                _athleteStatusDivider(),
+                _buildAthleteStatusMetric(
+                  value: '$_messageUnreadCount',
+                  label: 'Mensagens',
+                  color: const Color(0xFFFF8FA3),
+                ),
+                _athleteStatusDivider(),
+                _buildAthleteStatusMetric(
+                  value: '$_overdueFinancialCount',
+                  label: 'Financeiro',
+                  color: const Color(0xFF8FE8FF),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 17),
+          const Text(
+            'Acesso imediato',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _buildAthleteQuickActions(),
+          const SizedBox(height: 17),
+          _buildCoachEvaluationFeaturedAction(),
+          const SizedBox(height: 13),
+          _buildAthleteSportsDirectory(),
+        ],
+      ),
+    );
+  }
+
+  Widget _athleteStatusDivider() {
+    return Container(
+      width: 1,
+      height: 34,
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      color: Colors.white.withOpacity(0.12),
+    );
+  }
+
+  Widget _buildAthleteStatusMetric({
+    required String value,
+    required String label,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white60, fontSize: 10.5),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAthleteQuickActions() {
+    final actions = <({
+      String label,
+      IconData icon,
+      Color color,
+      int badge,
+      VoidCallback onTap,
+    })>[
+      (
+        label: 'Agenda',
+        icon: Icons.calendar_month_rounded,
+        color: olympusGold,
+        badge: _pendingTrainingCount +
+            _pendingFriendlyCount +
+            _pendingCompetitionCount,
+        onTap: _navigateToAgenda,
+      ),
+      (
+        label: 'Estatísticas',
+        icon: Icons.query_stats_rounded,
+        color: const Color(0xFF73E2A7),
+        badge: 0,
+        onTap: _navigateToStatistics,
+      ),
+      (
+        label: 'Mensagens',
+        icon: Icons.forum_rounded,
+        color: const Color(0xFFFF8FA3),
+        badge: _messageUnreadCount,
+        onTap: _navigateToMessages,
+      ),
+      (
+        label: 'Financeiro',
+        icon: Icons.account_balance_wallet_rounded,
+        color: const Color(0xFF8FE8FF),
+        badge: _overdueFinancialCount + _newFinancialCount,
+        onTap: _navigateToFinancial,
+      ),
+    ];
+
+    return SizedBox(
+      width: double.infinity,
+      height: 88,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final itemWidth = ((constraints.maxWidth - 24) / 4).clamp(60.0, 70.0);
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: actions.indexed.map((entry) {
+              final index = entry.$1;
+              final action = entry.$2;
+              return Padding(
+                padding: EdgeInsets.only(left: index == 0 ? 0 : 8),
+                child: _buildAthleteQuickAction(
+                  width: itemWidth,
+                  label: action.label,
+                  icon: action.icon,
+                  color: action.color,
+                  badge: action.badge,
+                  onTap: action.onTap,
+                ),
+              );
+            }).toList(),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAthleteQuickAction({
+    required double width,
+    required String label,
+    required IconData icon,
+    required Color color,
+    required int badge,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      width: width,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Column(
+          children: [
+            Badge(
+              isLabelVisible: badge > 0,
+              label: Text(badge > 99 ? '99+' : '$badge'),
+              backgroundColor: Colors.redAccent,
+              child: Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color.withOpacity(0.16),
+                  border: Border.all(color: color.withOpacity(0.52)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: color.withOpacity(0.14),
+                      blurRadius: 12,
+                    ),
+                  ],
+                ),
+                child: Icon(icon, color: color, size: 25),
+              ),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 10.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCoachEvaluationFeaturedAction() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _navigateToCoachEvaluation,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF64FFDA), Color(0xFF25BFA5)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x3364FFDA),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.22),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.rate_review_rounded,
+                  color: Color(0xFF0A3340),
+                  size: 25,
+                ),
+              ),
+              const SizedBox(width: 13),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Avaliar meu treinador',
+                      style: TextStyle(
+                        color: Color(0xFF0A3340),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Compartilhe sua experiência no treino',
+                      style: TextStyle(
+                        color: Color(0xCC0A3340),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_rounded,
+                color: Color(0xFF0A3340),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAthleteSportsDirectory() {
+    final items = <({
+      String label,
+      String subtitle,
+      IconData icon,
+      Color color,
+      int badge,
+      VoidCallback onTap,
+    })>[
+      (
+        label: 'Competições',
+        subtitle: 'Ligas, campeonatos e amistosos',
+        icon: Icons.emoji_events_rounded,
+        color: const Color(0xFF70E1F5),
+        badge: _competitionNewCount,
+        onTap: _navigateToCompetitions,
+      ),
+      if (_canAccessBirthdays)
+        (
+          label: 'Aniversariantes',
+          subtitle: 'Datas especiais da equipe',
+          icon: Icons.cake_rounded,
+          color: const Color(0xFFFF86C8),
+          badge: 0,
+          onTap: _navigateToBirthdays,
+        ),
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF102D4F).withOpacity(0.88),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withOpacity(0.13)),
+      ),
+      child: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(15, 14, 15, 7),
+            child: Row(
+              children: [
+                Text(
+                  'Meu time',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Spacer(),
+                Text(
+                  'OLYMPUS',
+                  style: TextStyle(
+                    color: olympusGold,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...items.indexed.map((entry) {
+            final index = entry.$1;
+            final item = entry.$2;
+            return Column(
+              children: [
+                if (index > 0)
+                  Divider(
+                    height: 1,
+                    indent: 65,
+                    color: Colors.white.withOpacity(0.09),
+                  ),
+                ListTile(
+                  onTap: item.onTap,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 3,
+                  ),
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: item.color.withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(item.icon, color: item.color, size: 21),
+                  ),
+                  title: Text(
+                    item.label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13.5,
+                    ),
+                  ),
+                  subtitle: Text(
+                    item.subtitle,
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                  trailing: item.badge > 0
+                      ? Badge(
+                          label: Text('${item.badge}'),
+                          backgroundColor: Colors.redAccent,
+                        )
+                      : const Icon(
+                          Icons.chevron_right_rounded,
+                          color: Colors.white38,
+                        ),
+                ),
+              ],
+            );
+          }),
+          const SizedBox(height: 6),
+        ],
+      ),
     );
   }
 
@@ -4537,89 +4954,12 @@ event_time
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   _buildAthleteInfoCard(),
+                  _buildAthleteCommandCenter(),
                   _buildTodayBirthdaysCard(),
                   _buildFinancialAlertCard(),
                   _buildPresenceSummaryCard(),
                   _buildGenderRankingCard(),
                   _buildWeekEventsSectionCard(),
-                  _buildDashboardCard(
-                    icon: Icons.calendar_today,
-                    title: 'Minha Agenda',
-                    subtitle: _getAgendaSubtitle(),
-                    color: olympusGold,
-                    onTap: _navigateToAgenda,
-                    badges: [
-                      _DashboardBadgeData(
-                        count: _pendingCompetitionCount,
-                        color: Colors.red,
-                      ),
-                      _DashboardBadgeData(
-                        count: _pendingTrainingCount,
-                        color: Colors.orange,
-                      ),
-                      _DashboardBadgeData(
-                        count: _pendingFriendlyCount,
-                        color: Colors.green,
-                      ),
-                    ],
-                  ),
-                  _buildDashboardCard(
-                    icon: Icons.insights_rounded,
-                    title: 'Minhas Estatísticas',
-                    subtitle: 'Evolução, avaliações e feedbacks do técnico',
-                    color: olympusGold,
-                    onTap: _navigateToStatistics,
-                  ),
-                  _buildDashboardCard(
-                    icon: Icons.rate_review_rounded,
-                    title: 'Avaliar Treinador',
-                    subtitle: 'Avalie o treino e envie seu feedback',
-                    color: const Color(0xFF64FFDA),
-                    onTap: _navigateToCoachEvaluation,
-                  ),
-                  _buildDashboardCard(
-                    icon: Icons.mark_chat_unread_rounded,
-                    title: 'Mensagens',
-                    subtitle: 'Avisos e comunicados',
-                    color: const Color(0xFF6C4AB6),
-                    onTap: _navigateToMessages,
-                    badgeCount:
-                        _messageUnreadCount > 0 ? _messageUnreadCount : null,
-                  ),
-                  _buildDashboardCard(
-                    icon: Icons.attach_money,
-                    title: 'Financeiro',
-                    subtitle: 'Acompanhe seus pagamentos',
-                    color: olympusBlue,
-                    onTap: _navigateToFinancial,
-                    badges: [
-                      _DashboardBadgeData(
-                        count: _overdueFinancialCount,
-                        color: Colors.red,
-                      ),
-                      _DashboardBadgeData(
-                        count: _newFinancialCount,
-                        color: olympusGold,
-                      ),
-                    ],
-                  ),
-                  if (_canAccessBirthdays)
-                    _buildDashboardCard(
-                      icon: Icons.cake_outlined,
-                      title: 'Aniversariantes',
-                      subtitle: 'Veja e acompanhe os aniversários',
-                      color: Colors.pink,
-                      onTap: _navigateToBirthdays,
-                    ),
-                  _buildDashboardCard(
-                    icon: Icons.emoji_events_outlined,
-                    title: 'Competições',
-                    subtitle: 'Veja ligas, campeonatos e amistosos',
-                    color: const Color(0xFF2C5F8D),
-                    onTap: _navigateToCompetitions,
-                    badgeCount:
-                        _competitionNewCount > 0 ? _competitionNewCount : null,
-                  ),
                   const SizedBox(height: 100),
                 ],
               ),

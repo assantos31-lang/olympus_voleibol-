@@ -543,6 +543,7 @@ events!convocations_event_id_fkey (
           .select('id, full_name, avatar_url, gender, user_type')
           .inFilter('id', visibleIds)
           .eq('user_type', 'athlete')
+          .eq('is_active', true)
           .order('full_name', ascending: true);
 
       final loadedProfiles =

@@ -488,6 +488,7 @@ event_time
             'id, full_name, email, phone, avatar_url, user_type, gender, court_position, performance_level, performance_level_rank',
           )
           .neq('user_type', 'admin')
+          .eq('is_active', true)
           .order('full_name', ascending: true);
 
       final athletes = List<Map<String, dynamic>>.from(rows as List);

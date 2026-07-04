@@ -305,7 +305,11 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
             .from('training_plan_blocks')
             .select('event_id')
             .eq('coach_id', user.id),
-        supabase.from('convocations').select('event_id').eq('user_id', user.id),
+        supabase
+            .from('convocations')
+            .select('event_id')
+            .eq('user_id', user.id)
+            .eq('event_role', 'coach'),
       ]);
 
       final profiles = List<Map<String, dynamic>>.from(results[0] as List);

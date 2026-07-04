@@ -19,6 +19,7 @@ class CoachEvaluationService {
         .from('profiles')
         .select('id, full_name, avatar_url, user_type')
         .inFilter('id', ids)
+        .eq('is_active', true)
         .order('full_name');
     final profiles = List<Map<String, dynamic>>.from(profilesResponse);
 
@@ -62,8 +63,11 @@ class CoachEvaluationService {
     required String evaluationId,
   }) async {
     try {
-      final rows =
-          await _client.from('profiles').select('id').eq('user_type', 'admin');
+      final rows = await _client
+          .from('profiles')
+          .select('id')
+          .eq('user_type', 'admin')
+          .eq('is_active', true);
 
       final adminIds = List<Map<String, dynamic>>.from(rows)
           .map((row) => row['id']?.toString())
@@ -195,6 +199,7 @@ class CoachEvaluationService {
           .from('profiles')
           .select('id, full_name, avatar_url, user_type')
           .eq('user_type', 'coach')
+          .eq('is_active', true)
           .order('full_name');
       return List<Map<String, dynamic>>.from(rows);
     }
@@ -286,6 +291,7 @@ class CoachEvaluationService {
           )
         ''')
         .eq('user_id', athleteId)
+        .eq('event_role', 'athlete')
         .inFilter('event_id', checkedEventIds.toList());
 
     final now = DateTime.now();
@@ -353,11 +359,13 @@ class CoachEvaluationService {
         // Compatibilidade enquanto o SQL ainda não foi executado.
       }
 
-      // 1. Tenta buscar os IDs na tabela de convocações do evento específico
+      // A função exercida no evento prevalece sobre os papéis gerais.
       final convocationRows = await _client
           .from('convocations')
           .select('user_id')
-          .eq('event_id', eventId);
+          .eq('event_id', eventId)
+          .eq('event_role', 'coach')
+          .limit(1);
 
       if (convocationRows.isNotEmpty) {
         final userIds = List<Map<String, dynamic>>.from(convocationRows)
@@ -365,7 +373,6 @@ class CoachEvaluationService {
             .toList();
 
         if (userIds.isNotEmpty) {
-          // Considera o papel principal e também papéis múltiplos em user_roles.
           final eventCoaches = await _loadCoachProfilesByIds(userIds);
 
           // Se encontrou o treinador vinculado ao treino, retorna ele

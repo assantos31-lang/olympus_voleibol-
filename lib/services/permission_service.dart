@@ -82,7 +82,8 @@ class PermissionService {
     try {
       final profilesResponse = await _supabase
           .from('profiles')
-          .select('id, email, full_name, user_type, avatar_url');
+          .select('id, email, full_name, user_type, avatar_url')
+          .eq('is_active', true);
 
       final permissionsResponse = await _supabase
           .from('page_permissions')

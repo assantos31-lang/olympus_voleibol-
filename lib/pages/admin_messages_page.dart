@@ -1322,6 +1322,7 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
           .from('profiles')
           .select('id, user_type, full_name, email, gender, court_position')
           .neq('user_type', 'admin')
+          .eq('is_active', true)
           .order('full_name', ascending: true);
 
       _allUsers = List<Map<String, dynamic>>.from(response);

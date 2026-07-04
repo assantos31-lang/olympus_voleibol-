@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import '../pages/add_event_page.dart';
 import '../services/permission_service.dart'; // ✅ NOVO
+import '../services/role_service.dart';
 
 class AgendaPage extends StatefulWidget {
   const AgendaPage({Key? key}) : super(key: key);
@@ -15,11 +16,13 @@ class AgendaPage extends StatefulWidget {
 class _AgendaPageState extends State<AgendaPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
   final PermissionService _permissionService = PermissionService(); // ✅ NOVO
+  final RoleService _roleService = RoleService();
 
   // ✅ NOVO: Variáveis de controle de permissão
   bool _hasPermission = true;
   bool _checkingPermission = true;
   bool _isAdmin = false; // ✅ NOVO: controla ações exclusivas de admin
+  RealtimeChannel? _eventsRealtimeChannel;
   Map<String, bool> _agendaActionPermissions = const {
     'edit_event': true,
     'insert_score': true,
@@ -52,9 +55,36 @@ class _AgendaPageState extends State<AgendaPage> {
   @override
   void initState() {
     super.initState();
-    _checkPermission(); // ✅ NOVO: verifica permissão primeiro
     _setMesAtual();
-    _buscarEventos();
+    _initializeAgenda();
+  }
+
+  Future<void> _initializeAgenda() async {
+    await _checkPermission();
+    if (!mounted || !_hasPermission) return;
+    await _buscarEventos();
+    _listenForEventChanges();
+  }
+
+  void _listenForEventChanges() {
+    if (_eventsRealtimeChannel != null) return;
+    _eventsRealtimeChannel = _supabase
+        .channel('agenda_events_${_supabase.auth.currentUser?.id ?? 'guest'}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'events',
+          callback: (_) => _buscarEventos(),
+        )
+        .subscribe();
+  }
+
+  @override
+  void dispose() {
+    if (_eventsRealtimeChannel != null) {
+      _supabase.removeChannel(_eventsRealtimeChannel!);
+    }
+    super.dispose();
   }
 
   // ✅ NOVO: Verifica se usuário tem permissão para acessar a Agenda
@@ -78,9 +108,11 @@ class _AgendaPageState extends State<AgendaPage> {
           .single();
 
       final userType = profileResponse['user_type'] ?? 'member';
+      final hasAdminRole =
+          userType == 'admin' || await _roleService.hasRole(user.id, 'admin');
 
       // Admins SEMPRE têm acesso
-      if (userType == 'admin') {
+      if (hasAdminRole) {
         setState(() {
           _hasPermission = true;
           _checkingPermission = false;
@@ -148,10 +180,11 @@ class _AgendaPageState extends State<AgendaPage> {
         });
         return;
       }
-      final response = await _supabase
-          .from('events')
-          .select()
-          .eq('user_id', user.id)
+      var query = _supabase.from('events').select();
+      if (!_isAdmin) {
+        query = query.eq('user_id', user.id);
+      }
+      final response = await query
           .order('event_date', ascending: true)
           .order('event_time', ascending: true);
       setState(() {
@@ -222,18 +255,17 @@ class _AgendaPageState extends State<AgendaPage> {
         // ✅ Busca convocations + tenta join do profiles(user_type)
         final convocationsResponse = await _supabase
             .from('convocations')
-            .select('user_id, profiles(user_type)')
+            .select('user_id, event_role')
             .eq('event_id', eventId);
         // ✅ Total sempre correto (independe de profiles)
         int atletas = 0;
         int tecnicos = 0;
         for (var convocation in convocationsResponse) {
-          final profile = convocation['profiles'];
-          final userType = profile != null ? profile['user_type'] : null;
-          if (userType == 'athlete') {
-            atletas++;
-          } else if (userType == 'coach') {
+          final eventRole = (convocation['event_role'] ?? 'athlete').toString();
+          if (eventRole == 'coach') {
             tecnicos++;
+          } else {
+            atletas++;
           }
         }
         quantidades[eventId] = {'athletes': atletas, 'technicians': tecnicos};

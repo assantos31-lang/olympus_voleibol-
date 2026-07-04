@@ -715,6 +715,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
           .from('profiles')
           .select('id, full_name, phone, gender')
           .eq('user_type', 'athlete')
+          .eq('is_active', true)
           .order('full_name');
 
       if (mounted) {

@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/auth_service.dart';
+import '../services/permission_service.dart';
 import 'agenda_page.dart';
 import 'admin_birthdays_page.dart';
 import 'admin_competitions_page.dart';
 import 'admin_financial_page.dart';
 import 'admin_messages_page.dart';
-import 'admin_notifications_page.dart';
 import 'admin_training_plans_page.dart' show AdminTrainingPlansPage;
 
 class AdminHomePage extends StatefulWidget {
@@ -23,15 +23,15 @@ class AdminHomePage extends StatefulWidget {
 class _AdminHomePageState extends State<AdminHomePage>
     with WidgetsBindingObserver {
   final supabase = Supabase.instance.client;
+  final PermissionService _permissionService = PermissionService();
+  Map<String, bool> _adminPermissions = {};
 
   List<Map<String, dynamic>> monthBirthdays = [];
   bool isLoadingBirthdays = true;
   bool _showAllMonthBirthdays = false;
-  int unreadNotificationsCount = 0;
   int pendingFinancialReceiptsCount = 0;
   int overdueFinancialRecordsCount = 0;
   int pendingFinancialRecordsCount = 0;
-  RealtimeChannel? _adminNotificationsChannel;
   RealtimeChannel? _financialReceiptsChannel;
   RealtimeChannel? _birthdaysRealtimeChannel;
   RealtimeChannel? _messagesParticipantsRealtimeChannel;
@@ -45,8 +45,18 @@ class _AdminHomePageState extends State<AdminHomePage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _refreshRealtimeBadges();
+    _loadAdminPermissions();
     _setupRealtimeListeners();
   }
+
+  Future<void> _loadAdminPermissions() async {
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return;
+    final permissions = await _permissionService.getUserPermissions(userId);
+    if (mounted) setState(() => _adminPermissions = permissions);
+  }
+
+  bool _canOpen(String permission) => _adminPermissions[permission] ?? true;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -60,14 +70,12 @@ class _AdminHomePageState extends State<AdminHomePage>
 
     await Future.wait([
       _fetchMonthBirthdays(),
-      _fetchUnreadNotificationsCount(),
       _fetchPendingFinancialReceiptsCount(),
       _fetchUnreadMessagesCount(),
     ]);
   }
 
   void _setupRealtimeListeners() {
-    _listenForAdminNotifications();
     _listenForFinancialReceipts();
     _listenForBirthdays();
     _listenForAdminMessages();
@@ -83,9 +91,6 @@ class _AdminHomePageState extends State<AdminHomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _adminBadgesFallbackTimer?.cancel();
-    if (_adminNotificationsChannel != null) {
-      supabase.removeChannel(_adminNotificationsChannel!);
-    }
     if (_financialReceiptsChannel != null) {
       supabase.removeChannel(_financialReceiptsChannel!);
     }
@@ -102,52 +107,6 @@ class _AdminHomePageState extends State<AdminHomePage>
       supabase.removeChannel(_eventsRealtimeChannel!);
     }
     super.dispose();
-  }
-
-  Future<void> _fetchUnreadNotificationsCount() async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
-
-    try {
-      final response = await supabase
-          .from('admin_notifications')
-          .select('id')
-          .eq('admin_id', user.id)
-          .eq('is_read', false);
-
-      if (mounted) {
-        setState(() {
-          unreadNotificationsCount = (response as List).length;
-        });
-      }
-    } catch (e) {
-      debugPrint('Erro ao buscar notificações não lidas: $e');
-    }
-  }
-
-  void _listenForAdminNotifications() {
-    final user = supabase.auth.currentUser;
-    if (user == null || _adminNotificationsChannel != null) return;
-
-    _adminNotificationsChannel = supabase
-        .channel('admin_home_notifications_${user.id}')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'admin_notifications',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'admin_id',
-            value: user.id,
-          ),
-          callback: (_) => _fetchUnreadNotificationsCount(),
-        )
-        .subscribe((status, [error]) {
-      debugPrint('Realtime admin_notifications status: $status error: $error');
-      if (status == RealtimeSubscribeStatus.subscribed) {
-        _fetchUnreadNotificationsCount();
-      }
-    });
   }
 
   Future<void> _fetchPendingFinancialReceiptsCount() async {
@@ -322,6 +281,7 @@ class _AdminHomePageState extends State<AdminHomePage>
       final response = await supabase
           .from('profiles')
           .select('full_name, birth_date, court_position')
+          .eq('is_active', true)
           .not('birth_date', 'is', null);
 
       final allUsers = List<Map<String, dynamic>>.from(response);
@@ -744,6 +704,1062 @@ class _AdminHomePageState extends State<AdminHomePage>
         : '$pendingFinancialRecordsCount cobranças pendentes';
   }
 
+  bool get _useCompactAdminGrid => true;
+
+  Widget _buildCompactAdminHero() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF123D68).withOpacity(0.92),
+            const Color(0xFF0D2948).withOpacity(0.88),
+          ],
+        ),
+        border: Border.all(color: const Color(0xFFE4C050).withOpacity(0.32)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF071A30),
+              border: Border.all(color: const Color(0xFFE4C050), width: 1.4),
+            ),
+            child: Image.asset(
+              'assets/images/olympus_logo.png',
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(
+                Icons.admin_panel_settings_rounded,
+                color: Color(0xFFE4C050),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Olá, Admin!',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Seu centro de controle Olympus',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Atualizar painel',
+            onPressed: _refreshRealtimeBadges,
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white.withOpacity(0.09),
+              foregroundColor: const Color(0xFFE4C050),
+            ),
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactBirthdaySummary(BuildContext context) {
+    final visible = monthBirthdays.take(2).toList();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: const Color(0xFF102D4F).withOpacity(0.84),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.14)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const CircleAvatar(
+                radius: 19,
+                backgroundColor: Color(0x33E4C050),
+                child: Icon(Icons.cake_outlined, color: Color(0xFFE4C050)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Aniversariantes do mês',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      '${monthBirthdays.length} pessoa${monthBirthdays.length == 1 ? '' : 's'} em ${_currentMonthLabel()}',
+                      style: const TextStyle(
+                        color: Color(0xFF8FE8FF),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: _showCurrentMonthBirthdays,
+                child: const Text('Ver todos'),
+              ),
+            ],
+          ),
+          if (isLoadingBirthdays)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: LinearProgressIndicator(),
+            )
+          else if (visible.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ...visible.map((birthday) {
+              final date = birthday['parsed_birth_date'] as DateTime?;
+              return Padding(
+                padding: const EdgeInsets.only(top: 7),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.celebration_outlined,
+                      color: Color(0xFFE4C050),
+                      size: 17,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        (birthday['full_name'] ?? 'Sem nome').toString(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    if (date != null)
+                      Text(
+                        _formatBirthDate(date),
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ignore: unused_element
+  Widget _buildAdminModulesGrid(BuildContext context) {
+    final modules = <({
+      String permission,
+      String label,
+      String subtitle,
+      IconData icon,
+      Color color,
+      int badge,
+      VoidCallback onTap,
+    })>[
+      (
+        permission: 'admin_agenda',
+        label: 'Agenda',
+        subtitle: 'Eventos e convocações',
+        icon: Icons.calendar_month_rounded,
+        color: const Color(0xFF65D6FF),
+        badge: 0,
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AgendaPage()),
+            ),
+      ),
+      (
+        permission: 'admin_users',
+        label: 'Perfis',
+        subtitle: 'Usuários e permissões',
+        icon: Icons.groups_rounded,
+        color: const Color(0xFFE4C050),
+        badge: 0,
+        onTap: () => Navigator.pushNamed(context, '/profiles'),
+      ),
+      (
+        permission: 'admin_training_plans',
+        label: 'Treinos',
+        subtitle: 'Planejamentos',
+        icon: Icons.menu_book_rounded,
+        color: const Color(0xFF73E2A7),
+        badge: 0,
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminTrainingPlansPage()),
+            ),
+      ),
+      (
+        permission: 'admin_competitions',
+        label: 'Competições',
+        subtitle: 'Jogos e campeonatos',
+        icon: Icons.emoji_events_rounded,
+        color: const Color(0xFF70E1F5),
+        badge: 0,
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const AdminCompetitionsPage(canEdit: true),
+              ),
+            ),
+      ),
+      (
+        permission: 'admin_evaluations',
+        label: 'Avaliações',
+        subtitle: 'Feedback dos treinadores',
+        icon: Icons.rate_review_rounded,
+        color: const Color(0xFF64FFDA),
+        badge: 0,
+        onTap: () => Navigator.pushNamed(context, '/admin-coach-evaluations'),
+      ),
+      (
+        permission: 'admin_statistics',
+        label: 'Estatísticas',
+        subtitle: 'Desempenho dos atletas',
+        icon: Icons.query_stats_rounded,
+        color: const Color(0xFFB29BFF),
+        badge: 0,
+        onTap: () => Navigator.pushNamed(context, '/admin-athletes-statistics'),
+      ),
+      (
+        permission: 'admin_financial',
+        label: 'Financeiro',
+        subtitle: 'Cobranças e comprovantes',
+        icon: Icons.account_balance_wallet_rounded,
+        color: const Color(0xFFFFC857),
+        badge: _financialBadgeCount,
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminFinancialPage()),
+          );
+          _fetchPendingFinancialReceiptsCount();
+        },
+      ),
+      (
+        permission: 'admin_messages',
+        label: 'Mensagens',
+        subtitle: 'Comunicação da equipe',
+        icon: Icons.forum_rounded,
+        color: const Color(0xFFFF8FA3),
+        badge: unreadMessagesCount,
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminMessagesPage()),
+          );
+          _fetchUnreadMessagesCount();
+        },
+      ),
+      (
+        permission: 'admin_birthdays',
+        label: 'Aniversários',
+        subtitle: 'Calendário da equipe',
+        icon: Icons.cake_rounded,
+        color: const Color(0xFFFF86C8),
+        badge: 0,
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminBirthdaysPage()),
+            ),
+      ),
+    ].where((module) => _canOpen(module.permission)).toList();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 760 ? 3 : 2;
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: modules.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: columns == 2 ? 1.16 : 1.35,
+          ),
+          itemBuilder: (context, index) {
+            final module = modules[index];
+            return _buildAdminModuleCard(
+              label: module.label,
+              subtitle: module.subtitle,
+              icon: module.icon,
+              color: module.color,
+              badge: module.badge,
+              onTap: module.onTap,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSportsCommandCenter(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildClubStatusStrip(),
+        const SizedBox(height: 18),
+        const Text(
+          'Acesso imediato',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 10),
+        _buildQuickActionsRail(context),
+        const SizedBox(height: 20),
+        _buildFeaturedAgendaAction(context),
+        const SizedBox(height: 14),
+        _buildManagementDirectory(context),
+      ],
+    );
+  }
+
+  Widget _buildClubStatusStrip() {
+    final metrics = <({
+      String value,
+      String label,
+      Color color,
+      VoidCallback onTap,
+    })>[
+      if (_canOpen('admin_financial'))
+        (
+          value: '$_financialBadgeCount',
+          label: 'Financeiro',
+          color: const Color(0xFFFFC857),
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminFinancialPage()),
+            );
+            _fetchPendingFinancialReceiptsCount();
+          },
+        ),
+      if (_canOpen('admin_messages'))
+        (
+          value: '$unreadMessagesCount',
+          label: 'Mensagens',
+          color: const Color(0xFFFF8FA3),
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminMessagesPage()),
+            );
+            _fetchUnreadMessagesCount();
+          },
+        ),
+      if (_canOpen('admin_birthdays'))
+        (
+          value: '${monthBirthdays.length}',
+          label: 'Aniversários',
+          color: const Color(0xFF8FE8FF),
+          onTap: _showCurrentMonthBirthdays,
+        ),
+    ];
+
+    if (metrics.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: const Color(0xFF081D33).withOpacity(0.86),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
+      ),
+      child: Row(
+        children: metrics.indexed.expand((entry) {
+          final index = entry.$1;
+          final metric = entry.$2;
+          return [
+            if (index > 0) _statusDivider(),
+            _buildStatusMetric(
+              value: metric.value,
+              label: metric.label,
+              color: metric.color,
+              onTap: metric.onTap,
+            ),
+          ];
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _statusDivider() {
+    return Container(
+      width: 1,
+      height: 34,
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      color: Colors.white.withOpacity(0.12),
+    );
+  }
+
+  Widget _buildStatusMetric({
+    required String value,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Column(
+            children: [
+              Text(
+                value,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white60, fontSize: 10.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showCurrentMonthBirthdays() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        initialChildSize: 0.56,
+        minChildSize: 0.36,
+        maxChildSize: 0.86,
+        expand: false,
+        builder: (context, controller) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF6F9FC),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 10, 10),
+                child: Row(
+                  children: [
+                    const CircleAvatar(
+                      backgroundColor: Color(0xFFFFE8A6),
+                      child: Icon(Icons.cake_rounded, color: Color(0xFF8A6500)),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Aniversariantes de ${_currentMonthLabel()}',
+                            style: const TextStyle(
+                              color: Color(0xFF102D4F),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            '${monthBirthdays.length} pessoa${monthBirthdays.length == 1 ? '' : 's'} neste mês',
+                            style: const TextStyle(
+                              color: Colors.black54,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: monthBirthdays.isEmpty
+                    ? const Center(
+                        child: Text('Nenhum aniversariante neste mês.'),
+                      )
+                    : ListView.separated(
+                        controller: controller,
+                        padding: const EdgeInsets.all(16),
+                        itemCount: monthBirthdays.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final birthday = monthBirthdays[index];
+                          final date =
+                              birthday['parsed_birth_date'] as DateTime?;
+                          return Container(
+                            padding: const EdgeInsets.all(13),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border:
+                                  Border.all(color: const Color(0xFFE3EAF2)),
+                            ),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor:
+                                      const Color(0xFF102D4F).withOpacity(0.08),
+                                  child: const Icon(
+                                    Icons.celebration_rounded,
+                                    color: Color(0xFFD4AF37),
+                                  ),
+                                ),
+                                const SizedBox(width: 11),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        (birthday['full_name'] ?? 'Sem nome')
+                                            .toString(),
+                                        style: const TextStyle(
+                                          color: Color(0xFF102D4F),
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      Text(
+                                        (birthday['court_position'] ??
+                                                'Posição não informada')
+                                            .toString(),
+                                        style: const TextStyle(
+                                          color: Colors.black54,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (date != null)
+                                  Text(
+                                    _formatBirthDate(date),
+                                    style: const TextStyle(
+                                      color: Color(0xFF102D4F),
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActionsRail(BuildContext context) {
+    final actions = <({
+      String permission,
+      String label,
+      IconData icon,
+      Color color,
+      int badge,
+      VoidCallback onTap,
+    })>[
+      (
+        permission: 'admin_users',
+        label: 'Perfis',
+        icon: Icons.groups_rounded,
+        color: const Color(0xFFE4C050),
+        badge: 0,
+        onTap: () => Navigator.pushNamed(context, '/profiles'),
+      ),
+      (
+        permission: 'admin_financial',
+        label: 'Financeiro',
+        icon: Icons.account_balance_wallet_rounded,
+        color: const Color(0xFFFFC857),
+        badge: _financialBadgeCount,
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminFinancialPage()),
+          );
+          _fetchPendingFinancialReceiptsCount();
+        },
+      ),
+      (
+        permission: 'admin_messages',
+        label: 'Mensagens',
+        icon: Icons.forum_rounded,
+        color: const Color(0xFFFF8FA3),
+        badge: unreadMessagesCount,
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminMessagesPage()),
+          );
+          _fetchUnreadMessagesCount();
+        },
+      ),
+      (
+        permission: 'admin_birthdays',
+        label: 'Aniversários',
+        icon: Icons.cake_rounded,
+        color: const Color(0xFF8FE8FF),
+        badge: 0,
+        onTap: _showCurrentMonthBirthdays,
+      ),
+    ].where((action) => _canOpen(action.permission)).toList();
+
+    return SizedBox(
+      width: double.infinity,
+      height: 88,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: actions.indexed.map((entry) {
+          final index = entry.$1;
+          final action = entry.$2;
+          return Padding(
+            padding: EdgeInsets.only(left: index == 0 ? 0 : 8),
+            child: _buildQuickAction(
+              label: action.label,
+              icon: action.icon,
+              color: action.color,
+              badge: action.badge,
+              onTap: action.onTap,
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildQuickAction({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required int badge,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      width: 70,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Column(
+          children: [
+            Badge(
+              isLabelVisible: badge > 0,
+              label: Text(badge > 99 ? '99+' : '$badge'),
+              backgroundColor: Colors.redAccent,
+              child: Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color.withOpacity(0.16),
+                  border: Border.all(color: color.withOpacity(0.50)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: color.withOpacity(0.15),
+                      blurRadius: 12,
+                    ),
+                  ],
+                ),
+                child: Icon(icon, color: color, size: 25),
+              ),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 10.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeaturedAgendaAction(BuildContext context) {
+    if (!_canOpen('admin_agenda')) return const SizedBox.shrink();
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const AgendaPage()),
+        ),
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          padding: const EdgeInsets.all(17),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            gradient: const LinearGradient(
+              colors: [Color(0xFFE4C050), Color(0xFFB78618)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x44D4AF37),
+                blurRadius: 20,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.20),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const Icon(
+                  Icons.calendar_month_rounded,
+                  color: Color(0xFF0C2743),
+                  size: 27,
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Abrir agenda do clube',
+                      style: TextStyle(
+                        color: Color(0xFF0C2743),
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Eventos, convocações e presenças',
+                      style: TextStyle(
+                        color: Color(0xCC0C2743),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_rounded,
+                color: Color(0xFF0C2743),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildManagementDirectory(BuildContext context) {
+    final modules = <({
+      String permission,
+      String label,
+      String subtitle,
+      IconData icon,
+      Color color,
+      VoidCallback onTap,
+    })>[
+      (
+        permission: 'admin_training_plans',
+        label: 'Planejamentos de treino',
+        subtitle: 'Programações criadas pelos treinadores',
+        icon: Icons.menu_book_rounded,
+        color: const Color(0xFF73E2A7),
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminTrainingPlansPage()),
+            ),
+      ),
+      (
+        permission: 'admin_competitions',
+        label: 'Competições',
+        subtitle: 'Jogos, amistosos e campeonatos',
+        icon: Icons.emoji_events_rounded,
+        color: const Color(0xFF70E1F5),
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const AdminCompetitionsPage(canEdit: true),
+              ),
+            ),
+      ),
+      (
+        permission: 'admin_evaluations',
+        label: 'Avaliações dos treinadores',
+        subtitle: 'Feedback recebido pelos técnicos',
+        icon: Icons.rate_review_rounded,
+        color: const Color(0xFF64FFDA),
+        onTap: () => Navigator.pushNamed(context, '/admin-coach-evaluations'),
+      ),
+      (
+        permission: 'admin_statistics',
+        label: 'Estatísticas dos atletas',
+        subtitle: 'Indicadores e evolução esportiva',
+        icon: Icons.query_stats_rounded,
+        color: const Color(0xFFB29BFF),
+        onTap: () => Navigator.pushNamed(context, '/admin-athletes-statistics'),
+      ),
+    ].where((module) => _canOpen(module.permission)).toList();
+
+    if (modules.isEmpty) return const SizedBox.shrink();
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF102D4F).withOpacity(0.88),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withOpacity(0.13)),
+      ),
+      child: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 15, 16, 8),
+            child: Row(
+              children: [
+                Text(
+                  'Gestão esportiva',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Spacer(),
+                Text(
+                  'OLYMPUS',
+                  style: TextStyle(
+                    color: Color(0xFFE4C050),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...modules.indexed.map((entry) {
+            final index = entry.$1;
+            final module = entry.$2;
+            return Column(
+              children: [
+                if (index > 0)
+                  Divider(
+                    height: 1,
+                    indent: 66,
+                    color: Colors.white.withOpacity(0.09),
+                  ),
+                ListTile(
+                  onTap: module.onTap,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 3,
+                  ),
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: module.color.withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(module.icon, color: module.color, size: 21),
+                  ),
+                  title: Text(
+                    module.label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13.5,
+                    ),
+                  ),
+                  subtitle: Text(
+                    module.subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontSize: 11,
+                    ),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.white38,
+                  ),
+                ),
+              ],
+            );
+          }),
+          const SizedBox(height: 6),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminModuleCard({
+    required String label,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required int badge,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Ink(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF163B60).withOpacity(0.94),
+                const Color(0xFF0C2743).withOpacity(0.90),
+              ],
+            ),
+            border: Border.all(color: color.withOpacity(0.30)),
+          ),
+          child: Stack(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.16),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: Icon(icon, color: color, size: 23),
+                  ),
+                  const Spacer(),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.62),
+                      fontSize: 11,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+              Positioned(
+                top: 0,
+                right: 0,
+                child: badge > 0
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          badge > 99 ? '99+' : '$badge',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                          ),
+                        ),
+                      )
+                    : Icon(
+                        Icons.arrow_outward_rounded,
+                        color: color.withOpacity(0.75),
+                        size: 19,
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const goldenColor = Color(0xFFE4C050);
@@ -765,18 +1781,21 @@ class _AdminHomePageState extends State<AdminHomePage>
         child: Stack(
           children: [
             Positioned.fill(
-              child: Image.asset(
-                'assets/images/monte_olimpo_v2.png',
-                fit: BoxFit.cover,
-                alignment: Alignment.center,
-                errorBuilder: (context, error, stackTrace) {
-                  return const SizedBox.shrink();
-                },
+              child: Opacity(
+                opacity: 0.68,
+                child: Image.asset(
+                  'assets/images/monte_olimpo_v2.png',
+                  fit: BoxFit.cover,
+                  alignment: Alignment.center,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const SizedBox.shrink();
+                  },
+                ),
               ),
             ),
             Positioned.fill(
               child: Container(
-                color: Colors.black.withOpacity(0.35),
+                color: const Color(0xFF06192D).withOpacity(0.46),
               ),
             ),
             Positioned.fill(
@@ -849,294 +1868,313 @@ class _AdminHomePageState extends State<AdminHomePage>
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Stack(
-                              clipBehavior: Clip.none,
-                              alignment: Alignment.topCenter,
-                              children: [
-                                Container(
-                                  width: double.infinity,
-                                  margin: const EdgeInsets.only(top: 54),
-                                  padding:
-                                      const EdgeInsets.fromLTRB(20, 72, 20, 22),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(18),
-                                    border: Border.all(
-                                      color: Colors.white.withOpacity(0.16),
-                                      width: 1.2,
-                                    ),
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [
-                                        Colors.white.withOpacity(0.18),
-                                        Colors.white.withOpacity(0.08),
-                                      ],
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: cyanColor.withOpacity(0.10),
-                                        blurRadius: 24,
-                                        spreadRadius: 1,
+                            if (_useCompactAdminGrid) _buildCompactAdminHero(),
+                            if (!_useCompactAdminGrid)
+                              Stack(
+                                clipBehavior: Clip.none,
+                                alignment: Alignment.topCenter,
+                                children: [
+                                  Container(
+                                    width: double.infinity,
+                                    margin: const EdgeInsets.only(top: 54),
+                                    padding: const EdgeInsets.fromLTRB(
+                                        20, 72, 20, 22),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(18),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.16),
+                                        width: 1.2,
                                       ),
-                                    ],
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(18),
-                                    child: BackdropFilter(
-                                      filter: ImageFilter.blur(
-                                        sigmaX: 14,
-                                        sigmaY: 14,
-                                      ),
-                                      child: Column(
-                                        children: [
-                                          Text(
-                                            'Bem-vindo, Admin!',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              fontSize: 23,
-                                              fontWeight: FontWeight.w500,
-                                              color: Colors.white
-                                                  .withOpacity(0.92),
-                                              height: 1.15,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 10),
-                                          Text(
-                                            'Gerencie o sistema Olympus Voleibol',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.white
-                                                  .withOpacity(0.68),
-                                              fontWeight: FontWeight.w400,
-                                            ),
-                                          ),
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          Colors.white.withOpacity(0.18),
+                                          Colors.white.withOpacity(0.08),
                                         ],
                                       ),
-                                    ),
-                                  ),
-                                ),
-                                Container(
-                                  width: 118,
-                                  height: 118,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [
-                                        const Color(0xFF42556F)
-                                            .withOpacity(0.95),
-                                        const Color(0xFF31445D)
-                                            .withOpacity(0.88),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: cyanColor.withOpacity(0.10),
+                                          blurRadius: 24,
+                                          spreadRadius: 1,
+                                        ),
                                       ],
                                     ),
-                                    border: Border.all(
-                                      color: goldenColor.withOpacity(0.35),
-                                      width: 2,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: goldenColor.withOpacity(0.20),
-                                        blurRadius: 24,
-                                        spreadRadius: 2,
-                                      ),
-                                    ],
-                                  ),
-                                  child: Center(
-                                    child: ClipOval(
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(4),
-                                        child: Image.asset(
-                                          'assets/images/olympus_logo.png',
-                                          width: 108,
-                                          height: 108,
-                                          fit: BoxFit.contain,
-                                          errorBuilder:
-                                              (context, error, stackTrace) {
-                                            return const Icon(
-                                              Icons
-                                                  .admin_panel_settings_rounded,
-                                              size: 54,
-                                              color: Color(0xFFE4C050),
-                                            );
-                                          },
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(18),
+                                      child: BackdropFilter(
+                                        filter: ImageFilter.blur(
+                                          sigmaX: 14,
+                                          sigmaY: 14,
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            Text(
+                                              'Bem-vindo, Admin!',
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                fontSize: 23,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.white
+                                                    .withOpacity(0.92),
+                                                height: 1.15,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 10),
+                                            Text(
+                                              'Gerencie o sistema Olympus Voleibol',
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: Colors.white
+                                                    .withOpacity(0.68),
+                                                fontWeight: FontWeight.w400,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 22),
-                            _buildMonthBirthdaysCard(context),
-                            const SizedBox(height: 26),
-                            _buildFuturisticButton(
-                              context: context,
-                              label: 'Avaliações dos Treinadores',
-                              icon: Icons.rate_review_rounded,
-                              accentColor: const Color(0xFF64FFDA),
-                              isPrimary: true,
-                              onTap: () {
-                                Navigator.pushNamed(
-                                  context,
-                                  '/admin-coach-evaluations',
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
-                              context: context,
-                              label: 'Notificações',
-                              icon: Icons.notifications_active_outlined,
-                              accentColor: const Color(0xFFFFD166),
-                              badgeCount: unreadNotificationsCount,
-                              onTap: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const AdminNotificationsPage(),
-                                  ),
-                                );
-                                _fetchUnreadNotificationsCount();
-                              },
-                            ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
-                              context: context,
-                              label: 'Agenda',
-                              icon: Icons.calendar_month_rounded,
-                              accentColor: cyanColor,
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => const AgendaPage(),
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
-                              context: context,
-                              label: 'Programações de Treinos',
-                              icon: Icons.menu_book_outlined,
-                              accentColor: const Color(0xFFB9FBC0),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const AdminTrainingPlansPage(),
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
-                              context: context,
-                              label: 'Estatísticas dos Atletas',
-                              icon: Icons.bar_chart_rounded,
-                              accentColor: const Color(0xFF9D8DF1),
-                              isPrimary: true,
-                              onTap: () {
-                                Navigator.pushNamed(
-                                  context,
-                                  '/admin-athletes-statistics',
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
-                              context: context,
-                              label: 'Aniversariantes',
-                              icon: Icons.cake_outlined,
-                              accentColor: Colors.pinkAccent,
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const AdminBirthdaysPage(),
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
-                              context: context,
-                              label: 'Competições',
-                              icon: Icons.emoji_events_outlined,
-                              accentColor: const Color(0xFF7CE7FF),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const AdminCompetitionsPage(
-                                      canEdit: true,
+                                  Container(
+                                    width: 118,
+                                    height: 118,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          const Color(0xFF42556F)
+                                              .withOpacity(0.95),
+                                          const Color(0xFF31445D)
+                                              .withOpacity(0.88),
+                                        ],
+                                      ),
+                                      border: Border.all(
+                                        color: goldenColor.withOpacity(0.35),
+                                        width: 2,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: goldenColor.withOpacity(0.20),
+                                          blurRadius: 24,
+                                          spreadRadius: 2,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Center(
+                                      child: ClipOval(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(4),
+                                          child: Image.asset(
+                                            'assets/images/olympus_logo.png',
+                                            width: 108,
+                                            height: 108,
+                                            fit: BoxFit.contain,
+                                            errorBuilder:
+                                                (context, error, stackTrace) {
+                                              return const Icon(
+                                                Icons
+                                                    .admin_panel_settings_rounded,
+                                                size: 54,
+                                                color: Color(0xFFE4C050),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                );
-                              },
-                            ),
+                                ],
+                              ),
+                            const SizedBox(height: 14),
+                            if (_canOpen('admin_birthdays'))
+                              if (_useCompactAdminGrid)
+                                _buildCompactBirthdaySummary(context)
+                              else
+                                _buildMonthBirthdaysCard(context),
                             const SizedBox(height: 18),
-                            _buildFuturisticButton(
-                              context: context,
-                              label: 'Financeiro',
-                              icon: Icons.attach_money_rounded,
-                              accentColor: cyanColor,
-                              badgeCount: _financialBadgeCount,
-                              badgeTooltip: _financialBadgeTooltip,
-                              badgeColor: _financialBadgeColor,
-                              badgeIcon: _financialBadgeIcon,
-                              onTap: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const AdminFinancialPage(),
-                                  ),
-                                );
-                                _fetchPendingFinancialReceiptsCount();
-                              },
-                            ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
-                              context: context,
-                              label: 'Gerenciar Usuários',
-                              icon: Icons.groups_rounded,
-                              accentColor: goldenColor,
-                              isPrimary: true,
-                              onTap: () {
-                                Navigator.pushNamed(context, '/profiles');
-                              },
-                            ),
-                            const SizedBox(height: 18),
-                            _buildFuturisticButton(
-                              context: context,
-                              label: 'Mensagens',
-                              icon: Icons.mark_chat_unread_outlined,
-                              accentColor: const Color(0xFFFFD166),
-                              badgeCount: unreadMessagesCount,
-                              badgeTooltip: unreadMessagesCount == 1
-                                  ? '1 mensagem não lida'
-                                  : '$unreadMessagesCount mensagens não lidas',
-                              badgeColor: Colors.redAccent,
-                              badgeIcon: Icons.mark_chat_unread_rounded,
-                              onTap: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const AdminMessagesPage(),
-                                  ),
-                                );
-                                _fetchUnreadMessagesCount();
-                              },
-                            ),
-                            const SizedBox(height: 12),
+                            if (_useCompactAdminGrid) ...[
+                              _buildSportsCommandCenter(context),
+                              const SizedBox(height: 12),
+                            ],
+                            if (!_useCompactAdminGrid &&
+                                _canOpen('admin_evaluations')) ...[
+                              _buildFuturisticButton(
+                                context: context,
+                                label: 'Avaliações dos Treinadores',
+                                icon: Icons.rate_review_rounded,
+                                accentColor: const Color(0xFF64FFDA),
+                                isPrimary: true,
+                                onTap: () {
+                                  Navigator.pushNamed(
+                                    context,
+                                    '/admin-coach-evaluations',
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 18),
+                            ],
+                            if (!_useCompactAdminGrid &&
+                                _canOpen('admin_agenda')) ...[
+                              _buildFuturisticButton(
+                                context: context,
+                                label: 'Agenda',
+                                icon: Icons.calendar_month_rounded,
+                                accentColor: cyanColor,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => const AgendaPage(),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 18),
+                            ],
+                            if (!_useCompactAdminGrid &&
+                                _canOpen('admin_training_plans')) ...[
+                              _buildFuturisticButton(
+                                context: context,
+                                label: 'Programações de Treinos',
+                                icon: Icons.menu_book_outlined,
+                                accentColor: const Color(0xFFB9FBC0),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const AdminTrainingPlansPage(),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 18),
+                            ],
+                            if (!_useCompactAdminGrid &&
+                                _canOpen('admin_statistics')) ...[
+                              _buildFuturisticButton(
+                                context: context,
+                                label: 'Estatísticas dos Atletas',
+                                icon: Icons.bar_chart_rounded,
+                                accentColor: const Color(0xFF9D8DF1),
+                                isPrimary: true,
+                                onTap: () {
+                                  Navigator.pushNamed(
+                                    context,
+                                    '/admin-athletes-statistics',
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 18),
+                            ],
+                            if (!_useCompactAdminGrid &&
+                                _canOpen('admin_birthdays')) ...[
+                              _buildFuturisticButton(
+                                context: context,
+                                label: 'Aniversariantes',
+                                icon: Icons.cake_outlined,
+                                accentColor: Colors.pinkAccent,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const AdminBirthdaysPage(),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 18),
+                            ],
+                            if (!_useCompactAdminGrid &&
+                                _canOpen('admin_competitions')) ...[
+                              _buildFuturisticButton(
+                                context: context,
+                                label: 'Competições',
+                                icon: Icons.emoji_events_outlined,
+                                accentColor: const Color(0xFF7CE7FF),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const AdminCompetitionsPage(
+                                        canEdit: true,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 18),
+                            ],
+                            if (!_useCompactAdminGrid &&
+                                _canOpen('admin_financial')) ...[
+                              _buildFuturisticButton(
+                                context: context,
+                                label: 'Financeiro',
+                                icon: Icons.attach_money_rounded,
+                                accentColor: cyanColor,
+                                badgeCount: _financialBadgeCount,
+                                badgeTooltip: _financialBadgeTooltip,
+                                badgeColor: _financialBadgeColor,
+                                badgeIcon: _financialBadgeIcon,
+                                onTap: () async {
+                                  await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const AdminFinancialPage(),
+                                    ),
+                                  );
+                                  _fetchPendingFinancialReceiptsCount();
+                                },
+                              ),
+                              const SizedBox(height: 18),
+                            ],
+                            if (!_useCompactAdminGrid &&
+                                _canOpen('admin_users')) ...[
+                              _buildFuturisticButton(
+                                context: context,
+                                label: 'Gerenciar Usuários',
+                                icon: Icons.groups_rounded,
+                                accentColor: goldenColor,
+                                isPrimary: true,
+                                onTap: () {
+                                  Navigator.pushNamed(context, '/profiles');
+                                },
+                              ),
+                              const SizedBox(height: 18),
+                            ],
+                            if (!_useCompactAdminGrid &&
+                                _canOpen('admin_messages')) ...[
+                              _buildFuturisticButton(
+                                context: context,
+                                label: 'Mensagens',
+                                icon: Icons.mark_chat_unread_outlined,
+                                accentColor: const Color(0xFFFFD166),
+                                badgeCount: unreadMessagesCount,
+                                badgeTooltip: unreadMessagesCount == 1
+                                    ? '1 mensagem não lida'
+                                    : '$unreadMessagesCount mensagens não lidas',
+                                badgeColor: Colors.redAccent,
+                                badgeIcon: Icons.mark_chat_unread_rounded,
+                                onTap: () async {
+                                  await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const AdminMessagesPage(),
+                                    ),
+                                  );
+                                  _fetchUnreadMessagesCount();
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                            ],
                           ],
                         ),
                       ),

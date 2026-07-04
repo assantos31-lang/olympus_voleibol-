@@ -55,6 +55,7 @@ class _AddEventPageState extends State<AddEventPage> {
   bool _enableRideLogistics = false;
   bool _isSaving = false;
   bool _isEditing = false;
+  int _automaticAthletesCount = 0;
   String? _eventId;
 
   List<Map<String, String>> _athletesFromSupabase = [];
@@ -117,7 +118,7 @@ class _AddEventPageState extends State<AddEventPage> {
       final supabase = Supabase.instance.client;
       final convocationsResponse = await supabase
           .from('convocations')
-          .select('user_id')
+          .select('user_id, event_role')
           .eq('event_id', _eventId!);
 
       final athleteIds = <String>{};
@@ -127,31 +128,13 @@ class _AddEventPageState extends State<AddEventPage> {
         final userId = convocation['user_id']?.toString();
         if (userId == null || userId.isEmpty) continue;
 
-        final athleteExists =
-            _athletesList.any((athlete) => athlete['uid'] == userId);
-        final technicianExists =
-            _techniciansList.any((tech) => tech['uid'] == userId);
-
-        if (athleteExists) {
-          athleteIds.add(userId);
-        } else if (technicianExists) {
+        final eventRole =
+            (convocation['event_role'] ?? 'athlete').toString().toLowerCase();
+        if (eventRole == 'coach') {
           technicianIds.add(userId);
-        } else {
-          final profileResponse = await supabase
-              .from('profiles')
-              .select('id, user_type')
-              .eq('id', userId)
-              .single();
-
-          if (profileResponse != null) {
-            final userType = profileResponse['user_type'] ?? '';
-            if (userType == 'athlete') {
-              athleteIds.add(userId);
-            } else if (userType == 'coach') {
-              technicianIds.add(userId);
-            }
-          }
+          continue;
         }
+        athleteIds.add(userId);
       }
 
       if (mounted) {
@@ -173,21 +156,45 @@ class _AddEventPageState extends State<AddEventPage> {
     try {
       final supabase = Supabase.instance.client;
 
-      final athletesResponse = await supabase
+      final profilesResponse = await supabase
           .from('profiles')
-          .select('id, full_name, user_type, gender')
-          .eq('user_type', 'athlete');
+          .select('id, full_name, user_type, gender, training_weekdays')
+          .eq('is_active', true);
+      final rolesResponse = await supabase
+          .from('user_roles')
+          .select('user_id, role')
+          .eq('is_active', true);
 
-      final coachesResponse = await supabase
-          .from('profiles')
-          .select('id, full_name, user_type')
-          .eq('user_type', 'coach');
+      final rolesByUser = <String, Set<String>>{};
+      for (final row in rolesResponse) {
+        final userId = (row['user_id'] ?? '').toString();
+        final role = (row['role'] ?? '').toString();
+        if (userId.isNotEmpty && role.isNotEmpty) {
+          rolesByUser.putIfAbsent(userId, () => <String>{}).add(role);
+        }
+      }
+
+      bool hasRole(Map<String, dynamic> profile, String role) {
+        final id = (profile['id'] ?? '').toString();
+        final primary = (profile['user_type'] ?? '').toString();
+        return primary == role || (rolesByUser[id]?.contains(role) ?? false);
+      }
+
+      final athletesResponse = profilesResponse
+          .where((profile) => hasRole(profile, 'athlete'))
+          .toList();
+      final coachesResponse = profilesResponse
+          .where((profile) => hasRole(profile, 'coach'))
+          .toList();
 
       final athletesList = athletesResponse.map<Map<String, String>>((p) {
         return {
           'uid': p['id']?.toString() ?? '',
           'nome': p['full_name'] ?? 'Usuário',
           'genero': _normalizeGenero(p['gender']?.toString()),
+          'training_weekdays': (p['training_weekdays'] is List)
+              ? (p['training_weekdays'] as List).join(',')
+              : '',
         };
       }).toList();
 
@@ -209,6 +216,8 @@ class _AddEventPageState extends State<AddEventPage> {
 
       if (_isEditing && _eventId != null) {
         await _loadConvocados();
+      } else {
+        _applyAutomaticAthleteSelection();
       }
     } catch (e) {
       if (mounted) {
@@ -466,6 +475,7 @@ class _AddEventPageState extends State<AddEventPage> {
           _dateController.text =
               '${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}';
         });
+        _applyAutomaticAthleteSelection();
       }
     }
   }
@@ -564,12 +574,58 @@ class _AddEventPageState extends State<AddEventPage> {
         .toList();
   }
 
+  DateTime? _selectedEventDate() {
+    final parts = _dateController.text.trim().split('/');
+    if (parts.length != 3) return null;
+    final day = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final year = int.tryParse(parts[2]);
+    if (day == null || month == null || year == null) return null;
+    return DateTime(year, month, day);
+  }
+
+  Set<int> _athleteTrainingDays(Map<String, String> athlete) {
+    return (athlete['training_weekdays'] ?? '')
+        .split(',')
+        .map((value) => int.tryParse(value.trim()))
+        .whereType<int>()
+        .toSet();
+  }
+
+  void _applyAutomaticAthleteSelection() {
+    if (_isEditing || _selectedType != EventType.treino) return;
+    final eventDate = _selectedEventDate();
+    if (eventDate == null || _isLoadingProfiles) return;
+
+    final expectedGender = _normalizeGenero(_generoEvento);
+    final automaticIds = _athletesList
+        .where((athlete) {
+          final sameGender =
+              _normalizeGenero(athlete['genero']) == expectedGender;
+          return sameGender &&
+              _athleteTrainingDays(athlete).contains(eventDate.weekday);
+        })
+        .map((athlete) => athlete['uid'] ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    if (!mounted) return;
+    setState(() {
+      _selectedAthleteIds
+        ..clear()
+        ..addAll(automaticIds);
+      _automaticAthletesCount = automaticIds.length;
+      _filtroGeneroAtleta = expectedGender;
+    });
+  }
+
   void _toggleAthleteSelection(String userId) {
     if (mounted) {
       setState(() {
         if (_selectedAthleteIds.contains(userId)) {
           _selectedAthleteIds.remove(userId);
         } else {
+          _selectedTechnicianIds.remove(userId);
           _selectedAthleteIds.add(userId);
         }
       });
@@ -582,7 +638,17 @@ class _AddEventPageState extends State<AddEventPage> {
         if (_selectedTechnicianIds.contains(userId)) {
           _selectedTechnicianIds.remove(userId);
         } else {
+          final previousCoachIds = _selectedTechnicianIds.toList();
+          _selectedTechnicianIds.clear();
           _selectedTechnicianIds.add(userId);
+          _selectedAthleteIds.remove(userId);
+
+          for (final previousCoachId in previousCoachIds) {
+            final canPlay = _athletesList.any(
+              (athlete) => athlete['uid'] == previousCoachId,
+            );
+            if (canPlay) _selectedAthleteIds.add(previousCoachId);
+          }
         }
       });
     }
@@ -658,6 +724,27 @@ class _AddEventPageState extends State<AddEventPage> {
         return;
       }
 
+      final endParts = _endTimeController.text.trim().split(':');
+      final endHour = endParts.length == 2 ? int.tryParse(endParts[0]) : null;
+      final endMinute = endParts.length == 2 ? int.tryParse(endParts[1]) : null;
+      if (endHour == null || endMinute == null) {
+        if (mounted) setState(() => _isSaving = false);
+        _showError('Horário de término inválido');
+        return;
+      }
+      final eventEndAt = DateTime(
+        eventStartAt.year,
+        eventStartAt.month,
+        eventStartAt.day,
+        endHour,
+        endMinute,
+      );
+      if (!eventEndAt.isAfter(eventStartAt)) {
+        if (mounted) setState(() => _isSaving = false);
+        _showError('O término deve ser posterior ao início do evento');
+        return;
+      }
+
       final eventData = {
         'user_id': user.id,
         'event_name': _opponentController.text.isNotEmpty
@@ -708,10 +795,11 @@ class _AddEventPageState extends State<AddEventPage> {
 
       final eventId = response[0]['id'];
 
-      final selectedUserIds = <String>{
-        ..._selectedAthleteIds,
-        ..._selectedTechnicianIds,
+      final selectedRoles = <String, String>{
+        for (final userId in _selectedAthleteIds) userId: 'athlete',
+        for (final userId in _selectedTechnicianIds) userId: 'coach',
       };
+      final selectedUserIds = selectedRoles.keys.toSet();
 
       final existingConvocations = await supabase
           .from('convocations')
@@ -722,7 +810,6 @@ class _AddEventPageState extends State<AddEventPage> {
           .map<String>((c) => c['user_id'].toString())
           .toSet();
 
-      final userIdsToInsert = selectedUserIds.difference(existingUserIds);
       final userIdsToDelete = existingUserIds.difference(selectedUserIds);
 
       if (userIdsToDelete.isNotEmpty) {
@@ -733,16 +820,28 @@ class _AddEventPageState extends State<AddEventPage> {
             .inFilter('user_id', userIdsToDelete.toList());
       }
 
-      if (userIdsToInsert.isNotEmpty) {
-        final newConvocations = userIdsToInsert
-            .map((userId) => {
+      if (selectedRoles.isNotEmpty) {
+        final convocations = selectedRoles.entries
+            .map((entry) => {
                   'event_id': eventId,
-                  'user_id': userId,
-                  'status': 'pending',
+                  'user_id': entry.key,
+                  'event_role': entry.value,
+                  'status':
+                      existingUserIds.contains(entry.key) ? null : 'pending',
                 })
             .toList();
 
-        await supabase.from('convocations').insert(newConvocations);
+        for (final convocation in convocations) {
+          final status = convocation.remove('status');
+          final data = {
+            ...convocation,
+            if (status != null) 'status': status,
+          };
+          await supabase.from('convocations').upsert(
+                data,
+                onConflict: 'event_id,user_id',
+              );
+        }
       }
 
 // ==========================================================
@@ -830,30 +929,55 @@ class _AddEventPageState extends State<AddEventPage> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  _buildEventTypeSelector(),
+                  _buildFormCard(
+                    icon: Icons.event_note_rounded,
+                    title: 'Dados do evento',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildEventTypeSelector(),
+                        const SizedBox(height: 18),
+                        _buildGenderSelector(),
+                        if (_selectedType == EventType.campeonato) ...[
+                          const SizedBox(height: 18),
+                          _buildChampionshipNameField(),
+                          const SizedBox(height: 16),
+                          _buildRideLogisticsOption(),
+                        ],
+                        if (_selectedType == EventType.amistoso ||
+                            _selectedType == EventType.campeonato) ...[
+                          const SizedBox(height: 18),
+                          _buildOpponentField(),
+                          const SizedBox(height: 16),
+                          _buildSetsFormatSelector(),
+                        ],
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 16),
-                  if (_selectedType == EventType.campeonato) ...[
-                    _buildChampionshipNameField(),
-                    const SizedBox(height: 16),
-                    _buildRideLogisticsOption(),
-                    const SizedBox(height: 24),
-                  ],
-                  _buildGenderSelector(),
-                  const SizedBox(height: 24),
-                  if (_selectedType == EventType.amistoso ||
-                      _selectedType == EventType.campeonato) ...[
-                    _buildOpponentField(),
-                    const SizedBox(height: 16),
-                    _buildSetsFormatSelector(),
-                    const SizedBox(height: 24),
-                  ],
-                  _buildDateTimeFields(),
-                  const SizedBox(height: 24),
-                  _buildConvocationSection(),
-                  const SizedBox(height: 24),
-                  _buildAddressSection(),
+                  _buildFormCard(
+                    icon: Icons.schedule_rounded,
+                    title: 'Data e horário',
+                    child: _buildResponsiveDateTimeFields(),
+                  ),
                   const SizedBox(height: 16),
-                  _buildCheckInOption(),
+                  _buildFormCard(
+                    icon: Icons.groups_rounded,
+                    title: 'Convocação',
+                    child: _buildConvocationSection(),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildFormCard(
+                    icon: Icons.location_on_outlined,
+                    title: 'Local e acesso',
+                    child: Column(
+                      children: [
+                        _buildAddressSection(),
+                        const SizedBox(height: 16),
+                        _buildCheckInOption(),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 80),
                 ],
               ),
@@ -941,6 +1065,7 @@ class _AddEventPageState extends State<AddEventPage> {
       onTap: () {
         if (mounted) {
           setState(() => _generoEvento = value);
+          _applyAutomaticAthleteSelection();
         }
       },
       child: Container(
@@ -1156,12 +1281,12 @@ class _AddEventPageState extends State<AddEventPage> {
           ),
         ),
         const SizedBox(height: 12),
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
             _buildEventTypeChip('Treino', EventType.treino),
-            const SizedBox(width: 8),
             _buildEventTypeChip('Amistoso', EventType.amistoso),
-            const SizedBox(width: 8),
             _buildEventTypeChip('Campeonato', EventType.campeonato),
           ],
         ),
@@ -1183,6 +1308,11 @@ class _AddEventPageState extends State<AddEventPage> {
       onSelected: (selected) {
         if (mounted) {
           setState(() => _selectedType = type);
+          if (type == EventType.treino) {
+            _applyAutomaticAthleteSelection();
+          } else {
+            setState(() => _automaticAthletesCount = 0);
+          }
         }
       },
       backgroundColor: Colors.grey[200],
@@ -1320,6 +1450,8 @@ class _AddEventPageState extends State<AddEventPage> {
     );
   }
 
+  // Mantido temporariamente para compatibilidade com personalizações antigas.
+  // ignore: unused_element
   Widget _buildDateTimeFields() {
     return Row(
       children: [
@@ -1479,6 +1611,202 @@ class _AddEventPageState extends State<AddEventPage> {
     );
   }
 
+  Widget _buildAutomaticSelectionSummary() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: goldenColor.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: goldenColor.withOpacity(0.45)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.auto_awesome_rounded,
+            color: Color(0xFF0A2463),
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$_automaticAthletesCount atleta(s) carregado(s) automaticamente para este dia.',
+              style: const TextStyle(
+                color: Color(0xFF0A2463),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Recarregar escala',
+            onPressed: _applyAutomaticAthleteSelection,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormCard({
+    required IconData icon,
+    required String title,
+    required Widget child,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE1E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x120A2463),
+            blurRadius: 16,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: goldenColor.withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: cardColor, size: 21),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Color(0xFF0A2463),
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResponsiveDateTimeFields() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 520;
+        final dateWidth =
+            compact ? constraints.maxWidth : (constraints.maxWidth - 24) / 3;
+        final timeWidth = compact
+            ? (constraints.maxWidth - 10) / 2
+            : (constraints.maxWidth - 24) / 3;
+
+        return Wrap(
+          spacing: compact ? 10 : 12,
+          runSpacing: 14,
+          children: [
+            SizedBox(
+              width: dateWidth,
+              child: _buildDateTimeBox(
+                label: 'Data',
+                value: _dateController.text,
+                placeholder: 'Selecione a data',
+                icon: Icons.calendar_today_rounded,
+                onTap: () => _selectDate(context),
+              ),
+            ),
+            SizedBox(
+              width: timeWidth,
+              child: _buildDateTimeBox(
+                label: 'Início',
+                value: _timeController.text,
+                placeholder: '--:--',
+                icon: Icons.access_time_rounded,
+                onTap: () => _selectTime(context),
+              ),
+            ),
+            SizedBox(
+              width: timeWidth,
+              child: _buildDateTimeBox(
+                label: 'Término',
+                value: _endTimeController.text,
+                placeholder: '--:--',
+                icon: Icons.timer_outlined,
+                onTap: () => _selectEndTime(context),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDateTimeBox({
+    required String label,
+    required String value,
+    required String placeholder,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF0A2463),
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 7),
+        Material(
+          color: const Color(0xFFF5F8FC),
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFD8E2ED)),
+              ),
+              child: Row(
+                children: [
+                  Icon(icon, color: goldenColor, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      value.isEmpty ? placeholder : value,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: value.isEmpty
+                            ? Colors.grey.shade500
+                            : const Color(0xFF0A2463),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildConvocationSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1492,6 +1820,11 @@ class _AddEventPageState extends State<AddEventPage> {
           ),
         ),
         const SizedBox(height: 12),
+        if (_selectedType == EventType.treino &&
+            _selectedEventDate() != null) ...[
+          _buildAutomaticSelectionSummary(),
+          const SizedBox(height: 12),
+        ],
         Row(
           children: [
             _buildConvocationTab('Atleta', 'Atleta'),

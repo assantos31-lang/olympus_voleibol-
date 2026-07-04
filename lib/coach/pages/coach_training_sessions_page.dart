@@ -423,7 +423,7 @@ events!convocations_event_id_fkey (
   allow_checkin,
   enable_ride_logistics
 )
-''').eq('user_id', user.id);
+''').eq('user_id', user.id).eq('event_role', 'coach');
 
       final treinos = <Map<String, dynamic>>[];
       final convocacoesParaAceitar = <String>[];

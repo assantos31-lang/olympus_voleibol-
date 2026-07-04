@@ -61,6 +61,7 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
       final response = await supabase
           .from('profiles')
           .select('full_name, birth_date, avatar_url, court_position, gender')
+          .eq('is_active', true)
           .not('birth_date', 'is', null);
 
       final fetchedUsers = List<Map<String, dynamic>>.from(response);

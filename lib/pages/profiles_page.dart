@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'dart:math';
 import '../services/auth_service.dart';
 import '../services/permission_service.dart';
+import '../services/role_service.dart';
 import '../widgets/role_manager_widget.dart';
 
 class ProfilesPage extends StatefulWidget {
@@ -22,12 +23,16 @@ class ProfilesPage extends StatefulWidget {
 class _ProfilesPageState extends State<ProfilesPage> {
   final supabase = Supabase.instance.client;
   final PermissionService _permissionService = PermissionService();
+  final RoleService _roleService = RoleService();
   List<Map<String, dynamic>> profiles = [];
   bool isLoading = true;
   bool _isCheckingAccess = true;
   String _selectedGenderFilter = 'Todos';
   String _selectedUserTypeFilter = 'Todos';
   bool _showInactiveUsers = false;
+  final TextEditingController _profilesSearchController =
+      TextEditingController();
+  String _profilesSearchQuery = '';
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
@@ -36,6 +41,12 @@ class _ProfilesPageState extends State<ProfilesPage> {
   void initState() {
     super.initState();
     _checkAdminAccess();
+  }
+
+  @override
+  void dispose() {
+    _profilesSearchController.dispose();
+    super.dispose();
   }
 
   Future<void> _checkAdminAccess() async {
@@ -51,14 +62,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
         }
         return;
       }
-      final response = await supabase
-          .from('profiles')
-          .select('user_type')
-          .eq('id', user.id)
-          .maybeSingle();
-      final userType = response?['user_type'];
+      final hasAdminRole = await _roleService.hasRole(user.id, 'admin');
       if (!mounted) return;
-      if (userType != 'admin') {
+      if (!hasAdminRole) {
         Navigator.pushNamedAndRemoveUntil(
           context,
           '/dashboard',
@@ -236,6 +242,125 @@ class _ProfilesPageState extends State<ProfilesPage> {
     await updateProfile(id, {
       'is_active': isActive,
     });
+  }
+
+  static const Map<int, String> _trainingWeekdayLabels = {
+    1: 'Seg',
+    2: 'Ter',
+    3: 'Qua',
+    4: 'Qui',
+    5: 'Sex',
+    6: 'Sáb',
+    7: 'Dom',
+  };
+
+  List<int> _profileTrainingWeekdays(Map<String, dynamic> profile) {
+    final raw = profile['training_weekdays'];
+    if (raw is! List) return <int>[];
+    return raw
+        .map((value) => int.tryParse(value.toString()))
+        .whereType<int>()
+        .where((day) => day >= 1 && day <= 7)
+        .toSet()
+        .toList()
+      ..sort();
+  }
+
+  Future<void> _showTrainingDaysDialog(Map<String, dynamic> profile) async {
+    final userId = (profile['id'] ?? '').toString();
+    if (userId.isEmpty) return;
+
+    final selectedDays = _profileTrainingWeekdays(profile).toSet();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFFF7FAFC),
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: const Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: Color(0xFFE8F0F8),
+                child: Icon(Icons.calendar_month_rounded, color: olympusBlue),
+              ),
+              SizedBox(width: 12),
+              Expanded(child: Text('Dias de treino')),
+            ],
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  (profile['full_name'] ?? 'Atleta').toString(),
+                  style: const TextStyle(
+                    color: olympusBlue,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Ao criar um treino, o atleta será selecionado automaticamente conforme o dia e o gênero do evento.',
+                  style: TextStyle(color: Colors.black54, fontSize: 13),
+                ),
+                const SizedBox(height: 18),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _trainingWeekdayLabels.entries.map((entry) {
+                    final selected = selectedDays.contains(entry.key);
+                    return FilterChip(
+                      label: Text(entry.value),
+                      selected: selected,
+                      selectedColor: olympusGold,
+                      checkmarkColor: olympusBlue,
+                      onSelected: (value) {
+                        setDialogState(() {
+                          value
+                              ? selectedDays.add(entry.key)
+                              : selectedDays.remove(entry.key);
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('Salvar dias'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true) return;
+    final orderedDays = selectedDays.toList()..sort();
+    await supabase
+        .from('profiles')
+        .update({'training_weekdays': orderedDays}).eq('id', userId);
+    profile['training_weekdays'] = orderedDays;
+    await fetchProfiles();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Dias de treino atualizados.'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   void _confirmDelete(String id) {
@@ -770,6 +895,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
     final visibilityPermissions =
         await _permissionService.getRankingEvaluationVisibility(userId);
     final agendaFilters = await _permissionService.getAgendaFilters(userId);
+    var activeRoles = await _roleService.getUserRoles(userId);
 
     Map<String, dynamic> financialFilters = {};
     try {
@@ -818,8 +944,56 @@ class _ProfilesPageState extends State<ProfilesPage> {
       },
     ];
 
+    final adminPermissionItems = [
+      {
+        'pageName': 'admin_evaluations',
+        'title': 'Avaliações dos treinadores',
+        'subtitle': 'Visualizar as avaliações recebidas pelos treinadores',
+      },
+      {
+        'pageName': 'admin_agenda',
+        'title': 'Agenda administrativa',
+        'subtitle': 'Visualizar todos os eventos cadastrados',
+      },
+      {
+        'pageName': 'admin_training_plans',
+        'title': 'Planejamentos de treino',
+        'subtitle': 'Visualizar os planejamentos dos treinadores',
+      },
+      {
+        'pageName': 'admin_statistics',
+        'title': 'Estatísticas dos atletas',
+        'subtitle': 'Visualizar estatísticas e indicadores dos atletas',
+      },
+      {
+        'pageName': 'admin_birthdays',
+        'title': 'Aniversariantes',
+        'subtitle': 'Visualizar aniversariantes no modo administrador',
+      },
+      {
+        'pageName': 'admin_competitions',
+        'title': 'Jogos e competições',
+        'subtitle': 'Visualizar os jogos cadastrados pela administração',
+      },
+      {
+        'pageName': 'admin_financial',
+        'title': 'Financeiro administrativo',
+        'subtitle': 'Visualizar cobranças, pagamentos e comprovantes',
+      },
+      {
+        'pageName': 'admin_users',
+        'title': 'Gerenciar usuários',
+        'subtitle': 'Visualizar perfis e alterar permissões',
+      },
+      {
+        'pageName': 'admin_messages',
+        'title': 'Mensagens administrativas',
+        'subtitle': 'Acessar as mensagens da administração',
+      },
+    ];
+
     final permissionValues = <String, bool>{
-      for (final item in permissionItems)
+      for (final item in [...permissionItems, ...adminPermissionItems])
         item['pageName'] as String:
             currentPermissions[item['pageName']] ?? true,
     };
@@ -848,6 +1022,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
     bool verConvocados = agendaFilters['ver_convocados'] == true;
     bool exportarDadosJogo = agendaFilters['exportar_dados_jogo'] == true;
+    String selectedPermissionSection = 'access';
+    bool rolesExpanded = false;
     final allowedFinancialTypes = List<String>.from(
       financialFilters['allowed_financial_types'] ??
           ['monthly', 'games', 'maintenance', 'other'],
@@ -936,46 +1112,114 @@ class _ProfilesPageState extends State<ProfilesPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Usuário: $userName',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: olympusBlue,
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE4EDF5)),
+                    ),
+                    child: ExpansionTile(
+                      initiallyExpanded: rolesExpanded,
+                      onExpansionChanged: (value) {
+                        setDialogState(() => rolesExpanded = value);
+                      },
+                      leading: const CircleAvatar(
+                        backgroundColor: Color(0xFFE8F0F8),
+                        child: Icon(Icons.badge_outlined, color: olympusBlue),
+                      ),
+                      title: Text(
+                        userName,
+                        style: const TextStyle(
+                          color: olympusBlue,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Papéis • ${_getTypeLabel(currentUserType)}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                      children: [
+                        RoleManagerWidget(
+                          userId: userId,
+                          userName: userName,
+                          currentPrimaryRole: currentUserType,
+                          onRolesSaved: (newPrimaryRole) async {
+                            final refreshedRoles =
+                                await _roleService.getUserRoles(userId);
+                            if (!context.mounted) return;
+                            setDialogState(() {
+                              activeRoles = refreshedRoles;
+                              currentUserType = newPrimaryRole;
+                              profile['user_type'] = newPrimaryRole;
+                              selectedPermissionSection = 'access';
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Papéis atualizados! Perfil principal: ${_getTypeLabel(newPrimaryRole)}.',
+                                ),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                            fetchProfiles();
+                          },
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 16),
 
-                  // ✅ RoleManagerWidget com onRolesSaved CORRIGIDO
-                  RoleManagerWidget(
-                    userId: userId,
-                    userName: userName,
-                    currentPrimaryRole: currentUserType,
-                    onRolesSaved: (newPrimaryRole) {
-                      // 1. Atualiza o estado do dialog imediatamente (síncrono)
-                      setDialogState(() {
-                        currentUserType = newPrimaryRole;
-                        profile['user_type'] = newPrimaryRole;
-                      });
+                  const SizedBox(height: 12),
 
-                      // 2. Exibe o snackbar com o context atual do dialog
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Papéis atualizados! Perfil principal: ${_getTypeLabel(newPrimaryRole)}.',
-                          ),
-                          backgroundColor: Colors.green,
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ('access', 'Acessos', Icons.grid_view_rounded),
+                      if (activeRoles.contains('admin'))
+                        ('admin', 'Admin', Icons.admin_panel_settings_outlined),
+                      if (currentUserType == 'athlete')
+                        ('visibility', 'Atleta', Icons.visibility_outlined),
+                      if (permissionValues['agenda'] == true)
+                        ('agenda', 'Agenda', Icons.calendar_month_outlined),
+                      if (permissionValues['financeiro'] == true)
+                        ('finance', 'Financeiro', Icons.payments_outlined),
+                    ].map((item) {
+                      final selected = selectedPermissionSection == item.$1;
+                      return ChoiceChip(
+                        avatar: Icon(
+                          item.$3,
+                          size: 16,
+                          color: selected ? Colors.white : olympusBlue,
                         ),
+                        label: Text(item.$2),
+                        labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                        selected: selected,
+                        showCheckmark: false,
+                        selectedColor: olympusBlue,
+                        backgroundColor: Colors.white,
+                        side: BorderSide(
+                          color:
+                              selected ? olympusBlue : const Color(0xFFE4EDF5),
+                        ),
+                        labelStyle: TextStyle(
+                          color: selected ? Colors.white : olympusBlue,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        onSelected: (_) {
+                          setDialogState(() {
+                            selectedPermissionSection = item.$1;
+                          });
+                        },
                       );
-
-                      // 3. Atualiza a lista em background sem bloquear o dialog
-                      fetchProfiles();
-                    },
+                    }).toList(),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
 
                   // ✅ USA currentUserType — reativo ao RoleManagerWidget
-                  if (currentUserType == 'coach')
+                  if (currentUserType == 'coach' &&
+                      selectedPermissionSection == 'access')
                     _buildCoachTeamPermissionsCard(
                       selectedValue: selectedCoachTeamGender,
                       onSelected: (value) async {
@@ -1009,26 +1253,89 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       },
                     ),
 
-                  const Text(
-                    'Permissões de Acesso:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
+                  if (selectedPermissionSection == 'access') ...[
+                    const Text(
+                      'Permissões de Acesso:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  ...permissionItems.map((item) {
-                    final pageName = item['pageName'] as String;
-                    final title = item['title'] as String;
-                    final subtitle = item['subtitle'] as String;
-                    return SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(title),
-                      subtitle: Text(subtitle),
-                      value: permissionValues[pageName] ?? true,
-                      activeColor: olympusGold,
-                      onChanged: (value) async {
-                        try {
+                    const SizedBox(height: 12),
+                    ...permissionItems.map((item) {
+                      final pageName = item['pageName'] as String;
+                      final title = item['title'] as String;
+                      final subtitle = item['subtitle'] as String;
+                      return SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(title),
+                        subtitle: Text(subtitle),
+                        value: permissionValues[pageName] ?? true,
+                        activeColor: olympusGold,
+                        onChanged: (value) async {
+                          try {
+                            await _permissionService.updatePermission(
+                              userId: userId,
+                              pageName: pageName,
+                              canAccess: value,
+                            );
+                            setDialogState(() {
+                              permissionValues[pageName] = value;
+                            });
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Permissão de ${title.toLowerCase()} ${value ? 'concedida' : 'revogada'} com sucesso!',
+                                  ),
+                                  backgroundColor:
+                                      value ? Colors.green : Colors.orange,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content:
+                                      Text('Erro ao atualizar permissão: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                      );
+                    }).toList(),
+                  ],
+
+                  if (selectedPermissionSection == 'admin' &&
+                      activeRoles.contains('admin')) ...[
+                    const Text(
+                      'Acessos no modo Administrador:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Escolha exatamente quais áreas este administrador pode visualizar.',
+                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                    const SizedBox(height: 8),
+                    ...adminPermissionItems.map((item) {
+                      final pageName = item['pageName'] as String;
+                      final title = item['title'] as String;
+                      final subtitle = item['subtitle'] as String;
+                      return SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: Text(title),
+                        subtitle: Text(subtitle),
+                        value: permissionValues[pageName] ?? true,
+                        activeColor: olympusGold,
+                        onChanged: (value) async {
                           await _permissionService.updatePermission(
                             userId: userId,
                             pageName: pageName,
@@ -1037,34 +1344,14 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           setDialogState(() {
                             permissionValues[pageName] = value;
                           });
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Permissão de ${title.toLowerCase()} ${value ? 'concedida' : 'revogada'} com sucesso!',
-                                ),
-                                backgroundColor:
-                                    value ? Colors.green : Colors.orange,
-                              ),
-                            );
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content:
-                                    Text('Erro ao atualizar permissão: $e'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        }
-                      },
-                    );
-                  }).toList(),
+                        },
+                      );
+                    }),
+                  ],
 
                   // ✅ USA currentUserType — reativo ao RoleManagerWidget
-                  if (currentUserType == 'athlete') ...[
+                  if (currentUserType == 'athlete' &&
+                      selectedPermissionSection == 'visibility') ...[
                     const SizedBox(height: 16),
                     Divider(color: Colors.grey[300]),
                     const SizedBox(height: 8),
@@ -1156,7 +1443,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     ),
                   ],
 
-                  if (permissionValues['agenda'] == true) ...[
+                  if (permissionValues['agenda'] == true &&
+                      selectedPermissionSection == 'agenda') ...[
                     const SizedBox(height: 16),
                     Divider(color: Colors.grey[300]),
                     const SizedBox(height: 8),
@@ -1376,7 +1664,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     ],
                   ],
 
-                  if (permissionValues['agenda'] == true) ...[
+                  if (permissionValues['agenda'] == true &&
+                      selectedPermissionSection == 'agenda') ...[
                     const SizedBox(height: 16),
                     Divider(color: Colors.grey[300]),
                     const SizedBox(height: 8),
@@ -1468,7 +1757,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     ),
                   ],
 
-                  if (permissionValues['financeiro'] == true) ...[
+                  if (permissionValues['financeiro'] == true &&
+                      selectedPermissionSection == 'finance') ...[
                     const SizedBox(height: 16),
                     Divider(color: Colors.grey[300]),
                     const SizedBox(height: 8),
@@ -1924,14 +2214,22 @@ class _ProfilesPageState extends State<ProfilesPage> {
       final gender = (profile['gender'] ?? '').toString().trim();
       final userType = (profile['user_type'] ?? '').toString().trim();
       final isActive = _isProfileActive(profile);
+      final searchText = [
+        profile['full_name'],
+        profile['phone'],
+        profile['cpf'],
+        profile['email'],
+      ].whereType<Object>().join(' ').toLowerCase();
 
       final matchesStatus = _showInactiveUsers ? !isActive : isActive;
       final matchesGender =
           _selectedGenderFilter == 'Todos' || gender == _selectedGenderFilter;
       final matchesUserType = _selectedUserTypeFilter == 'Todos' ||
           userType == _selectedUserTypeFilter;
+      final matchesSearch = _profilesSearchQuery.trim().isEmpty ||
+          searchText.contains(_profilesSearchQuery.trim().toLowerCase());
 
-      return matchesStatus && matchesGender && matchesUserType;
+      return matchesStatus && matchesGender && matchesUserType && matchesSearch;
     }).toList();
 
     filtered.sort((a, b) {
@@ -2087,6 +2385,264 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
   }
 
+  Future<void> _showCompactFiltersSheet() async {
+    var gender = _selectedGenderFilter;
+    var userType = _selectedUserTypeFilter;
+
+    final apply = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Container(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            12,
+            20,
+            20 + MediaQuery.paddingOf(context).bottom,
+          ),
+          decoration: const BoxDecoration(
+            color: Color(0xFFF7FAFC),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Row(
+                children: [
+                  Icon(Icons.tune_rounded, color: olympusBlue),
+                  SizedBox(width: 10),
+                  Text(
+                    'Filtrar perfis',
+                    style: TextStyle(
+                      color: olympusBlue,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              DropdownButtonFormField<String>(
+                initialValue: gender,
+                decoration: const InputDecoration(
+                  labelText: 'Gênero',
+                  prefixIcon: Icon(Icons.wc_rounded),
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'Todos', child: Text('Todos')),
+                  DropdownMenuItem(
+                      value: 'Masculino', child: Text('Masculino')),
+                  DropdownMenuItem(value: 'Feminino', child: Text('Feminino')),
+                ],
+                onChanged: (value) {
+                  if (value != null) setSheetState(() => gender = value);
+                },
+              ),
+              const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                initialValue: userType,
+                decoration: const InputDecoration(
+                  labelText: 'Tipo de usuário',
+                  prefixIcon: Icon(Icons.badge_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'Todos', child: Text('Todos')),
+                  DropdownMenuItem(value: 'member', child: Text('Membro')),
+                  DropdownMenuItem(value: 'athlete', child: Text('Atleta')),
+                  DropdownMenuItem(value: 'coach', child: Text('Técnico')),
+                  DropdownMenuItem(
+                      value: 'admin', child: Text('Administrador')),
+                ],
+                onChanged: (value) {
+                  if (value != null) setSheetState(() => userType = value);
+                },
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () {
+                        setSheetState(() {
+                          gender = 'Todos';
+                          userType = 'Todos';
+                        });
+                      },
+                      child: const Text('Limpar'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(sheetContext, true),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: olympusBlue,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Aplicar filtros'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (apply == true && mounted) {
+      setState(() {
+        _selectedGenderFilter = gender;
+        _selectedUserTypeFilter = userType;
+      });
+    }
+  }
+
+  Widget _buildCompactFiltersBar(int resultsCount) {
+    final appliedFilters = (_selectedGenderFilter != 'Todos' ? 1 : 0) +
+        (_selectedUserTypeFilter != 'Todos' ? 1 : 0);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      child: Column(
+        children: [
+          TextField(
+            controller: _profilesSearchController,
+            onChanged: (value) => setState(() => _profilesSearchQuery = value),
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Buscar por nome, telefone ou CPF',
+              hintStyle: TextStyle(color: Colors.white.withOpacity(0.60)),
+              prefixIcon: const Icon(Icons.search_rounded, color: olympusGold),
+              suffixIcon: _profilesSearchQuery.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Limpar busca',
+                      onPressed: () {
+                        _profilesSearchController.clear();
+                        setState(() => _profilesSearchQuery = '');
+                      },
+                      icon: const Icon(Icons.close_rounded,
+                          color: Colors.white70),
+                    ),
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.11),
+              contentPadding: const EdgeInsets.symmetric(vertical: 13),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: Colors.white.withOpacity(0.14)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: Colors.white.withOpacity(0.14)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: olympusGold, width: 1.5),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(
+                      value: false,
+                      icon: Icon(Icons.verified_user_outlined, size: 17),
+                      label: Text('Ativos'),
+                    ),
+                    ButtonSegment(
+                      value: true,
+                      icon: Icon(Icons.person_off_outlined, size: 17),
+                      label: Text('Inativos'),
+                    ),
+                  ],
+                  selected: {_showInactiveUsers},
+                  showSelectedIcon: false,
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: WidgetStateProperty.resolveWith(
+                      (states) => states.contains(WidgetState.selected)
+                          ? olympusBlue
+                          : Colors.white,
+                    ),
+                    backgroundColor: WidgetStateProperty.resolveWith(
+                      (states) => states.contains(WidgetState.selected)
+                          ? olympusGold
+                          : Colors.white.withOpacity(0.08),
+                    ),
+                  ),
+                  onSelectionChanged: (value) {
+                    setState(() => _showInactiveUsers = value.first);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Badge(
+                isLabelVisible: appliedFilters > 0,
+                label: Text('$appliedFilters'),
+                backgroundColor: olympusGold,
+                textColor: olympusBlue,
+                child: IconButton.filledTonal(
+                  tooltip: 'Filtros',
+                  onPressed: _showCompactFiltersSheet,
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.white.withOpacity(0.12),
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.tune_rounded),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _getSelectedFiltersLabel(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.74),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              Text(
+                '$resultsCount perfil${resultsCount == 1 ? '' : 'is'}',
+                style: const TextStyle(
+                  color: olympusGold,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ignore: unused_element
   Widget _buildFiltersBar(int resultsCount) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
@@ -2220,9 +2776,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
     if (!isActive) cardColor = Colors.grey;
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(18),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
@@ -2235,7 +2791,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(18),
               border: Border.all(
                 color: cardColor.withOpacity(0.35),
                 width: 1.2,
@@ -2249,16 +2805,16 @@ class _ProfilesPageState extends State<ProfilesPage> {
               ],
             ),
             child: InkWell(
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(18),
               onTap: () => showProfileDialog(profile: profile),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
+                padding: const EdgeInsets.fromLTRB(12, 11, 6, 11),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      width: 58,
-                      height: 58,
+                      width: 50,
+                      height: 50,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
@@ -2267,7 +2823,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         ),
                       ),
                       child: CircleAvatar(
-                        radius: 28,
+                        radius: 24,
                         backgroundColor:
                             _getColorForType(userType).withOpacity(0.16),
                         backgroundImage:
@@ -2280,13 +2836,13 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 22,
+                                  fontSize: 19,
                                 ),
                               )
                             : null,
                       ),
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 11),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2296,14 +2852,14 @@ class _ProfilesPageState extends State<ProfilesPage> {
                             style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               color: Colors.white,
-                              fontSize: 21,
+                              fontSize: 18,
                               height: 1.1,
                             ),
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 7),
                           Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
+                            spacing: 6,
+                            runSpacing: 6,
                             children: [
                               _buildBadge(
                                 icon: Icons.badge_outlined,
@@ -2331,25 +2887,45 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 ),
                             ],
                           ),
-                          const SizedBox(height: 12),
-                          if (phone.isNotEmpty)
-                            _buildProfileInfoLine(
-                              icon: Icons.phone_outlined,
-                              text: _formatPhone(phone),
+                          if (phone.isNotEmpty || cpf.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 5,
+                              children: [
+                                if (phone.isNotEmpty)
+                                  _buildProfileInfoLine(
+                                    icon: Icons.phone_outlined,
+                                    text: _formatPhone(phone),
+                                  ),
+                                if (cpf.isNotEmpty)
+                                  _buildProfileInfoLine(
+                                    icon: Icons.credit_card_outlined,
+                                    text: 'CPF: ${_formatCpf(cpf)}',
+                                  ),
+                              ],
                             ),
-                          if (cpf.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: _buildProfileInfoLine(
-                                icon: Icons.credit_card_outlined,
-                                text: 'CPF: ${_formatCpf(cpf)}',
-                              ),
-                            ),
+                          ],
                         ],
                       ),
                     ),
                     PopupMenuButton<String>(
                       icon: Icon(Icons.more_vert_rounded, color: olympusGold),
+                      tooltip: 'Ações do perfil',
+                      color: const Color(0xFF102D4F),
+                      surfaceTintColor: Colors.transparent,
+                      elevation: 14,
+                      offset: const Offset(-8, 8),
+                      constraints: const BoxConstraints(
+                        minWidth: 220,
+                        maxWidth: 260,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        side: BorderSide(
+                          color: olympusGold.withOpacity(0.28),
+                        ),
+                      ),
                       onSelected: (value) {
                         if (value == 'edit') {
                           showProfileDialog(profile: profile);
@@ -2357,6 +2933,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           _confirmDelete(profile['id']);
                         } else if (value == 'permissions') {
                           _showPermissionsDialog(profile);
+                        } else if (value == 'training_days') {
+                          _showTrainingDaysDialog(profile);
                         } else if (value == 'reset_password') {
                           _showResetPasswordDialog(profile);
                         } else if (value == 'toggle_active') {
@@ -2364,17 +2942,47 @@ class _ProfilesPageState extends State<ProfilesPage> {
                               profile, !_isProfileActive(profile));
                         }
                       },
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(value: 'edit', child: Text('Editar')),
-                        PopupMenuItem(value: 'delete', child: Text('Excluir')),
-                        PopupMenuItem(
-                            value: 'permissions', child: Text('Permissões')),
-                        PopupMenuItem(
-                            value: 'reset_password',
-                            child: Text('Resetar senha')),
-                        PopupMenuItem(
-                            value: 'toggle_active',
-                            child: Text('Alterar status')),
+                      itemBuilder: (context) => [
+                        _buildProfileMenuItem(
+                          value: 'edit',
+                          icon: Icons.edit_outlined,
+                          label: 'Editar perfil',
+                        ),
+                        _buildProfileMenuItem(
+                          value: 'permissions',
+                          icon: Icons.lock_person_outlined,
+                          label: 'Permissões',
+                        ),
+                        if (userType == 'athlete')
+                          _buildProfileMenuItem(
+                            value: 'training_days',
+                            icon: Icons.calendar_month_outlined,
+                            label: 'Dias de treino',
+                          ),
+                        _buildProfileMenuItem(
+                          value: 'reset_password',
+                          icon: Icons.password_rounded,
+                          label: 'Resetar senha',
+                        ),
+                        const PopupMenuDivider(height: 10),
+                        _buildProfileMenuItem(
+                          value: 'toggle_active',
+                          icon: isActive
+                              ? Icons.person_off_outlined
+                              : Icons.person_add_alt_1_rounded,
+                          label: isActive
+                              ? 'Inativar usuário'
+                              : 'Reativar usuário',
+                          color: isActive
+                              ? const Color(0xFFFFC857)
+                              : const Color(0xFF73E2A7),
+                        ),
+                        _buildProfileMenuItem(
+                          value: 'delete',
+                          icon: Icons.delete_outline_rounded,
+                          label: 'Excluir definitivamente',
+                          color: const Color(0xFFFF7B7B),
+                        ),
                       ],
                     ),
                   ],
@@ -2387,13 +2995,49 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
   }
 
+  PopupMenuItem<String> _buildProfileMenuItem({
+    required String value,
+    required IconData icon,
+    required String label,
+    Color color = Colors.white,
+  }) {
+    return PopupMenuItem<String>(
+      value: value,
+      height: 48,
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 19, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBadge({
     required IconData icon,
     required String label,
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: color.withOpacity(0.10),
         borderRadius: BorderRadius.circular(999),
@@ -2407,7 +3051,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
           Text(
             label,
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               color: Colors.white,
               fontWeight: FontWeight.w700,
             ),
@@ -2422,17 +3066,16 @@ class _ProfilesPageState extends State<ProfilesPage> {
     required String text,
   }) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 16, color: olympusGold),
         const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 13.5,
-              color: Colors.white.withOpacity(0.85),
-              fontWeight: FontWeight.w600,
-            ),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 12.5,
+            color: Colors.white.withOpacity(0.85),
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],
@@ -2631,13 +3274,13 @@ class _ProfilesPageState extends State<ProfilesPage> {
               : _buildGlassContentShell(
                   child: Column(
                     children: [
-                      _buildFiltersBar(filteredProfiles.length),
+                      _buildCompactFiltersBar(filteredProfiles.length),
                       Expanded(
                         child: filteredProfiles.isEmpty
                             ? _buildProfilesEmptyState()
                             : ListView.builder(
                                 itemCount: filteredProfiles.length,
-                                padding: const EdgeInsets.all(8),
+                                padding: const EdgeInsets.fromLTRB(8, 4, 8, 92),
                                 itemBuilder: (context, index) {
                                   return _buildProfileCard(
                                       filteredProfiles[index]);
