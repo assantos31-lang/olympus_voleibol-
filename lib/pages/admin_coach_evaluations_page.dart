@@ -36,6 +36,8 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
   String _search = '';
   String _coachSearch = '';
   String _typeFilter = '';
+  String _statusView = 'pending';
+  late String _selectedMonthKey;
 
   List<Map<String, dynamic>> _evaluations = [];
   List<Map<String, dynamic>> _allCoaches = [];
@@ -44,10 +46,46 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
+    _selectedMonthKey = _monthKey(now.month, now.year);
     _load();
   }
 
   String _asString(dynamic value) => (value ?? '').toString().trim();
+
+  String _monthKey(int month, int year) =>
+      '$year-${month.toString().padLeft(2, '0')}';
+
+  String _evaluationMonthKey(Map<String, dynamic> row) {
+    final month = int.tryParse(_asString(row['reference_month']));
+    final year = int.tryParse(_asString(row['reference_year']));
+    if (month != null && year != null && month >= 1 && month <= 12) {
+      return _monthKey(month, year);
+    }
+    final created = DateTime.tryParse(_asString(row['created_at']))?.toLocal();
+    final date = created ?? DateTime.now();
+    return _monthKey(date.month, date.year);
+  }
+
+  List<String> get _availableMonthKeys {
+    final now = DateTime.now();
+    final keys = <String>{
+      _monthKey(now.month, now.year),
+      ..._evaluations.map(_evaluationMonthKey),
+    }.toList()
+      ..sort((a, b) => b.compareTo(a));
+    return keys;
+  }
+
+  String _monthLabelFromKey(String key) {
+    final parts = key.split('-');
+    if (parts.length != 2) return key;
+    return _monthLabel(parts[1], parts[0]);
+  }
+
+  bool _isSent(Map<String, dynamic> row) =>
+      row['visible_to_coach'] == true ||
+      _asString(row['admin_review_status']).toLowerCase() == 'approved';
 
   Future<void> _load() async {
     setState(() {
@@ -293,10 +331,72 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
     }
   }
 
+  Future<void> _deleteEvaluation(Map<String, dynamic> row) async {
+    final id = _asString(row['id']);
+    if (id.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: olympusDanger),
+            SizedBox(width: 10),
+            Expanded(child: Text('Excluir avaliação?')),
+          ],
+        ),
+        content: const Text(
+          'Esta ação é permanente e a avaliação não poderá ser recuperada.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: olympusDanger),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.delete_rounded),
+            label: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    try {
+      await _service.deleteEvaluation(id);
+      if (!mounted) return;
+      setState(() {
+        _evaluations.removeWhere((item) => _asString(item['id']) == id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Avaliação excluída.'),
+          backgroundColor: olympusSuccess,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao excluir avaliação: $e'),
+          backgroundColor: olympusDanger,
+        ),
+      );
+    }
+  }
+
   List<Map<String, dynamic>> get _filteredEvaluations {
     final query = _search.trim().toLowerCase();
 
     return _evaluations.where((row) {
+      if (_evaluationMonthKey(row) != _selectedMonthKey) return false;
+      final sent = _isSent(row);
+      if (_statusView == 'sent' && !sent) return false;
+      if (_statusView == 'pending' && sent) return false;
+
       final type = _asString(row['evaluation_type']).isEmpty
           ? 'training'
           : _asString(row['evaluation_type']);
@@ -682,7 +782,75 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
             ),
             activeThumbColor: olympusSuccess,
           ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => _deleteEvaluation(row),
+              style: TextButton.styleFrom(foregroundColor: olympusDanger),
+              icon: const Icon(Icons.delete_outline_rounded, size: 19),
+              label: const Text(
+                'Excluir avaliação',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _statusButton({
+    required String value,
+    required String label,
+    required int count,
+    required IconData icon,
+    required Color color,
+  }) {
+    final selected = _statusView == value;
+    return Material(
+      color: selected ? Colors.white : Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => setState(() => _statusView = value),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 11),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: selected ? color : Colors.white70),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected ? olympusBlue : Colors.white,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                constraints: const BoxConstraints(minWidth: 22),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: selected ? color.withOpacity(0.16) : Colors.white12,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$count',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: selected ? color : Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -707,6 +875,11 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
     }
 
     final evaluations = _filteredEvaluations;
+    final monthRows = _evaluations
+        .where((row) => _evaluationMonthKey(row) == _selectedMonthKey)
+        .toList();
+    final pendingCount = monthRows.where((row) => !_isSent(row)).length;
+    final sentCount = monthRows.where(_isSent).length;
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -738,6 +911,72 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
           ),
           const SizedBox(height: 12),
           _monthlyCoachSelectorCard(),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: olympusBlue,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _statusButton(
+                    value: 'pending',
+                    label: 'Pendentes',
+                    count: pendingCount,
+                    icon: Icons.schedule_rounded,
+                    color: olympusGold,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _statusButton(
+                    value: 'sent',
+                    label: 'Enviadas',
+                    count: sentCount,
+                    icon: Icons.check_circle_outline_rounded,
+                    color: olympusSuccess,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Mês de referência',
+            style: TextStyle(
+              color: olympusBlue,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _availableMonthKeys.map((key) {
+                final selected = key == _selectedMonthKey;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    selected: selected,
+                    showCheckmark: false,
+                    label: Text(_monthLabelFromKey(key)),
+                    selectedColor: olympusGold,
+                    backgroundColor: Colors.white,
+                    side: BorderSide(
+                      color: selected ? olympusGold : olympusBorder,
+                    ),
+                    labelStyle: TextStyle(
+                      color: selected ? olympusBlue : olympusMuted,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    onSelected: (_) => setState(() => _selectedMonthKey = key),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -811,12 +1050,13 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
           ),
           const SizedBox(height: 14),
           if (evaluations.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(28),
+            Padding(
+              padding: const EdgeInsets.all(28),
               child: Center(
                 child: Text(
-                  'Nenhuma avaliação encontrada.',
-                  style: TextStyle(
+                  'Nenhuma avaliação ${_statusView == 'sent' ? 'enviada' : 'pendente'} neste mês.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
                     color: olympusMuted,
                     fontWeight: FontWeight.w800,
                   ),
@@ -846,7 +1086,7 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
           ),
         ],
       ),
-      body: _content(),
+      body: SafeArea(top: false, child: _content()),
     );
   }
 }

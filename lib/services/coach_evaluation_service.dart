@@ -589,6 +589,14 @@ class CoachEvaluationService {
     }
   }
 
+  Future<void> deleteEvaluation(String evaluationId) async {
+    final id = evaluationId.trim();
+    if (id.isEmpty) {
+      throw ArgumentError('Avaliação não identificada.');
+    }
+    await _client.from('coach_evaluations').delete().eq('id', id);
+  }
+
   Future<List<Map<String, dynamic>>> loadAdminEvaluations() async {
     final rows = await _client.from('coach_evaluations').select('''
           id,

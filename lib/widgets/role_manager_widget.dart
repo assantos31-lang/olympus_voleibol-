@@ -137,13 +137,34 @@ class _RoleManagerWidgetState extends State<RoleManagerWidget> {
     setState(() => _activeRoles = updated);
   }
 
-  void _setPrimary(String role) {
-    if (!_activeRoles.contains(role)) return;
-    setState(() => _primaryRole = role);
-    _showSnack(
-      '⭐ ${RoleService.roleLabels[role] ?? role} definido como papel principal.',
-      Colors.green,
-    );
+  Future<void> _setPrimary(String role) async {
+    if (!_activeRoles.contains(role) || _isSaving) return;
+
+    final previousPrimaryRole = _primaryRole;
+    setState(() {
+      _primaryRole = role;
+      _isSaving = true;
+    });
+
+    try {
+      await _roleService.setRoles(
+        userId: widget.userId,
+        roles: _activeRoles,
+        primaryRole: role,
+      );
+      if (!mounted) return;
+      widget.onRolesSaved?.call(role);
+      _showSnack(
+        '⭐ ${RoleService.roleLabels[role] ?? role} definido como papel principal.',
+        Colors.green,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _primaryRole = previousPrimaryRole);
+      _showSnack('Erro ao definir papel principal: $e', Colors.red);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   void _showSnack(String message, Color color) {

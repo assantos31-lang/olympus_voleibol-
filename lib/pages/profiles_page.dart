@@ -1178,7 +1178,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       ('access', 'Acessos', Icons.grid_view_rounded),
                       if (activeRoles.contains('admin'))
                         ('admin', 'Admin', Icons.admin_panel_settings_outlined),
-                      if (currentUserType == 'athlete')
+                      if (activeRoles.contains('coach'))
+                        ('coach', 'Técnico', Icons.sports_rounded),
+                      if (activeRoles.contains('athlete'))
                         ('visibility', 'Atleta', Icons.visibility_outlined),
                       if (permissionValues['agenda'] == true)
                         ('agenda', 'Agenda', Icons.calendar_month_outlined),
@@ -1218,8 +1220,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   const SizedBox(height: 12),
 
                   // ✅ USA currentUserType — reativo ao RoleManagerWidget
-                  if (currentUserType == 'coach' &&
-                      selectedPermissionSection == 'access')
+                  if (activeRoles.contains('coach') &&
+                      selectedPermissionSection == 'coach')
                     _buildCoachTeamPermissionsCard(
                       selectedValue: selectedCoachTeamGender,
                       onSelected: (value) async {
@@ -1350,7 +1352,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   ],
 
                   // ✅ USA currentUserType — reativo ao RoleManagerWidget
-                  if (currentUserType == 'athlete' &&
+                  if (activeRoles.contains('athlete') &&
                       selectedPermissionSection == 'visibility') ...[
                     const SizedBox(height: 16),
                     Divider(color: Colors.grey[300]),

@@ -4949,19 +4949,23 @@ event_time
               ),
             )
           else
-            SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  _buildAthleteInfoCard(),
-                  _buildAthleteCommandCenter(),
-                  _buildTodayBirthdaysCard(),
-                  _buildFinancialAlertCard(),
-                  _buildPresenceSummaryCard(),
-                  _buildGenderRankingCard(),
-                  _buildWeekEventsSectionCard(),
-                  const SizedBox(height: 100),
-                ],
+            SafeArea(
+              top: false,
+              minimum: const EdgeInsets.only(bottom: 12),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: 92),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _buildAthleteInfoCard(),
+                    _buildAthleteCommandCenter(),
+                    _buildTodayBirthdaysCard(),
+                    _buildFinancialAlertCard(),
+                    _buildPresenceSummaryCard(),
+                    _buildGenderRankingCard(),
+                    _buildWeekEventsSectionCard(),
+                  ],
+                ),
               ),
             ),
         ],

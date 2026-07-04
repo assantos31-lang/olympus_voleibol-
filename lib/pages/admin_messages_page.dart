@@ -1840,6 +1840,7 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
           'recipientUserIds': recipientUserIds,
           'title': isUrgent ? 'URGENTE: $title' : title,
           'body': body,
+          'type': 'platform_message',
           'threadId': threadId,
         },
       );
@@ -2942,6 +2943,7 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
             'recipientUserIds': recipientUserIds,
             'title': widget.subject,
             'body': body,
+            'type': 'platform_message',
             'threadId': widget.threadId,
           },
         );

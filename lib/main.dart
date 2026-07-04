@@ -15,6 +15,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'firebase_options.dart';
 import 'pages/admin_home_page.dart';
+import 'pages/admin_messages_page.dart';
 import 'pages/admin_athletes_statistics_list_page.dart';
 import 'pages/admin_coach_evaluations_page.dart';
 import 'pages/athlete_agenda_page.dart';
@@ -22,9 +23,11 @@ import 'pages/athlete_dashboard_page.dart';
 import 'pages/athlete_financial_page.dart';
 import 'pages/athlete_statistics_page.dart';
 import 'pages/athlete_coach_evaluation_page.dart';
+import 'pages/athlete_messages_page.dart';
 import 'pages/chat_rooms_page.dart';
 import 'pages/complete_profile_page.dart';
-import 'pages/coach_received_evaluations_page.dart';
+import 'coach/pages/coach_received_evaluations_page.dart';
+import 'coach/pages/coach_messages_page.dart';
 import 'pages/dashboard_router_page.dart';
 import 'pages/login_page.dart';
 import 'pages/profiles_page.dart';
@@ -282,14 +285,52 @@ void _navigateFromNotificationData(Map<String, dynamic> data) {
     return;
   }
 
-  if (type == 'message') {
+  if (type == 'platform_message' ||
+      type == 'app_message' ||
+      type == 'admin_message') {
+    unawaited(_openPlatformMessages());
+    return;
+  }
+
+  if (type == 'message' || type == 'chat_message') {
     navigatorKey.currentState?.pushNamed(
       '/chat-rooms',
-      arguments: {
-        'threadId': threadId,
-      },
+      arguments: {'threadId': threadId},
     );
     return;
+  }
+}
+
+Future<void> _openPlatformMessages() async {
+  final navigator = navigatorKey.currentState;
+  final user = Supabase.instance.client.auth.currentUser;
+  if (navigator == null || user == null) return;
+
+  String primaryRole = 'athlete';
+  try {
+    final profile = await Supabase.instance.client
+        .from('profiles')
+        .select('user_type')
+        .eq('id', user.id)
+        .maybeSingle();
+    primaryRole =
+        (profile?['user_type'] ?? 'athlete').toString().trim().toLowerCase();
+  } catch (_) {}
+
+  if (navigatorKey.currentState == null) return;
+  if (primaryRole == 'admin') {
+    navigator.push(
+      MaterialPageRoute(builder: (_) => const AdminMessagesPage()),
+    );
+  } else if ({'coach', 'treinador', 'tecnico', 'técnico'}
+      .contains(primaryRole)) {
+    navigator.push(
+      MaterialPageRoute(builder: (_) => const CoachMessagesPage()),
+    );
+  } else {
+    navigator.push(
+      MaterialPageRoute(builder: (_) => const AthleteMessagesPage()),
+    );
   }
 }
 

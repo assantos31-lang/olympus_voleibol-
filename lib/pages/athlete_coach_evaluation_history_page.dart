@@ -17,7 +17,6 @@ class _AthleteCoachEvaluationHistoryPageState
     extends State<AthleteCoachEvaluationHistoryPage> {
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusMuted = Color(0xFF53657B);
 
   final CoachEvaluationService _service = CoachEvaluationService();
   bool _loading = true;
@@ -127,7 +126,14 @@ class _AthleteCoachEvaluationHistoryPageState
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.96),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF163B60).withOpacity(.96),
+            const Color(0xFF0C2743).withOpacity(.94),
+          ],
+        ),
         borderRadius: BorderRadius.circular(19),
         border: Border.all(color: Colors.white.withOpacity(.50)),
       ),
@@ -168,7 +174,7 @@ class _AthleteCoachEvaluationHistoryPageState
           Text(
             _coachName(row),
             style: const TextStyle(
-              color: olympusBlue,
+              color: Colors.white,
               fontSize: 16,
               fontWeight: FontWeight.w900,
             ),
@@ -180,7 +186,7 @@ class _AthleteCoachEvaluationHistoryPageState
                   .where((value) => value.isNotEmpty)
                   .join(' • '),
               style: const TextStyle(
-                color: olympusMuted,
+                color: Colors.white60,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -194,7 +200,7 @@ class _AthleteCoachEvaluationHistoryPageState
               Text(
                 'Nota geral: ${row['rating_general'] ?? '-'} / 5',
                 style: const TextStyle(
-                  color: olympusBlue,
+                  color: Colors.white,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -204,7 +210,7 @@ class _AthleteCoachEvaluationHistoryPageState
             const SizedBox(height: 7),
             Text(
               '💙 ${(row['positive_point']).toString()}',
-              style: const TextStyle(color: olympusMuted, height: 1.3),
+              style: const TextStyle(color: Colors.white70, height: 1.3),
             ),
           ],
         ],
@@ -254,22 +260,68 @@ class _AthleteCoachEvaluationHistoryPageState
               ),
             )
           else
-            ListView(
-              padding: const EdgeInsets.all(14),
-              children: _grouped.entries.expand((entry) sync* {
-                yield Padding(
-                  padding: const EdgeInsets.fromLTRB(3, 8, 3, 9),
-                  child: Text(
-                    entry.key,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
+            SafeArea(
+              top: false,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 34),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(15),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF081D33).withOpacity(0.88),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: olympusGold.withOpacity(0.28)),
+                    ),
+                    child: Row(
+                      children: [
+                        const CircleAvatar(
+                          backgroundColor: Color(0x33D4AF37),
+                          child:
+                              Icon(Icons.history_rounded, color: olympusGold),
+                        ),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Meu histórico',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              Text(
+                                '${_rows.length} avaliação${_rows.length == 1 ? '' : 's'} realizada${_rows.length == 1 ? '' : 's'}',
+                                style: const TextStyle(
+                                  color: Colors.white60,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                );
-                yield* entry.value.map(_evaluationCard);
-              }).toList(),
+                  const SizedBox(height: 10),
+                  ..._grouped.entries.expand((entry) sync* {
+                    yield Padding(
+                      padding: const EdgeInsets.fromLTRB(3, 8, 3, 9),
+                      child: Text(
+                        entry.key,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    );
+                    yield* entry.value.map(_evaluationCard);
+                  }),
+                ],
+              ),
             ),
         ],
       ),

@@ -343,6 +343,7 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
 
   @override
   Widget build(BuildContext context) {
+    final systemBottomInset = MediaQuery.viewPaddingOf(context).bottom;
     if (_isLoading) {
       return const PremiumLoadingScreen(text: 'Carregando dashboard...');
     }
@@ -360,7 +361,7 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
       children: [
         _dashboardWidget!,
         Positioned(
-          bottom: 24,
+          bottom: systemBottomInset + 14,
           right: 16,
           child: FloatingActionButton.extended(
             heroTag: 'role_switcher',

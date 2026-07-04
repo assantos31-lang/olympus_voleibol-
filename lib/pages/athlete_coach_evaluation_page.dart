@@ -565,7 +565,19 @@ class _AthleteCoachEvaluationPageState
           child: Ink(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: disabled ? Colors.grey.shade100 : Colors.white,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: disabled
+                    ? [
+                        const Color(0xFF24374D).withOpacity(0.74),
+                        const Color(0xFF17283D).withOpacity(0.72),
+                      ]
+                    : [
+                        const Color(0xFF163B60).withOpacity(0.96),
+                        const Color(0xFF0C2743).withOpacity(0.94),
+                      ],
+              ),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color:
@@ -607,7 +619,7 @@ class _AthleteCoachEvaluationPageState
                             child: Text(
                               title,
                               style: TextStyle(
-                                color: disabled ? Colors.grey : olympusBlue,
+                                color: disabled ? Colors.white38 : Colors.white,
                                 fontSize: 17,
                                 fontWeight: FontWeight.w900,
                               ),
@@ -640,7 +652,7 @@ class _AthleteCoachEvaluationPageState
                       Text(
                         subtitle,
                         style: TextStyle(
-                          color: disabled ? Colors.grey : olympusMuted,
+                          color: disabled ? Colors.white30 : Colors.white70,
                           fontWeight: FontWeight.w600,
                           height: 1.25,
                         ),
@@ -681,22 +693,60 @@ class _AthleteCoachEvaluationPageState
 
   Widget _menuContent() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 40),
       children: [
-        const Text(
-          'Avaliação do Treinador',
-          style: TextStyle(
-            color: olympusBlue,
-            fontSize: 23,
-            fontWeight: FontWeight.w900,
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF081D33).withOpacity(0.86),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: olympusGold.withOpacity(0.28)),
+          ),
+          child: const Row(
+            children: [
+              CircleAvatar(
+                radius: 23,
+                backgroundColor: Color(0x33D4AF37),
+                child: Icon(
+                  Icons.stars_rounded,
+                  color: olympusGold,
+                  size: 25,
+                ),
+              ),
+              SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Avaliação do Treinador',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Seu feedback fortalece o time.',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 5),
+        const SizedBox(height: 18),
         const Text(
-          'Escolha o tipo de avaliação que deseja preencher.',
-          style: TextStyle(color: olympusMuted, fontWeight: FontWeight.w600),
+          'O que você deseja fazer?',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 10),
         _modeButton(
           icon: Icons.fact_check_rounded,
           title: 'Avaliar treino',
@@ -751,17 +801,44 @@ class _AthleteCoachEvaluationPageState
   Widget _trainingContent() {
     if (_events.isEmpty) {
       return ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 40),
         children: [
-          const SizedBox(height: 14),
           _monthFilter(),
-          const SizedBox(height: 24),
-          const Center(
-            child: Text(
-              'Nenhum treino com check-in disponível para avaliação neste mês.',
-              textAlign: TextAlign.center,
-              style:
-                  TextStyle(color: olympusMuted, fontWeight: FontWeight.w800),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 34),
+            decoration: BoxDecoration(
+              color: const Color(0xFF102D4F).withOpacity(0.92),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: Colors.white.withOpacity(0.13)),
+            ),
+            child: const Column(
+              children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: Color(0x3364FFDA),
+                  child: Icon(
+                    Icons.sports_volleyball_rounded,
+                    color: Color(0xFF64FFDA),
+                    size: 28,
+                  ),
+                ),
+                SizedBox(height: 14),
+                Text(
+                  'Nenhum treino para avaliar',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'Quando houver um treino com check-in neste mês, ele aparecerá aqui.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white60, height: 1.35),
+                ),
+              ],
             ),
           ),
         ],
@@ -1125,10 +1202,13 @@ class _AthleteCoachEvaluationPageState
         body: Stack(
           children: [
             Positioned.fill(
-              child: Image.asset(
-                'assets/images/monte_olimpo_v2.png',
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(color: olympusBlue),
+              child: Opacity(
+                opacity: 0.70,
+                child: Image.asset(
+                  'assets/images/monte_olimpo_v2.png',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(color: olympusBlue),
+                ),
               ),
             ),
             Positioned.fill(
@@ -1136,10 +1216,15 @@ class _AthleteCoachEvaluationPageState
             ),
             Positioned.fill(
               child: SafeArea(
+                top: false,
                 child: Container(
                   margin: const EdgeInsets.fromLTRB(10, 10, 10, 12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.94),
+                    color: _mode == _CoachEvaluationMode.menu ||
+                            (_mode == _CoachEvaluationMode.training &&
+                                _events.isEmpty)
+                        ? const Color(0xFF071A30).withOpacity(0.78)
+                        : Colors.white.withOpacity(0.95),
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(color: Colors.white.withOpacity(0.45)),
                   ),

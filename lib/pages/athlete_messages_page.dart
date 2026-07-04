@@ -1035,7 +1035,7 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
             'token': token,
             'title': senderName,
             'body': preview,
-            'type': 'message',
+            'type': 'platform_message',
             'threadId': widget.threadId,
             'senderId': senderId,
             'senderName': senderName,
