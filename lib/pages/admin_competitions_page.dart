@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -109,7 +111,7 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
           image_url,
           created_at
         )
-      ''');
+      ''').timeout(const Duration(seconds: 20));
 
       final allEvents = eventsResponse
           .map(
@@ -268,7 +270,9 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Erro ao carregar competições: $e';
+        _error = e is TimeoutException
+            ? 'A conexão demorou mais que o esperado. Tente atualizar novamente.'
+            : 'Não foi possível carregar as competições agora. Verifique sua conexão e tente novamente.';
         _loading = false;
       });
     }

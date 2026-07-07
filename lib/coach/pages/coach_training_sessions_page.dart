@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' show asin, cos, sin, sqrt;
 
@@ -398,38 +399,39 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
         return;
       }
 
-      final response = await _supabase.from('convocations').select('''
-id,
-event_id,
-status,
-justification,
-events!convocations_event_id_fkey (
-  id,
-  event_name,
-  event_type,
-  event_date,
-  event_time,
-  event_end_time,
-  gender,
-  championship_name,
-  street,
-  street_number,
-  neighborhood,
-  city,
-  state,
-  cep,
-  latitude,
-  longitude,
-  allow_checkin,
-  enable_ride_logistics
-)
-''').eq('user_id', user.id).eq('event_role', 'coach');
+      // Consultas separadas são menores e mais estáveis no celular do que um
+      // único embed grande de convocations + events.
+      final response = await _supabase
+          .from('convocations')
+          .select('id, event_id, status, justification')
+          .eq('user_id', user.id)
+          .eq('event_role', 'coach')
+          .timeout(const Duration(seconds: 15));
+
+      final eventIds = List<Map<String, dynamic>>.from(response)
+          .map((row) => (row['event_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      final eventsById = <String, Map<String, dynamic>>{};
+      if (eventIds.isNotEmpty) {
+        final eventRows = await _supabase.from('events').select('''
+              id, event_name, event_type, event_date, event_time,
+              event_end_time, gender, championship_name, street,
+              street_number, neighborhood, city, state, cep, latitude,
+              longitude, allow_checkin, enable_ride_logistics
+            ''').inFilter('id', eventIds).timeout(const Duration(seconds: 15));
+        for (final row in List<Map<String, dynamic>>.from(eventRows)) {
+          eventsById[(row['id'] ?? '').toString()] = row;
+        }
+      }
 
       final treinos = <Map<String, dynamic>>[];
       final convocacoesParaAceitar = <String>[];
 
-      for (final item in response) {
-        final rawEvent = item['events'];
+      for (final item in List<Map<String, dynamic>>.from(response)) {
+        final rawEvent = eventsById[(item['event_id'] ?? '').toString()];
         if (rawEvent == null) continue;
 
         final event = Map<String, dynamic>.from(rawEvent);
@@ -459,10 +461,10 @@ events!convocations_event_id_fkey (
                 'id', convocacoesParaAceitar);
       }
 
-      final eventIds = treinos.map((e) => e['id'].toString()).toList();
+      final loadedEventIds = treinos.map((e) => e['id'].toString()).toList();
       final extraData = await Future.wait([
-        _buscarContagensComFallback(eventIds),
-        _buscarEventosComPlanejamento(eventIds),
+        _buscarContagensComFallback(loadedEventIds),
+        _buscarEventosComPlanejamento(loadedEventIds),
       ]);
       final athleteCounts = extraData[0] as Map<String, Map<String, int>>;
       final eventsWithPlanning = extraData[1] as Set<String>;
@@ -488,7 +490,9 @@ events!convocations_event_id_fkey (
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Erro ao carregar treinos: $e';
+        _error = e is TimeoutException
+            ? 'A conexão demorou mais que o esperado. Toque em atualizar para tentar novamente.'
+            : 'Não foi possível carregar os treinos agora. Verifique sua conexão e tente novamente.';
       });
     }
   }
@@ -2573,12 +2577,45 @@ events!convocations_event_id_fkey (
                         ? Center(
                             child: Padding(
                               padding: const EdgeInsets.all(24),
-                              child: Text(
-                                _error!,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: olympusDanger,
-                                  fontWeight: FontWeight.w600,
+                              child: Container(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 360),
+                                padding: const EdgeInsets.all(18),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.94),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: olympusDanger.withOpacity(0.18),
+                                  ),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.cloud_off_rounded,
+                                      color: olympusDanger,
+                                      size: 34,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      _error!,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: olympusText,
+                                        fontWeight: FontWeight.w700,
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 14),
+                                    FilledButton.icon(
+                                      onPressed: _buscarTreinosDoTecnico,
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: olympusBlue,
+                                      ),
+                                      icon: const Icon(Icons.refresh_rounded),
+                                      label: const Text('Tentar novamente'),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),

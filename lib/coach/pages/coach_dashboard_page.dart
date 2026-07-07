@@ -40,6 +40,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
   RealtimeChannel? _trainingPlanRealtimeChannel;
   RealtimeChannel? _coachEvaluationsRealtimeChannel;
   Timer? _messagesBadgeFallbackTimer;
+  Timer? _intelligenceDebounceTimer;
+  bool _hasLoadedOnce = false;
   DateTime? _lastMessageNotificationAt;
   String _coachFullName = 'Técnico';
   String _coachAvatarUrl = '';
@@ -111,24 +113,47 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
   Future<void> _refreshDashboard() async {
     if (!mounted) return;
 
-    setState(() {
-      _isLoading = true;
-    });
+    if (!_hasLoadedOnce) {
+      setState(() => _isLoading = true);
+    }
 
-    await Future.wait([
-      _loadCoachProfile(),
-      _loadCompetitionNewCount(),
-      _loadUnreadMessagesCount(showNotification: false),
-      _loadUnreadReceivedEvaluationsCount(),
-      _loadDashboardIntelligence(),
-    ]);
+    try {
+      await _loadCoachProfile().timeout(const Duration(seconds: 8));
+    } catch (e) {
+      debugPrint('Perfil do técnico carregado parcialmente: $e');
+    }
 
     if (mounted) {
       setState(() {
         _isLoading = false;
+        _hasLoadedOnce = true;
       });
       _setupRealtimeListeners();
     }
+
+    // Os indicadores entram progressivamente sem manter a tela inteira presa.
+    unawaited(_loadSecondaryDashboardData());
+  }
+
+  Future<void> _loadSecondaryDashboardData() async {
+    try {
+      await Future.wait([
+        _loadCompetitionNewCount(),
+        _loadUnreadMessagesCount(showNotification: false),
+        _loadUnreadReceivedEvaluationsCount(),
+        _loadDashboardIntelligence(),
+      ]).timeout(const Duration(seconds: 22));
+    } catch (e) {
+      debugPrint('Indicadores do dashboard carregados parcialmente: $e');
+    }
+  }
+
+  void _scheduleDashboardIntelligenceRefresh() {
+    _intelligenceDebounceTimer?.cancel();
+    _intelligenceDebounceTimer = Timer(
+      const Duration(milliseconds: 700),
+      _loadDashboardIntelligence,
+    );
   }
 
   @override
@@ -660,7 +685,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
             table: 'events',
             callback: (_) {
               _loadCompetitionNewCount();
-              _loadDashboardIntelligence();
+              _scheduleDashboardIntelligenceRefresh();
             },
           )
           ..subscribe();
@@ -671,7 +696,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'training_plan_blocks',
-          callback: (_) => _loadDashboardIntelligence(),
+          callback: (_) => _scheduleDashboardIntelligenceRefresh(),
         )
         .subscribe();
 
@@ -743,7 +768,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     });
 
     _messagesBadgeFallbackTimer ??= Timer.periodic(
-      const Duration(seconds: 8),
+      const Duration(seconds: 30),
       (_) => _loadUnreadMessagesCount(showNotification: true),
     );
   }
@@ -1868,6 +1893,401 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     );
   }
 
+  Widget _buildCoachCommandCenter() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+            decoration: BoxDecoration(
+              color: const Color(0xFF081D33).withOpacity(0.90),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white.withOpacity(0.12)),
+            ),
+            child: Row(
+              children: [
+                _buildCoachStatusMetric(
+                  value: '$_unplannedTrainingsCount',
+                  label: 'Planejamentos',
+                  color: olympusGold,
+                ),
+                _coachStatusDivider(),
+                _buildCoachStatusMetric(
+                  value: '$_evaluationsBadgeCount',
+                  label: 'Avaliações',
+                  color: const Color(0xFFB69CFF),
+                ),
+                _coachStatusDivider(),
+                _buildCoachStatusMetric(
+                  value: '$_unreadMessagesCount',
+                  label: 'Mensagens',
+                  color: const Color(0xFFFF8FA3),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 17),
+          const Text(
+            'Acesso imediato',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _buildCoachQuickActions(),
+          const SizedBox(height: 17),
+          _buildCoachFeaturedAction(),
+          const SizedBox(height: 13),
+          _buildCoachSportsDirectory(),
+        ],
+      ),
+    );
+  }
+
+  Widget _coachStatusDivider() {
+    return Container(
+      width: 1,
+      height: 34,
+      margin: const EdgeInsets.symmetric(horizontal: 6),
+      color: Colors.white.withOpacity(0.12),
+    );
+  }
+
+  Widget _buildCoachStatusMetric({
+    required String value,
+    required String label,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white60, fontSize: 10.5),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCoachQuickActions() {
+    final actions = <({
+      String label,
+      IconData icon,
+      Color color,
+      int badge,
+      VoidCallback onTap,
+    })>[
+      (
+        label: 'Avaliações',
+        icon: Icons.fact_check_rounded,
+        color: const Color(0xFFB69CFF),
+        badge: _evaluationsBadgeCount,
+        onTap: _navigateToEvaluationsHub,
+      ),
+      (
+        label: 'Planejar',
+        icon: Icons.menu_book_rounded,
+        color: olympusGold,
+        badge: _unplannedTrainingsCount,
+        onTap: _navigateToTrainingPlanningDashboard,
+      ),
+      (
+        label: 'Mensagens',
+        icon: Icons.forum_rounded,
+        color: const Color(0xFFFF8FA3),
+        badge: _unreadMessagesCount,
+        onTap: _navigateToMessages,
+      ),
+      (
+        label: 'Competições',
+        icon: Icons.emoji_events_rounded,
+        color: const Color(0xFF70E1F5),
+        badge: _competitionNewCount,
+        onTap: _navigateToCompetitions,
+      ),
+    ];
+
+    return SizedBox(
+      width: double.infinity,
+      height: 88,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final itemWidth = ((constraints.maxWidth - 24) / 4).clamp(58.0, 72.0);
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: actions.indexed.map((entry) {
+              final action = entry.$2;
+              return Padding(
+                padding: EdgeInsets.only(left: entry.$1 == 0 ? 0 : 8),
+                child: SizedBox(
+                  width: itemWidth,
+                  child: InkWell(
+                    onTap: action.onTap,
+                    borderRadius: BorderRadius.circular(18),
+                    child: Column(
+                      children: [
+                        Badge(
+                          isLabelVisible: action.badge > 0,
+                          label: Text(
+                            action.badge > 99 ? '99+' : '${action.badge}',
+                          ),
+                          backgroundColor: Colors.redAccent,
+                          child: Container(
+                            width: 54,
+                            height: 54,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: action.color.withOpacity(0.16),
+                              border: Border.all(
+                                color: action.color.withOpacity(0.52),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: action.color.withOpacity(0.14),
+                                  blurRadius: 12,
+                                ),
+                              ],
+                            ),
+                            child: Icon(action.icon,
+                                color: action.color, size: 25),
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Text(
+                          action.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildCoachFeaturedAction() {
+    final hasPending = _unplannedTrainingsCount > 0 ||
+        _visiblePendingEvaluationsCount > 0 ||
+        _unreadMessagesCount > 0;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap:
+            hasPending ? _navigateToPendingCenter : _navigateToTrainingPlanner,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            gradient: const LinearGradient(
+              colors: [Color(0xFFF4CF4E), Color(0xFFD4A91E)],
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x33D4AF37),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.26),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  hasPending
+                      ? Icons.pending_actions_rounded
+                      : Icons.add_task_rounded,
+                  color: const Color(0xFF0A2947),
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hasPending
+                          ? 'Revisar pendências'
+                          : 'Preparar próximo treino',
+                      style: const TextStyle(
+                        color: Color(0xFF0A2947),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      hasPending
+                          ? 'Planejamentos, avaliações e mensagens em um só lugar'
+                          : 'Seu painel está em dia. Comece um novo planejamento',
+                      style: const TextStyle(
+                        color: Color(0xCC0A2947),
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.arrow_forward_rounded, color: Color(0xFF0A2947)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCoachSportsDirectory() {
+    final items = <({
+      String label,
+      String subtitle,
+      IconData icon,
+      Color color,
+      VoidCallback onTap,
+    })>[
+      (
+        label: 'Análise completa',
+        subtitle: 'Indicadores e evolução da equipe',
+        icon: Icons.insights_rounded,
+        color: const Color(0xFFB69CFF),
+        onTap: _navigateToSmartDashboard,
+      ),
+      (
+        label: 'Sessões de treino',
+        subtitle: 'Planejamento e avaliação rápida',
+        icon: Icons.fitness_center_rounded,
+        color: const Color(0xFF73E2A7),
+        onTap: _navigateToTrainingPlanner,
+      ),
+      (
+        label: 'Avaliar atletas',
+        subtitle: 'Acompanhamento técnico da equipe',
+        icon: Icons.assignment_turned_in_rounded,
+        color: const Color(0xFF70E1F5),
+        onTap: _navigateToAthleteEvaluations,
+      ),
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF102D4F).withOpacity(0.90),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withOpacity(0.13)),
+      ),
+      child: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(15, 14, 15, 7),
+            child: Row(
+              children: [
+                Text(
+                  'Gestão técnica',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Spacer(),
+                Text(
+                  'OLYMPUS',
+                  style: TextStyle(
+                    color: olympusGold,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...items.indexed.map((entry) => Column(
+                children: [
+                  if (entry.$1 > 0)
+                    Divider(
+                      height: 1,
+                      indent: 65,
+                      color: Colors.white.withOpacity(0.09),
+                    ),
+                  ListTile(
+                    onTap: entry.$2.onTap,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 3,
+                    ),
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: entry.$2.color.withOpacity(0.14),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        entry.$2.icon,
+                        color: entry.$2.color,
+                        size: 21,
+                      ),
+                    ),
+                    title: Text(
+                      entry.$2.label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                    subtitle: Text(
+                      entry.$2.subtitle,
+                      style:
+                          const TextStyle(color: Colors.white54, fontSize: 11),
+                    ),
+                    trailing: const Icon(
+                      Icons.chevron_right_rounded,
+                      color: Colors.white38,
+                    ),
+                  ),
+                ],
+              )),
+          const SizedBox(height: 6),
+        ],
+      ),
+    );
+  }
+
   String _smartGreeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) return 'Bom dia';
@@ -2591,6 +3011,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       supabase.removeChannel(_coachEvaluationsRealtimeChannel!);
     }
     _messagesBadgeFallbackTimer?.cancel();
+    _intelligenceDebounceTimer?.cancel();
     _nextCommitmentExpiryTimer?.cancel();
     super.dispose();
   }
@@ -2631,27 +3052,31 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                 ),
               )
             else
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  return SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: constraints.maxHeight,
+              SafeArea(
+                top: false,
+                minimum: const EdgeInsets.only(bottom: 12),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.only(bottom: 76),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            _buildCoachInfoCard(),
+                            _buildCoachCommandCenter(),
+                            _buildTrainingHistoryCard(),
+                            const SizedBox(height: 18),
+                          ],
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          _buildCoachInfoCard(),
-                          _buildSmartSummaryCard(),
-                          _buildTrainingHistoryCard(),
-                          _buildDashboardActions(),
-                          const SizedBox(height: 28),
-                        ],
-                      ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
           ],
         ),
