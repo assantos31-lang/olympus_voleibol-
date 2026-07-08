@@ -101,48 +101,76 @@ Future<void> _initializeSupabase() async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
 
-  await flutterLocalNotificationsPlugin.initialize(
-    InitializationSettings(
-      android: const AndroidInitializationSettings('@mipmap/ic_launcher'),
-    ),
-    onDidReceiveNotificationResponse: (NotificationResponse response) {
-      final payload = response.payload;
-      if (payload == null || payload.isEmpty) return;
+    if (!kIsWeb) {
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
+    }
 
-      try {
-        final data = Map<String, dynamic>.from(jsonDecode(payload) as Map);
-        _navigateFromNotificationData(data);
-      } catch (e) {
-        debugPrint('Erro ao processar payload da notificação local: $e');
-      }
-    },
-  );
+    await flutterLocalNotificationsPlugin.initialize(
+      const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        iOS: DarwinInitializationSettings(),
+      ),
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        final payload = response.payload;
+        if (payload == null || payload.isEmpty) return;
 
-  await flutterLocalNotificationsPlugin
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(channel);
+        try {
+          final data = Map<String, dynamic>.from(jsonDecode(payload) as Map);
+          _navigateFromNotificationData(data);
+        } catch (e) {
+          debugPrint('Erro ao processar payload da notificação local: $e');
+        }
+      },
+    );
 
-  if (!kIsWeb) {
-    FirebaseMessaging.onBackgroundMessage(
-      _firebaseMessagingBackgroundHandler,
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+
+    await _initializeSupabase();
+
+    runApp(
+      MultiProvider(
+        providers: [
+          Provider<AuthService>(create: (_) => AuthService()),
+        ],
+        child: const MyApp(),
+      ),
+    );
+  } catch (e, s) {
+    debugPrint('ERRO FATAL AO INICIAR APP: $e');
+    debugPrint('$s');
+
+    runApp(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: Colors.black,
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Erro ao iniciar o aplicativo:\n\n$e',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
-
-  await _initializeSupabase();
-
-  runApp(
-    MultiProvider(
-      providers: [
-        Provider<AuthService>(create: (_) => AuthService()),
-      ],
-      child: const MyApp(),
-    ),
-  );
 }
 
 Future<void> _setupPushNotifications() async {
@@ -185,6 +213,7 @@ Future<void> _setupPushNotifications() async {
             importance: Importance.max,
             priority: Priority.high,
           ),
+          iOS: const DarwinNotificationDetails(),
         ),
         payload: jsonEncode(message.data),
       );
@@ -313,11 +342,13 @@ Future<void> _openPlatformMessages() async {
         .select('user_type')
         .eq('id', user.id)
         .maybeSingle();
+
     primaryRole =
         (profile?['user_type'] ?? 'athlete').toString().trim().toLowerCase();
   } catch (_) {}
 
   if (navigatorKey.currentState == null) return;
+
   if (primaryRole == 'admin') {
     navigator.push(
       MaterialPageRoute(builder: (_) => const AdminMessagesPage()),
