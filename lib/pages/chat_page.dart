@@ -44,6 +44,7 @@ class _ChatPageState extends State<ChatPage> {
   List<Map<String, dynamic>> _participants = [];
   String? _lastMarkedMessageId;
   List<ChatMessage> _lastStableMessages = [];
+  final Map<String, String?> _localReactionOverrides = {};
   ChatMessage? _replyingTo;
   bool _hasLoadedMessagesOnce = false;
   final Map<String, String?> _participantPhotoUrls = {};
@@ -181,6 +182,19 @@ class _ChatPageState extends State<ChatPage> {
         _chatService.setTypingStatus(roomId: _room.id, isTyping: false);
       });
     }
+  }
+
+  String _capitalizeMessageStart(String value) {
+    if (value.trim().isEmpty) return value;
+
+    final firstLetterIndex = value.indexOf(RegExp(r'[A-Za-zÀ-ÖØ-öø-ÿ]'));
+    if (firstLetterIndex < 0) return value;
+
+    return value.replaceRange(
+      firstLetterIndex,
+      firstLetterIndex + 1,
+      value[firstLetterIndex].toUpperCase(),
+    );
   }
 
   Future<void> _loadMyRole() async {
@@ -382,7 +396,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _send() async {
-    final text = _controller.text;
+    final text = _capitalizeMessageStart(_controller.text);
     if (text.trim().isEmpty) return;
 
     setState(() => _sending = true);
@@ -578,13 +592,22 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _reactToMessage(ChatMessage message, String? emoji) async {
     if (message.isDeleted) return;
 
+    final cleanEmoji = (emoji ?? '').trim();
+    setState(() {
+      _localReactionOverrides[message.id] =
+          cleanEmoji.isEmpty ? null : cleanEmoji;
+    });
+
     try {
       await _chatService.reactToMessage(
         messageId: message.id,
-        emoji: emoji,
+        emoji: cleanEmoji.isEmpty ? null : cleanEmoji,
       );
     } catch (e) {
       if (!mounted) return;
+      setState(() {
+        _localReactionOverrides.remove(message.id);
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erro ao reagir: $e')),
       );
@@ -3238,6 +3261,7 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                     child: TextField(
                       controller: _controller,
+                      textCapitalization: TextCapitalization.sentences,
                       minLines: 1,
                       maxLines: 4,
                       style: const TextStyle(
@@ -3701,7 +3725,20 @@ class _ChatPageState extends State<ChatPage> {
                             _lastStableMessages.isNotEmpty
                         ? _lastStableMessages
                         : incomingMessages;
-                    final visibleMessages = messages
+                    final messagesWithLocalReactions = messages.map((message) {
+                      if (!_localReactionOverrides.containsKey(message.id)) {
+                        return message;
+                      }
+
+                      final localReaction = _localReactionOverrides[message.id];
+                      return message.copyWith(
+                        reactionEmoji: localReaction,
+                        clearReactionEmoji:
+                            localReaction == null || localReaction.isEmpty,
+                      );
+                    }).toList();
+
+                    final visibleMessages = messagesWithLocalReactions
                         .where((message) =>
                             !_isPollNotificationMessage(message) &&
                             !message.isPoll)

@@ -83,6 +83,10 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   int _monthlyTrainingTotal = 0;
   int _monthlyPresenceCount = 0;
   int _monthlyAbsenceCount = 0;
+  int _annualTrainingTotal = 0;
+  int _annualPresenceCount = 0;
+  int _annualAbsenceCount = 0;
+  double _annualPresencePercent = 0;
   int _currentStreak = 0;
   double _monthlyPresencePercent = 0;
   bool _showingLevelUpDialog = false;
@@ -2152,6 +2156,7 @@ event_time
       final year = now.year;
 
       final List<Map<String, dynamic>> trainingEvents = [];
+      final List<Map<String, dynamic>> annualTrainingEvents = [];
       final Set<String> trainingEventIds = <String>{};
 
       int rejectedPresence = 0;
@@ -2179,18 +2184,24 @@ event_time
           (eventMap['event_time'] ?? '').toString(),
         );
         if (eventDate == null) continue;
-        if (eventDate.month != month || eventDate.year != year) continue;
+        if (eventDate.year != year) continue;
 
         final eventId = (eventMap['id'] ?? '').toString();
         if (eventId.isEmpty) continue;
 
-        trainingEvents.add({
+        final normalizedTrainingEvent = {
           ...eventMap,
           'status': status,
           'justification': justification,
           'event_datetime': eventDate,
-        });
+        };
+
+        annualTrainingEvents.add(normalizedTrainingEvent);
         trainingEventIds.add(eventId);
+
+        if (eventDate.month == month) {
+          trainingEvents.add(normalizedTrainingEvent);
+        }
       }
 
       final pendingTrainingOpenCount = trainingEvents.where((event) {
@@ -2275,6 +2286,40 @@ event_time
       final presencePercent =
           totalTrainings > 0 ? (monthlyPresence / totalTrainings) * 100 : 0.0;
 
+      annualTrainingEvents.sort(
+        (a, b) => (a['event_datetime'] as DateTime)
+            .compareTo(b['event_datetime'] as DateTime),
+      );
+
+      final countedAnnualTrainingEvents = annualTrainingEvents.where((event) {
+        final eventId = (event['id'] ?? '').toString();
+        final eventDate = event['event_datetime'] as DateTime;
+        final hasValidCheckin = eventHasValidCheckin[eventId] ?? false;
+        final checkinExpired =
+            now.isAfter(eventDate.add(const Duration(minutes: 30)));
+
+        return hasValidCheckin || checkinExpired;
+      }).toList();
+
+      int annualPresence = 0;
+      int annualAbsence = 0;
+
+      for (final event in countedAnnualTrainingEvents) {
+        final eventId = (event['id'] ?? '').toString();
+        final hasValidCheckin = eventHasValidCheckin[eventId] ?? false;
+
+        if (hasValidCheckin) {
+          annualPresence++;
+        } else {
+          annualAbsence++;
+        }
+      }
+
+      final annualTotalTrainings = countedAnnualTrainingEvents.length;
+      final annualPresencePercent = annualTotalTrainings > 0
+          ? (annualPresence / annualTotalTrainings) * 100
+          : 0.0;
+
       int currentStreak = 0;
       final completedTrainings = countedTrainingEvents.toList()
         ..sort(
@@ -2305,6 +2350,10 @@ event_time
           _monthlyTrainingTotal = totalTrainings;
           _monthlyPresenceCount = monthlyPresence;
           _monthlyAbsenceCount = monthlyAbsence;
+          _annualTrainingTotal = annualTotalTrainings;
+          _annualPresenceCount = annualPresence;
+          _annualAbsenceCount = annualAbsence;
+          _annualPresencePercent = annualPresencePercent;
           _currentStreak = currentStreak;
           _monthlyPresencePercent = presencePercent;
         });
@@ -3391,6 +3440,10 @@ event_time
     final progress = _monthlyTrainingTotal > 0
         ? (_monthlyPresenceCount / _monthlyTrainingTotal).clamp(0.0, 1.0)
         : 0.0;
+    final now = DateTime.now();
+    final monthName = DateFormat('MMMM', 'pt_BR').format(now);
+    final currentMonthLabel =
+        '${monthName[0].toUpperCase()}${monthName.substring(1)}';
 
     return Container(
       width: double.infinity,
@@ -3486,7 +3539,7 @@ event_time
                   children: [
                     Flexible(
                       child: Text(
-                        '${_monthlyPresenceCount.toString().padLeft(2, '0')}/${_monthlyTrainingTotal.toString().padLeft(2, '0')} TREINOS',
+                        'MÊS ATUAL • $currentMonthLabel',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 11,
@@ -3526,7 +3579,7 @@ event_time
                 ),
               ),
               Text(
-                _getPerformanceLevel(),
+                '${_monthlyPresenceCount.toString().padLeft(2, '0')}/${_monthlyTrainingTotal.toString().padLeft(2, '0')} treinos',
                 style: const TextStyle(
                   color: Colors.white70,
                   fontSize: 10,
@@ -3541,8 +3594,8 @@ event_time
               Expanded(
                 child: _buildMiniMetric(
                   icon: Icons.check_circle_outline,
-                  label: 'Presenças',
-                  helper: 'Taxa de presença',
+                  label: 'Presença',
+                  helper: 'Mês atual',
                   value: '${_monthlyPresencePercent.toStringAsFixed(0)}%',
                   valueColor: _getPresencePercentColor(_monthlyPresencePercent),
                   accentColor:
@@ -3556,7 +3609,7 @@ event_time
                 child: _buildMiniMetric(
                   icon: Icons.warning_amber_rounded,
                   label: 'Faltas',
-                  helper: 'Faltas no mês',
+                  helper: 'No mês',
                   value: _monthlyAbsenceCount.toString(),
                   valueColor: _getAbsenceCardColor(),
                   accentColor: _getAbsenceCardColor(),
@@ -3568,8 +3621,8 @@ event_time
               Expanded(
                 child: _buildMiniMetric(
                   icon: Icons.bar_chart_rounded,
-                  label: 'Volume de treino',
-                  helper: 'Treinos do mês',
+                  label: 'Volume',
+                  helper: 'Treinos/mês',
                   value: _monthlyTrainingTotal.toString(),
                   valueColor: const Color(0xFF4FA3FF),
                   accentColor: const Color(0xFF4FA3FF),
@@ -3577,6 +3630,149 @@ event_time
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          _buildAnnualConsolidatedStrip(now.year),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnnualConsolidatedStrip(int year) {
+    final annualProgress = _annualTrainingTotal > 0
+        ? (_annualPresenceCount / _annualTrainingTotal).clamp(0.0, 1.0)
+        : 0.0;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(9, 8, 9, 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(11),
+        color: const Color(0xFF061A31).withOpacity(0.72),
+        border: Border.all(
+          color: const Color(0xFF4FA3FF).withOpacity(0.34),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(9),
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF4FA3FF).withOpacity(0.34),
+                  const Color(0xFF8AF26D).withOpacity(0.18),
+                ],
+              ),
+            ),
+            child: const Icon(
+              Icons.insights_rounded,
+              color: Color(0xFF8FD0FF),
+              size: 16,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Consolidado',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'Ano atual • $year',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.62),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: LinearProgressIndicator(
+                    value: annualProgress,
+                    minHeight: 5,
+                    backgroundColor: Colors.white.withOpacity(0.10),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      _getPresencePercentColor(_annualPresencePercent),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _buildAnnualMetricChip(
+            '${_annualPresencePercent.toStringAsFixed(0)}%',
+            'pres.',
+            _getPresencePercentColor(_annualPresencePercent),
+          ),
+          const SizedBox(width: 5),
+          _buildAnnualMetricChip(
+            _annualAbsenceCount.toString(),
+            'faltas',
+            const Color(0xFFFF6B6B),
+          ),
+          const SizedBox(width: 5),
+          _buildAnnualMetricChip(
+            _annualTrainingTotal.toString(),
+            'treinos',
+            const Color(0xFF8FD0FF),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnnualMetricChip(String value, String label, Color color) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 38),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: color.withOpacity(0.36)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.58),
+              fontSize: 7,
+              fontWeight: FontWeight.w700,
+              height: 1,
+            ),
           ),
         ],
       ),

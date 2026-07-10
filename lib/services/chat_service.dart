@@ -818,44 +818,125 @@ class ChatService {
   }
 
   Stream<List<ChatMessage>> streamMessages(String roomId) {
-    return supabase
+    final controller = StreamController<List<ChatMessage>>();
+    RealtimeChannel? channel;
+
+    Future<void> emit() async {
+      if (controller.isClosed) return;
+      try {
+        controller.add(await _loadMessagesForRoom(roomId));
+      } catch (error, stackTrace) {
+        if (!controller.isClosed) {
+          controller.addError(error, stackTrace);
+        }
+      }
+    }
+
+    controller.onListen = () {
+      emit();
+      channel = supabase
+          .channel('chat_messages_live_$roomId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_messages',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'room_id',
+              value: roomId,
+            ),
+            callback: (_) => emit(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_message_reactions',
+            callback: (_) => emit(),
+          )
+          .subscribe();
+    };
+
+    controller.onCancel = () async {
+      final liveChannel = channel;
+      if (liveChannel != null) {
+        await supabase.removeChannel(liveChannel);
+      }
+    };
+
+    return controller.stream;
+  }
+
+  Future<List<ChatMessage>> _loadMessagesForRoom(String roomId) async {
+    final data = await supabase
         .from('chat_messages')
-        .stream(primaryKey: ['id'])
+        .select()
         .eq('room_id', roomId)
-        .order('created_at')
-        .asyncMap((data) async {
-          final byId = <String, ChatMessage>{};
-          for (final row in data) {
-            final message = ChatMessage.fromMap(row);
-            byId[message.id] = message;
+        .order('created_at');
+
+    final rows = data.map<Map<String, dynamic>>((row) {
+      return Map<String, dynamic>.from(row);
+    }).toList();
+
+    final messageIds = rows
+        .map((row) => (row['id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toList();
+
+    final reactionByMessageId = <String, String>{};
+    if (messageIds.isNotEmpty) {
+      try {
+        final reactions = await supabase
+            .from('chat_message_reactions')
+            .select('message_id, emoji, created_at')
+            .inFilter('message_id', messageIds)
+            .order('created_at', ascending: false);
+
+        for (final rawReaction in reactions) {
+          final reaction = Map<String, dynamic>.from(rawReaction);
+          final messageId = (reaction['message_id'] ?? '').toString();
+          final emoji = (reaction['emoji'] ?? '').toString().trim();
+          if (messageId.isNotEmpty &&
+              emoji.isNotEmpty &&
+              !reactionByMessageId.containsKey(messageId)) {
+            reactionByMessageId[messageId] = emoji;
           }
+        }
+      } catch (_) {
+        // Se o SQL ainda não foi aplicado, o chat continua funcionando sem reação.
+      }
+    }
 
-          final messages = byId.values.toList()
-            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final messages = <ChatMessage>[];
+    final senderIds = <String>{};
+    for (final row in rows) {
+      final messageId = (row['id'] ?? '').toString();
+      row['reaction_emoji'] = reactionByMessageId[messageId];
+      final message = ChatMessage.fromMap(row);
+      messages.add(message);
+      senderIds.add(message.senderId);
+    }
 
-          final senderIds = messages.map((m) => m.senderId).toSet().toList();
-          if (senderIds.isEmpty) return messages;
+    if (senderIds.isEmpty) return messages;
 
-          final profiles = await supabase
-              .from('profiles')
-              .select('id, full_name, avatar_url')
-              .inFilter('id', senderIds);
+    final profiles = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .inFilter('id', senderIds.toList());
 
-          final profileMap = <String, String>{};
-          for (final profile in profiles) {
-            final id = (profile['id'] ?? '').toString();
-            final fullName = (profile['full_name'] ?? '').toString();
-            if (id.isNotEmpty) {
-              profileMap[id] = fullName;
-            }
-          }
+    final profileMap = <String, String>{};
+    for (final profile in profiles) {
+      final id = (profile['id'] ?? '').toString();
+      final fullName = (profile['full_name'] ?? '').toString();
+      if (id.isNotEmpty) {
+        profileMap[id] = fullName;
+      }
+    }
 
-          return messages.map((message) {
-            return message.copyWith(
-              senderName: profileMap[message.senderId],
-            );
-          }).toList();
-        });
+    return messages.map((message) {
+      return message.copyWith(
+        senderName: profileMap[message.senderId],
+      );
+    }).toList();
   }
 
   Future<void> sendMessage({
@@ -959,13 +1040,25 @@ class ChatService {
     String? emoji,
   }) async {
     final userId = currentUserId;
-    if (userId == null) throw Exception('UsuÃ¡rio nÃ£o autenticado');
+    if (userId == null) throw Exception('Usuário não autenticado');
 
     final cleanEmoji = (emoji ?? '').trim();
 
-    await supabase.from('chat_messages').update({
-      'reaction_emoji': cleanEmoji.isEmpty ? null : cleanEmoji,
-    }).eq('id', messageId);
+    if (cleanEmoji.isEmpty) {
+      await supabase
+          .from('chat_message_reactions')
+          .delete()
+          .eq('message_id', messageId)
+          .eq('user_id', userId);
+      return;
+    }
+
+    await supabase.from('chat_message_reactions').upsert({
+      'message_id': messageId,
+      'user_id': userId,
+      'emoji': cleanEmoji,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }, onConflict: 'message_id,user_id');
   }
 
   Future<ChatRoom?> getRoomById(String roomId) async {

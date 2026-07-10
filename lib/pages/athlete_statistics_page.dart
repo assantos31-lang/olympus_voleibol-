@@ -416,7 +416,9 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
       }
 
       // Falta nasce de treino convocado sem check-in após 30 minutos.
-      // Recusados e pendentes seguem a mesma regra da Agenda: não viram falta.
+      // Regra alinhada com Home e Detalhes:
+      // convocado + treino fechado + sem check-in válido = falta,
+      // mesmo que o atleta não tenha marcado que iria.
       if (!convokedTrainingEventDates.containsKey(eventId)) continue;
 
       final convocation = _convocations.firstWhere(
@@ -425,7 +427,11 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
       );
       final status =
           (convocation['status'] ?? '').toString().toLowerCase().trim();
-      if (status != 'accepted') continue;
+      if (status == 'cancelled' ||
+          status == 'canceled' ||
+          status == 'cancelado') {
+        continue;
+      }
 
       final checkinClosed = today.isAfter(
         eventDate.add(const Duration(minutes: 30)),

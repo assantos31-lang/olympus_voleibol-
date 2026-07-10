@@ -56,6 +56,8 @@ class ChatMessage {
 
   ChatMessage copyWith({
     String? senderName,
+    String? reactionEmoji,
+    bool clearReactionEmoji = false,
   }) {
     return ChatMessage(
       id: id,
@@ -68,7 +70,8 @@ class ChatMessage {
       replyToMessageId: replyToMessageId,
       replyToText: replyToText,
       replyToSenderName: replyToSenderName,
-      reactionEmoji: reactionEmoji,
+      reactionEmoji:
+          clearReactionEmoji ? null : reactionEmoji ?? this.reactionEmoji,
       createdAt: createdAt,
       editedAt: editedAt,
       deletedAt: deletedAt,
