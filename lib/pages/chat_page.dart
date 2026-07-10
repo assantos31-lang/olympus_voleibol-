@@ -352,14 +352,12 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _scrollToBottom({bool animated = false}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-      if (!_scrollController.hasClients) return;
+    void jump({required bool withAnimation}) {
+      if (!mounted || !_scrollController.hasClients) return;
 
       final target = _scrollController.position.maxScrollExtent;
-      if (animated) {
-        await _scrollController.animateTo(
+      if (withAnimation) {
+        _scrollController.animateTo(
           target,
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOut,
@@ -367,6 +365,19 @@ class _ChatPageState extends State<ChatPage> {
       } else {
         _scrollController.jumpTo(target);
       }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      jump(withAnimation: animated);
+      Future.delayed(const Duration(milliseconds: 120), () {
+        jump(withAnimation: false);
+      });
+      Future.delayed(const Duration(milliseconds: 320), () {
+        jump(withAnimation: false);
+      });
+      Future.delayed(const Duration(milliseconds: 650), () {
+        jump(withAnimation: false);
+      });
     });
   }
 
@@ -564,6 +575,22 @@ class _ChatPageState extends State<ChatPage> {
     setState(() => _replyingTo = message);
   }
 
+  Future<void> _reactToMessage(ChatMessage message, String? emoji) async {
+    if (message.isDeleted) return;
+
+    try {
+      await _chatService.reactToMessage(
+        messageId: message.id,
+        emoji: emoji,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao reagir: $e')),
+      );
+    }
+  }
+
   Future<void> _showMessageActions(ChatMessage message) async {
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -580,6 +607,52 @@ class _ChatPageState extends State<ChatPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: const [
+                      '\u{1F602}',
+                      '\u{2764}\u{FE0F}',
+                      '\u{1F44F}',
+                      '\u{1F525}',
+                      '\u{1F3D0}',
+                      '\u{1F44D}',
+                    ].map((emoji) {
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(22),
+                        onTap: () => Navigator.pop(context, 'react:$emoji'),
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 22),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                if ((message.reactionEmoji ?? '').trim().isNotEmpty)
+                  ListTile(
+                    leading:
+                        const Icon(Icons.emoji_emotions_outlined, color: _navy),
+                    title: const Text('Remover reação'),
+                    onTap: () => Navigator.pop(context, 'clear_reaction'),
+                  ),
                 ListTile(
                   leading: const Icon(Icons.reply_rounded, color: _navy),
                   title: const Text('Responder'),
@@ -608,7 +681,11 @@ class _ChatPageState extends State<ChatPage> {
       },
     );
 
-    if (action == 'reply') {
+    if ((action ?? '').startsWith('react:')) {
+      await _reactToMessage(message, action!.substring('react:'.length));
+    } else if (action == 'clear_reaction') {
+      await _reactToMessage(message, null);
+    } else if (action == 'reply') {
       _startReply(message);
     } else if (action == 'edit') {
       await _editMessage(message);
@@ -2449,6 +2526,7 @@ class _ChatPageState extends State<ChatPage> {
     required String senderName,
     required String text,
     bool compact = false,
+    bool dark = false,
   }) {
     final preview = text.trim().isEmpty ? 'Mensagem' : text.trim();
 
@@ -2471,8 +2549,8 @@ class _ChatPageState extends State<ChatPage> {
             senderName.isEmpty ? 'Mensagem respondida' : senderName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: _navy,
+            style: TextStyle(
+              color: dark ? Colors.white : _navy,
               fontSize: 12,
               fontWeight: FontWeight.w900,
             ),
@@ -2483,7 +2561,9 @@ class _ChatPageState extends State<ChatPage> {
             maxLines: compact ? 1 : 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: _navy.withValues(alpha: 0.72),
+              color: dark
+                  ? Colors.white.withValues(alpha: 0.78)
+                  : _navy.withValues(alpha: 0.72),
               fontSize: compact ? 12 : 13,
               height: 1.18,
               fontWeight: FontWeight.w600,
@@ -3015,10 +3095,45 @@ class _ChatPageState extends State<ChatPage> {
       ),
     );
 
+    final reaction = (msg.reactionEmoji ?? '').trim();
+    final bubbleWithReaction = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(bottom: reaction.isEmpty ? 0 : 12),
+          child: bubble,
+        ),
+        if (reaction.isNotEmpty)
+          Positioned(
+            right: isMine ? 10 : null,
+            left: isMine ? null : 10,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                reaction,
+                style: const TextStyle(fontSize: 16),
+              ),
+            ),
+          ),
+      ],
+    );
+
     if (isMine) {
       return Align(
         alignment: Alignment.centerRight,
-        child: bubble,
+        child: bubbleWithReaction,
       );
     }
 
@@ -3029,7 +3144,7 @@ class _ChatPageState extends State<ChatPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           _buildParticipantAvatar(msg),
-          Flexible(child: bubble),
+          Flexible(child: bubbleWithReaction),
         ],
       ),
     );
@@ -3055,6 +3170,7 @@ class _ChatPageState extends State<ChatPage> {
               senderName: _replySenderName(message),
               text: _replyPreviewText(message),
               compact: true,
+              dark: true,
             ),
           ),
           const SizedBox(width: 8),

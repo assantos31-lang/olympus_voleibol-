@@ -954,6 +954,20 @@ class ChatService {
         .eq('sender_id', userId);
   }
 
+  Future<void> reactToMessage({
+    required String messageId,
+    String? emoji,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('UsuÃ¡rio nÃ£o autenticado');
+
+    final cleanEmoji = (emoji ?? '').trim();
+
+    await supabase.from('chat_messages').update({
+      'reaction_emoji': cleanEmoji.isEmpty ? null : cleanEmoji,
+    }).eq('id', messageId);
+  }
+
   Future<ChatRoom?> getRoomById(String roomId) async {
     final response = await supabase
         .from('chat_rooms')

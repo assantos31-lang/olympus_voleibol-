@@ -9,6 +9,7 @@ class ChatMessage {
   final String? replyToMessageId;
   final String? replyToText;
   final String? replyToSenderName;
+  final String? reactionEmoji;
   final DateTime createdAt;
   final DateTime? editedAt;
   final DateTime? deletedAt;
@@ -24,6 +25,7 @@ class ChatMessage {
     this.replyToMessageId,
     this.replyToText,
     this.replyToSenderName,
+    this.reactionEmoji,
     required this.createdAt,
     this.editedAt,
     this.deletedAt,
@@ -41,6 +43,7 @@ class ChatMessage {
       replyToMessageId: map['reply_to_message_id'] as String?,
       replyToText: map['reply_to_text'] as String?,
       replyToSenderName: map['reply_to_sender_name'] as String?,
+      reactionEmoji: map['reaction_emoji'] as String?,
       createdAt: DateTime.parse(map['created_at'] as String),
       editedAt: map['edited_at'] == null
           ? null
@@ -65,6 +68,7 @@ class ChatMessage {
       replyToMessageId: replyToMessageId,
       replyToText: replyToText,
       replyToSenderName: replyToSenderName,
+      reactionEmoji: reactionEmoji,
       createdAt: createdAt,
       editedAt: editedAt,
       deletedAt: deletedAt,
