@@ -1709,6 +1709,44 @@ enable_ride_logistics
         }
       }
 
+      String buildRideText(Map<String, dynamic>? ride) {
+        if (ride == null) return 'Não respondeu';
+
+        final needsRide = ride['needs_ride'] == true;
+        final hasCar = ride['has_car'] == true;
+        final seatsRaw = ride['available_seats'];
+        final seats =
+            seatsRaw is int ? seatsRaw : int.tryParse('$seatsRaw') ?? 0;
+
+        if (needsRide) return 'Precisa de carona';
+        if (hasCar && seats > 0) {
+          return 'Vou de carro e tenho $seats vaga${seats > 1 ? 's' : ''}';
+        }
+        if (hasCar && seats == 0) return 'Vou de carro e não tenho vagas';
+        if (!needsRide && seats == 0) return 'Vou de carro e não tenho vagas';
+
+        return 'Não respondeu';
+      }
+
+      final ridesByUser = <String, Map<String, Map<String, dynamic>>>{};
+      try {
+        final ridesResponse = await _supabase
+            .from('event_rides')
+            .select('user_id, ride_type, needs_ride, has_car, available_seats')
+            .eq('event_id', eventIdRaw.toString());
+
+        for (final rawRide in ridesResponse as List) {
+          final ride = Map<String, dynamic>.from(rawRide);
+          final userId = (ride['user_id'] ?? '').toString();
+          final rideType =
+              (ride['ride_type'] ?? '').toString().toLowerCase().trim();
+          if (userId.isEmpty || rideType.isEmpty) continue;
+          ridesByUser.putIfAbsent(userId, () => {})[rideType] = ride;
+        }
+      } catch (e) {
+        debugPrint('Erro ao carregar caronas para exportação: $e');
+      }
+
       if (!mounted) return;
 
       showDialog(
@@ -1969,6 +2007,44 @@ enable_ride_logistics
         }
       }
 
+      String buildRideText(Map<String, dynamic>? ride) {
+        if (ride == null) return 'Não respondeu';
+
+        final needsRide = ride['needs_ride'] == true;
+        final hasCar = ride['has_car'] == true;
+        final seatsRaw = ride['available_seats'];
+        final seats =
+            seatsRaw is int ? seatsRaw : int.tryParse('$seatsRaw') ?? 0;
+
+        if (needsRide) return 'Precisa de carona';
+        if (hasCar && seats > 0) {
+          return 'Vou de carro e tenho $seats vaga${seats > 1 ? 's' : ''}';
+        }
+        if (hasCar && seats == 0) return 'Vou de carro e não tenho vagas';
+        if (!needsRide && seats == 0) return 'Vou de carro e não tenho vagas';
+
+        return 'Não respondeu';
+      }
+
+      final ridesByUser = <String, Map<String, Map<String, dynamic>>>{};
+      try {
+        final ridesResponse = await _supabase
+            .from('event_rides')
+            .select('user_id, ride_type, needs_ride, has_car, available_seats')
+            .eq('event_id', eventIdRaw.toString());
+
+        for (final rawRide in ridesResponse as List) {
+          final ride = Map<String, dynamic>.from(rawRide);
+          final userId = (ride['user_id'] ?? '').toString();
+          final rideType =
+              (ride['ride_type'] ?? '').toString().toLowerCase().trim();
+          if (userId.isEmpty || rideType.isEmpty) continue;
+          ridesByUser.putIfAbsent(userId, () => {})[rideType] = ride;
+        }
+      } catch (e) {
+        debugPrint('Erro ao carregar caronas para exportação: $e');
+      }
+
       final championshipName =
           (evento['championship_name'] ?? '-').toString().trim().isEmpty
               ? '-'
@@ -2022,6 +2098,11 @@ enable_ride_logistics
         final nome = (convocado['full_name'] ?? '-').toString();
         final dataNascimento = formatBirthDate(convocado['birth_date']);
         final rg = (convocado['rg'] ?? '-').toString();
+        final userId = (convocado['user_id'] ??
+                convocado['id'] ??
+                convocado['profile_id'] ??
+                '')
+            .toString();
         final userType = (convocado['user_type'] ?? '').toString();
         final cargo = userType == 'coach'
             ? 'Técnico'
@@ -2031,12 +2112,24 @@ enable_ride_logistics
         final status = (convocado['status'] ?? 'pending').toString();
 
         if (status == 'accepted') {
+          final userRides =
+              ridesByUser[userId] ?? <String, Map<String, dynamic>>{};
+          final idaRide = userRides['ida'];
+          final voltaRide = userRides['volta'];
+          final precisaCarona = (idaRide?['needs_ride'] == true) ||
+                  (voltaRide?['needs_ride'] == true)
+              ? 'Sim'
+              : 'Não';
+
           aceitosLines.add(
             'Nome: $nome\n'
             'Tipo: ${cargo.isEmpty ? '-' : cargo}\n'
             'Data de nascimento: $dataNascimento\n'
             'RG: $rg\n'
-            'Status: Aceitou\n',
+            'Status: Aceitou\n'
+            'Preciso de Carona: $precisaCarona\n'
+            'Ida: ${buildRideText(idaRide)}\n'
+            'Volta: ${buildRideText(voltaRide)}\n',
           );
         } else if (status == 'rejected') {
           final justificativa =

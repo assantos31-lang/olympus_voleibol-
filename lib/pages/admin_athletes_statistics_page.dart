@@ -310,16 +310,10 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
   bool _isTrainingEvent(Map<String, dynamic> row) {
     final event = row['events'];
-
-    if (event is Map) {
-      final type = (event['event_type'] ?? '').toString().toLowerCase().trim();
-      return type == 'treino';
-    }
-
-    final directType =
-        (row['event_type'] ?? '').toString().toLowerCase().trim();
-    if (directType.isEmpty) return true;
-    return directType == 'treino';
+    final rawType = event is Map ? event['event_type'] : row['event_type'];
+    final type = (rawType ?? '').toString().toLowerCase().trim();
+    if (type.isEmpty) return true;
+    return type.contains('treino');
   }
 
   void _showItemExplanation({
@@ -474,7 +468,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     // `check_in_status` ou com variações de texto. Para não manter falta
     // indevidamente, qualquer linha existente em `checkins` sem status de
     // erro/cancelamento também conta como presença.
-    if (raw.isEmpty) return true;
+    if (raw.isEmpty || raw == 'pending' || raw == 'pendente') return false;
 
     if (raw == 'cancelado' ||
         raw == 'canceled' ||
@@ -967,7 +961,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
   double get _presenceRate {
     final base = _trainingBaseCount;
-    if (base == 0) return 0;
+    if (base == 0) return 1.0;
     return (_trainingPresenceCount / base).clamp(0, 1);
   }
 

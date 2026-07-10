@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/auth_service.dart';
+import '../services/chat_service.dart';
 import '../services/permission_service.dart';
 import 'agenda_page.dart';
 import 'admin_birthdays_page.dart';
@@ -12,6 +13,7 @@ import 'admin_competitions_page.dart';
 import 'admin_financial_page.dart';
 import 'admin_messages_page.dart';
 import 'admin_training_plans_page.dart' show AdminTrainingPlansPage;
+import 'chat_rooms_page.dart';
 
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
@@ -24,6 +26,7 @@ class _AdminHomePageState extends State<AdminHomePage>
     with WidgetsBindingObserver {
   final supabase = Supabase.instance.client;
   final PermissionService _permissionService = PermissionService();
+  final ChatService _chatService = ChatService();
   Map<String, bool> _adminPermissions = {};
 
   List<Map<String, dynamic>> monthBirthdays = [];
@@ -39,6 +42,7 @@ class _AdminHomePageState extends State<AdminHomePage>
   RealtimeChannel? _eventsRealtimeChannel;
   Timer? _adminBadgesFallbackTimer;
   int unreadMessagesCount = 0;
+  int chatUnreadCount = 0;
 
   @override
   void initState() {
@@ -72,6 +76,7 @@ class _AdminHomePageState extends State<AdminHomePage>
       _fetchMonthBirthdays(),
       _fetchPendingFinancialReceiptsCount(),
       _fetchUnreadMessagesCount(),
+      _fetchChatUnreadCount(),
     ]);
   }
 
@@ -272,6 +277,15 @@ class _AdminHomePageState extends State<AdminHomePage>
     } catch (e) {
       debugPrint('Erro ao buscar mensagens não lidas do admin: $e');
     }
+  }
+
+  Future<void> _fetchChatUnreadCount() async {
+    final unreadTotal = await _chatService.getTotalUnreadCount();
+    if (!mounted) return;
+
+    setState(() {
+      chatUnreadCount = unreadTotal;
+    });
   }
 
   Future<void> _fetchMonthBirthdays() async {
@@ -1357,6 +1371,20 @@ class _AdminHomePageState extends State<AdminHomePage>
         },
       ),
       (
+        permission: 'admin_messages',
+        label: 'Chat',
+        icon: Icons.chat_bubble_rounded,
+        color: const Color(0xFF25D366),
+        badge: chatUnreadCount,
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ChatRoomsPage()),
+          );
+          _fetchChatUnreadCount();
+        },
+      ),
+      (
         permission: 'admin_birthdays',
         label: 'Aniversários',
         icon: Icons.cake_rounded,
@@ -1369,27 +1397,36 @@ class _AdminHomePageState extends State<AdminHomePage>
     return SizedBox(
       width: double.infinity,
       height: 88,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: actions.indexed.map((entry) {
-          final index = entry.$1;
-          final action = entry.$2;
-          return Padding(
-            padding: EdgeInsets.only(left: index == 0 ? 0 : 8),
-            child: _buildQuickAction(
-              label: action.label,
-              icon: action.icon,
-              color: action.color,
-              badge: action.badge,
-              onTap: action.onTap,
-            ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final itemWidth =
+              ((constraints.maxWidth - 32) / actions.length).clamp(54.0, 70.0);
+
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: actions.indexed.map((entry) {
+              final index = entry.$1;
+              final action = entry.$2;
+              return Padding(
+                padding: EdgeInsets.only(left: index == 0 ? 0 : 8),
+                child: _buildQuickAction(
+                  width: itemWidth,
+                  label: action.label,
+                  icon: action.icon,
+                  color: action.color,
+                  badge: action.badge,
+                  onTap: action.onTap,
+                ),
+              );
+            }).toList(),
           );
-        }).toList(),
+        },
       ),
     );
   }
 
   Widget _buildQuickAction({
+    required double width,
     required String label,
     required IconData icon,
     required Color color,
@@ -1397,7 +1434,7 @@ class _AdminHomePageState extends State<AdminHomePage>
     required VoidCallback onTap,
   }) {
     return SizedBox(
-      width: 70,
+      width: width,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),

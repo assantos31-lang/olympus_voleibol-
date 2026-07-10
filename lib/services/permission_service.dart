@@ -210,17 +210,22 @@ class PermissionService {
     required bool showStatusFilter,
     required List<String> allowedConvocationStatuses,
   }) async {
+    final currentFilters = await getAgendaFilters(userId);
+    final currentAccess = await hasAccess(userId, 'agenda');
+
     final filters = {
       'show_month_filter': showMonthFilter,
       'allowed_event_types': allowedEventTypes,
       'show_status_filter': showStatusFilter,
       'allowed_convocation_statuses': allowedConvocationStatuses,
+      'ver_convocados': currentFilters['ver_convocados'] == true,
+      'exportar_dados_jogo': currentFilters['exportar_dados_jogo'] == true,
     };
 
     await updatePermission(
       userId: userId,
       pageName: 'agenda',
-      canAccess: true,
+      canAccess: currentAccess,
       allowedFilters: filters,
     );
   }

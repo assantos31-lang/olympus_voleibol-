@@ -2,12 +2,14 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import '../models/chat_room.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/chat_service.dart';
 import 'chat_page.dart';
 
 class ChatRoomsPage extends StatefulWidget {
-  const ChatRoomsPage({super.key});
+  final String? initialRoomId;
+
+  const ChatRoomsPage({super.key, this.initialRoomId});
 
   @override
   State<ChatRoomsPage> createState() => _ChatRoomsPageState();
@@ -19,21 +21,26 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
   final ImagePicker _imagePicker = ImagePicker();
 
   late Future<List<ChatRoomListItem>> _futureRooms;
+  late Stream<List<ChatRoomListItem>> _roomsStream;
   bool _isAdmin = false;
   String _searchQuery = '';
+  bool _openedInitialRoom = false;
+  bool _openedPendingPollRoom = false;
+  final Set<String> _pinnedRoomIds = <String>{};
 
   static const Color _gold = Color(0xFFD4B06A);
-  static const Color _goldSoft = Color(0xFFE7CD8E);
   static const Color _navy = Color(0xFF0E2A57);
   static const Color _navyDark = Color(0xFF0A1730);
-  static const Color _textPrimary = Colors.white;
-  static const Color _textSecondary = Color(0xFFD8DEE8);
 
   @override
   void initState() {
     super.initState();
     _futureRooms = _chatService.getMyRoomListItems();
+    _roomsStream = _chatService.streamMyRoomListItems();
     _loadIsAdmin();
+    _loadPinnedRooms();
+    _openInitialRoomIfNeeded();
+    _openPendingPollRoomIfNeeded();
     _searchController.addListener(_onSearchChanged);
   }
 
@@ -65,7 +72,30 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
   Future<void> _reload() async {
     setState(() {
       _futureRooms = _chatService.getMyRoomListItems();
+      _roomsStream = _chatService.streamMyRoomListItems();
     });
+  }
+
+  Future<void> _openInitialRoomIfNeeded() async {
+    if (_openedInitialRoom) return;
+    final roomId = widget.initialRoomId?.trim();
+    if (roomId == null || roomId.isEmpty) return;
+
+    _openedInitialRoom = true;
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+
+    try {
+      final room = await _chatService.getRoomById(roomId);
+      if (!mounted || room == null) return;
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ChatPage(room: room)),
+      );
+
+      if (!mounted) return;
+      await _reload();
+    } catch (_) {}
   }
 
   Future<void> _deleteRoomForMe(ChatRoomListItem item) async {
@@ -167,16 +197,16 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                           itemBuilder: (context, index) {
                             final user = users[index];
                             final userId = (user['id'] ?? '').toString();
-                            final fullName =
-                                (user['full_name'] ?? 'Sem nome').toString();
-                            final phone =
-                                (user['phone'] ?? '').toString().trim();
-                            final userType =
-                                (user['user_type'] ?? '').toString().trim();
+                            final fullName = (user['display_name'] ??
+                                    user['full_name'] ??
+                                    'Sem nome')
+                                .toString();
                             final photoUrl = _resolveAvatarUrl(
                               (user['avatar_url'] ?? '').toString(),
                             );
                             final isSelected = selectedUserId == userId;
+                            const phone = '';
+                            const userType = '';
 
                             String subtitle = '';
                             if (phone.isNotEmpty && userType.isNotEmpty) {
@@ -285,9 +315,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                           });
 
                           try {
-                            final room = await _chatService.createGroupRoom(
-                              name: selectedUserName ?? 'Nova conversa',
-                              participantUserIds: [selectedUserId!],
+                            final room = await _chatService.createDirectRoom(
+                              otherUserId: selectedUserId!,
+                              otherUserName: selectedUserName,
                             );
 
                             if (!mounted) return;
@@ -368,7 +398,31 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: const Text('Criar grupo'),
+              backgroundColor: const Color(0xFFF7F4EC),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+              titlePadding: const EdgeInsets.fromLTRB(22, 20, 22, 8),
+              contentPadding: const EdgeInsets.fromLTRB(18, 4, 18, 0),
+              actionsPadding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
+              title: const Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: _navy,
+                    child: Icon(Icons.groups_rounded, color: _gold),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Criar grupo',
+                      style: TextStyle(
+                        color: _navy,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               content: SizedBox(
                 width: double.maxFinite,
                 child: SingleChildScrollView(
@@ -378,31 +432,57 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                       GestureDetector(
                         onTap:
                             isSaving ? null : () => pickImage(setDialogState),
-                        child: CircleAvatar(
-                          radius: 34,
-                          backgroundColor: _gold.withValues(alpha: 0.18),
-                          backgroundImage: selectedImage != null
-                              ? FileImage(selectedImage!)
-                              : null,
-                          child: selectedImage == null
-                              ? const Icon(Icons.camera_alt, color: _gold)
-                              : null,
+                        child: Container(
+                          width: 84,
+                          height: 84,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _gold.withValues(alpha: 0.18),
+                            border: Border.all(
+                              color: _gold.withValues(alpha: 0.55),
+                              width: 1.2,
+                            ),
+                          ),
+                          child: CircleAvatar(
+                            radius: 40,
+                            backgroundColor: Colors.transparent,
+                            backgroundImage: selectedImage != null
+                                ? FileImage(selectedImage!)
+                                : null,
+                            child: selectedImage == null
+                                ? const Icon(
+                                    Icons.add_a_photo_rounded,
+                                    color: _navy,
+                                  )
+                                : null,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
                       TextField(
                         controller: nameController,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Nome do grupo',
-                          border: OutlineInputBorder(),
+                          filled: true,
+                          fillColor: Colors.white,
+                          prefixIcon: const Icon(Icons.edit_rounded),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: BorderSide.none,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),
-                      const Align(
+                      Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Selecionar participantes',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                          selectedUserIds.isEmpty
+                              ? 'Selecionar participantes'
+                              : '${selectedUserIds.length} participante(s) selecionado(s)',
+                          style: const TextStyle(
+                            color: _navy,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -420,40 +500,107 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                             itemBuilder: (context, index) {
                               final user = users[index];
                               final userId = (user['id'] ?? '').toString();
-                              final fullName =
-                                  (user['full_name'] ?? 'Sem nome').toString();
-                              final phone =
-                                  (user['phone'] ?? '').toString().trim();
-                              final userType =
-                                  (user['user_type'] ?? '').toString().trim();
+                              final fullName = (user['display_name'] ??
+                                      user['full_name'] ??
+                                      'Sem nome')
+                                  .toString();
+                              const phone = '';
+                              const userTypeLabel = '';
 
                               String subtitle = '';
-                              if (phone.isNotEmpty && userType.isNotEmpty) {
-                                subtitle = '$phone • $userType';
+                              if (phone.isNotEmpty &&
+                                  userTypeLabel.isNotEmpty) {
+                                subtitle = '$phone • $userTypeLabel';
                               } else if (phone.isNotEmpty) {
                                 subtitle = phone;
                               } else {
-                                subtitle = userType;
+                                subtitle = userTypeLabel;
                               }
 
-                              return CheckboxListTile(
-                                value: selectedUserIds.contains(userId),
-                                onChanged: isSaving
-                                    ? null
-                                    : (checked) {
-                                        setDialogState(() {
-                                          if (checked == true) {
-                                            selectedUserIds.add(userId);
-                                          } else {
-                                            selectedUserIds.remove(userId);
-                                          }
-                                        });
-                                      },
-                                title: Text(fullName),
-                                subtitle: Text(subtitle),
-                                controlAffinity:
-                                    ListTileControlAffinity.leading,
-                                contentPadding: EdgeInsets.zero,
+                              final checked = selectedUserIds.contains(userId);
+
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(16),
+                                  onTap: isSaving
+                                      ? null
+                                      : () {
+                                          setDialogState(() {
+                                            if (checked) {
+                                              selectedUserIds.remove(userId);
+                                            } else {
+                                              selectedUserIds.add(userId);
+                                            }
+                                          });
+                                        },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 9,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: checked
+                                          ? _gold.withValues(alpha: 0.22)
+                                          : Colors.white,
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: checked ? _gold : Colors.black12,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Checkbox(
+                                          value: checked,
+                                          activeColor: _navy,
+                                          onChanged: isSaving
+                                              ? null
+                                              : (value) {
+                                                  setDialogState(() {
+                                                    if (value == true) {
+                                                      selectedUserIds
+                                                          .add(userId);
+                                                    } else {
+                                                      selectedUserIds
+                                                          .remove(userId);
+                                                    }
+                                                  });
+                                                },
+                                        ),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                fullName,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: _navy,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                              if (subtitle.isNotEmpty)
+                                                Text(
+                                                  subtitle,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: _navy.withValues(
+                                                      alpha: 0.62,
+                                                    ),
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               );
                             },
                           ),
@@ -469,6 +616,13 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _gold,
+                    foregroundColor: _navy,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
                   onPressed: isSaving
                       ? null
                       : () async {
@@ -499,27 +653,20 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                           });
 
                           try {
-                            var room = await _chatService.createGroupRoom(
-                              name: groupName,
-                              participantUserIds: selectedUserIds.toList(),
-                            );
-
+                            String? avatarPath;
                             if (selectedImage != null) {
-                              final avatarPath =
-                                  await _chatService.uploadRoomAvatar(
-                                roomId: room.id,
+                              avatarPath = await _chatService.uploadRoomAvatar(
+                                roomId:
+                                    'grupo_${DateTime.now().millisecondsSinceEpoch}',
                                 file: selectedImage!,
                               );
-                              await _chatService.updateRoomAvatar(
-                                roomId: room.id,
-                                avatarUrl: avatarPath,
-                              );
-                              final updatedRoom =
-                                  await _chatService.getRoomById(room.id);
-                              if (updatedRoom != null) {
-                                room = updatedRoom;
-                              }
                             }
+
+                            final room = await _chatService.createGroupRoom(
+                              name: groupName,
+                              participantUserIds: selectedUserIds.toList(),
+                              avatarUrl: avatarPath,
+                            );
 
                             if (!mounted) return;
                             Navigator.of(dialogContext).pop();
@@ -554,7 +701,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Criar'),
+                      : const Text('Criar grupo'),
                 ),
               ],
             );
@@ -640,7 +787,94 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
     if (room.isLocked) return 'Bloqueado';
     if (room.adminOnly) return 'Somente admin envia';
-    return room.type;
+    return room.type == 'group' ? 'Grupo' : 'Conversa';
+  }
+
+  String get _pinnedRoomsKey {
+    final userId = _chatService.currentUserId ?? 'anon';
+    return 'olympus_pinned_chat_rooms_$userId';
+  }
+
+  Future<void> _loadPinnedRooms() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ids = prefs.getStringList(_pinnedRoomsKey) ?? const <String>[];
+    if (!mounted) return;
+    setState(() {
+      _pinnedRoomIds
+        ..clear()
+        ..addAll(ids.take(2));
+    });
+  }
+
+  Future<void> _savePinnedRooms() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_pinnedRoomsKey, _pinnedRoomIds.take(2).toList());
+  }
+
+  Future<void> _togglePinnedRoom(ChatRoomListItem item) async {
+    final roomId = item.room.id;
+    final isPinned = _pinnedRoomIds.contains(roomId);
+
+    if (!isPinned && _pinnedRoomIds.length >= 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Você pode fixar até 2 conversas no topo.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      if (isPinned) {
+        _pinnedRoomIds.remove(roomId);
+      } else {
+        _pinnedRoomIds.add(roomId);
+      }
+    });
+
+    await _savePinnedRooms();
+  }
+
+  Future<void> _openPendingPollRoomIfNeeded() async {
+    if (_openedPendingPollRoom || widget.initialRoomId != null) return;
+    _openedPendingPollRoom = true;
+
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+
+    try {
+      final rooms = await _chatService.getMyRoomListItems();
+      for (final item in rooms) {
+        if (item.room.type != 'group') continue;
+        final pendingPolls =
+            await _chatService.getPendingPollsForRoom(item.room.id);
+        if (pendingPolls.isEmpty) continue;
+
+        if (!mounted) return;
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => ChatPage(room: item.room)),
+        );
+        if (!mounted) return;
+        await _reload();
+        return;
+      }
+    } catch (_) {}
+  }
+
+  String _translatedUserType(String value) {
+    switch (value.toLowerCase().trim()) {
+      case 'admin':
+        return 'Administrador';
+      case 'coach':
+        return 'Técnico';
+      case 'athlete':
+        return 'Atleta';
+      case 'member':
+        return 'Membro';
+      default:
+        return value;
+    }
   }
 
   String _formatLastMessageTime(DateTime? dateTime) {
@@ -754,13 +988,14 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     final room = item.room;
     final subtitle = _buildRoomSubtitle(item);
     final trailingWidget = _buildTrailing(item);
+    final isPinned = _pinnedRoomIds.contains(room.id);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           onTap: () async {
             await Navigator.push(
               context,
@@ -774,33 +1009,29 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
           },
           child: Ink(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: _gold.withValues(alpha: 0.78),
-                width: 1.5,
+                color: Colors.white.withValues(alpha: 0.22),
+                width: 1,
               ),
-              color: Colors.white.withValues(alpha: 0.06),
+              color: Colors.white.withValues(alpha: 0.92),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.16),
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
+                ),
+              ],
             ),
             child: Stack(
               children: [
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: Opacity(
-                        opacity: 0.18,
-                        child: _buildCenterRoomIcon(item, index),
-                      ),
-                    ),
-                  ),
-                ),
                 Padding(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   child: Row(
                     children: [
                       _buildAvatar(item),
-                      const SizedBox(width: 14),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -810,19 +1041,41 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                color: _textPrimary,
-                                fontSize: 18,
+                                color: _navy,
+                                fontSize: 16,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
+                            if (isPinned) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(
+                                    Icons.push_pin_rounded,
+                                    size: 13,
+                                    color: _gold,
+                                  ),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Fixado',
+                                    style: TextStyle(
+                                      color: _gold,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                             const SizedBox(height: 4),
                             Text(
                               subtitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: _textSecondary,
-                                fontSize: 14,
+                              style: TextStyle(
+                                color: _navy.withValues(alpha: 0.64),
+                                fontSize: 13,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -837,9 +1090,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                             padding: const EdgeInsets.only(top: 2),
                             child: Text(
                               _formatLastMessageTime(item.lastMessageAt),
-                              style: const TextStyle(
-                                color: _goldSoft,
-                                fontSize: 13,
+                              style: TextStyle(
+                                color: _navy.withValues(alpha: 0.62),
+                                fontSize: 12,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
@@ -848,27 +1101,34 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                           if (trailingWidget != null)
                             trailingWidget
                           else
-                            Opacity(
-                              opacity: 0.9,
-                              child: _buildCenterRoomIcon(item, index),
-                            ),
+                            const SizedBox(height: 30),
                         ],
                       ),
                       PopupMenuButton<String>(
                         onSelected: (value) async {
-                          if (value == 'delete') {
+                          if (value == 'pin') {
+                            await _togglePinnedRoom(item);
+                          } else if (value == 'delete') {
                             await _deleteRoomForMe(item);
                           }
                         },
-                        itemBuilder: (context) => const [
+                        itemBuilder: (context) => [
                           PopupMenuItem<String>(
+                            value: 'pin',
+                            child: Text(
+                              isPinned
+                                  ? 'Desafixar conversa'
+                                  : 'Fixar conversa',
+                            ),
+                          ),
+                          const PopupMenuItem<String>(
                             value: 'delete',
                             child: Text('Excluir'),
                           ),
                         ],
                         icon: const Icon(
                           Icons.more_vert,
-                          color: _gold,
+                          color: _navy,
                         ),
                       ),
                     ],
@@ -884,16 +1144,28 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
   List<ChatRoomListItem> _filterRooms(List<ChatRoomListItem> rooms) {
     final query = _searchQuery.trim().toLowerCase();
-    if (query.isEmpty) return rooms;
+    final filtered = query.isEmpty
+        ? List<ChatRoomListItem>.from(rooms)
+        : rooms.where((item) {
+            final roomName = (item.room.name ?? '').toLowerCase();
+            final subtitle = _buildRoomSubtitle(item).toLowerCase();
+            final sender = (item.lastMessageSenderName ?? '').toLowerCase();
+            return roomName.contains(query) ||
+                subtitle.contains(query) ||
+                sender.contains(query);
+          }).toList();
 
-    return rooms.where((item) {
-      final roomName = (item.room.name ?? '').toLowerCase();
-      final subtitle = _buildRoomSubtitle(item).toLowerCase();
-      final sender = (item.lastMessageSenderName ?? '').toLowerCase();
-      return roomName.contains(query) ||
-          subtitle.contains(query) ||
-          sender.contains(query);
-    }).toList();
+    filtered.sort((a, b) {
+      final aPinned = _pinnedRoomIds.contains(a.room.id);
+      final bPinned = _pinnedRoomIds.contains(b.room.id);
+      if (aPinned != bPinned) return aPinned ? -1 : 1;
+
+      final aDate = a.lastMessageAt ?? a.room.createdAt;
+      final bDate = b.lastMessageAt ?? b.room.createdAt;
+      return bDate.compareTo(aDate);
+    });
+
+    return filtered;
   }
 
   Widget _buildContent(List<ChatRoomListItem> rooms) {
@@ -999,29 +1271,33 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
         ),
         centerTitle: true,
       ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton(
-            heroTag: 'create_group',
-            onPressed: _showCreateGroupDialog,
-            backgroundColor: _navy,
-            child: const Icon(
-              Icons.groups_rounded,
-              color: _gold,
+      floatingActionButton: SafeArea(
+        minimum: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isAdmin) ...[
+              FloatingActionButton(
+                heroTag: 'create_group',
+                onPressed: _showCreateGroupDialog,
+                backgroundColor: _gold,
+                child: const Icon(
+                  Icons.groups_rounded,
+                  color: _navy,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            FloatingActionButton.extended(
+              heroTag: 'create_chat',
+              onPressed: _showCreateConversationDialog,
+              backgroundColor: _gold,
+              foregroundColor: _navy,
+              icon: const Icon(Icons.add_comment_rounded),
+              label: const Text('Nova conversa'),
             ),
-          ),
-          const SizedBox(height: 12),
-          FloatingActionButton(
-            heroTag: 'create_chat',
-            onPressed: _showCreateConversationDialog,
-            backgroundColor: _navy,
-            child: const Icon(
-              Icons.add,
-              color: _gold,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -1038,11 +1314,16 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
           children: [
             Positioned.fill(
               child: Opacity(
-                opacity: 0.17,
+                opacity: 0.24,
                 child: Image.asset(
-                  'assets/images/olympus_logo.png',
-                  fit: BoxFit.contain,
+                  'assets/images/monte_olimpo_v2.png',
+                  fit: BoxFit.cover,
                 ),
+              ),
+            ),
+            Positioned.fill(
+              child: Container(
+                color: _navyDark.withValues(alpha: 0.56),
               ),
             ),
             SafeArea(
@@ -1066,11 +1347,12 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                     _buildEdgeGlow(top: 335, left: -14, size: 46),
                     _buildEdgeGlow(top: 98, right: -10, size: 46),
                     _buildFloatingParticles(),
-                    FutureBuilder<List<ChatRoomListItem>>(
-                      future: _futureRooms,
+                    StreamBuilder<List<ChatRoomListItem>>(
+                      stream: _roomsStream,
                       builder: (context, snapshot) {
                         if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
+                                ConnectionState.waiting &&
+                            !snapshot.hasData) {
                           return const Center(
                             child: CircularProgressIndicator(color: _gold),
                           );
@@ -1078,9 +1360,56 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
                         if (snapshot.hasError) {
                           return Center(
-                            child: Text(
-                              'Erro: ${snapshot.error}',
-                              style: const TextStyle(color: Colors.white),
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 28),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      color: _gold.withValues(alpha: 0.16),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.wifi_off_rounded,
+                                      color: _gold,
+                                      size: 34,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  const Text(
+                                    'Não foi possível carregar as conversas.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Verifique a conexão e toque para atualizar.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.72),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  ElevatedButton.icon(
+                                    onPressed: _reload,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: _gold,
+                                      foregroundColor: _navy,
+                                    ),
+                                    icon: const Icon(Icons.refresh_rounded),
+                                    label: const Text('Atualizar'),
+                                  ),
+                                ],
+                              ),
                             ),
                           );
                         }

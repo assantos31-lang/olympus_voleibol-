@@ -15,7 +15,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'firebase_options.dart';
 import 'pages/admin_home_page.dart';
-import 'pages/admin_messages_page.dart';
 import 'pages/admin_athletes_statistics_list_page.dart';
 import 'pages/admin_coach_evaluations_page.dart';
 import 'pages/athlete_agenda_page.dart';
@@ -32,6 +31,7 @@ import 'pages/dashboard_router_page.dart';
 import 'pages/login_page.dart';
 import 'pages/profiles_page.dart';
 import 'services/auth_service.dart';
+import 'services/active_chat_service.dart';
 import 'services/badge_service.dart';
 import 'services/push_token_service.dart';
 
@@ -44,6 +44,14 @@ const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
 bool _handledInitialMessage = false;
 Map<String, dynamic>? _pendingNotificationData;
+
+int _stableNotificationId(String value) {
+  var hash = 0;
+  for (final unit in value.codeUnits) {
+    hash = ((hash * 31) + unit) & 0x7fffffff;
+  }
+  return 100000 + (hash % 800000);
+}
 
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
   'messages_channel',
@@ -125,7 +133,7 @@ Future<void> main() async {
           final data = Map<String, dynamic>.from(jsonDecode(payload) as Map);
           _navigateFromNotificationData(data);
         } catch (e) {
-          debugPrint('Erro ao processar payload da notificação local: $e');
+          debugPrint('Erro ao processar payload da notificaÃ§Ã£o local: $e');
         }
       },
     );
@@ -173,6 +181,32 @@ Future<void> main() async {
   }
 }
 
+Future<void> initializeNotificationServicesForCompatibility() async {
+  await flutterLocalNotificationsPlugin.initialize(
+    InitializationSettings(
+      android: const AndroidInitializationSettings('@mipmap/ic_launcher'),
+    ),
+    onDidReceiveNotificationResponse: (NotificationResponse response) {
+      final payload = response.payload;
+      if (payload == null || payload.isEmpty) return;
+
+      try {
+        final data = Map<String, dynamic>.from(jsonDecode(payload) as Map);
+        _navigateFromNotificationData(data);
+      } catch (e) {
+        debugPrint('Erro ao processar payload da notificação local: $e');
+      }
+    },
+  );
+
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+
+  await _setupPushNotifications();
+}
+
 Future<void> _setupPushNotifications() async {
   if (kIsWeb) return;
 
@@ -190,9 +224,9 @@ Future<void> _setupPushNotifications() async {
   await messaging.setAutoInitEnabled(true);
 
   await messaging.setForegroundNotificationPresentationOptions(
-    alert: true,
+    alert: false,
     badge: true,
-    sound: true,
+    sound: false,
   );
 
   FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
@@ -201,8 +235,45 @@ Future<void> _setupPushNotifications() async {
     final notification = message.notification;
 
     if (notification != null) {
+      final data = message.data;
+      final type = (data['type'] ?? data['notification_type'] ?? '')
+          .toString()
+          .toLowerCase();
+      final roomId = (data['roomId'] ??
+              data['room_id'] ??
+              data['threadId'] ??
+              data['thread_id'])
+          ?.toString();
+      final isChatNotification =
+          (type == 'message' || type == 'chat_message') &&
+              roomId != null &&
+              roomId.isNotEmpty;
+      final payloadNotificationId = int.tryParse(
+        (data['notification_id'] ??
+                data['notificationId'] ??
+                data['local_notification_id'] ??
+                '')
+            .toString(),
+      );
+      final notificationId = isChatNotification
+          ? (payloadNotificationId ?? _stableNotificationId('chat_$roomId'))
+          : _stableNotificationId(
+              message.messageId ??
+                  '${notification.title ?? ''}_${notification.body ?? ''}',
+            );
+      final groupKey = isChatNotification ? 'chat_$roomId' : null;
+
+      if (isChatNotification && ActiveChatService.isRoomOpen(roomId)) {
+        await flutterLocalNotificationsPlugin.cancel(
+          notificationId,
+          tag: groupKey,
+        );
+        await BadgeService.updateBadge();
+        return;
+      }
+
       await flutterLocalNotificationsPlugin.show(
-        notification.hashCode,
+        notificationId,
         notification.title,
         notification.body,
         NotificationDetails(
@@ -212,8 +283,13 @@ Future<void> _setupPushNotifications() async {
             channelDescription: 'Canal de notificações do Olympus',
             importance: Importance.max,
             priority: Priority.high,
+            groupKey: groupKey,
+            setAsGroupSummary: false,
+            tag: groupKey,
           ),
-          iOS: const DarwinNotificationDetails(),
+          iOS: DarwinNotificationDetails(
+            threadIdentifier: groupKey,
+          ),
         ),
         payload: jsonEncode(message.data),
       );
@@ -257,7 +333,11 @@ void _navigateFromNotificationData(Map<String, dynamic> data) {
       .replaceAll('-', '_');
 
   final eventId = (data['eventId'] ?? data['event_id'])?.toString();
-  final threadId = (data['threadId'] ?? data['thread_id'])?.toString();
+  final threadId = (data['threadId'] ??
+          data['thread_id'] ??
+          data['roomId'] ??
+          data['room_id'])
+      ?.toString();
 
   if (Supabase.instance.client.auth.currentSession == null ||
       navigatorKey.currentState == null) {
@@ -324,7 +404,7 @@ void _navigateFromNotificationData(Map<String, dynamic> data) {
   if (type == 'message' || type == 'chat_message') {
     navigatorKey.currentState?.pushNamed(
       '/chat-rooms',
-      arguments: {'threadId': threadId},
+      arguments: {'roomId': threadId},
     );
     return;
   }
@@ -342,16 +422,14 @@ Future<void> _openPlatformMessages() async {
         .select('user_type')
         .eq('id', user.id)
         .maybeSingle();
-
     primaryRole =
         (profile?['user_type'] ?? 'athlete').toString().trim().toLowerCase();
   } catch (_) {}
 
   if (navigatorKey.currentState == null) return;
-
   if (primaryRole == 'admin') {
     navigator.push(
-      MaterialPageRoute(builder: (_) => const AdminMessagesPage()),
+      MaterialPageRoute(builder: (_) => const AthleteMessagesPage()),
     );
   } else if ({'coach', 'treinador', 'tecnico', 'técnico'}
       .contains(primaryRole)) {
@@ -437,7 +515,15 @@ class MyApp extends StatelessWidget {
             const AdminCoachEvaluationsPage(),
         '/coach-received-evaluations': (context) =>
             const CoachReceivedEvaluationsPage(),
-        '/chat-rooms': (context) => const ChatRoomsPage(),
+        '/chat-rooms': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          String? roomId;
+          if (args is Map) {
+            roomId = (args['roomId'] ?? args['room_id'] ?? args['threadId'])
+                ?.toString();
+          }
+          return ChatRoomsPage(initialRoomId: roomId);
+        },
       },
     );
   }
@@ -631,6 +717,7 @@ class AuthWrapper extends StatefulWidget {
 class _AuthWrapperState extends State<AuthWrapper> {
   final _auth = Supabase.instance.client.auth;
   bool _initialAuthResolved = false;
+  bool _postLoginServicesScheduled = false;
 
   @override
   void initState() {
@@ -660,14 +747,19 @@ class _AuthWrapperState extends State<AuthWrapper> {
         }
 
         if (hasSession) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            PushTokenService.instance.syncCurrentUserTokenIfPossible();
-            BadgeService.updateBadge();
-            _flushPendingNotification();
-          });
+          if (!_postLoginServicesScheduled) {
+            _postLoginServicesScheduled = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              PushTokenService.instance.syncCurrentUserTokenIfPossible();
+              BadgeService.updateBadge();
+              _flushPendingNotification();
+            });
+          }
 
           return const DashboardRouterPage();
         }
+
+        _postLoginServicesScheduled = false;
 
         if (!_initialAuthResolved &&
             snapshot.connectionState == ConnectionState.waiting) {

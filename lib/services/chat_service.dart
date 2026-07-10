@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/chat_message.dart';
+import '../models/chat_poll.dart';
 import '../models/chat_room.dart';
 
 class ChatRoomListItem {
@@ -28,6 +30,14 @@ class ChatService {
 
   String? get currentUserId => supabase.auth.currentUser?.id;
 
+  int _stableNotificationId(String value) {
+    var hash = 0;
+    for (final unit in value.codeUnits) {
+      hash = ((hash * 31) + unit) & 0x7fffffff;
+    }
+    return 100000 + (hash % 800000);
+  }
+
   Future<List<ChatRoom>> getMyRooms() async {
     final userId = currentUserId;
     if (userId == null) return [];
@@ -40,8 +50,11 @@ class ChatService {
 
     if (memberships.isEmpty) return [];
 
-    final roomIds =
-        memberships.map<String>((item) => item['room_id'] as String).toList();
+    final roomIds = memberships
+        .map<String>((item) => (item['room_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
 
     final roomsResponse = await supabase
         .from('chat_rooms')
@@ -61,15 +74,33 @@ class ChatService {
 
     final roomIds = rooms.map((r) => r.id).toList();
 
-    final messagesResponse = await supabase
-        .from('chat_messages')
-        .select('id, room_id, sender_id, content, created_at')
-        .inFilter('room_id', roomIds)
-        .order('created_at', ascending: false);
+    dynamic messagesResponse;
+    try {
+      messagesResponse = await supabase
+          .from('chat_messages')
+          .select(
+            'id, room_id, sender_id, content, message_type, image_url, created_at, deleted_at',
+          )
+          .inFilter('room_id', roomIds)
+          .order('created_at', ascending: false);
+    } catch (_) {
+      messagesResponse = await supabase
+          .from('chat_messages')
+          .select('id, room_id, sender_id, content, created_at')
+          .inFilter('room_id', roomIds)
+          .order('created_at', ascending: false);
+    }
 
-    final List<Map<String, dynamic>> messages = messagesResponse
-        .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
-        .toList();
+    final messageMap = <String, Map<String, dynamic>>{};
+    for (final rawMessage in messagesResponse) {
+      final message = Map<String, dynamic>.from(rawMessage);
+      final id = (message['id'] ?? '').toString();
+      if (id.isNotEmpty) {
+        messageMap[id] = message;
+      }
+    }
+
+    final List<Map<String, dynamic>> messages = messageMap.values.toList();
 
     final senderIds = messages
         .map((m) => (m['sender_id'] ?? '').toString())
@@ -167,8 +198,9 @@ class ChatService {
       final roomId = (message['room_id'] ?? '').toString();
       final messageId = (message['id'] ?? '').toString();
       final senderId = (message['sender_id'] ?? '').toString();
+      final isDeleted = message['deleted_at'] != null;
 
-      if (roomId.isEmpty || messageId.isEmpty) continue;
+      if (roomId.isEmpty || messageId.isEmpty || isDeleted) continue;
 
       latestMessageByRoom.putIfAbsent(roomId, () => message);
 
@@ -183,10 +215,22 @@ class ChatService {
     return rooms.map((room) {
       final lastMessage = latestMessageByRoom[room.id];
       final senderId = (lastMessage?['sender_id'] ?? '').toString();
+      final otherMemberId = roomMembers.map((member) {
+        final roomId = (member['room_id'] ?? '').toString();
+        final memberUserId = (member['user_id'] ?? '').toString();
+        return roomId == room.id && memberUserId != userId ? memberUserId : '';
+      }).firstWhere((id) => id.isNotEmpty, orElse: () => '');
+      final displayRoom = room.type == 'direct' && otherMemberId.isNotEmpty
+          ? room.copyWith(
+              name: profileNameMap[otherMemberId]?.trim().isNotEmpty == true
+                  ? profileNameMap[otherMemberId]
+                  : room.name,
+            )
+          : room;
 
       return ChatRoomListItem(
-        room: room,
-        lastMessageText: lastMessage?['content']?.toString(),
+        room: displayRoom,
+        lastMessageText: _previewMessage(lastMessage),
         lastMessageSenderName:
             senderId.isNotEmpty ? profileNameMap[senderId] : null,
         lastMessageAt: lastMessage?['created_at'] != null
@@ -198,9 +242,100 @@ class ChatService {
     }).toList();
   }
 
+  String? _previewMessage(Map<String, dynamic>? message) {
+    if (message == null) return null;
+    if (message['deleted_at'] != null) return 'Mensagem apagada';
+
+    final type = (message['message_type'] ?? 'text').toString();
+    if (type == 'image') {
+      final caption = (message['content'] ?? '').toString().trim();
+      return caption.isEmpty ? '?? Imagem' : '?? $caption';
+    }
+
+    if (type == 'poll') {
+      final question = (message['content'] ?? '').toString().trim();
+      return question.isEmpty ? '?? Enquete' : '?? Enquete: $question';
+    }
+
+    return message['content']?.toString();
+  }
+
+  Stream<List<ChatRoomListItem>> streamMyRoomListItems() {
+    final controller = StreamController<List<ChatRoomListItem>>();
+    RealtimeChannel? channel;
+    Timer? fallbackTimer;
+    var closed = false;
+
+    Future<void> emit() async {
+      if (closed) return;
+      try {
+        final items = await getMyRoomListItems();
+        if (!closed && !controller.isClosed) controller.add(items);
+      } catch (e, st) {
+        if (!closed && !controller.isClosed) controller.addError(e, st);
+      }
+    }
+
+    controller.onListen = () {
+      emit();
+      channel = supabase
+          .channel('chat_rooms_live_${currentUserId ?? 'anon'}')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_messages',
+            callback: (_) => emit(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_room_members',
+            callback: (_) => emit(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_rooms',
+            callback: (_) => emit(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_message_reads',
+            callback: (_) => emit(),
+          )
+          .subscribe();
+
+      fallbackTimer =
+          Timer.periodic(const Duration(seconds: 20), (_) => emit());
+    };
+
+    controller.onCancel = () async {
+      closed = true;
+      fallbackTimer?.cancel();
+      if (channel != null) {
+        await supabase.removeChannel(channel!);
+      }
+    };
+
+    return controller.stream;
+  }
+
   Future<bool> isCurrentUserAdmin() async {
     final userId = currentUserId;
     if (userId == null) return false;
+
+    try {
+      final roleResponse = await supabase
+          .from('user_roles')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('role', 'admin')
+          .eq('is_active', true)
+          .maybeSingle();
+
+      if (roleResponse != null) return true;
+    } catch (_) {}
 
     final response = await supabase
         .from('profiles')
@@ -213,35 +348,221 @@ class ChatService {
   }
 
   Future<List<Map<String, dynamic>>> getSelectableUsers() async {
+    final userId = currentUserId;
     final response = await supabase
         .from('profiles')
         .select('id, full_name, user_type, phone, avatar_url')
         .eq('is_active', true)
         .order('full_name');
 
-    return response.map<Map<String, dynamic>>((e) {
-      return Map<String, dynamic>.from(e);
-    }).toList();
+    final users = response
+        .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+        .where((profile) => (profile['id'] ?? '').toString() != userId)
+        .toList();
+
+    for (final user in users) {
+      final fullName = (user['full_name'] ?? '').toString();
+      user['display_name'] = compactPersonName(fullName);
+    }
+
+    users.sort((a, b) {
+      final nameA = (a['display_name'] ?? a['full_name'] ?? '').toString();
+      final nameB = (b['display_name'] ?? b['full_name'] ?? '').toString();
+      return nameA.toLowerCase().compareTo(nameB.toLowerCase());
+    });
+
+    return users;
   }
 
-  Future<ChatRoom> createGroupRoom({
-    required String name,
-    required List<String> participantUserIds,
+  String compactPersonName(String fullName) {
+    final parts = fullName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.trim().isNotEmpty)
+        .toList();
+
+    if (parts.isEmpty) return 'Sem nome';
+    if (parts.length == 1) return parts.first;
+
+    return '${parts.first} ${parts.last}';
+  }
+
+  Future<int> getTotalUnreadCount() async {
+    final userId = currentUserId;
+    if (userId == null) return 0;
+
+    try {
+      final memberships = await supabase
+          .from('chat_room_members')
+          .select('room_id')
+          .eq('user_id', userId)
+          .eq('is_banned', false);
+
+      final roomIds = memberships
+          .map<String>((row) => (row['room_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      if (roomIds.isEmpty) return 0;
+
+      final messagesResponse = await supabase
+          .from('chat_messages')
+          .select('id, sender_id')
+          .inFilter('room_id', roomIds)
+          .neq('sender_id', userId);
+
+      final messageIds = messagesResponse
+          .map<String>((row) => (row['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      if (messageIds.isEmpty) return 0;
+
+      final readsResponse = await supabase
+          .from('chat_message_reads')
+          .select('message_id')
+          .eq('user_id', userId)
+          .inFilter('message_id', messageIds);
+
+      final readIds = readsResponse
+          .map<String>((row) => (row['message_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      return messageIds.where((id) => !readIds.contains(id)).length;
+    } catch (e) {
+      debugPrint('[ChatService] Erro ao buscar badge do chat: $e');
+      return 0;
+    }
+  }
+
+  Future<ChatRoom> createDirectRoom({
+    required String otherUserId,
+    String? otherUserName,
   }) async {
     final userId = currentUserId;
     if (userId == null) {
       throw Exception('Usuário não autenticado');
     }
 
+    if (otherUserId == userId) {
+      throw Exception('Você não pode abrir conversa com você mesmo.');
+    }
+
+    final memberships = await supabase
+        .from('chat_room_members')
+        .select('room_id')
+        .inFilter('user_id', [userId, otherUserId]).eq('is_banned', false);
+
+    final counter = <String, int>{};
+    for (final item in memberships) {
+      final roomId = (item['room_id'] ?? '').toString();
+      if (roomId.isEmpty) continue;
+      counter[roomId] = (counter[roomId] ?? 0) + 1;
+    }
+
+    final commonRoomIds = counter.entries
+        .where((entry) => entry.value >= 2)
+        .map((entry) => entry.key)
+        .toList();
+
+    if (commonRoomIds.isNotEmpty) {
+      final existing = await supabase
+          .from('chat_rooms')
+          .select()
+          .inFilter('id', commonRoomIds)
+          .eq('type', 'direct')
+          .limit(1)
+          .maybeSingle();
+
+      if (existing != null) {
+        return ChatRoom.fromMap(existing);
+      }
+    }
+
     final roomResponse = await supabase
         .from('chat_rooms')
         .insert({
-          'name': name.trim(),
-          'type': 'group',
+          'name': otherUserName?.trim().isNotEmpty == true
+              ? otherUserName!.trim()
+              : 'Conversa',
+          'type': 'direct',
           'created_by': userId,
+          'allow_messages': true,
+          'admin_only': false,
+          'is_locked': false,
         })
         .select()
         .single();
+
+    final roomId = roomResponse['id'] as String;
+
+    await supabase.from('chat_room_members').insert([
+      {
+        'room_id': roomId,
+        'user_id': userId,
+        'role': 'member',
+      },
+      {
+        'room_id': roomId,
+        'user_id': otherUserId,
+        'role': 'member',
+      },
+    ]);
+
+    return ChatRoom.fromMap(roomResponse);
+  }
+
+  Future<ChatRoom> createGroupRoom({
+    required String name,
+    required List<String> participantUserIds,
+    String? avatarUrl,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) {
+      throw Exception('Usuário não autenticado');
+    }
+
+    final isAdmin = await isCurrentUserAdmin();
+    if (!isAdmin) {
+      throw Exception('Apenas administradores podem criar grupos.');
+    }
+
+    final roomPayload = {
+      'name': name.trim(),
+      'type': 'group',
+      'created_by': userId,
+      'allow_messages': true,
+      'admin_only': false,
+      'is_locked': false,
+      if (avatarUrl != null && avatarUrl.trim().isNotEmpty)
+        'avatar_url': avatarUrl.trim(),
+    };
+
+    dynamic roomResponse;
+    try {
+      roomResponse = await supabase
+          .from('chat_rooms')
+          .insert(roomPayload)
+          .select()
+          .single();
+    } catch (e) {
+      final message = e.toString();
+      final avatarColumnMissing =
+          message.contains('avatar_url') || message.contains('PGRST204');
+
+      if (!avatarColumnMissing) rethrow;
+
+      final fallbackPayload = Map<String, dynamic>.from(roomPayload)
+        ..remove('avatar_url');
+      roomResponse = await supabase
+          .from('chat_rooms')
+          .insert(fallbackPayload)
+          .select()
+          .single();
+    }
 
     final roomId = roomResponse['id'] as String;
 
@@ -273,7 +594,36 @@ class ChatService {
     await supabase.storage.from('avatars').uploadBinary(
           path,
           bytes,
-          fileOptions: const FileOptions(upsert: true),
+          fileOptions: FileOptions(
+            upsert: true,
+            contentType: safeExtension == 'png'
+                ? 'image/png'
+                : safeExtension == 'webp'
+                    ? 'image/webp'
+                    : 'image/jpeg',
+          ),
+        );
+
+    return path;
+  }
+
+  Future<String> uploadChatImage({
+    required String roomId,
+    required File file,
+  }) async {
+    final bytes = await file.readAsBytes();
+    final extension = file.path.split('.').last.toLowerCase();
+    final safeExtension = extension.isEmpty ? 'jpg' : extension;
+    final path =
+        'chat_messages/$roomId/image_${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
+
+    await supabase.storage.from('avatars').uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(
+            upsert: true,
+            contentType: 'image/jpeg',
+          ),
         );
 
     return path;
@@ -297,6 +647,176 @@ class ChatService {
     }).eq('id', roomId);
   }
 
+  Future<void> updateCurrentUserChatName(String name) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) throw Exception('Informe um nome válido');
+
+    await supabase.from('profiles').update({
+      'full_name': cleanName,
+    }).eq('id', userId);
+  }
+
+  Future<void> deletePoll({
+    required String pollId,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    final isAdmin = await isCurrentUserAdmin();
+    if (!isAdmin) {
+      throw Exception('Apenas administradores podem excluir enquetes.');
+    }
+
+    await supabase.from('chat_poll_votes').delete().eq('poll_id', pollId);
+    await supabase.from('chat_poll_options').delete().eq('poll_id', pollId);
+    await supabase.from('chat_polls').delete().eq('id', pollId);
+  }
+
+  Future<void> setPollPinned({
+    required String pollId,
+    required bool pinned,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    final isAdmin = await isCurrentUserAdmin();
+    if (!isAdmin) {
+      throw Exception('Apenas administradores podem fixar enquetes.');
+    }
+
+    await supabase.from('chat_polls').update({
+      'is_pinned': pinned,
+    }).eq('id', pollId);
+  }
+
+  Future<List<Map<String, dynamic>>> getPollVotesDetail(String pollId) async {
+    final userId = currentUserId;
+    if (userId == null) return [];
+
+    final isAdmin = await isCurrentUserAdmin();
+    if (!isAdmin) {
+      throw Exception('Apenas administradores podem visualizar os votos.');
+    }
+
+    final votesResponse = await supabase
+        .from('chat_poll_votes')
+        .select('option_id, user_id, created_at')
+        .eq('poll_id', pollId)
+        .order('created_at', ascending: true);
+
+    final votes = (votesResponse as List)
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
+
+    if (votes.isEmpty) return [];
+
+    final optionIds = votes
+        .map((vote) => (vote['option_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+    final userIds = votes
+        .map((vote) => (vote['user_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
+    final optionTextById = <String, String>{};
+    if (optionIds.isNotEmpty) {
+      final optionsResponse = await supabase
+          .from('chat_poll_options')
+          .select('id, option_text')
+          .inFilter('id', optionIds);
+
+      for (final rawOption in optionsResponse as List) {
+        final option = Map<String, dynamic>.from(rawOption);
+        final id = (option['id'] ?? '').toString();
+        if (id.isNotEmpty) {
+          optionTextById[id] = (option['option_text'] ?? '').toString();
+        }
+      }
+    }
+
+    final profileById = <String, Map<String, dynamic>>{};
+    if (userIds.isNotEmpty) {
+      final profilesResponse = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url')
+          .inFilter('id', userIds);
+
+      for (final rawProfile in profilesResponse as List) {
+        final profile = Map<String, dynamic>.from(rawProfile);
+        final id = (profile['id'] ?? '').toString();
+        if (id.isNotEmpty) profileById[id] = profile;
+      }
+    }
+
+    return votes.map((vote) {
+      final optionId = (vote['option_id'] ?? '').toString();
+      final voterId = (vote['user_id'] ?? '').toString();
+      final profile = profileById[voterId] ?? const <String, dynamic>{};
+      return {
+        'user_id': voterId,
+        'full_name': (profile['full_name'] ?? 'Sem nome').toString(),
+        'avatar_url': (profile['avatar_url'] ?? '').toString(),
+        'option_id': optionId,
+        'option_text': optionTextById[optionId] ?? 'Opção removida',
+        'created_at': vote['created_at'],
+      };
+    }).toList();
+  }
+
+  Future<void> deleteRoomForEveryone(String roomId) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    final isAdmin = await isCurrentUserAdmin();
+    if (!isAdmin) {
+      throw Exception('Apenas administradores podem excluir grupos.');
+    }
+
+    final messagesResponse =
+        await supabase.from('chat_messages').select('id').eq('room_id', roomId);
+    final messageIds = (messagesResponse as List)
+        .map((row) => (row['id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toList();
+
+    if (messageIds.isNotEmpty) {
+      await supabase
+          .from('chat_message_reads')
+          .delete()
+          .inFilter('message_id', messageIds);
+    }
+
+    final pollsResponse =
+        await supabase.from('chat_polls').select('id').eq('room_id', roomId);
+    final pollIds = (pollsResponse as List)
+        .map((row) => (row['id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toList();
+
+    if (pollIds.isNotEmpty) {
+      await supabase
+          .from('chat_poll_votes')
+          .delete()
+          .inFilter('poll_id', pollIds);
+      await supabase
+          .from('chat_poll_options')
+          .delete()
+          .inFilter('poll_id', pollIds);
+      await supabase.from('chat_polls').delete().inFilter('id', pollIds);
+    }
+
+    await supabase.from('chat_typing_status').delete().eq('room_id', roomId);
+    await supabase.from('chat_messages').delete().eq('room_id', roomId);
+    await supabase.from('chat_room_members').delete().eq('room_id', roomId);
+    await supabase.from('chat_rooms').delete().eq('id', roomId);
+  }
+
   Stream<List<ChatMessage>> streamMessages(String roomId) {
     return supabase
         .from('chat_messages')
@@ -304,7 +824,14 @@ class ChatService {
         .eq('room_id', roomId)
         .order('created_at')
         .asyncMap((data) async {
-          final messages = data.map(ChatMessage.fromMap).toList();
+          final byId = <String, ChatMessage>{};
+          for (final row in data) {
+            final message = ChatMessage.fromMap(row);
+            byId[message.id] = message;
+          }
+
+          final messages = byId.values.toList()
+            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
           final senderIds = messages.map((m) => m.senderId).toSet().toList();
           if (senderIds.isEmpty) return messages;
@@ -334,6 +861,9 @@ class ChatService {
   Future<void> sendMessage({
     required String roomId,
     required String text,
+    String? replyToMessageId,
+    String? replyToText,
+    String? replyToSenderName,
   }) async {
     final userId = currentUserId;
     if (userId == null) throw Exception('Usuário não autenticado');
@@ -341,11 +871,87 @@ class ChatService {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
-    await supabase.from('chat_messages').insert({
+    final payload = <String, dynamic>{
       'room_id': roomId,
       'sender_id': userId,
       'content': trimmed,
+    };
+
+    if ((replyToMessageId ?? '').trim().isNotEmpty) {
+      payload['reply_to_message_id'] = replyToMessageId;
+      payload['reply_to_text'] = (replyToText ?? '').trim();
+      payload['reply_to_sender_name'] = (replyToSenderName ?? '').trim();
+    }
+
+    await supabase.from('chat_messages').insert(payload);
+
+    unawaited(_sendPushToRoomParticipants(
+      roomId: roomId,
+      senderId: userId,
+      content: trimmed,
+    ));
+  }
+
+  Future<void> sendImageMessage({
+    required String roomId,
+    required File imageFile,
+    String caption = '',
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    final imagePath = await uploadChatImage(roomId: roomId, file: imageFile);
+    final trimmedCaption = caption.trim();
+
+    await supabase.from('chat_messages').insert({
+      'room_id': roomId,
+      'sender_id': userId,
+      'content': trimmedCaption,
+      'message_type': 'image',
+      'image_url': imagePath,
     });
+
+    unawaited(_sendPushToRoomParticipants(
+      roomId: roomId,
+      senderId: userId,
+      content: trimmedCaption.isEmpty ? '📷 Imagem' : '📷 $trimmedCaption',
+    ));
+  }
+
+  Future<void> editMessage({
+    required String messageId,
+    required String text,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) throw Exception('A mensagem não pode ficar vazia.');
+
+    await supabase
+        .from('chat_messages')
+        .update({
+          'content': trimmed,
+          'edited_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', messageId)
+        .eq('sender_id', userId);
+  }
+
+  Future<void> deleteMessage({
+    required String messageId,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    await supabase
+        .from('chat_messages')
+        .update({
+          'content': '',
+          'deleted_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', messageId)
+        .eq('sender_id', userId);
   }
 
   Future<ChatRoom?> getRoomById(String roomId) async {
@@ -437,7 +1043,13 @@ class ChatService {
         .toList();
 
     if (inserts.isNotEmpty) {
-      await supabase.from('chat_message_reads').insert(inserts);
+      try {
+        await supabase
+            .from('chat_message_reads')
+            .upsert(inserts, onConflict: 'message_id,user_id');
+      } catch (_) {
+        await supabase.from('chat_message_reads').insert(inserts);
+      }
     }
   }
 
@@ -486,6 +1098,9 @@ class ChatService {
         'phone': (profile['phone'] ?? '').toString(),
         'user_type': (profile['user_type'] ?? '').toString(),
         'avatar_url': (profile['avatar_url'] ?? '').toString(),
+        'display_name': compactPersonName(
+          (profile['full_name'] ?? 'Sem nome').toString(),
+        ),
       };
     }).toList();
   }
@@ -610,6 +1225,371 @@ class ChatService {
     });
   }
 
+  Future<ChatPoll> createPoll({
+    required String roomId,
+    required String question,
+    required List<String> options,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    final canCreate = await isCurrentUserAdmin();
+    if (!canCreate) {
+      throw Exception('Apenas administradores podem criar enquetes.');
+    }
+
+    final cleanOptions = options
+        .map((option) => option.trim())
+        .where((option) => option.isNotEmpty)
+        .toList();
+
+    if (question.trim().isEmpty) {
+      throw Exception('Informe a pergunta da enquete.');
+    }
+
+    if (cleanOptions.length < 2) {
+      throw Exception('Informe pelo menos duas opções.');
+    }
+
+    final room = await getRoomById(roomId);
+    if (room == null || room.type != 'group') {
+      throw Exception('Enquetes estão disponíveis apenas em grupos.');
+    }
+
+    final pollResponse = await supabase
+        .from('chat_polls')
+        .insert({
+          'room_id': roomId,
+          'created_by': userId,
+          'question': question.trim(),
+        })
+        .select()
+        .single();
+
+    final poll = ChatPoll.fromMap(Map<String, dynamic>.from(pollResponse));
+
+    final optionRows = <Map<String, dynamic>>[];
+    for (var i = 0; i < cleanOptions.length; i++) {
+      optionRows.add({
+        'poll_id': poll.id,
+        'option_text': cleanOptions[i],
+        'position': i,
+      });
+    }
+
+    await supabase.from('chat_poll_options').insert(optionRows);
+
+    await sendMessage(
+      roomId: roomId,
+      text:
+          '📊 Enquete criada: ${question.trim()}\nAbra esta conversa para votar.',
+    );
+
+    final insertedOptions = optionRows
+        .map((row) => ChatPollOption.fromMap(Map<String, dynamic>.from(row)))
+        .toList();
+
+    return ChatPoll.fromMap(
+      Map<String, dynamic>.from(pollResponse),
+      options: insertedOptions,
+    );
+  }
+
+  Future<List<ChatPoll>> getPendingPollsForRoom(String roomId) async {
+    final userId = currentUserId;
+    if (userId == null) return [];
+
+    final membership = await supabase
+        .from('chat_room_members')
+        .select('room_id')
+        .eq('room_id', roomId)
+        .eq('user_id', userId)
+        .eq('is_banned', false)
+        .maybeSingle();
+
+    if (membership == null) return [];
+
+    final pollsResponse = await supabase
+        .from('chat_polls')
+        .select(
+            'id, room_id, created_by, question, is_closed, is_pinned, created_at')
+        .eq('room_id', roomId)
+        .eq('is_closed', false)
+        .order('created_at', ascending: true);
+
+    final polls = (pollsResponse as List)
+        .map((row) => Map<String, dynamic>.from(row))
+        .where((row) => (row['id'] ?? '').toString().isNotEmpty)
+        .toList();
+
+    if (polls.isEmpty) return [];
+
+    final pollIds = polls.map((poll) => poll['id'].toString()).toList();
+
+    final votesResponse = await supabase
+        .from('chat_poll_votes')
+        .select('poll_id, option_id, user_id')
+        .inFilter('poll_id', pollIds);
+
+    final votedPollIds = <String>{};
+    final voteCounts = <String, int>{};
+
+    for (final rawVote in votesResponse as List) {
+      final vote = Map<String, dynamic>.from(rawVote);
+      final pollId = (vote['poll_id'] ?? '').toString();
+      final optionId = (vote['option_id'] ?? '').toString();
+      final voteUserId = (vote['user_id'] ?? '').toString();
+
+      if (voteUserId == userId && pollId.isNotEmpty) {
+        votedPollIds.add(pollId);
+      }
+      if (optionId.isNotEmpty) {
+        voteCounts[optionId] = (voteCounts[optionId] ?? 0) + 1;
+      }
+    }
+
+    final pendingPolls = polls
+        .where((poll) => !votedPollIds.contains(poll['id'].toString()))
+        .toList();
+
+    if (pendingPolls.isEmpty) return [];
+
+    final pendingPollIds =
+        pendingPolls.map((poll) => poll['id'].toString()).toList();
+
+    final optionsResponse = await supabase
+        .from('chat_poll_options')
+        .select('id, poll_id, option_text, position')
+        .inFilter('poll_id', pendingPollIds)
+        .order('position', ascending: true);
+
+    final optionsByPollId = <String, List<ChatPollOption>>{};
+    for (final rawOption in optionsResponse as List) {
+      final optionMap = Map<String, dynamic>.from(rawOption);
+      final option = ChatPollOption.fromMap(
+        optionMap,
+        voteCount: voteCounts[(optionMap['id'] ?? '').toString()] ?? 0,
+      );
+      optionsByPollId.putIfAbsent(option.pollId, () => []).add(option);
+    }
+
+    return pendingPolls.map((poll) {
+      final pollId = poll['id'].toString();
+      return ChatPoll.fromMap(
+        poll,
+        options: optionsByPollId[pollId] ?? const [],
+        myOptionId: null,
+      );
+    }).toList();
+  }
+
+  Future<List<ChatPoll>> getPollsForRoom(String roomId) async {
+    final userId = currentUserId;
+    if (userId == null) return [];
+
+    final membership = await supabase
+        .from('chat_room_members')
+        .select('room_id')
+        .eq('room_id', roomId)
+        .eq('user_id', userId)
+        .eq('is_banned', false)
+        .maybeSingle();
+
+    if (membership == null) return [];
+
+    final pollsResponse = await supabase
+        .from('chat_polls')
+        .select(
+            'id, room_id, created_by, question, is_closed, is_pinned, created_at')
+        .eq('room_id', roomId)
+        .order('is_pinned', ascending: false)
+        .order('created_at', ascending: true);
+
+    final polls = (pollsResponse as List)
+        .map((row) => Map<String, dynamic>.from(row))
+        .where((row) => (row['id'] ?? '').toString().isNotEmpty)
+        .toList();
+
+    if (polls.isEmpty) return [];
+
+    final pollIds = polls.map((poll) => poll['id'].toString()).toList();
+
+    final votesResponse = await supabase
+        .from('chat_poll_votes')
+        .select('poll_id, option_id, user_id')
+        .inFilter('poll_id', pollIds);
+
+    final voteCounts = <String, int>{};
+    final myVotesByPollId = <String, String>{};
+
+    for (final rawVote in votesResponse as List) {
+      final vote = Map<String, dynamic>.from(rawVote);
+      final pollId = (vote['poll_id'] ?? '').toString();
+      final optionId = (vote['option_id'] ?? '').toString();
+      final voteUserId = (vote['user_id'] ?? '').toString();
+
+      if (optionId.isNotEmpty) {
+        voteCounts[optionId] = (voteCounts[optionId] ?? 0) + 1;
+      }
+
+      if (voteUserId == userId && pollId.isNotEmpty && optionId.isNotEmpty) {
+        myVotesByPollId[pollId] = optionId;
+      }
+    }
+
+    final optionsResponse = await supabase
+        .from('chat_poll_options')
+        .select('id, poll_id, option_text, position')
+        .inFilter('poll_id', pollIds)
+        .order('position', ascending: true);
+
+    final optionsByPollId = <String, List<ChatPollOption>>{};
+    for (final rawOption in optionsResponse as List) {
+      final optionMap = Map<String, dynamic>.from(rawOption);
+      final optionId = (optionMap['id'] ?? '').toString();
+      final option = ChatPollOption.fromMap(
+        optionMap,
+        voteCount: voteCounts[optionId] ?? 0,
+      );
+      optionsByPollId.putIfAbsent(option.pollId, () => []).add(option);
+    }
+
+    return polls.map((poll) {
+      final pollId = poll['id'].toString();
+      return ChatPoll.fromMap(
+        poll,
+        options: optionsByPollId[pollId] ?? const [],
+        myOptionId: myVotesByPollId[pollId],
+      );
+    }).toList();
+  }
+
+  Stream<List<ChatPoll>> streamPollsForRoom(String roomId) {
+    final controller = StreamController<List<ChatPoll>>();
+    RealtimeChannel? channel;
+    Timer? fallbackTimer;
+    var disposed = false;
+
+    Future<void> emit() async {
+      if (disposed || controller.isClosed) return;
+      try {
+        controller.add(await getPollsForRoom(roomId));
+      } catch (e, st) {
+        if (!controller.isClosed) controller.addError(e, st);
+      }
+    }
+
+    emit();
+
+    channel = supabase
+        .channel('chat_room_polls_cards_$roomId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'chat_polls',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'room_id',
+            value: roomId,
+          ),
+          callback: (_) => emit(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'chat_poll_options',
+          callback: (_) => emit(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'chat_poll_votes',
+          callback: (_) => emit(),
+        )
+        .subscribe();
+
+    fallbackTimer = Timer.periodic(const Duration(seconds: 20), (_) => emit());
+
+    controller.onCancel = () async {
+      disposed = true;
+      fallbackTimer?.cancel();
+      if (channel != null) {
+        await supabase.removeChannel(channel!);
+      }
+    };
+
+    return controller.stream;
+  }
+
+  Stream<List<ChatPoll>> streamPendingPollsForRoom(String roomId) {
+    final controller = StreamController<List<ChatPoll>>();
+    RealtimeChannel? channel;
+    Timer? fallbackTimer;
+    var disposed = false;
+
+    Future<void> emit() async {
+      if (disposed || controller.isClosed) return;
+      try {
+        controller.add(await getPendingPollsForRoom(roomId));
+      } catch (e) {
+        if (!controller.isClosed) controller.addError(e);
+      }
+    }
+
+    emit();
+
+    channel = supabase
+        .channel('chat_polls_live_$roomId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'chat_polls',
+          callback: (_) => emit(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'chat_poll_options',
+          callback: (_) => emit(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'chat_poll_votes',
+          callback: (_) => emit(),
+        )
+        .subscribe();
+
+    fallbackTimer = Timer.periodic(const Duration(seconds: 20), (_) => emit());
+
+    controller.onCancel = () async {
+      disposed = true;
+      fallbackTimer?.cancel();
+      if (channel != null) {
+        await supabase.removeChannel(channel!);
+      }
+    };
+
+    return controller.stream;
+  }
+
+  Future<void> votePoll({
+    required String pollId,
+    required String optionId,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    await supabase.from('chat_poll_votes').upsert(
+      {
+        'poll_id': pollId,
+        'option_id': optionId,
+        'user_id': userId,
+      },
+      onConflict: 'poll_id,user_id',
+    );
+  }
+
   Stream<List<Map<String, dynamic>>> streamUsersPresence(
     List<String> userIds,
   ) {
@@ -633,12 +1613,15 @@ class ChatService {
     final userId = currentUserId;
     if (userId == null) return;
 
-    await supabase.from('chat_typing_status').upsert({
-      'room_id': roomId,
-      'user_id': userId,
-      'is_typing': isTyping,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    });
+    await supabase.from('chat_typing_status').upsert(
+      {
+        'room_id': roomId,
+        'user_id': userId,
+        'is_typing': isTyping,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      onConflict: 'room_id,user_id',
+    );
   }
 
   Stream<List<Map<String, dynamic>>> streamTypingStatus(String roomId) {
@@ -649,5 +1632,109 @@ class ChatService {
         .map((rows) => rows
             .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
             .toList());
+  }
+
+  Future<void> _sendPushToRoomParticipants({
+    required String roomId,
+    required String senderId,
+    required String content,
+  }) async {
+    try {
+      final memberRows = await supabase
+          .from('chat_room_members')
+          .select('user_id')
+          .eq('room_id', roomId)
+          .eq('is_banned', false);
+
+      final recipientIds = memberRows
+          .map<String>((row) => (row['user_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty && id != senderId)
+          .toSet()
+          .toList();
+
+      if (recipientIds.isEmpty) return;
+
+      final senderProfile = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', senderId)
+          .maybeSingle();
+
+      final senderName =
+          senderProfile?['full_name']?.toString().trim().isNotEmpty == true
+              ? senderProfile!['full_name'].toString().trim()
+              : 'Olympus Chat';
+
+      final tokenRows = await supabase
+          .from('user_push_tokens')
+          .select('user_id, device_token')
+          .inFilter('user_id', recipientIds);
+
+      final tokens = <String>{};
+      for (final row in tokenRows) {
+        final token = row['device_token']?.toString().trim();
+        if (token != null && token.isNotEmpty) tokens.add(token);
+      }
+
+      if (tokens.isEmpty) return;
+
+      final preview =
+          content.length > 90 ? '${content.substring(0, 90)}...' : content;
+      final collapseId = 'chat_$roomId';
+      final notificationId = _stableNotificationId(collapseId);
+
+      for (final token in tokens) {
+        await supabase.functions.invoke(
+          'send-push-notification',
+          body: {
+            'token': token,
+            'title': senderName,
+            'body': preview,
+            'type': 'message',
+            'notification_type': 'chat_message',
+            'screen': 'chat',
+            'route': '/chat-rooms',
+            'tag': collapseId,
+            'androidTag': collapseId,
+            'android_tag': collapseId,
+            'collapseKey': collapseId,
+            'collapse_key': collapseId,
+            'collapseId': collapseId,
+            'collapse_id': collapseId,
+            'groupKey': collapseId,
+            'group_key': collapseId,
+            'notificationId': notificationId,
+            'notification_id': notificationId,
+            'localNotificationId': notificationId,
+            'local_notification_id': notificationId,
+            'androidNotificationId': notificationId,
+            'android_notification_id': notificationId,
+            'replaceId': notificationId,
+            'replace_id': notificationId,
+            'roomId': roomId,
+            'room_id': roomId,
+            'threadId': roomId,
+            'thread_id': roomId,
+            'senderId': senderId,
+            'senderName': senderName,
+            'data': {
+              'type': 'message',
+              'screen': 'chat',
+              'route': '/chat-rooms',
+              'roomId': roomId,
+              'room_id': roomId,
+              'tag': collapseId,
+              'collapse_key': collapseId,
+              'notificationId': notificationId.toString(),
+              'notification_id': notificationId.toString(),
+              'local_notification_id': notificationId.toString(),
+            },
+          },
+        );
+      }
+    } catch (e, st) {
+      debugPrint('[ChatService] Push de chat não enviado: $e');
+      debugPrintStack(stackTrace: st);
+    }
   }
 }

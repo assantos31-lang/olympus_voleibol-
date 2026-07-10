@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../pages/admin_competitions_page.dart';
+import '../../pages/chat_rooms_page.dart';
+import '../../services/chat_service.dart';
 import '../../services/permission_service.dart';
 import 'coach_athlete_evaluations_page.dart';
 import 'coach_complete_profile_page.dart';
@@ -27,11 +29,14 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final supabase = Supabase.instance.client;
   final PermissionService _permissionService = PermissionService();
+  final ChatService _chatService = ChatService();
 
   bool _isLoading = true;
   bool _isBackgroundReady = false;
   int _competitionNewCount = 0;
   int _unreadMessagesCount = 0;
+  int _chatUnreadCount = 0;
+  bool _canAccessChat = true;
   DateTime? _lastCompetitionsViewedAt;
   RealtimeChannel? _competitionsRealtimeChannel;
   RealtimeChannel? _messageParticipantsRealtimeChannel;
@@ -140,6 +145,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       await Future.wait([
         _loadCompetitionNewCount(),
         _loadUnreadMessagesCount(showNotification: false),
+        _loadChatPermission(),
+        _loadChatUnreadCount(),
         _loadUnreadReceivedEvaluationsCount(),
         _loadDashboardIntelligence(),
       ]).timeout(const Duration(seconds: 22));
@@ -674,6 +681,32 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     }
   }
 
+  Future<void> _loadChatUnreadCount() async {
+    final total = await _chatService.getTotalUnreadCount();
+    if (!mounted) return;
+
+    setState(() => _chatUnreadCount = total);
+  }
+
+  Future<void> _loadChatPermission() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final hasAccess = await _permissionService.hasAccess(user.id, 'chat');
+      if (!mounted) return;
+      setState(() {
+        _canAccessChat = hasAccess;
+      });
+    } catch (e) {
+      debugPrint('Erro ao carregar permissão de chat: $e');
+      if (!mounted) return;
+      setState(() {
+        _canAccessChat = true;
+      });
+    }
+  }
+
   void _setupRealtimeListeners() {
     final user = supabase.auth.currentUser;
 
@@ -769,7 +802,10 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
 
     _messagesBadgeFallbackTimer ??= Timer.periodic(
       const Duration(seconds: 30),
-      (_) => _loadUnreadMessagesCount(showNotification: true),
+      (_) {
+        _loadUnreadMessagesCount(showNotification: true);
+        _loadChatUnreadCount();
+      },
     );
   }
 
@@ -853,6 +889,16 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         builder: (context) => const CoachMessagesPage(),
       ),
     ).then((_) => _loadUnreadMessagesCount(showNotification: false));
+  }
+
+  void _navigateToChat() {
+    if (!_canAccessChat) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ChatRoomsPage(),
+      ),
+    ).then((_) => _loadChatUnreadCount());
   }
 
   void _navigateToSmartDashboard() {
@@ -2016,6 +2062,14 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         badge: _unreadMessagesCount,
         onTap: _navigateToMessages,
       ),
+      if (_canAccessChat)
+        (
+          label: 'Chat',
+          icon: Icons.chat_bubble_rounded,
+          color: const Color(0xFF25D366),
+          badge: _chatUnreadCount,
+          onTap: _navigateToChat,
+        ),
       (
         label: 'Competições',
         icon: Icons.emoji_events_rounded,
@@ -2030,7 +2084,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       height: 88,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final itemWidth = ((constraints.maxWidth - 24) / 4).clamp(58.0, 72.0);
+          final itemWidth =
+              ((constraints.maxWidth - 32) / actions.length).clamp(54.0, 72.0);
           return Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: actions.indexed.map((entry) {

@@ -136,7 +136,7 @@ class _AdminAthletesStatisticsListPageState
   bool _isCheckinDone(dynamic value) {
     final raw = (value ?? '').toString().trim().toLowerCase();
 
-    if (raw.isEmpty) return true;
+    if (raw.isEmpty || raw == 'pending' || raw == 'pendente') return false;
 
     if (raw == 'cancelado' ||
         raw == 'canceled' ||
@@ -1277,7 +1277,7 @@ class _AdminAthleteStats {
   int get baseFrequencia => presencas + faltas;
 
   double get presenceRate {
-    if (baseFrequencia <= 0) return 0;
+    if (baseFrequencia <= 0) return 1.0;
     return (presencas / baseFrequencia).clamp(0.0, 1.0).toDouble();
   }
 

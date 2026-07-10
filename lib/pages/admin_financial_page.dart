@@ -711,12 +711,45 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
 
   Future<void> _loadAthletes() async {
     try {
-      final response = await _supabase
+      final athleteIds = <String>{};
+
+      try {
+        final rolesResponse = await _supabase
+            .from('user_roles')
+            .select('user_id')
+            .eq('role', 'athlete')
+            .eq('is_active', true);
+
+        for (final row in rolesResponse as List) {
+          final userId = (row['user_id'] ?? '').toString();
+          if (userId.isNotEmpty) athleteIds.add(userId);
+        }
+      } catch (e) {
+        debugPrint('Papéis de atleta indisponíveis no financeiro: $e');
+      }
+
+      final profileAthletes = await _supabase
           .from('profiles')
-          .select('id, full_name, phone, gender')
+          .select('id')
           .eq('user_type', 'athlete')
-          .eq('is_active', true)
-          .order('full_name');
+          .eq('is_active', true);
+
+      for (final row in profileAthletes as List) {
+        final userId = (row['id'] ?? '').toString();
+        if (userId.isNotEmpty) athleteIds.add(userId);
+      }
+
+      dynamic response;
+      if (athleteIds.isEmpty) {
+        response = const [];
+      } else {
+        response = await _supabase
+            .from('profiles')
+            .select('id, full_name, phone, gender')
+            .eq('is_active', true)
+            .inFilter('id', athleteIds.toList())
+            .order('full_name');
+      }
 
       if (mounted) {
         setState(() {

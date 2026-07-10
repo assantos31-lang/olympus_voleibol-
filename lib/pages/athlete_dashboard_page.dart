@@ -11,6 +11,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui';
 import '../services/auth_service.dart';
+import '../services/chat_service.dart';
 import '../services/permission_service.dart';
 import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
@@ -32,6 +33,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   final supabase = Supabase.instance.client;
   final _authService = AuthService();
+  final ChatService _chatService = ChatService();
   final PermissionService _permissionService = PermissionService();
   Map<String, dynamic>? _profile;
   bool _isLoading = true;
@@ -51,6 +53,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   late final AnimationController _presenceBlinkController;
   late final Animation<double> _presenceBlinkOpacity;
   int _messageUnreadCount = 0;
+  int _chatUnreadCount = 0;
   int _competitionNewCount = 0;
   int? _currentUserRankingPosition;
   String? _currentUserRankingMovement;
@@ -84,6 +87,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   double _monthlyPresencePercent = 0;
   bool _showingLevelUpDialog = false;
   bool _canAccessBirthdays = false;
+  bool _canAccessChat = true;
 
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
@@ -146,6 +150,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
       _loadProfile(),
       _loadTodayBirthdays(),
       _loadBirthdaysPermission(),
+      _loadChatPermission(),
     ]);
   }
 
@@ -172,6 +177,25 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
       if (!mounted) return;
       setState(() {
         _canAccessBirthdays = false;
+      });
+    }
+  }
+
+  Future<void> _loadChatPermission() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final hasAccess = await _permissionService.hasAccess(user.id, 'chat');
+      if (!mounted) return;
+      setState(() {
+        _canAccessChat = hasAccess;
+      });
+    } catch (e) {
+      debugPrint('Erro ao carregar permissão de chat: $e');
+      if (!mounted) return;
+      setState(() {
+        _canAccessChat = true;
       });
     }
   }
@@ -213,6 +237,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
       _loadGenderRanking(profile);
       _loadMonthlyHistory();
       _loadMessageUnreadCount();
+      _loadChatUnreadCount();
       _loadCompetitionNewCount();
       _setupRealtimeListeners();
     }
@@ -634,6 +659,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
 
     await Future.wait([
       _loadMessageUnreadCount(),
+      _loadChatUnreadCount(),
       _loadCompetitionNewCount(),
       _loadPendingCount(),
       _loadOverdueFinancialCount(),
@@ -670,6 +696,13 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     } catch (e) {
       debugPrint('Erro ao carregar mensagens não lidas: $e');
     }
+  }
+
+  Future<void> _loadChatUnreadCount() async {
+    final total = await _chatService.getTotalUnreadCount();
+    if (!mounted) return;
+
+    setState(() => _chatUnreadCount = total);
   }
 
   DateTime? _getPersistedCompetitionsViewedAt() {
@@ -740,7 +773,7 @@ event_time
           final eventType =
               (eventMap['event_type'] ?? '').toString().toLowerCase().trim();
 
-          if (eventType == 'treino') {
+          if (eventType.contains('treino')) {
             pendingTraining++;
             continue;
           }
@@ -921,7 +954,7 @@ event_time
       final eventType =
           (event['event_type'] ?? '').toString().toLowerCase().trim();
       final eventDateTime = event['event_datetime'];
-      return eventType == 'treino' &&
+      return eventType.contains('treino') &&
           eventDateTime is DateTime &&
           !eventDateTime.isBefore(now);
     }).toList()
@@ -2139,7 +2172,7 @@ event_time
         final eventType =
             (eventMap['event_type'] ?? '').toString().toLowerCase().trim();
 
-        if (eventType != 'treino') continue;
+        if (!eventType.contains('treino')) continue;
 
         final eventDate = _parseEventDateTime(
           (eventMap['event_date'] ?? '').toString(),
@@ -2720,12 +2753,13 @@ event_time
   }
 
   void _navigateToChat() {
+    if (!_canAccessChat) return;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => const ChatRoomsPage(),
       ),
-    );
+    ).then((_) => _loadChatUnreadCount());
   }
 
   void _navigateToCompetitions() {
@@ -4593,6 +4627,14 @@ event_time
         badge: _messageUnreadCount,
         onTap: _navigateToMessages,
       ),
+      if (_canAccessChat)
+        (
+          label: 'Chat',
+          icon: Icons.chat_bubble_rounded,
+          color: const Color(0xFF25D366),
+          badge: _chatUnreadCount,
+          onTap: _navigateToChat,
+        ),
       (
         label: 'Financeiro',
         icon: Icons.account_balance_wallet_rounded,
@@ -4607,7 +4649,8 @@ event_time
       height: 88,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final itemWidth = ((constraints.maxWidth - 24) / 4).clamp(60.0, 70.0);
+          final itemWidth =
+              ((constraints.maxWidth - 32) / actions.length).clamp(54.0, 70.0);
           return Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: actions.indexed.map((entry) {

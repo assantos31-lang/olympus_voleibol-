@@ -923,6 +923,11 @@ class _ProfilesPageState extends State<ProfilesPage> {
         'subtitle': 'Permitir visualizar recursos financeiros',
       },
       {
+        'pageName': 'chat',
+        'title': 'Acesso ao Chat',
+        'subtitle': 'Permitir conversar em chats e grupos',
+      },
+      {
         'pageName': 'treinos',
         'title': 'Acesso aos Treinos',
         'subtitle': 'Permitir visualizar e usar os treinos',

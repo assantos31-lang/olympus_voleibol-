@@ -4,7 +4,14 @@ class ChatMessage {
   final String senderId;
   final String? senderName;
   final String? content;
+  final String messageType;
+  final String? imageUrl;
+  final String? replyToMessageId;
+  final String? replyToText;
+  final String? replyToSenderName;
   final DateTime createdAt;
+  final DateTime? editedAt;
+  final DateTime? deletedAt;
 
   ChatMessage({
     required this.id,
@@ -12,7 +19,14 @@ class ChatMessage {
     required this.senderId,
     this.senderName,
     required this.content,
+    this.messageType = 'text',
+    this.imageUrl,
+    this.replyToMessageId,
+    this.replyToText,
+    this.replyToSenderName,
     required this.createdAt,
+    this.editedAt,
+    this.deletedAt,
   });
 
   factory ChatMessage.fromMap(Map<String, dynamic> map) {
@@ -22,7 +36,18 @@ class ChatMessage {
       senderId: map['sender_id'] as String,
       senderName: map['sender_name'] as String?,
       content: map['content'] as String?,
+      messageType: (map['message_type'] ?? 'text').toString(),
+      imageUrl: map['image_url'] as String?,
+      replyToMessageId: map['reply_to_message_id'] as String?,
+      replyToText: map['reply_to_text'] as String?,
+      replyToSenderName: map['reply_to_sender_name'] as String?,
       createdAt: DateTime.parse(map['created_at'] as String),
+      editedAt: map['edited_at'] == null
+          ? null
+          : DateTime.tryParse(map['edited_at'].toString()),
+      deletedAt: map['deleted_at'] == null
+          ? null
+          : DateTime.tryParse(map['deleted_at'].toString()),
     );
   }
 
@@ -35,7 +60,20 @@ class ChatMessage {
       senderId: senderId,
       senderName: senderName ?? this.senderName,
       content: content,
+      messageType: messageType,
+      imageUrl: imageUrl,
+      replyToMessageId: replyToMessageId,
+      replyToText: replyToText,
+      replyToSenderName: replyToSenderName,
       createdAt: createdAt,
+      editedAt: editedAt,
+      deletedAt: deletedAt,
     );
   }
+
+  bool get isDeleted => deletedAt != null;
+
+  bool get isImage => messageType == 'image' && imageUrl != null;
+
+  bool get isPoll => messageType == 'poll' && imageUrl != null;
 }

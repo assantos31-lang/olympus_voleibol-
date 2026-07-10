@@ -269,7 +269,7 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
       return false;
     }
 
-    if (raw.isEmpty) return true;
+    if (raw.isEmpty || raw == 'pending' || raw == 'pendente') return false;
 
     return raw == 'realizado' ||
         raw == 'realizado com sucesso' ||
@@ -1598,17 +1598,9 @@ class _AthleteStatisticsDetailPageState
   }
 
   bool _isTrainingEvent(Map<String, dynamic> row) {
-    final event = row['events'];
-
-    if (event is Map) {
-      final type = (event['event_type'] ?? '').toString().toLowerCase().trim();
-      return type == 'treino';
-    }
-
-    final directType =
-        (row['event_type'] ?? '').toString().toLowerCase().trim();
-    if (directType.isEmpty) return true;
-    return directType == 'treino';
+    final type = _eventTypeForRow(row);
+    if (type.isEmpty) return true;
+    return type == 'treino';
   }
 
   String _normalizarTipoEvento(dynamic value) {
@@ -1850,7 +1842,7 @@ class _AthleteStatisticsDetailPageState
     // A tabela checkins representa uma presença registrada.
     // Check-ins antigos, manuais ou atrasados podem estar sem status ou com
     // variações de texto. Só bloqueamos status claramente inválidos.
-    if (raw.isEmpty) return true;
+    if (raw.isEmpty || raw == 'pending' || raw == 'pendente') return false;
 
     if (raw == 'cancelado' ||
         raw == 'canceled' ||
@@ -2590,7 +2582,7 @@ class _AthleteStatisticsDetailPageState
 
   double get _presenceRate {
     final base = _trainingBaseCount;
-    if (base == 0) return 0;
+    if (base == 0) return 1.0;
     return (_trainingPresenceCount / base).clamp(0, 1);
   }
 
@@ -5016,7 +5008,7 @@ class _AthleteStatisticsDetailPageState
             _infoButton(
               title: 'Presença',
               explanation:
-                  'Presença = check-ins realizados ÷ eventos consolidados, incluindo check-in atrasado/manual. Falta = treinos aceitos sem check-in depois do prazo de 30 minutos. Recusados e pendentes não viram falta. Esta tela considera somente treinos a partir de 01/05/2026. Quando o evento possui gênero, o cálculo considera apenas treinos do mesmo gênero cadastrado no perfil da atleta.',
+                  'Presença = check-ins realizados ÷ eventos consolidados, incluindo check-in atrasado/manual. Falta = treino convocado sem check-in depois do prazo de 30 minutos, mesmo que o status esteja pendente, recusado ou aceito. Esta tela considera somente treinos a partir de 01/05/2026. Quando o evento possui gênero, o cálculo considera apenas treinos do mesmo gênero cadastrado no perfil da atleta.',
             ),
           ],
         ),
