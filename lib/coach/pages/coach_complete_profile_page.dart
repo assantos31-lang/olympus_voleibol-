@@ -39,6 +39,8 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
   final MaskedTextController _phoneController =
       MaskedTextController(mask: '(00) 00000-0000');
   final TextEditingController _rgController = TextEditingController();
+  final MaskedTextController _birthDateController =
+      MaskedTextController(mask: '00/00/0000');
   final MaskedTextController _cepController =
       MaskedTextController(mask: '00000-000');
   final TextEditingController _streetController = TextEditingController();
@@ -73,6 +75,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
     _cpfController.dispose();
     _phoneController.dispose();
     _rgController.dispose();
+    _birthDateController.dispose();
     _cepController.dispose();
     _streetController.dispose();
     _numberController.dispose();
@@ -108,6 +111,50 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
     return '${numbers.substring(0, 5)}-${numbers.substring(5)}';
   }
 
+  String _formatBirthDate(dynamic value) {
+    final raw = (value ?? '').toString().trim();
+    if (raw.isEmpty) return '';
+
+    try {
+      final parsed = DateTime.tryParse(raw);
+      if (parsed != null) {
+        return '${parsed.day.toString().padLeft(2, '0')}/'
+            '${parsed.month.toString().padLeft(2, '0')}/'
+            '${parsed.year.toString().padLeft(4, '0')}';
+      }
+    } catch (_) {}
+
+    final numbers = _onlyNumbers(raw);
+    if (numbers.length == 8) {
+      return '${numbers.substring(0, 2)}/${numbers.substring(2, 4)}/${numbers.substring(4)}';
+    }
+    return raw;
+  }
+
+  DateTime? _parseBirthDateInput() {
+    final numbers = _onlyNumbers(_birthDateController.text);
+    if (numbers.length != 8) return null;
+
+    final day = int.tryParse(numbers.substring(0, 2));
+    final month = int.tryParse(numbers.substring(2, 4));
+    final year = int.tryParse(numbers.substring(4, 8));
+    if (day == null || month == null || year == null) return null;
+
+    final parsed = DateTime(year, month, day);
+    if (parsed.day != day || parsed.month != month || parsed.year != year) {
+      return null;
+    }
+    return parsed;
+  }
+
+  String? _birthDateToDatabase() {
+    final parsed = _parseBirthDateInput();
+    if (parsed == null) return null;
+    return '${parsed.year.toString().padLeft(4, '0')}-'
+        '${parsed.month.toString().padLeft(2, '0')}-'
+        '${parsed.day.toString().padLeft(2, '0')}';
+  }
+
   bool _hasCompleteName(String value) {
     final parts = value
         .trim()
@@ -136,7 +183,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
       final profile = await supabase
           .from('profiles')
           .select(
-            'full_name, cpf, phone, rg, avatar_url, user_type, '
+            'full_name, cpf, phone, rg, birth_date, avatar_url, user_type, '
             'cep, address_street, address_number, address_complement, '
             'address_neighborhood, address_city, address_state',
           )
@@ -149,6 +196,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
       final cpf = (profile?['cpf'] ?? '').toString();
       final phone = (profile?['phone'] ?? '').toString();
       final rg = (profile?['rg'] ?? '').toString();
+      final birthDate = profile?['birth_date'];
       final avatarUrl = (profile?['avatar_url'] ?? '').toString().trim();
       final cep = (profile?['cep'] ?? '').toString();
 
@@ -156,6 +204,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
       _cpfController.text = _formatCpf(cpf);
       _phoneController.text = _formatPhone(phone);
       _rgController.text = rg;
+      _birthDateController.text = _formatBirthDate(birthDate);
       _cepController.text = _formatCep(cep);
       _streetController.text =
           (profile?['address_street'] ?? '').toString().trim();
@@ -236,6 +285,44 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
         setState(() => _loadingCep = false);
       }
     }
+  }
+
+  Future<void> _selectBirthDate() async {
+    if (_saving) return;
+
+    final current = _parseBirthDateInput();
+    final now = DateTime.now();
+    final initialDate = current ?? DateTime(now.year - 25, now.month, now.day);
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate.isAfter(now) ? now : initialDate,
+      firstDate: DateTime(1930),
+      lastDate: now,
+      helpText: 'Data de nascimento',
+      cancelText: 'Cancelar',
+      confirmText: 'Selecionar',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: olympusBlue,
+              onPrimary: Colors.white,
+              onSurface: olympusDark,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      _birthDateController.text = '${picked.day.toString().padLeft(2, '0')}/'
+          '${picked.month.toString().padLeft(2, '0')}/'
+          '${picked.year.toString().padLeft(4, '0')}';
+    });
   }
 
   Future<void> _pickImage() async {
@@ -332,6 +419,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
         'cpf': _onlyNumbers(_cpfController.text),
         'phone': _onlyNumbers(_phoneController.text),
         'rg': _rgController.text.trim(),
+        'birth_date': _birthDateToDatabase(),
         'avatar_url': avatarUrl.trim(),
         'cep': _onlyNumbers(_cepController.text),
         'address_street': _streetController.text.trim(),
@@ -695,6 +783,38 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
                     final text = (value ?? '').trim();
                     if (text.isEmpty) return 'Informe o RG.';
                     if (text.length < 5) return 'Informe um RG válido.';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _birthDateController,
+                  enabled: !_saving,
+                  readOnly: true,
+                  style: const TextStyle(color: Colors.white),
+                  keyboardType: TextInputType.datetime,
+                  decoration: _decoration(
+                    label: 'Data de nascimento *',
+                    icon: Icons.cake_outlined,
+                    hint: 'dd/mm/aaaa',
+                    suffixIcon: IconButton(
+                      tooltip: 'Selecionar data',
+                      onPressed: _saving ? null : _selectBirthDate,
+                      icon: const Icon(
+                        Icons.calendar_month_rounded,
+                        color: olympusGold,
+                      ),
+                    ),
+                  ),
+                  onTap: _selectBirthDate,
+                  validator: (value) {
+                    final parsed = _parseBirthDateInput();
+                    if ((value ?? '').trim().isEmpty || parsed == null) {
+                      return 'Informe uma data de nascimento válida.';
+                    }
+                    if (parsed.isAfter(DateTime.now())) {
+                      return 'A data não pode ser futura.';
+                    }
                     return null;
                   },
                 ),

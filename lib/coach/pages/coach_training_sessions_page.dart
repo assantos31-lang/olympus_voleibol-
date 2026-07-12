@@ -11,6 +11,7 @@ import '../../services/permission_service.dart';
 import 'coach_championship_scout_page.dart' as championship_scout;
 import 'coach_quick_athlete_evaluation_page.dart';
 import 'coach_training_plan_detail_page.dart';
+import 'training_plan_readonly_sheet.dart';
 
 export 'coach_quick_athlete_evaluation_page.dart';
 export 'coach_training_plan_detail_page.dart';
@@ -51,12 +52,14 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
   bool _loading = true;
   String? _error;
   bool _showAllPendingPlans = false;
+  bool _mostrarTodosPlanejamentos = false;
   RealtimeChannel? _planningRealtimeChannel;
   List<Map<String, dynamic>> _treinos = [];
   List<Map<String, dynamic>> _treinosFiltrados = [];
 
   String _filtroMes = '';
   String _filtroStatus = 'todos';
+  String _filtroCoachId = 'todos';
   late String _filtroTipoEvento;
   Map<String, int> _typeCounts = {
     'treino': 0,
@@ -408,11 +411,91 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
           .eq('event_role', 'coach')
           .timeout(const Duration(seconds: 15));
 
-      final eventIds = List<Map<String, dynamic>>.from(response)
+      final ownEventIds = List<Map<String, dynamic>>.from(response)
           .map((row) => (row['event_id'] ?? '').toString())
           .where((id) => id.isNotEmpty)
           .toSet()
           .toList();
+
+      final plannedEventIds = <String>{};
+      if (_mostrarTodosPlanejamentos) {
+        try {
+          final plannedRows = await _supabase
+              .from('training_plan_blocks')
+              .select('event_id')
+              .timeout(const Duration(seconds: 15));
+
+          for (final row in List<Map<String, dynamic>>.from(plannedRows)) {
+            final eventId = (row['event_id'] ?? '').toString();
+            if (eventId.isNotEmpty) plannedEventIds.add(eventId);
+          }
+        } catch (_) {
+          // Se a leitura ampla ainda não estiver liberada no Supabase,
+          // mantém a tela funcionando com os próprios treinos.
+        }
+      }
+
+      final eventIds = <String>{
+        ...ownEventIds,
+        if (_mostrarTodosPlanejamentos) ...plannedEventIds,
+      }.toList();
+
+      final ownConvocationByEventId = <String, Map<String, dynamic>>{};
+      for (final item in List<Map<String, dynamic>>.from(response)) {
+        final eventId = (item['event_id'] ?? '').toString();
+        if (eventId.isNotEmpty) ownConvocationByEventId[eventId] = item;
+      }
+
+      final coachIdsByEventId = <String, Set<String>>{};
+      for (final eventId in ownEventIds) {
+        coachIdsByEventId.putIfAbsent(eventId, () => <String>{}).add(user.id);
+      }
+
+      if (eventIds.isNotEmpty) {
+        try {
+          final planCoachRows = await _supabase
+              .from('training_plan_blocks')
+              .select('event_id, coach_id')
+              .inFilter('event_id', eventIds)
+              .timeout(const Duration(seconds: 15));
+
+          for (final row in List<Map<String, dynamic>>.from(planCoachRows)) {
+            final eventId = (row['event_id'] ?? '').toString();
+            final coachId = (row['coach_id'] ?? '').toString();
+            if (eventId.isEmpty || coachId.isEmpty) continue;
+            coachIdsByEventId
+                .putIfAbsent(eventId, () => <String>{})
+                .add(coachId);
+          }
+        } catch (_) {
+          // Se a tabela de planejamentos não puder ser lida agora, mantém
+          // pelo menos o treinador logado nos próprios treinos.
+        }
+      }
+
+      final coachIds = coachIdsByEventId.values
+          .expand((ids) => ids)
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      final coachNameById = <String, String>{};
+      if (coachIds.isNotEmpty) {
+        try {
+          final profileRows = await _supabase
+              .from('profiles')
+              .select('id, full_name')
+              .inFilter('id', coachIds)
+              .timeout(const Duration(seconds: 15));
+
+          for (final profile in List<Map<String, dynamic>>.from(profileRows)) {
+            final id = (profile['id'] ?? '').toString();
+            final name = (profile['full_name'] ?? '').toString().trim();
+            if (id.isNotEmpty && name.isNotEmpty) {
+              coachNameById[id] = name;
+            }
+          }
+        } catch (_) {}
+      }
 
       final eventsById = <String, Map<String, dynamic>>{};
       if (eventIds.isNotEmpty) {
@@ -427,11 +510,11 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
         }
       }
 
-      final treinos = <Map<String, dynamic>>[];
       final convocacoesParaAceitar = <String>[];
 
-      for (final item in List<Map<String, dynamic>>.from(response)) {
-        final rawEvent = eventsById[(item['event_id'] ?? '').toString()];
+      final treinos = <Map<String, dynamic>>[];
+      for (final eventId in eventIds) {
+        final rawEvent = eventsById[eventId];
         if (rawEvent == null) continue;
 
         final event = Map<String, dynamic>.from(rawEvent);
@@ -440,17 +523,53 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
 
         if (!_isTipoEventoSuportado(eventType)) continue;
 
-        event['normalized_event_type'] = _normalizarTipoEvento(eventType);
-        event['convocation_id'] = item['id'];
-        final currentStatus = _normalizarStatusConvocacao(item['status']);
-        event['convocation_status'] = 'accepted';
-        if (currentStatus != 'accepted') {
-          final convocationId = (item['id'] ?? '').toString();
-          if (convocationId.isNotEmpty) {
-            convocacoesParaAceitar.add(convocationId);
+        final ownConvocation = ownConvocationByEventId[eventId];
+        final isOwnCoachEvent = ownConvocation != null;
+
+        if (_mostrarTodosPlanejamentos && !isOwnCoachEvent) {
+          final normalizedType = _normalizarTipoEvento(eventType);
+          if (normalizedType != 'treino' ||
+              !plannedEventIds.contains(eventId)) {
+            continue;
           }
         }
-        event['justification'] = item['justification'];
+
+        event['normalized_event_type'] = _normalizarTipoEvento(eventType);
+        event['is_own_coach_event'] = isOwnCoachEvent;
+        event['view_only_planning'] = !isOwnCoachEvent;
+        final eventCoachIds =
+            coachIdsByEventId[eventId]?.where((id) => id.isNotEmpty).toList() ??
+                <String>[];
+        final eventCoachNames = eventCoachIds
+            .map((id) => coachNameById[id] ?? 'Treinador')
+            .where((name) => name.trim().isNotEmpty)
+            .toSet()
+            .toList();
+        event['coach_ids'] = eventCoachIds;
+        event['coach_names'] = eventCoachNames;
+        event['coach_options'] = eventCoachIds
+            .map((id) => {
+                  'id': id,
+                  'name': coachNameById[id] ?? 'Treinador',
+                })
+            .toList();
+
+        if (isOwnCoachEvent) {
+          event['convocation_id'] = ownConvocation['id'];
+          final currentStatus =
+              _normalizarStatusConvocacao(ownConvocation['status']);
+          event['convocation_status'] = 'accepted';
+          if (currentStatus != 'accepted') {
+            final convocationId = (ownConvocation['id'] ?? '').toString();
+            if (convocationId.isNotEmpty) {
+              convocacoesParaAceitar.add(convocationId);
+            }
+          }
+          event['justification'] = ownConvocation['justification'];
+        } else {
+          event['convocation_status'] = 'view_only';
+          event['justification'] = null;
+        }
         treinos.add(event);
       }
 
@@ -483,6 +602,13 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
       if (!mounted) return;
       setState(() {
         _treinos = treinos;
+        if (_filtroCoachId != 'todos' &&
+            !_treinos.any((treino) =>
+                ((treino['coach_ids'] as List?) ?? const [])
+                    .map((id) => id.toString())
+                    .contains(_filtroCoachId))) {
+          _filtroCoachId = 'todos';
+        }
         _aplicarFiltros();
         _loading = false;
       });
@@ -571,6 +697,19 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
     });
   }
 
+  Future<void> _alternarFontePlanejamentos(bool mostrarTodos) async {
+    if (_mostrarTodosPlanejamentos == mostrarTodos) return;
+
+    setState(() {
+      _mostrarTodosPlanejamentos = mostrarTodos;
+      _filtroStatus = 'todos';
+      _filtroCoachId = 'todos';
+      _showAllPendingPlans = false;
+    });
+
+    await _buscarTreinosDoTecnico();
+  }
+
   List<Map<String, dynamic>> _getTreinosBaseFiltro() {
     if (_filtroMes.isEmpty) return List<Map<String, dynamic>>.from(_treinos);
 
@@ -600,7 +739,18 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
       'liga': 0,
     };
 
-    for (final evento in _getTreinosBaseFiltro()) {
+    final baseResumo = _getTreinosBaseFiltro().where((evento) {
+      if (!_mostrarTodosPlanejamentos || _filtroCoachId == 'todos') {
+        return true;
+      }
+
+      final coachIds = ((evento['coach_ids'] as List?) ?? const [])
+          .map((id) => id.toString())
+          .toSet();
+      return coachIds.contains(_filtroCoachId);
+    }).toList();
+
+    for (final evento in baseResumo) {
       final tipo = _normalizarTipoEvento(
         evento['normalized_event_type'] ?? evento['event_type'],
       );
@@ -612,7 +762,12 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
 
     final counts = {'accepted': 0, 'rejected': 0, 'pending': 0};
 
-    for (final evento in _getEventosDoTipoSelecionado()) {
+    for (final evento in baseResumo.where((evento) {
+      final tipo = _normalizarTipoEvento(
+        evento['normalized_event_type'] ?? evento['event_type'],
+      );
+      return tipo == _filtroTipoEvento;
+    })) {
       final status =
           (evento['convocation_status'] ?? 'pending').toString().toLowerCase();
       if (counts.containsKey(status)) {
@@ -657,12 +812,40 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
       }).toList();
     }
 
+    if (_mostrarTodosPlanejamentos && _filtroCoachId != 'todos') {
+      lista = lista.where((treino) {
+        final coachIds = ((treino['coach_ids'] as List?) ?? const [])
+            .map((id) => id.toString())
+            .toSet();
+        return coachIds.contains(_filtroCoachId);
+      }).toList();
+    }
+
     lista.sort(
       (a, b) => _parseEventDateTime(a).compareTo(_parseEventDateTime(b)),
     );
 
     _treinosFiltrados = lista;
     _atualizarResumoStatus();
+  }
+
+  List<MapEntry<String, String>> _getTreinadoresDisponiveis() {
+    final coaches = <String, String>{};
+
+    for (final treino in _getEventosDoTipoSelecionado()) {
+      final options = ((treino['coach_options'] as List?) ?? const []);
+      for (final option in options) {
+        if (option is! Map) continue;
+        final id = (option['id'] ?? '').toString();
+        if (id.isEmpty) continue;
+        final name = (option['name'] ?? '').toString().trim();
+        coaches[id] = name.isEmpty ? 'Treinador' : name;
+      }
+    }
+
+    final entries = coaches.entries.toList()
+      ..sort((a, b) => a.value.compareTo(b.value));
+    return entries;
   }
 
   List<String> _getMesesDisponiveis() {
@@ -2215,6 +2398,15 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                   ],
                 ),
               ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+                child: _buildPlanningScopeSelector(),
+              ),
+              if (_mostrarTodosPlanejamentos)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+                  child: _buildCoachFilterDropdown(),
+                ),
               _buildResumoTreinosSection(compact: true),
             ],
           );
@@ -2237,6 +2429,12 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
               ),
               child: Column(
                 children: [
+                  _buildPlanningScopeSelector(),
+                  if (_mostrarTodosPlanejamentos) ...[
+                    const SizedBox(height: 10),
+                    _buildCoachFilterDropdown(),
+                  ],
+                  const SizedBox(height: 10),
                   _buildVisaoGeralButton(),
                   const SizedBox(height: 10),
                   _buildModernDropdown(
@@ -2274,7 +2472,98 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
     );
   }
 
+  Widget _buildPlanningScopeSelector() {
+    Widget chip({
+      required bool selected,
+      required String label,
+      required IconData icon,
+      required VoidCallback onTap,
+    }) {
+      return ChoiceChip(
+        selected: selected,
+        showCheckmark: false,
+        avatar: Icon(
+          icon,
+          size: 16,
+          color: olympusBlue,
+        ),
+        label: Text(label),
+        onSelected: (_) => onTap(),
+        selectedColor: olympusGold,
+        backgroundColor: Colors.white.withOpacity(0.92),
+        side: BorderSide(
+          color: selected ? olympusGold : Colors.white.withOpacity(0.58),
+        ),
+        labelStyle: TextStyle(
+          color: olympusBlue,
+          fontWeight: FontWeight.w900,
+          fontSize: 12,
+        ),
+      );
+    }
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          chip(
+            selected: !_mostrarTodosPlanejamentos,
+            label: 'Meus treinos',
+            icon: Icons.person_rounded,
+            onTap: () => _alternarFontePlanejamentos(false),
+          ),
+          chip(
+            selected: _mostrarTodosPlanejamentos,
+            label: 'Todos planejados',
+            icon: Icons.visibility_rounded,
+            onTap: () => _alternarFontePlanejamentos(true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCoachFilterDropdown() {
+    final coaches = _getTreinadoresDisponiveis();
+
+    return _buildModernDropdown(
+      icon: Icons.sports_rounded,
+      value: _filtroCoachId,
+      hint: 'Treinador',
+      items: [
+        const DropdownMenuItem(
+          value: 'todos',
+          child: Text('Todos os treinadores'),
+        ),
+        ...coaches.map(
+          (coach) => DropdownMenuItem(
+            value: coach.key,
+            child: Text(coach.value),
+          ),
+        ),
+      ],
+      onChanged: (valor) {
+        setState(() {
+          _filtroCoachId = (valor ?? 'todos').toString();
+          _aplicarFiltros();
+        });
+      },
+    );
+  }
+
   Future<void> _abrirDetalheTreino(Map<String, dynamic> treino) async {
+    final viewOnly = treino['view_only_planning'] == true;
+    if (viewOnly) {
+      await TrainingPlanReadonlySheet.show(
+        context,
+        event: treino,
+        emptyMessage: 'Este treino ainda não tem planejamento publicado.',
+      );
+      return;
+    }
+
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -2351,8 +2640,21 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
     final tipoColor = _colorTipoEvento(tipoEvento);
     final tipoIcon = _iconTipoEvento(tipoEvento);
     final genero = (treino['gender'] ?? '').toString();
+    final coachNames = ((treino['coach_names'] as List?) ?? const [])
+        .map((name) => name.toString().trim())
+        .where((name) => name.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    final coachLabel = coachNames.isEmpty
+        ? ''
+        : coachNames.length == 1
+            ? coachNames.first
+            : coachNames.take(2).join(', ') +
+                (coachNames.length > 2 ? ' +${coachNames.length - 2}' : '');
     final endereco = _formatarEndereco(treino);
     final hasPlanning = treino['has_planning'] == true;
+    final viewOnlyPlanning = treino['view_only_planning'] == true;
     final athleteCounts = Map<String, int>.from(
       treino['athlete_status_counts'] as Map? ?? const <String, int>{},
     );
@@ -2417,6 +2719,44 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                   fontWeight: FontWeight.w800,
                 ),
               ),
+              if (coachLabel.isNotEmpty) ...[
+                const SizedBox(height: 7),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: olympusBlue.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: olympusBlue.withOpacity(0.10),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.sports_rounded,
+                        size: 15,
+                        color: olympusBlue.withOpacity(0.86),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          'Treinador: $coachLabel',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: olympusBlue.withOpacity(0.90),
+                            fontSize: isMobile ? 11.5 : 12.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               Text(
                 _formatarDataHora(treino),
@@ -2471,31 +2811,32 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                 ],
               ),
               const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _abrirAvaliacaoRapida(treino),
-                  icon: Icon(
-                    tipoEvento == 'campeonato'
-                        ? Icons.analytics_outlined
-                        : Icons.fact_check_outlined,
-                  ),
-                  label: Text(
-                    tipoEvento == 'campeonato'
-                        ? 'Avaliar Campeonato (Scout)'
-                        : 'Avaliação rápida de $tipoLabel',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: tipoEvento == 'campeonato'
-                        ? olympusGold
-                        : olympusPurple,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(
-                      vertical: isMobile ? 11 : 12,
+              if (!viewOnlyPlanning)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _abrirAvaliacaoRapida(treino),
+                    icon: Icon(
+                      tipoEvento == 'campeonato'
+                          ? Icons.analytics_outlined
+                          : Icons.fact_check_outlined,
+                    ),
+                    label: Text(
+                      tipoEvento == 'campeonato'
+                          ? 'Avaliar Campeonato (Scout)'
+                          : 'Avaliação rápida de $tipoLabel',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: tipoEvento == 'campeonato'
+                          ? olympusGold
+                          : olympusPurple,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(
+                        vertical: isMobile ? 11 : 12,
+                      ),
                     ),
                   ),
                 ),
-              ),
               if (tipoEvento == 'treino') ...[
                 const SizedBox(height: 10),
                 SizedBox(
@@ -2503,17 +2844,23 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                   child: ElevatedButton.icon(
                     onPressed: () => _abrirDetalheTreino(treino),
                     icon: Icon(
-                      hasPlanning
+                      viewOnlyPlanning || hasPlanning
                           ? Icons.menu_book_outlined
                           : Icons.add_task_rounded,
                     ),
                     label: Text(
-                      hasPlanning ? 'Abrir planejamento' : 'Criar planejamento',
+                      viewOnlyPlanning
+                          ? 'Ver planejamento'
+                          : hasPlanning
+                              ? 'Abrir planejamento'
+                              : 'Criar planejamento',
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: hasPlanning
-                          ? olympusSuccess
-                          : const Color(0xFFE67E22),
+                      backgroundColor: viewOnlyPlanning
+                          ? olympusBlue
+                          : hasPlanning
+                              ? olympusSuccess
+                              : const Color(0xFFE67E22),
                       foregroundColor: Colors.white,
                       padding: EdgeInsets.symmetric(
                         vertical: isMobile ? 11 : 12,

@@ -74,6 +74,27 @@ class ChatService {
 
     final roomIds = rooms.map((r) => r.id).toList();
 
+    final hiddenAtByRoom = <String, DateTime>{};
+    try {
+      final hiddenRows = await supabase
+          .from('chat_room_hidden_users')
+          .select('room_id, hidden_at')
+          .eq('user_id', userId)
+          .inFilter('room_id', roomIds);
+
+      for (final rawHidden in hiddenRows) {
+        final hidden = Map<String, dynamic>.from(rawHidden);
+        final roomId = (hidden['room_id'] ?? '').toString();
+        final hiddenAtText = (hidden['hidden_at'] ?? '').toString();
+        if (roomId.isEmpty || hiddenAtText.isEmpty) continue;
+
+        hiddenAtByRoom[roomId] = DateTime.parse(hiddenAtText);
+      }
+    } catch (_) {
+      // Se o SQL de ocultar conversa ainda não foi aplicado, mantém o chat
+      // funcionando normalmente.
+    }
+
     dynamic messagesResponse;
     try {
       messagesResponse = await supabase
@@ -212,8 +233,22 @@ class ChatService {
       }
     }
 
-    return rooms.map((room) {
+    final items = <ChatRoomListItem>[];
+
+    for (final room in rooms) {
       final lastMessage = latestMessageByRoom[room.id];
+      final lastMessageAt = lastMessage?['created_at'] != null
+          ? DateTime.parse(lastMessage!['created_at'] as String)
+          : null;
+      final hiddenAt = hiddenAtByRoom[room.id];
+
+      if (hiddenAt != null) {
+        final compareDate = lastMessageAt ?? room.createdAt;
+        if (!compareDate.isAfter(hiddenAt)) {
+          continue;
+        }
+      }
+
       final senderId = (lastMessage?['sender_id'] ?? '').toString();
       final otherMemberId = roomMembers.map((member) {
         final roomId = (member['room_id'] ?? '').toString();
@@ -228,18 +263,18 @@ class ChatService {
             )
           : room;
 
-      return ChatRoomListItem(
+      items.add(ChatRoomListItem(
         room: displayRoom,
         lastMessageText: _previewMessage(lastMessage),
         lastMessageSenderName:
             senderId.isNotEmpty ? profileNameMap[senderId] : null,
-        lastMessageAt: lastMessage?['created_at'] != null
-            ? DateTime.parse(lastMessage!['created_at'] as String)
-            : null,
+        lastMessageAt: lastMessageAt,
         unreadCount: unreadCountByRoom[room.id] ?? 0,
         avatarUrl: roomAvatarMap[room.id],
-      );
-    }).toList();
+      ));
+    }
+
+    return items;
   }
 
   String? _previewMessage(Map<String, dynamic>? message) {
@@ -302,6 +337,12 @@ class ChatService {
             event: PostgresChangeEvent.all,
             schema: 'public',
             table: 'chat_message_reads',
+            callback: (_) => emit(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_room_hidden_users',
             callback: (_) => emit(),
           )
           .subscribe();
@@ -478,6 +519,7 @@ class ChatService {
           .maybeSingle();
 
       if (existing != null) {
+        await unhideRoomForCurrentUser(existing['id'].toString());
         return ChatRoom.fromMap(existing);
       }
     }
@@ -965,6 +1007,7 @@ class ChatService {
     }
 
     await supabase.from('chat_messages').insert(payload);
+    await unhideRoomForCurrentUser(roomId);
 
     unawaited(_sendPushToRoomParticipants(
       roomId: roomId,
@@ -991,6 +1034,7 @@ class ChatService {
       'message_type': 'image',
       'image_url': imagePath,
     });
+    await unhideRoomForCurrentUser(roomId);
 
     unawaited(_sendPushToRoomParticipants(
       roomId: roomId,
@@ -1313,11 +1357,35 @@ class ChatService {
     final userId = currentUserId;
     if (userId == null) throw Exception('Usuário não autenticado');
 
-    await supabase
-        .from('chat_room_members')
-        .delete()
-        .eq('room_id', roomId)
-        .eq('user_id', userId);
+    // Igual WhatsApp: "apagar conversa" apaga apenas para o usuário atual.
+    // Nunca remova o usuário de chat_room_members em conversa direta, porque
+    // isso quebra o recebimento de novas mensagens. A sala fica viva, some da
+    // lista de quem apagou e volta quando chegar uma nova mensagem.
+    await supabase.from('chat_room_hidden_users').upsert(
+      {
+        'room_id': roomId,
+        'user_id': userId,
+        'hidden_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      onConflict: 'room_id,user_id',
+    );
+
+    await markRoomMessagesAsRead(roomId);
+  }
+
+  Future<void> unhideRoomForCurrentUser(String roomId) async {
+    final userId = currentUserId;
+    if (userId == null) return;
+
+    try {
+      await supabase
+          .from('chat_room_hidden_users')
+          .delete()
+          .eq('room_id', roomId)
+          .eq('user_id', userId);
+    } catch (_) {
+      // Se o SQL ainda não foi aplicado, não deve impedir enviar/abrir conversa.
+    }
   }
 
   Future<void> setCurrentUserOnline(bool isOnline) async {

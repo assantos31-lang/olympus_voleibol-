@@ -628,7 +628,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
           child: Container(color: Colors.transparent),
         ),
         Container(
-          color: Colors.white.withOpacity(0.28),
+          color: const Color(0xFF07182B).withOpacity(0.50),
         ),
         DecoratedBox(
           decoration: BoxDecoration(
@@ -636,9 +636,9 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                Colors.white.withOpacity(0.08),
-                Colors.white.withOpacity(0.18),
-                const Color(0xFFE8EEF6).withOpacity(0.34),
+                olympusBlue.withOpacity(0.16),
+                Colors.transparent,
+                Colors.black.withOpacity(0.22),
               ],
             ),
           ),
@@ -653,7 +653,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    olympusBlue.withOpacity(0.18),
+                    olympusBlue.withOpacity(0.34),
                     Colors.transparent,
                   ],
                 ),
@@ -678,15 +678,15 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
         child: Container(
           padding: padding,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.78),
+            color: Colors.white.withOpacity(0.88),
             borderRadius: BorderRadius.circular(radius),
             border: Border.all(
-              color: borderColor ?? Colors.white.withOpacity(0.55),
+              color: borderColor ?? Colors.white.withOpacity(0.48),
               width: 1.1,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.08),
+                color: Colors.black.withOpacity(0.14),
                 blurRadius: 20,
                 offset: const Offset(0, 9),
               ),
@@ -1478,7 +1478,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
             fontSize: 20,
           ),
         ),
-        backgroundColor: olympusBlue,
+        backgroundColor: olympusBlue.withOpacity(0.92),
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
@@ -1556,8 +1556,13 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                             builder: (context, constraints) {
                               return GridView.builder(
                                 controller: _parallaxScrollController,
-                                padding:
-                                    const EdgeInsets.fromLTRB(10, 10, 10, 14),
+                                padding: EdgeInsets.fromLTRB(
+                                  10,
+                                  10,
+                                  10,
+                                  MediaQuery.of(context).viewPadding.bottom +
+                                      24,
+                                ),
                                 gridDelegate:
                                     SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount:

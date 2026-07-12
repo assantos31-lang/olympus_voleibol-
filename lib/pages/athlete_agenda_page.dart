@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../coach/pages/training_plan_readonly_sheet.dart';
 import '../services/permission_service.dart';
 
 class AthleteAgendaPage extends StatefulWidget {
@@ -3592,6 +3593,56 @@ enable_ride_logistics
                                                         ),
                                                       ),
                                                       const SizedBox(height: 6),
+                                                    ],
+                                                    if (tipoNormalizado ==
+                                                        'treino') ...[
+                                                      SizedBox(
+                                                        height: 34,
+                                                        width: double.infinity,
+                                                        child:
+                                                            ElevatedButton.icon(
+                                                          onPressed: () =>
+                                                              TrainingPlanReadonlySheet
+                                                                  .show(
+                                                            context,
+                                                            event: evento,
+                                                            emptyMessage:
+                                                                'Este treino ainda não tem planejamento publicado.',
+                                                          ),
+                                                          icon: const Icon(
+                                                            Icons
+                                                                .menu_book_rounded,
+                                                            size: 16,
+                                                          ),
+                                                          label: const Text(
+                                                            'Ver planejamento',
+                                                            style: TextStyle(
+                                                              fontSize: 11,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w900,
+                                                            ),
+                                                          ),
+                                                          style: ElevatedButton
+                                                              .styleFrom(
+                                                            backgroundColor:
+                                                                olympusBlue,
+                                                            foregroundColor:
+                                                                Colors.white,
+                                                            elevation: 0,
+                                                            padding:
+                                                                EdgeInsets.zero,
+                                                            shape:
+                                                                RoundedRectangleBorder(
+                                                              borderRadius:
+                                                                  BorderRadius
+                                                                      .circular(
+                                                                          12),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 8),
                                                     ],
                                                     if (status == 'pending')
                                                       Row(

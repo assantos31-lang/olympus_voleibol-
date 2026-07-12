@@ -5516,166 +5516,339 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
   Widget build(BuildContext context) {
     final profile = widget.profile;
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Meu Perfil'),
-        backgroundColor: olympusBlue,
+        backgroundColor: olympusBlue.withOpacity(0.86),
         foregroundColor: Colors.white,
-        elevation: 2,
+        elevation: 0,
       ),
       body: profile == null
-          ? Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(olympusGold),
-              ),
+          ? Stack(
+              fit: StackFit.expand,
+              children: [
+                _buildOlympusProfileBackground(),
+                Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(olympusGold),
+                  ),
+                ),
+              ],
             )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                _buildOlympusProfileBackground(),
+                SafeArea(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      14,
+                      14,
+                      14,
+                      MediaQuery.of(context).viewPadding.bottom + 24,
+                    ),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        CircleAvatar(
-                          radius: 60,
-                          backgroundColor: olympusGold.withOpacity(0.2),
-                          backgroundImage: profile['avatar_url'] != null &&
-                                  profile['avatar_url'].toString().isNotEmpty
-                              ? NetworkImage(profile['avatar_url'])
-                              : null,
-                          child: profile['avatar_url'] == null ||
-                                  profile['avatar_url'].toString().isEmpty
-                              ? Text(
-                                  profile['full_name']?[0]?.toUpperCase() ??
-                                      '?',
-                                  style: const TextStyle(
-                                    fontSize: 40,
-                                    fontWeight: FontWeight.bold,
-                                    color: olympusBlue,
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                olympusBlue.withOpacity(0.94),
+                                olympusLightBlue.withOpacity(0.86),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: olympusGold.withOpacity(0.45),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.22),
+                                blurRadius: 22,
+                                offset: const Offset(0, 10),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: olympusGold,
+                                    width: 2,
                                   ),
-                                )
-                              : null,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: olympusGold.withOpacity(0.22),
+                                      blurRadius: 18,
+                                    ),
+                                  ],
+                                ),
+                                child: CircleAvatar(
+                                  radius: 54,
+                                  backgroundColor:
+                                      Colors.white.withOpacity(0.15),
+                                  backgroundImage:
+                                      profile['avatar_url'] != null &&
+                                              profile['avatar_url']
+                                                  .toString()
+                                                  .isNotEmpty
+                                          ? NetworkImage(profile['avatar_url'])
+                                          : null,
+                                  child: profile['avatar_url'] == null ||
+                                          profile['avatar_url']
+                                              .toString()
+                                              .isEmpty
+                                      ? Text(
+                                          profile['full_name']?[0]
+                                                  ?.toUpperCase() ??
+                                              '?',
+                                          style: const TextStyle(
+                                            fontSize: 38,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              Text(
+                                profile['full_name'] ?? 'Sem nome',
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: olympusGold.withOpacity(0.18),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: olympusGold.withOpacity(0.5),
+                                  ),
+                                ),
+                                child: Text(
+                                  _getUserTypeLabel(profile['user_type']),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          _AthleteProfileEditDialog(
+                                        profile: profile,
+                                      ),
+                                    ),
+                                  ).then((_) => Navigator.pop(context, true));
+                                },
+                                icon: const Icon(Icons.edit_rounded),
+                                label: const Text('Alterar Dados'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: olympusGold,
+                                  foregroundColor: olympusBlue,
+                                  elevation: 0,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  textStyle: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _showChangePasswordDialog,
+                                icon: const Icon(Icons.lock_rounded),
+                                label: const Text('Alterar Senha'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor:
+                                      Colors.white.withOpacity(0.92),
+                                  foregroundColor: olympusBlue,
+                                  elevation: 0,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  textStyle: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _confirmDeleteAccount,
+                            icon: const Icon(Icons.delete_forever_rounded),
+                            label: const Text('Excluir conta'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                                  const Color(0xFFEF4444).withOpacity(0.94),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 16),
-                        Text(
-                          profile['full_name'] ?? 'Sem nome',
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: olympusBlue,
-                          ),
-                          textAlign: TextAlign.center,
+                        _buildProfileGlassCard(
+                          children: [
+                            _buildSectionTitle('Dados Pessoais'),
+                            _buildInfoTile(
+                                Icons.person, 'Nome', profile['full_name']),
+                            _buildInfoTile(Icons.email, 'E-mail',
+                                profile['email'] ?? 'Não informado'),
+                            _buildInfoTile(Icons.phone, 'Telefone',
+                                _formatPhone(profile['phone'])),
+                            _buildInfoTile(Icons.credit_card, 'CPF',
+                                _formatCpf(profile['cpf'])),
+                            _buildInfoTile(Icons.badge, 'RG',
+                                profile['rg'] ?? 'Não informado'),
+                            _buildInfoTile(
+                                Icons.calendar_today,
+                                'Data de Nascimento',
+                                _formatDate(profile['birth_date'])),
+                            _buildInfoTile(
+                                Icons.transgender, 'Gênero', profile['gender']),
+                            if (profile['court_position'] != null &&
+                                profile['court_position'].toString().isNotEmpty)
+                              _buildInfoTile(
+                                Icons.sports_volleyball,
+                                'Posição na Quadra',
+                                profile['court_position'],
+                              ),
+                          ],
                         ),
-                        Text(
-                          _getUserTypeLabel(profile['user_type']),
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: olympusGold,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        const SizedBox(height: 14),
+                        _buildProfileGlassCard(
+                          children: [
+                            _buildSectionTitle('Endereço'),
+                            _buildInfoTile(Icons.location_on, 'CEP',
+                                _formatCep(profile['zip_code'])),
+                            _buildInfoTile(
+                                Icons.home, 'Rua', profile['street']),
+                            _buildInfoTile(
+                                Icons.pin, 'Número', profile['street_number']),
+                            if (profile['complement'] != null &&
+                                profile['complement'].toString().isNotEmpty)
+                              _buildInfoTile(Icons.apartment, 'Complemento',
+                                  profile['complement']),
+                            _buildInfoTile(Icons.location_city, 'Bairro',
+                                profile['neighborhood']),
+                            _buildInfoTile(
+                                Icons.location_city, 'Cidade', profile['city']),
+                            _buildInfoTile(
+                                Icons.public, 'Estado', profile['state']),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    _AthleteProfileEditDialog(profile: profile),
-                              ),
-                            ).then((_) => Navigator.pop(context, true));
-                          },
-                          icon: const Icon(Icons.edit),
-                          label: const Text('Alterar Dados'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: olympusGold,
-                            foregroundColor: olympusBlue,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _showChangePasswordDialog,
-                          icon: const Icon(Icons.lock),
-                          label: const Text('Alterar Senha'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: olympusBlue,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _confirmDeleteAccount,
-                      icon: const Icon(Icons.delete_forever),
-                      label: const Text('Excluir conta'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  _buildSectionTitle('Dados Pessoais'),
-                  _buildInfoTile(Icons.person, 'Nome', profile['full_name']),
-                  _buildInfoTile(Icons.email, 'E-mail',
-                      profile['email'] ?? 'Não informado'),
-                  _buildInfoTile(
-                      Icons.phone, 'Telefone', _formatPhone(profile['phone'])),
-                  _buildInfoTile(
-                      Icons.credit_card, 'CPF', _formatCpf(profile['cpf'])),
-                  _buildInfoTile(
-                      Icons.badge, 'RG', profile['rg'] ?? 'Não informado'),
-                  _buildInfoTile(Icons.calendar_today, 'Data de Nascimento',
-                      _formatDate(profile['birth_date'])),
-                  _buildInfoTile(
-                      Icons.transgender, 'Gênero', profile['gender']),
-                  if (profile['court_position'] != null &&
-                      profile['court_position'].toString().isNotEmpty)
-                    _buildInfoTile(Icons.sports_volleyball, 'Posição na Quadra',
-                        profile['court_position']),
-                  const SizedBox(height: 24),
-                  _buildSectionTitle('Endereço'),
-                  _buildInfoTile(Icons.location_on, 'CEP',
-                      _formatCep(profile['zip_code'])),
-                  _buildInfoTile(Icons.home, 'Rua', profile['street']),
-                  _buildInfoTile(Icons.pin, 'Número', profile['street_number']),
-                  if (profile['complement'] != null &&
-                      profile['complement'].toString().isNotEmpty)
-                    _buildInfoTile(
-                        Icons.apartment, 'Complemento', profile['complement']),
-                  _buildInfoTile(
-                      Icons.location_city, 'Bairro', profile['neighborhood']),
-                  _buildInfoTile(
-                      Icons.location_city, 'Cidade', profile['city']),
-                  _buildInfoTile(Icons.public, 'Estado', profile['state']),
-                  const SizedBox(height: 24),
-                ],
-              ),
+                ),
+              ],
             ),
+    );
+  }
+
+  Widget _buildProfileGlassCard({required List<Widget> children}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.90),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.white.withOpacity(0.42)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.12),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOlympusProfileBackground() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset(
+          'assets/images/monte_olimpo_v2.png',
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(color: olympusBlue);
+          },
+        ),
+        Container(
+          color: const Color(0xFF07182B).withOpacity(0.68),
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                olympusBlue.withOpacity(0.22),
+                Colors.transparent,
+                Colors.black.withOpacity(0.24),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -6053,398 +6226,557 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Editar Perfil'),
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
-        elevation: 2,
+  InputDecoration _athleteEditDecoration({
+    required String label,
+    required IconData icon,
+    String? hint,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: Icon(icon, color: olympusGold),
+      suffixIcon: suffixIcon,
+      labelStyle: TextStyle(color: Colors.white.withOpacity(0.76)),
+      hintStyle: TextStyle(color: Colors.white.withOpacity(0.38)),
+      filled: true,
+      fillColor: const Color(0xFF0A1A2C).withOpacity(0.78),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: olympusGold.withOpacity(0.22)),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: GestureDetector(
-                  onTap: _pickImage,
-                  child: Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      color: olympusGold.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: olympusGold, width: 3),
-                    ),
-                    child: ClipOval(
-                      child: _getAvatarImage(),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Center(
-                child: TextButton.icon(
-                  onPressed: _pickImage,
-                  icon: const Icon(Icons.photo_camera, color: olympusGold),
-                  label: const Text(
-                    'Selecionar Foto',
-                    style: TextStyle(color: olympusBlue),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _fullNameController,
-                decoration: InputDecoration(
-                  labelText: 'Nome Completo *',
-                  border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.person, color: olympusGold),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: olympusGold, width: 2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                validator: (value) =>
-                    value?.isEmpty ?? true ? 'Campo obrigatório' : null,
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _cpfController,
-                      decoration: InputDecoration(
-                        labelText: 'CPF *',
-                        border: const OutlineInputBorder(),
-                        prefixIcon:
-                            const Icon(Icons.credit_card, color: olympusGold),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide:
-                              const BorderSide(color: olympusGold, width: 2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      keyboardType: TextInputType.number,
-                      validator: (value) => _removeMask(value).length != 11
-                          ? 'CPF inválido'
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _rgController,
-                      decoration: InputDecoration(
-                        labelText: 'RG *',
-                        border: const OutlineInputBorder(),
-                        prefixIcon:
-                            const Icon(Icons.credit_card, color: olympusGold),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide:
-                              const BorderSide(color: olympusGold, width: 2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      keyboardType: TextInputType.number,
-                      validator: (value) =>
-                          value?.isEmpty ?? true ? 'Campo obrigatório' : null,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _phoneController,
-                      decoration: InputDecoration(
-                        labelText: 'Telefone *',
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.phone, color: olympusGold),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide:
-                              const BorderSide(color: olympusGold, width: 2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      keyboardType: TextInputType.phone,
-                      validator: (value) => _removeMask(value).length < 10
-                          ? 'Telefone inválido'
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      value:
-                          _selectedGender.isNotEmpty ? _selectedGender : null,
-                      decoration: InputDecoration(
-                        labelText: 'Gênero *',
-                        border: const OutlineInputBorder(),
-                        prefixIcon:
-                            const Icon(Icons.transgender, color: olympusGold),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide:
-                              const BorderSide(color: olympusGold, width: 2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                            value: 'Masculino', child: Text('Masculino')),
-                        DropdownMenuItem(
-                            value: 'Feminino', child: Text('Feminino')),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedGender = value ?? '';
-                          _positionController.text = '';
-                          _genderController.text = value ?? '';
-                        });
-                      },
-                      validator: (value) =>
-                          value == null ? 'Campo obrigatório' : null,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _birthDateController,
-                decoration: InputDecoration(
-                  labelText: 'Data de Nascimento',
-                  border: const OutlineInputBorder(),
-                  prefixIcon:
-                      const Icon(Icons.calendar_today, color: olympusGold),
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.calendar_today, color: olympusGold),
-                    onPressed: _selectDate,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: olympusGold, width: 2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                readOnly: true,
-              ),
-              const SizedBox(height: 12),
-              if (_selectedGender.isNotEmpty)
-                DropdownButtonFormField<String>(
-                  value: _positionController.text.isNotEmpty
-                      ? _positionController.text
-                      : null,
-                  decoration: InputDecoration(
-                    labelText: 'Posição na Quadra',
-                    border: const OutlineInputBorder(),
-                    prefixIcon:
-                        const Icon(Icons.sports_volleyball, color: olympusGold),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide:
-                          const BorderSide(color: olympusGold, width: 2),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                  items: (_positions[_selectedGender] ?? [])
-                      .map((pos) => DropdownMenuItem(
-                            value: pos['value'],
-                            child: Text(pos['label']!),
-                          ))
-                      .toList(),
-                  onChanged: (value) =>
-                      setState(() => _positionController.text = value ?? ''),
-                ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Icon(Icons.location_on, color: olympusGold, size: 20),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Endereço',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: olympusBlue,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _zipCodeController,
-                decoration: InputDecoration(
-                  labelText: 'CEP *',
-                  border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.location_on, color: olympusGold),
-                  suffixIcon: _isFetchingCep
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(olympusGold),
-                          ),
-                        )
-                      : null,
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: olympusGold, width: 2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                keyboardType: TextInputType.number,
-                maxLength: 9,
-                validator: (value) =>
-                    _removeMask(value).length != 8 ? 'CEP inválido' : null,
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: TextFormField(
-                      controller: _streetController,
-                      decoration: InputDecoration(
-                        labelText: 'Rua *',
-                        border: const OutlineInputBorder(),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide:
-                              const BorderSide(color: olympusGold, width: 2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      validator: (value) =>
-                          value?.isEmpty ?? true ? 'Campo obrigatório' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _streetNumberController,
-                      decoration: InputDecoration(
-                        labelText: 'Número *',
-                        border: const OutlineInputBorder(),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide:
-                              const BorderSide(color: olympusGold, width: 2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      keyboardType: TextInputType.number,
-                      validator: (value) =>
-                          value?.isEmpty ?? true ? 'Campo obrigatório' : null,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _complementController,
-                decoration: InputDecoration(
-                  labelText: 'Complemento',
-                  border: const OutlineInputBorder(),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: olympusGold, width: 2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _neighborhoodController,
-                decoration: InputDecoration(
-                  labelText: 'Bairro *',
-                  border: const OutlineInputBorder(),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: olympusGold, width: 2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                validator: (value) =>
-                    value?.isEmpty ?? true ? 'Campo obrigatório' : null,
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: TextFormField(
-                      controller: _cityController,
-                      decoration: InputDecoration(
-                        labelText: 'Cidade *',
-                        border: const OutlineInputBorder(),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide:
-                              const BorderSide(color: olympusGold, width: 2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      validator: (value) =>
-                          value?.isEmpty ?? true ? 'Campo obrigatório' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _stateController,
-                      decoration: InputDecoration(
-                        labelText: 'Estado *',
-                        border: const OutlineInputBorder(),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide:
-                              const BorderSide(color: olympusGold, width: 2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      maxLength: 2,
-                      validator: (value) =>
-                          value?.isEmpty ?? true ? 'Campo obrigatório' : null,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
-              SizedBox(
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _isLoading || _isUploading ? null : _saveProfile,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: olympusGold,
-                    foregroundColor: olympusBlue,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 2,
-                    shadowColor: olympusGold.withOpacity(0.4),
-                  ),
-                  child: _isLoading || _isUploading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(olympusBlue),
-                          ),
-                        )
-                      : const Text(
-                          'Salvar Alterações',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: olympusGold.withOpacity(0.22)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: const BorderSide(color: olympusGold, width: 1.8),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: const BorderSide(color: Colors.redAccent),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: const BorderSide(color: Colors.redAccent, width: 1.8),
+      ),
+      errorStyle: const TextStyle(color: Color(0xFFFFB4B4)),
+    );
+  }
+
+  Widget _athleteEditBackground() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset(
+          'assets/images/monte_olimpo_v2.png',
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          errorBuilder: (_, __, ___) => Container(color: olympusBlue),
+        ),
+        Container(color: const Color(0xFF07182B).withOpacity(0.64)),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                olympusBlue.withOpacity(0.36),
+                Colors.transparent,
+                Colors.black.withOpacity(0.34),
+              ],
+            ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _athleteSectionTitle(String title) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        title,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isCompact = MediaQuery.of(context).size.width < 430;
+
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: const Text('Editar dados'),
+        backgroundColor: olympusBlue.withOpacity(0.88),
+        foregroundColor: Colors.white,
+        elevation: 0,
+      ),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          _athleteEditBackground(),
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                18,
+                18,
+                18,
+                MediaQuery.of(context).viewPadding.bottom + 24,
+              ),
+              child: Column(
+                children: [
+                  GestureDetector(
+                    onTap: _pickImage,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: isCompact ? 104 : 120,
+                          height: isCompact ? 104 : 120,
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const LinearGradient(
+                              colors: [olympusGold, Color(0xFFFFF2B8)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: olympusGold.withOpacity(0.30),
+                                blurRadius: 24,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                          child: ClipOval(
+                            child: Container(
+                              color: const Color(0xFF113457),
+                              child: _getAvatarImage(),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: Material(
+                            color: olympusGold,
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: _pickImage,
+                              child: const Padding(
+                                padding: EdgeInsets.all(10),
+                                child: Icon(
+                                  Icons.photo_camera_rounded,
+                                  color: olympusBlue,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: _pickImage,
+                    icon: const Icon(Icons.upload_file_rounded),
+                    label: const Text('Alterar foto'),
+                    style: TextButton.styleFrom(foregroundColor: olympusGold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Editar meus dados',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: isCompact ? 22 : 26,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Dados obrigatórios do atleta',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.82),
+                      fontSize: isCompact ? 13 : 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(26),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                      child: Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.all(isCompact ? 16 : 22),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(26),
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.white.withOpacity(0.15),
+                              Colors.white.withOpacity(0.07),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          border:
+                              Border.all(color: olympusGold.withOpacity(0.24)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.22),
+                              blurRadius: 24,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                        ),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            children: [
+                              _athleteSectionTitle('Identificação'),
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _fullNameController,
+                                enabled: !_isLoading && !_isUploading,
+                                style: const TextStyle(color: Colors.white),
+                                textCapitalization: TextCapitalization.words,
+                                decoration: _athleteEditDecoration(
+                                  label: 'Nome completo *',
+                                  icon: Icons.person_outline,
+                                ),
+                                validator: (value) => value?.isEmpty ?? true
+                                    ? 'Campo obrigatório'
+                                    : null,
+                              ),
+                              const SizedBox(height: 14),
+                              TextFormField(
+                                controller: _cpfController,
+                                enabled: !_isLoading && !_isUploading,
+                                style: const TextStyle(color: Colors.white),
+                                keyboardType: TextInputType.number,
+                                decoration: _athleteEditDecoration(
+                                  label: 'CPF *',
+                                  icon: Icons.badge_outlined,
+                                ),
+                                validator: (value) =>
+                                    _removeMask(value).length != 11
+                                        ? 'CPF inválido'
+                                        : null,
+                              ),
+                              const SizedBox(height: 14),
+                              TextFormField(
+                                controller: _rgController,
+                                enabled: !_isLoading && !_isUploading,
+                                style: const TextStyle(color: Colors.white),
+                                keyboardType: TextInputType.number,
+                                decoration: _athleteEditDecoration(
+                                  label: 'RG *',
+                                  icon: Icons.credit_card_outlined,
+                                ),
+                                validator: (value) => value?.isEmpty ?? true
+                                    ? 'Campo obrigatório'
+                                    : null,
+                              ),
+                              const SizedBox(height: 14),
+                              TextFormField(
+                                controller: _birthDateController,
+                                enabled: !_isLoading && !_isUploading,
+                                readOnly: true,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: _athleteEditDecoration(
+                                  label: 'Data de nascimento',
+                                  icon: Icons.cake_outlined,
+                                  hint: 'dd/mm/aaaa',
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(
+                                      Icons.calendar_month_rounded,
+                                      color: olympusGold,
+                                    ),
+                                    onPressed: _selectDate,
+                                  ),
+                                ),
+                                onTap: _selectDate,
+                              ),
+                              const SizedBox(height: 14),
+                              TextFormField(
+                                controller: _phoneController,
+                                enabled: !_isLoading && !_isUploading,
+                                style: const TextStyle(color: Colors.white),
+                                keyboardType: TextInputType.phone,
+                                decoration: _athleteEditDecoration(
+                                  label: 'Telefone *',
+                                  icon: Icons.phone_outlined,
+                                ),
+                                validator: (value) =>
+                                    _removeMask(value).length < 10
+                                        ? 'Telefone inválido'
+                                        : null,
+                              ),
+                              const SizedBox(height: 14),
+                              DropdownButtonFormField<String>(
+                                value: _selectedGender.isNotEmpty
+                                    ? _selectedGender
+                                    : null,
+                                dropdownColor: const Color(0xFF0A1A2C),
+                                iconEnabledColor: olympusGold,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: _athleteEditDecoration(
+                                  label: 'Gênero *',
+                                  icon: Icons.transgender,
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'Masculino',
+                                    child: Text('Masculino'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'Feminino',
+                                    child: Text('Feminino'),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedGender = value ?? '';
+                                    _positionController.text = '';
+                                    _genderController.text = value ?? '';
+                                  });
+                                },
+                                validator: (value) =>
+                                    value == null ? 'Campo obrigatório' : null,
+                              ),
+                              if (_selectedGender.isNotEmpty) ...[
+                                const SizedBox(height: 14),
+                                DropdownButtonFormField<String>(
+                                  value: _positionController.text.isNotEmpty
+                                      ? _positionController.text
+                                      : null,
+                                  dropdownColor: const Color(0xFF0A1A2C),
+                                  iconEnabledColor: olympusGold,
+                                  style: const TextStyle(color: Colors.white),
+                                  decoration: _athleteEditDecoration(
+                                    label: 'Posição na quadra',
+                                    icon: Icons.sports_volleyball,
+                                  ),
+                                  items: (_positions[_selectedGender] ?? [])
+                                      .map(
+                                        (pos) => DropdownMenuItem(
+                                          value: pos['value'],
+                                          child: Text(pos['label']!),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (value) => setState(
+                                    () =>
+                                        _positionController.text = value ?? '',
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 20),
+                              _athleteSectionTitle('Endereço'),
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _zipCodeController,
+                                enabled: !_isLoading && !_isUploading,
+                                style: const TextStyle(color: Colors.white),
+                                keyboardType: TextInputType.number,
+                                decoration: _athleteEditDecoration(
+                                  label: 'CEP *',
+                                  icon: Icons.location_searching_rounded,
+                                  hint: '00000-000',
+                                  suffixIcon: _isFetchingCep
+                                      ? const Padding(
+                                          padding: EdgeInsets.all(14),
+                                          child: SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: olympusGold,
+                                            ),
+                                          ),
+                                        )
+                                      : null,
+                                ),
+                                validator: (value) =>
+                                    _removeMask(value).length != 8
+                                        ? 'CEP inválido'
+                                        : null,
+                              ),
+                              const SizedBox(height: 14),
+                              TextFormField(
+                                controller: _streetController,
+                                enabled: !_isLoading && !_isUploading,
+                                style: const TextStyle(color: Colors.white),
+                                textCapitalization: TextCapitalization.words,
+                                decoration: _athleteEditDecoration(
+                                  label: 'Endereço *',
+                                  icon: Icons.home_outlined,
+                                ),
+                                validator: (value) => value?.isEmpty ?? true
+                                    ? 'Campo obrigatório'
+                                    : null,
+                              ),
+                              const SizedBox(height: 14),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    flex: 2,
+                                    child: TextFormField(
+                                      controller: _streetNumberController,
+                                      enabled: !_isLoading && !_isUploading,
+                                      style:
+                                          const TextStyle(color: Colors.white),
+                                      decoration: _athleteEditDecoration(
+                                        label: 'Número *',
+                                        icon: Icons.numbers_rounded,
+                                      ),
+                                      validator: (value) =>
+                                          value?.isEmpty ?? true
+                                              ? 'Obrigatório'
+                                              : null,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    flex: 3,
+                                    child: TextFormField(
+                                      controller: _complementController,
+                                      enabled: !_isLoading && !_isUploading,
+                                      style:
+                                          const TextStyle(color: Colors.white),
+                                      textCapitalization:
+                                          TextCapitalization.words,
+                                      decoration: _athleteEditDecoration(
+                                        label: 'Complemento',
+                                        icon: Icons.apartment_rounded,
+                                        hint: 'Opcional',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 14),
+                              TextFormField(
+                                controller: _neighborhoodController,
+                                enabled: !_isLoading && !_isUploading,
+                                style: const TextStyle(color: Colors.white),
+                                textCapitalization: TextCapitalization.words,
+                                decoration: _athleteEditDecoration(
+                                  label: 'Bairro *',
+                                  icon: Icons.location_city_outlined,
+                                ),
+                                validator: (value) => value?.isEmpty ?? true
+                                    ? 'Campo obrigatório'
+                                    : null,
+                              ),
+                              const SizedBox(height: 14),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    flex: 3,
+                                    child: TextFormField(
+                                      controller: _cityController,
+                                      enabled: !_isLoading && !_isUploading,
+                                      style:
+                                          const TextStyle(color: Colors.white),
+                                      textCapitalization:
+                                          TextCapitalization.words,
+                                      decoration: _athleteEditDecoration(
+                                        label: 'Cidade *',
+                                        icon: Icons.location_on_outlined,
+                                      ),
+                                      validator: (value) =>
+                                          value?.isEmpty ?? true
+                                              ? 'Campo obrigatório'
+                                              : null,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _stateController,
+                                      enabled: !_isLoading && !_isUploading,
+                                      style:
+                                          const TextStyle(color: Colors.white),
+                                      textCapitalization:
+                                          TextCapitalization.characters,
+                                      decoration: _athleteEditDecoration(
+                                        label: 'UF *',
+                                        icon: Icons.flag_outlined,
+                                      ),
+                                      maxLength: 2,
+                                      validator: (value) =>
+                                          value?.isEmpty ?? true
+                                              ? 'Obrigatório'
+                                              : null,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 24),
+                              SizedBox(
+                                width: double.infinity,
+                                height: 52,
+                                child: ElevatedButton.icon(
+                                  onPressed: _isLoading || _isUploading
+                                      ? null
+                                      : _saveProfile,
+                                  icon: _isLoading || _isUploading
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                              olympusBlue,
+                                            ),
+                                          ),
+                                        )
+                                      : const Icon(Icons.save_rounded),
+                                  label: Text(
+                                    _isUploading
+                                        ? 'Enviando foto...'
+                                        : 'Salvar alterações',
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: olympusGold,
+                                    foregroundColor: olympusBlue,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    textStyle: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

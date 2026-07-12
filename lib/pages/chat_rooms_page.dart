@@ -98,49 +98,6 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     } catch (_) {}
   }
 
-  Future<void> _deleteRoomForMe(ChatRoomListItem item) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Excluir conversa'),
-          content: const Text(
-            'Esta conversa será removida apenas do seu perfil. Deseja continuar?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Excluir'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      await _chatService.deleteRoomForCurrentUser(item.room.id);
-      if (!mounted) return;
-      await _reload();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Conversa removida apenas do seu perfil.'),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao excluir conversa: $e')),
-      );
-    }
-  }
-
   Future<void> _showCreateConversationDialog() async {
     List<Map<String, dynamic>> users = [];
     String? selectedUserId;
@@ -835,6 +792,55 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     await _savePinnedRooms();
   }
 
+  Future<void> _hideRoomForMe(ChatRoomListItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: const Text('Apagar conversa'),
+        content: const Text(
+          'A conversa será apagada apenas para você. A outra pessoa continua '
+          'com a conversa normalmente. Se ela mandar uma nova mensagem, você '
+          'recebe a notificação e a conversa aparece de novo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _gold,
+              foregroundColor: _navy,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Apagar para mim'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _chatService.deleteRoomForCurrentUser(item.room.id);
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Conversa apagada para você.')),
+      );
+      await _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao apagar conversa: $e')),
+      );
+    }
+  }
+
   Future<void> _openPendingPollRoomIfNeeded() async {
     if (_openedPendingPollRoom || widget.initialRoomId != null) return;
     _openedPendingPollRoom = true;
@@ -1108,8 +1114,8 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                         onSelected: (value) async {
                           if (value == 'pin') {
                             await _togglePinnedRoom(item);
-                          } else if (value == 'delete') {
-                            await _deleteRoomForMe(item);
+                          } else if (value == 'hide') {
+                            await _hideRoomForMe(item);
                           }
                         },
                         itemBuilder: (context) => [
@@ -1122,8 +1128,8 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                             ),
                           ),
                           const PopupMenuItem<String>(
-                            value: 'delete',
-                            child: Text('Excluir'),
+                            value: 'hide',
+                            child: Text('Apagar conversa'),
                           ),
                         ],
                         icon: const Icon(
