@@ -6,6 +6,9 @@ class ChatMessage {
   final String? content;
   final String messageType;
   final String? imageUrl;
+  final String? mediaQuality;
+  final DateTime? mediaExpiresAt;
+  final DateTime? mediaDeletedAt;
   final String? replyToMessageId;
   final String? replyToText;
   final String? replyToSenderName;
@@ -22,6 +25,9 @@ class ChatMessage {
     required this.content,
     this.messageType = 'text',
     this.imageUrl,
+    this.mediaQuality,
+    this.mediaExpiresAt,
+    this.mediaDeletedAt,
     this.replyToMessageId,
     this.replyToText,
     this.replyToSenderName,
@@ -40,6 +46,13 @@ class ChatMessage {
       content: map['content'] as String?,
       messageType: (map['message_type'] ?? 'text').toString(),
       imageUrl: map['image_url'] as String?,
+      mediaQuality: map['media_quality'] as String?,
+      mediaExpiresAt: map['media_expires_at'] == null
+          ? null
+          : DateTime.tryParse(map['media_expires_at'].toString()),
+      mediaDeletedAt: map['media_deleted_at'] == null
+          ? null
+          : DateTime.tryParse(map['media_deleted_at'].toString()),
       replyToMessageId: map['reply_to_message_id'] as String?,
       replyToText: map['reply_to_text'] as String?,
       replyToSenderName: map['reply_to_sender_name'] as String?,
@@ -67,6 +80,9 @@ class ChatMessage {
       content: content,
       messageType: messageType,
       imageUrl: imageUrl,
+      mediaQuality: mediaQuality,
+      mediaExpiresAt: mediaExpiresAt,
+      mediaDeletedAt: mediaDeletedAt,
       replyToMessageId: replyToMessageId,
       replyToText: replyToText,
       replyToSenderName: replyToSenderName,
@@ -81,6 +97,12 @@ class ChatMessage {
   bool get isDeleted => deletedAt != null;
 
   bool get isImage => messageType == 'image' && imageUrl != null;
+
+  bool get isVideo => messageType == 'video';
+
+  bool get hasVideo => isVideo && imageUrl != null && mediaDeletedAt == null;
+
+  bool get isVideoExpired => isVideo && !hasVideo;
 
   bool get isPoll => messageType == 'poll' && imageUrl != null;
 }

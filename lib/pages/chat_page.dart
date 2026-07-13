@@ -2,9 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:gal/gal.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_compress/video_compress.dart';
+import 'package:video_player/video_player.dart';
 
 import '../models/chat_message.dart';
 import '../models/chat_poll.dart';
@@ -160,6 +164,10 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    if (VideoCompress.isCompressing) {
+      unawaited(VideoCompress.cancelCompression());
+      VideoCompress.dispose();
+    }
     _typingTimer?.cancel();
     _pollSubscription?.cancel();
     _controller.removeListener(_handleTypingChanged);
@@ -433,8 +441,8 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  Future<void> _showImageSourceSheet() async {
-    final source = await showModalBottomSheet<ImageSource>(
+  Future<void> _showMediaSourceSheet() async {
+    final choice = await showModalBottomSheet<_MediaSourceChoice>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) {
@@ -460,7 +468,7 @@ class _ChatPageState extends State<ChatPage> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Enviar imagem',
+                  'Enviar mídia',
                   style: TextStyle(
                     color: _navy,
                     fontSize: 18,
@@ -473,9 +481,14 @@ class _ChatPageState extends State<ChatPage> {
                     Expanded(
                       child: _buildImageSourceButton(
                         icon: Icons.photo_library_rounded,
-                        label: 'Galeria',
-                        onTap: () =>
-                            Navigator.pop(context, ImageSource.gallery),
+                        label: 'Foto',
+                        onTap: () => Navigator.pop(
+                          context,
+                          const _MediaSourceChoice(
+                            type: _MediaType.image,
+                            source: ImageSource.gallery,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -483,7 +496,45 @@ class _ChatPageState extends State<ChatPage> {
                       child: _buildImageSourceButton(
                         icon: Icons.photo_camera_rounded,
                         label: 'Câmera',
-                        onTap: () => Navigator.pop(context, ImageSource.camera),
+                        onTap: () => Navigator.pop(
+                          context,
+                          const _MediaSourceChoice(
+                            type: _MediaType.image,
+                            source: ImageSource.camera,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildImageSourceButton(
+                        icon: Icons.video_library_rounded,
+                        label: 'Vídeo',
+                        onTap: () => Navigator.pop(
+                          context,
+                          const _MediaSourceChoice(
+                            type: _MediaType.video,
+                            source: ImageSource.gallery,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildImageSourceButton(
+                        icon: Icons.videocam_rounded,
+                        label: 'Gravar vídeo',
+                        onTap: () => Navigator.pop(
+                          context,
+                          const _MediaSourceChoice(
+                            type: _MediaType.video,
+                            source: ImageSource.camera,
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -495,8 +546,12 @@ class _ChatPageState extends State<ChatPage> {
       },
     );
 
-    if (source == null) return;
-    await _pickAndSendImage(source);
+    if (choice == null) return;
+    if (choice.type == _MediaType.image) {
+      await _pickAndSendImage(choice.source);
+    } else {
+      await _pickAndSendVideo(choice.source);
+    }
   }
 
   Widget _buildImageSourceButton({
@@ -565,12 +620,125 @@ class _ChatPageState extends State<ChatPage> {
     return elapsed.inSeconds <= 120;
   }
 
+  Future<void> _pickAndSendVideo(ImageSource source) async {
+    if (_sending) return;
+
+    final picked = await _imagePicker.pickVideo(source: source);
+    if (picked == null || !mounted) return;
+
+    final quality = await _showVideoQualitySheet();
+    if (quality == null || !mounted) return;
+
+    setState(() => _sending = true);
+    late File fileToSend;
+    try {
+      fileToSend = File(picked.path);
+      if (quality == _VideoSendQuality.dataSaver) {
+        if (VideoCompress.isCompressing) {
+          await VideoCompress.cancelCompression();
+          VideoCompress.dispose();
+        }
+
+        MediaInfo? compressed;
+        try {
+          compressed = await VideoCompress.compressVideo(
+            picked.path,
+            quality: VideoQuality.MediumQuality,
+            deleteOrigin: false,
+            includeAudio: true,
+          );
+        } finally {
+          // O pacote pode manter este estado ativo quando a camada nativa falha.
+          VideoCompress.dispose();
+        }
+        if (compressed?.file == null) {
+          throw Exception('Não foi possível compactar o vídeo.');
+        }
+        fileToSend = compressed!.file!;
+      }
+
+      await _chatService.sendVideoMessage(
+        roomId: _room.id,
+        videoFile: fileToSend,
+        isOriginal: quality == _VideoSendQuality.original,
+      );
+      if (mounted) _scrollToBottom(animated: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao enviar vídeo: $e')),
+      );
+    } finally {
+      if (quality == _VideoSendQuality.dataSaver) {
+        await VideoCompress.deleteAllCache();
+      }
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<_VideoSendQuality?> _showVideoQualitySheet() {
+    return showModalBottomSheet<_VideoSendQuality>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7F4EC),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: _gold.withValues(alpha: 0.45)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Qualidade do vídeo',
+                style: TextStyle(
+                  color: _navy,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.hd_rounded, color: _navy),
+                title: const Text('Qualidade original'),
+                subtitle: const Text('100% do arquivo, envio mais pesado'),
+                onTap: () => Navigator.pop(
+                  context,
+                  _VideoSendQuality.original,
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.data_saver_on_rounded, color: _navy),
+                title: const Text('Economia de dados'),
+                subtitle: const Text(
+                  'Reduz resolução e tamanho, como no WhatsApp',
+                ),
+                onTap: () => Navigator.pop(
+                  context,
+                  _VideoSendQuality.dataSaver,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   String _replyPreviewText(ChatMessage? message) {
     if (message == null) return '';
     if (message.isDeleted) return 'Mensagem apagada';
     if (message.isImage) {
       final caption = (message.content ?? '').trim();
       return caption.isEmpty ? 'Foto' : caption;
+    }
+    if (message.isVideo) {
+      if (message.isVideoExpired) return 'Vídeo expirado';
+      final caption = (message.content ?? '').trim();
+      return caption.isEmpty ? 'Vídeo' : caption;
     }
     return (message.content ?? '').trim();
   }
@@ -682,7 +850,9 @@ class _ChatPageState extends State<ChatPage> {
                   subtitle: const Text('Responder esta mensagem'),
                   onTap: () => Navigator.pop(context, 'reply'),
                 ),
-                if (_canChangeMessage(message) && !message.isImage)
+                if (_canChangeMessage(message) &&
+                    !message.isImage &&
+                    !message.isVideo)
                   ListTile(
                     leading: const Icon(Icons.edit_rounded, color: _navy),
                     title: const Text('Editar mensagem'),
@@ -3083,8 +3253,37 @@ class _ChatPageState extends State<ChatPage> {
                       ),
                     ),
                   ),
+                if (msg.hasVideo)
+                  _ChatVideoPlayer(
+                    url: _resolveAvatarUrl(msg.imageUrl) ?? '',
+                    width: MediaQuery.of(context).size.width * 0.66,
+                  ),
+                if (msg.isVideoExpired)
+                  Container(
+                    width: MediaQuery.of(context).size.width * 0.66,
+                    height: 120,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.black12,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.timer_off_rounded, color: Color(0xFF6E7D92)),
+                        SizedBox(height: 7),
+                        Text(
+                          'Vídeo expirado',
+                          style: TextStyle(
+                            color: Color(0xFF6E7D92),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 if ((msg.content ?? '').trim().isNotEmpty) ...[
-                  if (msg.isImage) const SizedBox(height: 8),
+                  if (msg.isImage || msg.isVideo) const SizedBox(height: 8),
                   Text(
                     msg.content ?? '',
                     style: TextStyle(
@@ -3244,9 +3443,9 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ),
                 IconButton(
-                  onPressed: _sending ? null : _showImageSourceSheet,
+                  onPressed: _sending ? null : _showMediaSourceSheet,
                   icon: const Icon(
-                    Icons.add_a_photo_rounded,
+                    Icons.attach_file_rounded,
                     color: _gold,
                   ),
                 ),
@@ -3809,6 +4008,275 @@ class _EmojiCategory {
   final List<String> emojis;
 
   const _EmojiCategory(this.label, this.emojis);
+}
+
+enum _MediaType { image, video }
+
+enum _VideoSendQuality { original, dataSaver }
+
+class _MediaSourceChoice {
+  final _MediaType type;
+  final ImageSource source;
+
+  const _MediaSourceChoice({required this.type, required this.source});
+}
+
+class _ChatVideoPlayer extends StatefulWidget {
+  final String url;
+  final double width;
+
+  const _ChatVideoPlayer({required this.url, required this.width});
+
+  @override
+  State<_ChatVideoPlayer> createState() => _ChatVideoPlayerState();
+}
+
+class _ChatVideoPlayerState extends State<_ChatVideoPlayer> {
+  VideoPlayerController? _controller;
+  bool _failed = false;
+  bool _downloading = false;
+  double _downloadProgress = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChatVideoPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _controller?.dispose();
+      _controller = null;
+      _failed = false;
+      _initialize();
+    }
+  }
+
+  Future<void> _initialize() async {
+    if (widget.url.isEmpty) {
+      setState(() => _failed = true);
+      return;
+    }
+
+    final controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    _controller = controller;
+    try {
+      await controller.initialize();
+      await controller.setLooping(false);
+      if (mounted) setState(() {});
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void _togglePlayback() {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    setState(() {
+      if (controller.value.isPlaying) {
+        controller.pause();
+      } else {
+        controller.play();
+      }
+    });
+  }
+
+  Future<void> _downloadVideo() async {
+    if (_downloading || widget.url.isEmpty) return;
+
+    setState(() {
+      _downloading = true;
+      _downloadProgress = 0;
+    });
+
+    final tempFile = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}'
+      'olympus_video_${DateTime.now().millisecondsSinceEpoch}.mp4',
+    );
+    IOSink? sink;
+    http.Client? client;
+    try {
+      client = http.Client();
+      final request = http.Request('GET', Uri.parse(widget.url));
+      final response = await client.send(request);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Falha no download (${response.statusCode}).');
+      }
+
+      final totalBytes = response.contentLength ?? 0;
+      var receivedBytes = 0;
+      sink = tempFile.openWrite();
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        receivedBytes += chunk.length;
+        if (mounted && totalBytes > 0) {
+          setState(() {
+            _downloadProgress = receivedBytes / totalBytes;
+          });
+        }
+      }
+      await sink.flush();
+      await sink.close();
+      sink = null;
+
+      if (!await Gal.hasAccess(toAlbum: true)) {
+        await Gal.requestAccess(toAlbum: true);
+      }
+      await Gal.putVideo(tempFile.path, album: 'Olympus');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vídeo salvo na galeria.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível baixar o vídeo: $error')),
+      );
+    } finally {
+      await sink?.close();
+      client?.close();
+      if (await tempFile.exists()) {
+        await tempFile.delete();
+      }
+      if (mounted) {
+        setState(() {
+          _downloading = false;
+          _downloadProgress = 0;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    if (_failed) {
+      return Container(
+        width: widget.width,
+        height: 180,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.black12,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.videocam_off_rounded),
+            SizedBox(height: 6),
+            Text('Vídeo indisponível'),
+          ],
+        ),
+      );
+    }
+
+    if (controller == null || !controller.value.isInitialized) {
+      return Container(
+        width: widget.width,
+        height: 180,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.black12,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+
+    final ratio = controller.value.aspectRatio <= 0
+        ? 16 / 9
+        : controller.value.aspectRatio;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox(
+        width: widget.width,
+        child: AspectRatio(
+          aspectRatio: ratio,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              VideoPlayer(controller),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _togglePlayback,
+                  child: Center(
+                    child: AnimatedOpacity(
+                      opacity: controller.value.isPlaying ? 0 : 1,
+                      duration: const Duration(milliseconds: 180),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: const BoxDecoration(
+                          color: Color(0x99000000),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.play_arrow_rounded,
+                          color: Colors.white,
+                          size: 34,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: VideoProgressIndicator(
+                  controller,
+                  allowScrubbing: true,
+                  padding: EdgeInsets.zero,
+                  colors: const VideoProgressColors(
+                    playedColor: Color(0xFFD4B06A),
+                    bufferedColor: Colors.white54,
+                    backgroundColor: Colors.black38,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Material(
+                  color: const Color(0x99000000),
+                  shape: const CircleBorder(),
+                  child: IconButton(
+                    tooltip: 'Baixar vídeo',
+                    onPressed: _downloading ? null : _downloadVideo,
+                    icon: _downloading
+                        ? SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              value: _downloadProgress > 0
+                                  ? _downloadProgress
+                                  : null,
+                              strokeWidth: 2.4,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.download_rounded,
+                            color: Colors.white,
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ChatLensPainter extends CustomPainter {

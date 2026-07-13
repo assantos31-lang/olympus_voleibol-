@@ -39,14 +39,39 @@
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
 
-		<!-- 🔥 ESSA É A LINHA QUE FALTAVA -->
+		<!-- Firebase -->
 		<key>FirebaseAppDelegateProxyEnabled</key>
 		<true/>
 
+		<!-- Permissão para selecionar fotos e vídeos -->
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>O Olympus precisa acessar sua galeria para selecionar fotos e vídeos para o chat.</string>
+
+		<!-- Permissão para salvar fotos e vídeos -->
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>O Olympus precisa salvar fotos e vídeos na sua galeria.</string>
+
+		<!-- Permissão para utilizar a câmera -->
+		<key>NSCameraUsageDescription</key>
+		<string>O Olympus precisa acessar a câmera para tirar fotos e gravar vídeos.</string>
+
+		<!-- Permissão para gravar o áudio dos vídeos -->
+		<key>NSMicrophoneUsageDescription</key>
+		<string>O Olympus precisa acessar o microfone para gravar o áudio dos vídeos.</string>
+
+		<!-- Permissões de localização -->
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>Precisamos da sua localização para realizar o check-in nos eventos.</string>
+
+		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+		<string>Precisamos da sua localização para realizar o check-in nos eventos.</string>
+
+		<!-- Configuração de cenas -->
 		<key>UIApplicationSceneManifest</key>
 		<dict>
 			<key>UIApplicationSupportsMultipleScenes</key>
 			<false/>
+
 			<key>UISceneConfigurations</key>
 			<dict>
 				<key>UIWindowSceneSessionRoleApplication</key>
@@ -54,10 +79,13 @@
 					<dict>
 						<key>UISceneClassName</key>
 						<string>UIWindowScene</string>
+
 						<key>UISceneConfigurationName</key>
 						<string>flutter</string>
+
 						<key>UISceneDelegateClassName</key>
 						<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+
 						<key>UISceneStoryboardFile</key>
 						<string>Main</string>
 					</dict>
@@ -68,6 +96,7 @@
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
 
+		<!-- Notificações em segundo plano -->
 		<key>UIBackgroundModes</key>
 		<array>
 			<string>remote-notification</string>
@@ -79,13 +108,7 @@
 		<key>UIMainStoryboardFile</key>
 		<string>Main</string>
 
-		<!-- Permissões de localização -->
-		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>Precisamos da sua localização para realizar o check-in nos eventos.</string>
-
-		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-		<string>Precisamos da sua localização para realizar o check-in nos eventos.</string>
-
+		<!-- Orientações no iPhone -->
 		<key>UISupportedInterfaceOrientations</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>
@@ -93,6 +116,7 @@
 			<string>UIInterfaceOrientationLandscapeRight</string>
 		</array>
 
+		<!-- Orientações no iPad -->
 		<key>UISupportedInterfaceOrientations~ipad</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>

@@ -100,7 +100,7 @@ class ChatService {
       messagesResponse = await supabase
           .from('chat_messages')
           .select(
-            'id, room_id, sender_id, content, message_type, image_url, created_at, deleted_at',
+            'id, room_id, sender_id, content, message_type, image_url, media_deleted_at, created_at, deleted_at',
           )
           .inFilter('room_id', roomIds)
           .order('created_at', ascending: false);
@@ -285,6 +285,14 @@ class ChatService {
     if (type == 'image') {
       final caption = (message['content'] ?? '').toString().trim();
       return caption.isEmpty ? '?? Imagem' : '?? $caption';
+    }
+
+    if (type == 'video') {
+      if (message['media_deleted_at'] != null || message['image_url'] == null) {
+        return 'Vídeo expirado';
+      }
+      final caption = (message['content'] ?? '').toString().trim();
+      return caption.isEmpty ? '🎥 Vídeo' : '🎥 $caption';
     }
 
     if (type == 'poll') {
@@ -671,6 +679,40 @@ class ChatService {
     return path;
   }
 
+  Future<String> uploadChatVideo({
+    required String roomId,
+    required File file,
+  }) async {
+    final extension = file.path.split('.').last.toLowerCase();
+    final safeExtension = extension.isEmpty ? 'mp4' : extension;
+    final path =
+        'chat_messages/$roomId/video_${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
+
+    await supabase.storage.from('avatars').upload(
+          path,
+          file,
+          fileOptions: FileOptions(
+            upsert: true,
+            contentType: _videoContentType(safeExtension),
+          ),
+        );
+
+    return path;
+  }
+
+  String _videoContentType(String extension) {
+    switch (extension) {
+      case 'mov':
+        return 'video/quicktime';
+      case 'webm':
+        return 'video/webm';
+      case 'm4v':
+        return 'video/x-m4v';
+      default:
+        return 'video/mp4';
+    }
+  }
+
   Future<void> updateRoomName({
     required String roomId,
     required String name,
@@ -1040,6 +1082,42 @@ class ChatService {
       roomId: roomId,
       senderId: userId,
       content: trimmedCaption.isEmpty ? '📷 Imagem' : '📷 $trimmedCaption',
+    ));
+  }
+
+  Future<void> sendVideoMessage({
+    required String roomId,
+    required File videoFile,
+    required bool isOriginal,
+    String caption = '',
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    final videoPath = await uploadChatVideo(roomId: roomId, file: videoFile);
+    final trimmedCaption = caption.trim();
+    final retentionDays = isOriginal ? 30 : 90;
+    final expiresAt = DateTime.now()
+        .toUtc()
+        .add(Duration(days: retentionDays))
+        .toIso8601String();
+
+    await supabase.from('chat_messages').insert({
+      'room_id': roomId,
+      'sender_id': userId,
+      'content': trimmedCaption,
+      'message_type': 'video',
+      // Mantém compatibilidade com a estrutura atual de mídia do chat.
+      'image_url': videoPath,
+      'media_quality': isOriginal ? 'original' : 'compressed',
+      'media_expires_at': expiresAt,
+    });
+    await unhideRoomForCurrentUser(roomId);
+
+    unawaited(_sendPushToRoomParticipants(
+      roomId: roomId,
+      senderId: userId,
+      content: trimmedCaption.isEmpty ? '🎥 Vídeo' : '🎥 $trimmedCaption',
     ));
   }
 
