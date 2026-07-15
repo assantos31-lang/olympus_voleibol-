@@ -98,6 +98,13 @@ class ChatMessage {
 
   bool get isImage => messageType == 'image' && imageUrl != null;
 
+  bool get isSticker => messageType == 'sticker' && imageUrl != null;
+
+  bool get isVideoSticker => messageType == 'video_sticker' && imageUrl != null;
+
+  bool get isOfficialSticker =>
+      isSticker && (imageUrl?.startsWith('asset:') ?? false);
+
   bool get isVideo => messageType == 'video';
 
   bool get hasVideo => isVideo && imageUrl != null && mediaDeletedAt == null;

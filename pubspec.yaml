@@ -2,7 +2,7 @@ name: olympus_voleibol
 description: Aplicativo Olympus Voleibol - Gestão de atletas e sócios
 publish_to: 'none'
 
-version: 3.8.0+01
+version: 3.9.0+01
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -18,11 +18,12 @@ dependencies:
   geolocator: ^13.0.1
   supabase_flutter: ^2.3.4
   provider: ^6.1.1
+  shared_preferences: ^2.3.3
   image_picker: ^1.0.7
   video_compress: ^3.1.4
   video_player: ^2.11.1
-  gal: ^2.3.2
   cached_network_image: ^3.3.1
+  image: ^4.8.0
   google_fonts: ^6.1.0
   intl: ^0.20.2
   http: ^1.1.0
@@ -71,3 +72,4 @@ flutter:
     - assets/images/olympus_logo.png
     - assets/images/olympus_logo_icon.png
     - assets/images/monte_olimpo_v2.png
+    - assets/stickers/

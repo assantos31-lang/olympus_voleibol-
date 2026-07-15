@@ -263,15 +263,17 @@ class ChatService {
             )
           : room;
 
-      items.add(ChatRoomListItem(
-        room: displayRoom,
-        lastMessageText: _previewMessage(lastMessage),
-        lastMessageSenderName:
-            senderId.isNotEmpty ? profileNameMap[senderId] : null,
-        lastMessageAt: lastMessageAt,
-        unreadCount: unreadCountByRoom[room.id] ?? 0,
-        avatarUrl: roomAvatarMap[room.id],
-      ));
+      items.add(
+        ChatRoomListItem(
+          room: displayRoom,
+          lastMessageText: _previewMessage(lastMessage),
+          lastMessageSenderName:
+              senderId.isNotEmpty ? profileNameMap[senderId] : null,
+          lastMessageAt: lastMessageAt,
+          unreadCount: unreadCountByRoom[room.id] ?? 0,
+          avatarUrl: roomAvatarMap[room.id],
+        ),
+      );
     }
 
     return items;
@@ -355,8 +357,10 @@ class ChatService {
           )
           .subscribe();
 
-      fallbackTimer =
-          Timer.periodic(const Duration(seconds: 20), (_) => emit());
+      fallbackTimer = Timer.periodic(
+        const Duration(seconds: 20),
+        (_) => emit(),
+      );
     };
 
     controller.onCancel = () async {
@@ -550,16 +554,8 @@ class ChatService {
     final roomId = roomResponse['id'] as String;
 
     await supabase.from('chat_room_members').insert([
-      {
-        'room_id': roomId,
-        'user_id': userId,
-        'role': 'member',
-      },
-      {
-        'room_id': roomId,
-        'user_id': otherUserId,
-        'role': 'member',
-      },
+      {'room_id': roomId, 'user_id': userId, 'role': 'member'},
+      {'room_id': roomId, 'user_id': otherUserId, 'role': 'member'},
     ]);
 
     return ChatRoom.fromMap(roomResponse);
@@ -619,11 +615,13 @@ class ChatService {
     final memberIds = <String>{userId, ...participantUserIds};
 
     final members = memberIds
-        .map((memberId) => {
-              'room_id': roomId,
-              'user_id': memberId,
-              'role': memberId == userId ? 'admin' : 'member',
-            })
+        .map(
+          (memberId) => {
+            'room_id': roomId,
+            'user_id': memberId,
+            'role': memberId == userId ? 'admin' : 'member',
+          },
+        )
         .toList();
 
     await supabase.from('chat_room_members').insert(members);
@@ -679,6 +677,34 @@ class ChatService {
     return path;
   }
 
+  Future<String> uploadChatSticker({
+    required String roomId,
+    required File file,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    final bytes = await file.readAsBytes();
+    final extension = file.path.split('.').last.toLowerCase();
+    final safeExtension =
+        {'png', 'webp', 'jpg', 'jpeg'}.contains(extension) ? extension : 'jpg';
+    final contentType = switch (safeExtension) {
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => 'image/jpeg',
+    };
+    final path =
+        'chat_stickers/$userId/$roomId/sticker_${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
+
+    await supabase.storage.from('avatars').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(upsert: false, contentType: contentType),
+        );
+
+    return path;
+  }
+
   Future<String> uploadChatVideo({
     required String roomId,
     required File file,
@@ -717,18 +743,18 @@ class ChatService {
     required String roomId,
     required String name,
   }) async {
-    await supabase.from('chat_rooms').update({
-      'name': name.trim(),
-    }).eq('id', roomId);
+    await supabase
+        .from('chat_rooms')
+        .update({'name': name.trim()}).eq('id', roomId);
   }
 
   Future<void> updateRoomAvatar({
     required String roomId,
     required String avatarUrl,
   }) async {
-    await supabase.from('chat_rooms').update({
-      'avatar_url': avatarUrl,
-    }).eq('id', roomId);
+    await supabase
+        .from('chat_rooms')
+        .update({'avatar_url': avatarUrl}).eq('id', roomId);
   }
 
   Future<void> updateCurrentUserChatName(String name) async {
@@ -738,14 +764,12 @@ class ChatService {
     final cleanName = name.trim();
     if (cleanName.isEmpty) throw Exception('Informe um nome válido');
 
-    await supabase.from('profiles').update({
-      'full_name': cleanName,
-    }).eq('id', userId);
+    await supabase
+        .from('profiles')
+        .update({'full_name': cleanName}).eq('id', userId);
   }
 
-  Future<void> deletePoll({
-    required String pollId,
-  }) async {
+  Future<void> deletePoll({required String pollId}) async {
     final userId = currentUserId;
     if (userId == null) throw Exception('Usuário não autenticado');
 
@@ -771,9 +795,9 @@ class ChatService {
       throw Exception('Apenas administradores podem fixar enquetes.');
     }
 
-    await supabase.from('chat_polls').update({
-      'is_pinned': pinned,
-    }).eq('id', pollId);
+    await supabase
+        .from('chat_polls')
+        .update({'is_pinned': pinned}).eq('id', pollId);
   }
 
   Future<List<Map<String, dynamic>>> getPollVotesDetail(String pollId) async {
@@ -1017,9 +1041,7 @@ class ChatService {
     }
 
     return messages.map((message) {
-      return message.copyWith(
-        senderName: profileMap[message.senderId],
-      );
+      return message.copyWith(senderName: profileMap[message.senderId]);
     }).toList();
   }
 
@@ -1051,11 +1073,13 @@ class ChatService {
     await supabase.from('chat_messages').insert(payload);
     await unhideRoomForCurrentUser(roomId);
 
-    unawaited(_sendPushToRoomParticipants(
-      roomId: roomId,
-      senderId: userId,
-      content: trimmed,
-    ));
+    unawaited(
+      _sendPushToRoomParticipants(
+        roomId: roomId,
+        senderId: userId,
+        content: trimmed,
+      ),
+    );
   }
 
   Future<void> sendImageMessage({
@@ -1078,11 +1102,137 @@ class ChatService {
     });
     await unhideRoomForCurrentUser(roomId);
 
-    unawaited(_sendPushToRoomParticipants(
-      roomId: roomId,
-      senderId: userId,
-      content: trimmedCaption.isEmpty ? '📷 Imagem' : '📷 $trimmedCaption',
-    ));
+    unawaited(
+      _sendPushToRoomParticipants(
+        roomId: roomId,
+        senderId: userId,
+        content: trimmedCaption.isEmpty ? '📷 Imagem' : '📷 $trimmedCaption',
+      ),
+    );
+  }
+
+  Future<void> sendOfficialSticker({
+    required String roomId,
+    required String assetPath,
+  }) async {
+    final cleanPath = assetPath.trim();
+    if (!cleanPath.startsWith('assets/stickers/')) {
+      throw Exception('Figurinha oficial inválida');
+    }
+    await _insertStickerMessage(roomId: roomId, imageUrl: 'asset:$cleanPath');
+  }
+
+  Future<void> sendCustomSticker({
+    required String roomId,
+    required File imageFile,
+  }) async {
+    final imagePath = await uploadChatSticker(roomId: roomId, file: imageFile);
+    await saveStickerToCollection(sourceUrl: imagePath, stickerType: 'sticker');
+    await _insertStickerMessage(roomId: roomId, imageUrl: imagePath);
+  }
+
+  Future<void> sendVideoSticker({
+    required String roomId,
+    required File videoFile,
+  }) async {
+    final videoPath = await uploadChatVideo(roomId: roomId, file: videoFile);
+    await saveStickerToCollection(
+      sourceUrl: videoPath,
+      stickerType: 'video_sticker',
+    );
+    await _insertVideoStickerMessage(roomId: roomId, imageUrl: videoPath);
+  }
+
+  Future<void> sendSavedSticker({
+    required String roomId,
+    required String sourceUrl,
+    required String stickerType,
+  }) async {
+    if (stickerType == 'video_sticker') {
+      await _insertVideoStickerMessage(roomId: roomId, imageUrl: sourceUrl);
+      return;
+    }
+    await _insertStickerMessage(roomId: roomId, imageUrl: sourceUrl);
+  }
+
+  Future<List<Map<String, dynamic>>> loadSavedStickers() async {
+    final userId = currentUserId;
+    if (userId == null) return const [];
+
+    final rows = await supabase
+        .from('user_saved_stickers')
+        .select('id, source_url, sticker_type, created_at')
+        .eq('user_id', userId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  Future<void> saveStickerToCollection({
+    required String sourceUrl,
+    required String stickerType,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+    if (!{'sticker', 'video_sticker'}.contains(stickerType)) {
+      throw Exception('Tipo de figurinha inválido');
+    }
+
+    await supabase.from('user_saved_stickers').upsert({
+      'user_id': userId,
+      'source_url': sourceUrl,
+      'sticker_type': stickerType,
+    }, onConflict: 'user_id,source_url');
+  }
+
+  Future<void> _insertVideoStickerMessage({
+    required String roomId,
+    required String imageUrl,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    await supabase.from('chat_messages').insert({
+      'room_id': roomId,
+      'sender_id': userId,
+      'content': '',
+      'message_type': 'video_sticker',
+      'image_url': imageUrl,
+      'media_quality': 'compressed',
+    });
+    await unhideRoomForCurrentUser(roomId);
+
+    unawaited(
+      _sendPushToRoomParticipants(
+        roomId: roomId,
+        senderId: userId,
+        content: 'Figurinha de vídeo',
+      ),
+    );
+  }
+
+  Future<void> _insertStickerMessage({
+    required String roomId,
+    required String imageUrl,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    await supabase.from('chat_messages').insert({
+      'room_id': roomId,
+      'sender_id': userId,
+      'content': '',
+      'message_type': 'sticker',
+      'image_url': imageUrl,
+    });
+    await unhideRoomForCurrentUser(roomId);
+
+    unawaited(
+      _sendPushToRoomParticipants(
+        roomId: roomId,
+        senderId: userId,
+        content: 'Figurinha',
+      ),
+    );
   }
 
   Future<void> sendVideoMessage({
@@ -1114,11 +1264,13 @@ class ChatService {
     });
     await unhideRoomForCurrentUser(roomId);
 
-    unawaited(_sendPushToRoomParticipants(
-      roomId: roomId,
-      senderId: userId,
-      content: trimmedCaption.isEmpty ? '🎥 Vídeo' : '🎥 $trimmedCaption',
-    ));
+    unawaited(
+      _sendPushToRoomParticipants(
+        roomId: roomId,
+        senderId: userId,
+        content: trimmedCaption.isEmpty ? '🎥 Vídeo' : '🎥 $trimmedCaption',
+      ),
+    );
   }
 
   Future<void> editMessage({
@@ -1141,9 +1293,7 @@ class ChatService {
         .eq('sender_id', userId);
   }
 
-  Future<void> deleteMessage({
-    required String messageId,
-  }) async {
+  Future<void> deleteMessage({required String messageId}) async {
     final userId = currentUserId;
     if (userId == null) throw Exception('Usuário não autenticado');
 
@@ -1265,10 +1415,7 @@ class ChatService {
 
     final inserts = messageIds
         .where((id) => !existingReadIds.contains(id))
-        .map((id) => {
-              'message_id': id,
-              'user_id': userId,
-            })
+        .map((id) => {'message_id': id, 'user_id': userId})
         .toList();
 
     if (inserts.isNotEmpty) {
@@ -1374,11 +1521,9 @@ class ChatService {
     if (newUserIds.isEmpty) return;
 
     final inserts = newUserIds
-        .map((userId) => {
-              'room_id': roomId,
-              'user_id': userId,
-              'role': 'member',
-            })
+        .map(
+          (userId) => {'room_id': roomId, 'user_id': userId, 'role': 'member'},
+        )
         .toList();
 
     await supabase.from('chat_room_members').insert(inserts);
@@ -1439,14 +1584,11 @@ class ChatService {
     // Nunca remova o usuário de chat_room_members em conversa direta, porque
     // isso quebra o recebimento de novas mensagens. A sala fica viva, some da
     // lista de quem apagou e volta quando chegar uma nova mensagem.
-    await supabase.from('chat_room_hidden_users').upsert(
-      {
-        'room_id': roomId,
-        'user_id': userId,
-        'hidden_at': DateTime.now().toUtc().toIso8601String(),
-      },
-      onConflict: 'room_id,user_id',
-    );
+    await supabase.from('chat_room_hidden_users').upsert({
+      'room_id': roomId,
+      'user_id': userId,
+      'hidden_at': DateTime.now().toUtc().toIso8601String(),
+    }, onConflict: 'room_id,user_id');
 
     await markRoomMessagesAsRead(roomId);
   }
@@ -1565,7 +1707,8 @@ class ChatService {
     final pollsResponse = await supabase
         .from('chat_polls')
         .select(
-            'id, room_id, created_by, question, is_closed, is_pinned, created_at')
+          'id, room_id, created_by, question, is_closed, is_pinned, created_at',
+        )
         .eq('room_id', roomId)
         .eq('is_closed', false)
         .order('created_at', ascending: true);
@@ -1653,7 +1796,8 @@ class ChatService {
     final pollsResponse = await supabase
         .from('chat_polls')
         .select(
-            'id, room_id, created_by, question, is_closed, is_pinned, created_at')
+          'id, room_id, created_by, question, is_closed, is_pinned, created_at',
+        )
         .eq('room_id', roomId)
         .order('is_pinned', ascending: false)
         .order('created_at', ascending: true);
@@ -1833,19 +1977,14 @@ class ChatService {
     final userId = currentUserId;
     if (userId == null) throw Exception('Usuário não autenticado');
 
-    await supabase.from('chat_poll_votes').upsert(
-      {
-        'poll_id': pollId,
-        'option_id': optionId,
-        'user_id': userId,
-      },
-      onConflict: 'poll_id,user_id',
-    );
+    await supabase.from('chat_poll_votes').upsert({
+      'poll_id': pollId,
+      'option_id': optionId,
+      'user_id': userId,
+    }, onConflict: 'poll_id,user_id');
   }
 
-  Stream<List<Map<String, dynamic>>> streamUsersPresence(
-    List<String> userIds,
-  ) {
+  Stream<List<Map<String, dynamic>>> streamUsersPresence(List<String> userIds) {
     if (userIds.isEmpty) {
       return Stream.value(const <Map<String, dynamic>>[]);
     }
@@ -1854,9 +1993,11 @@ class ChatService {
         .from('user_presence')
         .stream(primaryKey: ['user_id'])
         .inFilter('user_id', userIds)
-        .map((rows) => rows
-            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
-            .toList());
+        .map(
+          (rows) => rows
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+              .toList(),
+        );
   }
 
   Future<void> setTypingStatus({
@@ -1866,15 +2007,12 @@ class ChatService {
     final userId = currentUserId;
     if (userId == null) return;
 
-    await supabase.from('chat_typing_status').upsert(
-      {
-        'room_id': roomId,
-        'user_id': userId,
-        'is_typing': isTyping,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      },
-      onConflict: 'room_id,user_id',
-    );
+    await supabase.from('chat_typing_status').upsert({
+      'room_id': roomId,
+      'user_id': userId,
+      'is_typing': isTyping,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }, onConflict: 'room_id,user_id');
   }
 
   Stream<List<Map<String, dynamic>>> streamTypingStatus(String roomId) {
@@ -1882,9 +2020,11 @@ class ChatService {
         .from('chat_typing_status')
         .stream(primaryKey: ['room_id', 'user_id'])
         .eq('room_id', roomId)
-        .map((rows) => rows
-            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
-            .toList());
+        .map(
+          (rows) => rows
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+              .toList(),
+        );
   }
 
   Future<void> _sendPushToRoomParticipants({

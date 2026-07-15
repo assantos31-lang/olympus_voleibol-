@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:gal/gal.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -55,14 +53,30 @@ class _ChatPageState extends State<ChatPage> {
   final Map<String, String> _participantNames = {};
   Timer? _typingTimer;
   StreamSubscription<List<ChatPoll>>? _pollSubscription;
+  List<Map<String, dynamic>> _savedStickers = [];
+  bool _loadingSavedStickers = false;
 
   static const Color _gold = Color(0xFFD4B06A);
   static const Color _goldSoft = Color(0xFFE8D19A);
   static const Color _navy = Color(0xFF0E2A57);
   static const Color _navyDark = Color(0xFF091428);
+  static const List<_OfficialSticker> _officialStickers = [
+    _OfficialSticker('Bora treinar', 'assets/stickers/bora_treinar.webp'),
+    _OfficialSticker('Mandou bem', 'assets/stickers/mandou_bem.webp'),
+    _OfficialSticker('Partiu', 'assets/stickers/partiu.webp'),
+    _OfficialSticker('Fechou', 'assets/stickers/fechou.webp'),
+  ];
   static const List<_EmojiCategory> _emojiCategories = [
-    _EmojiCategory(
-        'Recentes', ['😀', '😂', '😍', '🥹', '👏', '🔥', '💪', '🙏']),
+    _EmojiCategory('Recentes', [
+      '😀',
+      '😂',
+      '😍',
+      '🥹',
+      '👏',
+      '🔥',
+      '💪',
+      '🙏',
+    ]),
     _EmojiCategory('Rostos', [
       '😀',
       '😃',
@@ -157,6 +171,7 @@ class _ChatPageState extends State<ChatPage> {
     _markAsRead();
     _loadParticipantsForAvatars();
     _loadChatPreferences();
+    _loadSavedStickers();
     _listenPendingPolls();
     _chatService.setCurrentUserOnline(true);
     _controller.addListener(_handleTypingChanged);
@@ -219,14 +234,15 @@ class _ChatPageState extends State<ChatPage> {
   void _listenPendingPolls() {
     if (_room.type != 'group') return;
     _pollSubscription?.cancel();
-    _pollSubscription =
-        _chatService.streamPendingPollsForRoom(_room.id).listen((polls) {
-      if (!mounted || polls.isEmpty || _showingPollDialog) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _showingPollDialog) return;
-        _showPendingPollDialog(polls.first);
-      });
-    });
+    _pollSubscription = _chatService.streamPendingPollsForRoom(_room.id).listen(
+      (polls) {
+        if (!mounted || polls.isEmpty || _showingPollDialog) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _showingPollDialog) return;
+          _showPendingPollDialog(polls.first);
+        });
+      },
+    );
   }
 
   Future<void> _loadMyRoom() async {
@@ -246,28 +262,29 @@ class _ChatPageState extends State<ChatPage> {
       final nameMap = <String, String>{};
 
       for (final participant in participants) {
-        final userId =
-            (participant['user_id'] ?? participant['id'] ?? '').toString();
+        final userId = (participant['user_id'] ?? participant['id'] ?? '')
+            .toString();
         if (userId.isEmpty) continue;
 
-        final fullName = (participant['display_name'] ??
-                participant['full_name'] ??
-                participant['name'] ??
-                participant['username'] ??
-                _extractNestedValue(participant, const [
-                  'profiles',
-                  'full_name',
-                ]) ??
-                _extractNestedValue(participant, const [
-                  'profile',
-                  'full_name',
-                ]) ??
-                _extractNestedValue(participant, const [
-                  'user',
-                  'full_name',
-                ]) ??
-                'Sem nome')
-            .toString();
+        final fullName =
+            (participant['display_name'] ??
+                    participant['full_name'] ??
+                    participant['name'] ??
+                    participant['username'] ??
+                    _extractNestedValue(participant, const [
+                      'profiles',
+                      'full_name',
+                    ]) ??
+                    _extractNestedValue(participant, const [
+                      'profile',
+                      'full_name',
+                    ]) ??
+                    _extractNestedValue(participant, const [
+                      'user',
+                      'full_name',
+                    ]) ??
+                    'Sem nome')
+                .toString();
 
         final photoUrl = _extractParticipantPhoto(participant);
 
@@ -298,10 +315,7 @@ class _ChatPageState extends State<ChatPage> {
     return _chatService.supabase.storage.from('avatars').getPublicUrl(value);
   }
 
-  dynamic _extractNestedValue(
-    Map<String, dynamic> source,
-    List<String> path,
-  ) {
+  dynamic _extractNestedValue(Map<String, dynamic> source, List<String> path) {
     dynamic current = source;
     for (final key in path) {
       if (current is Map<String, dynamic> && current.containsKey(key)) {
@@ -431,9 +445,9 @@ class _ChatPageState extends State<ChatPage> {
       _scrollToBottom(animated: true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao enviar: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao enviar: $e')));
     } finally {
       if (mounted) {
         setState(() => _sending = false);
@@ -575,10 +589,7 @@ class _ChatPageState extends State<ChatPage> {
             const SizedBox(height: 8),
             Text(
               label,
-              style: const TextStyle(
-                color: _navy,
-                fontWeight: FontWeight.w800,
-              ),
+              style: const TextStyle(color: _navy, fontWeight: FontWeight.w800),
             ),
           ],
         ),
@@ -604,9 +615,9 @@ class _ChatPageState extends State<ChatPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao enviar imagem: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao enviar imagem: $e')));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -665,9 +676,9 @@ class _ChatPageState extends State<ChatPage> {
       if (mounted) _scrollToBottom(animated: true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao enviar vídeo: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao enviar vídeo: $e')));
     } finally {
       if (quality == _VideoSendQuality.dataSaver) {
         await VideoCompress.deleteAllCache();
@@ -705,10 +716,7 @@ class _ChatPageState extends State<ChatPage> {
                 leading: const Icon(Icons.hd_rounded, color: _navy),
                 title: const Text('Qualidade original'),
                 subtitle: const Text('100% do arquivo, envio mais pesado'),
-                onTap: () => Navigator.pop(
-                  context,
-                  _VideoSendQuality.original,
-                ),
+                onTap: () => Navigator.pop(context, _VideoSendQuality.original),
               ),
               ListTile(
                 leading: const Icon(Icons.data_saver_on_rounded, color: _navy),
@@ -716,10 +724,8 @@ class _ChatPageState extends State<ChatPage> {
                 subtitle: const Text(
                   'Reduz resolução e tamanho, como no WhatsApp',
                 ),
-                onTap: () => Navigator.pop(
-                  context,
-                  _VideoSendQuality.dataSaver,
-                ),
+                onTap: () =>
+                    Navigator.pop(context, _VideoSendQuality.dataSaver),
               ),
             ],
           ),
@@ -740,7 +746,44 @@ class _ChatPageState extends State<ChatPage> {
       final caption = (message.content ?? '').trim();
       return caption.isEmpty ? 'Vídeo' : caption;
     }
+    if (message.isVideoSticker) return 'Figurinha de vídeo';
+    if (message.isSticker) return 'Figurinha';
     return (message.content ?? '').trim();
+  }
+
+  Future<void> _loadSavedStickers({bool reportFailure = false}) async {
+    if (_loadingSavedStickers && !reportFailure) return;
+    _loadingSavedStickers = true;
+    try {
+      final stickers = await _chatService.loadSavedStickers();
+      if (mounted) setState(() => _savedStickers = stickers);
+    } catch (_) {
+      // O chat continua funcionando antes da migração ser aplicada.
+      if (reportFailure) rethrow;
+    } finally {
+      _loadingSavedStickers = false;
+    }
+  }
+
+  Future<void> _saveStickerToCollection(ChatMessage message) async {
+    final sourceUrl = message.imageUrl?.trim() ?? '';
+    if (sourceUrl.isEmpty) return;
+    try {
+      await _chatService.saveStickerToCollection(
+        sourceUrl: sourceUrl,
+        stickerType: message.isVideoSticker ? 'video_sticker' : 'sticker',
+      );
+      await _loadSavedStickers(reportFailure: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Figurinha salva em Minhas figurinhas.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível salvar a figurinha: $e')),
+      );
+    }
   }
 
   String _replySenderName(ChatMessage? message) {
@@ -762,8 +805,9 @@ class _ChatPageState extends State<ChatPage> {
 
     final cleanEmoji = (emoji ?? '').trim();
     setState(() {
-      _localReactionOverrides[message.id] =
-          cleanEmoji.isEmpty ? null : cleanEmoji;
+      _localReactionOverrides[message.id] = cleanEmoji.isEmpty
+          ? null
+          : cleanEmoji;
     });
 
     try {
@@ -776,9 +820,9 @@ class _ChatPageState extends State<ChatPage> {
       setState(() {
         _localReactionOverrides.remove(message.id);
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao reagir: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao reagir: $e')));
     }
   }
 
@@ -802,45 +846,48 @@ class _ChatPageState extends State<ChatPage> {
                   padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: const [
-                      '\u{1F602}',
-                      '\u{2764}\u{FE0F}',
-                      '\u{1F44F}',
-                      '\u{1F525}',
-                      '\u{1F3D0}',
-                      '\u{1F44D}',
-                    ].map((emoji) {
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(22),
-                        onTap: () => Navigator.pop(context, 'react:$emoji'),
-                        child: Container(
-                          width: 42,
-                          height: 42,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.08),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
+                    children:
+                        const [
+                          '\u{1F602}',
+                          '\u{2764}\u{FE0F}',
+                          '\u{1F44F}',
+                          '\u{1F525}',
+                          '\u{1F3D0}',
+                          '\u{1F44D}',
+                        ].map((emoji) {
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(22),
+                            onTap: () => Navigator.pop(context, 'react:$emoji'),
+                            child: Container(
+                              width: 42,
+                              height: 42,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.08),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: Text(
-                            emoji,
-                            style: const TextStyle(fontSize: 22),
-                          ),
-                        ),
-                      );
-                    }).toList(),
+                              child: Text(
+                                emoji,
+                                style: const TextStyle(fontSize: 22),
+                              ),
+                            ),
+                          );
+                        }).toList(),
                   ),
                 ),
                 if ((message.reactionEmoji ?? '').trim().isNotEmpty)
                   ListTile(
-                    leading:
-                        const Icon(Icons.emoji_emotions_outlined, color: _navy),
+                    leading: const Icon(
+                      Icons.emoji_emotions_outlined,
+                      color: _navy,
+                    ),
                     title: const Text('Remover reação'),
                     onTap: () => Navigator.pop(context, 'clear_reaction'),
                   ),
@@ -850,9 +897,21 @@ class _ChatPageState extends State<ChatPage> {
                   subtitle: const Text('Responder esta mensagem'),
                   onTap: () => Navigator.pop(context, 'reply'),
                 ),
+                if (message.isSticker || message.isVideoSticker)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.add_circle_outline_rounded,
+                      color: _navy,
+                    ),
+                    title: const Text('Salvar em Minhas figurinhas'),
+                    subtitle: const Text('Salva somente dentro do Olympus'),
+                    onTap: () => Navigator.pop(context, 'save_sticker'),
+                  ),
                 if (_canChangeMessage(message) &&
                     !message.isImage &&
-                    !message.isVideo)
+                    !message.isVideo &&
+                    !message.isSticker &&
+                    !message.isVideoSticker)
                   ListTile(
                     leading: const Icon(Icons.edit_rounded, color: _navy),
                     title: const Text('Editar mensagem'),
@@ -861,8 +920,10 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 if (_canChangeMessage(message))
                   ListTile(
-                    leading: const Icon(Icons.delete_outline_rounded,
-                        color: Colors.redAccent),
+                    leading: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Colors.redAccent,
+                    ),
                     title: const Text('Excluir mensagem'),
                     subtitle: const Text('Disponível por até 2 minutos'),
                     onTap: () => Navigator.pop(context, 'delete'),
@@ -880,6 +941,8 @@ class _ChatPageState extends State<ChatPage> {
       await _reactToMessage(message, null);
     } else if (action == 'reply') {
       _startReply(message);
+    } else if (action == 'save_sticker') {
+      await _saveStickerToCollection(message);
     } else if (action == 'edit') {
       await _editMessage(message);
     } else if (action == 'delete') {
@@ -933,8 +996,10 @@ class _ChatPageState extends State<ChatPage> {
                           color: _gold.withOpacity(0.18),
                           borderRadius: BorderRadius.circular(16),
                         ),
-                        child:
-                            const Icon(Icons.edit_note_rounded, color: _navy),
+                        child: const Icon(
+                          Icons.edit_note_rounded,
+                          color: _navy,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       const Expanded(
@@ -963,16 +1028,11 @@ class _ChatPageState extends State<ChatPage> {
                       contentPadding: const EdgeInsets.all(14),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
-                        borderSide: BorderSide(
-                          color: _navy.withOpacity(0.16),
-                        ),
+                        borderSide: BorderSide(color: _navy.withOpacity(0.16)),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
-                        borderSide: const BorderSide(
-                          color: _gold,
-                          width: 1.4,
-                        ),
+                        borderSide: const BorderSide(color: _gold, width: 1.4),
                       ),
                     ),
                   ),
@@ -1028,9 +1088,9 @@ class _ChatPageState extends State<ChatPage> {
       await _chatService.editMessage(messageId: message.id, text: nextText);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao editar: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao editar: $e')));
     }
   }
 
@@ -1062,9 +1122,9 @@ class _ChatPageState extends State<ChatPage> {
       await _chatService.deleteMessage(messageId: message.id);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao excluir: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao excluir: $e')));
     }
   }
 
@@ -1074,10 +1134,7 @@ class _ChatPageState extends State<ChatPage> {
     try {
       final nextLocked = !_room.isLocked;
 
-      await _chatService.setRoomLocked(
-        roomId: _room.id,
-        locked: nextLocked,
-      );
+      await _chatService.setRoomLocked(roomId: _room.id, locked: nextLocked);
 
       await _loadMyRoom();
 
@@ -1094,9 +1151,9 @@ class _ChatPageState extends State<ChatPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao atualizar grupo: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao atualizar grupo: $e')));
     } finally {
       if (mounted) {
         setState(() => _updatingRoom = false);
@@ -1130,9 +1187,9 @@ class _ChatPageState extends State<ChatPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao atualizar grupo: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao atualizar grupo: $e')));
     } finally {
       if (mounted) {
         setState(() => _updatingRoom = false);
@@ -1153,8 +1210,9 @@ class _ChatPageState extends State<ChatPage> {
         bool saving = false;
 
         Future<void> pickImage(StateSetter setDialogState) async {
-          final picked =
-              await _imagePicker.pickImage(source: ImageSource.gallery);
+          final picked = await _imagePicker.pickImage(
+            source: ImageSource.gallery,
+          );
           if (picked == null) return;
           setDialogState(() {
             selectedImage = File(picked.path);
@@ -1178,8 +1236,8 @@ class _ChatPageState extends State<ChatPage> {
                       backgroundImage: selectedImage != null
                           ? FileImage(selectedImage!)
                           : (currentAvatar != null
-                              ? NetworkImage(currentAvatar)
-                              : null),
+                                ? NetworkImage(currentAvatar)
+                                : null),
                       child: selectedImage == null && currentAvatar == null
                           ? const Icon(Icons.camera_alt, color: _gold)
                           : null,
@@ -1197,8 +1255,9 @@ class _ChatPageState extends State<ChatPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed:
-                      saving ? null : () => Navigator.of(dialogContext).pop(),
+                  onPressed: saving
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
@@ -1228,11 +1287,11 @@ class _ChatPageState extends State<ChatPage> {
                             }
 
                             if (selectedImage != null) {
-                              final avatarPath =
-                                  await _chatService.uploadRoomAvatar(
-                                roomId: _room.id,
-                                file: selectedImage!,
-                              );
+                              final avatarPath = await _chatService
+                                  .uploadRoomAvatar(
+                                    roomId: _room.id,
+                                    file: selectedImage!,
+                                  );
                               await _chatService.updateRoomAvatar(
                                 roomId: _room.id,
                                 avatarUrl: avatarPath,
@@ -1278,8 +1337,9 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _showEditMyChatNameDialog() async {
     final userId = _chatService.currentUserId;
-    final currentName =
-        userId == null ? '' : (_participantNames[userId] ?? '').trim();
+    final currentName = userId == null
+        ? ''
+        : (_participantNames[userId] ?? '').trim();
     final nameController = TextEditingController(text: currentName);
 
     await showDialog(
@@ -1302,8 +1362,9 @@ class _ChatPageState extends State<ChatPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed:
-                      saving ? null : () => Navigator.of(dialogContext).pop(),
+                  onPressed: saving
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
@@ -1315,7 +1376,8 @@ class _ChatPageState extends State<ChatPage> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text(
-                                    'Informe o nome que aparecerá no chat.'),
+                                  'Informe o nome que aparecerá no chat.',
+                                ),
                               ),
                             );
                             return;
@@ -1324,8 +1386,9 @@ class _ChatPageState extends State<ChatPage> {
                           setDialogState(() => saving = true);
 
                           try {
-                            await _chatService
-                                .updateCurrentUserChatName(nextName);
+                            await _chatService.updateCurrentUserChatName(
+                              nextName,
+                            );
                             await _loadParticipantsForAvatars();
 
                             if (!mounted) return;
@@ -1376,28 +1439,29 @@ class _ChatPageState extends State<ChatPage> {
       final nameMap = <String, String>{};
 
       for (final participant in participants) {
-        final userId =
-            (participant['user_id'] ?? participant['id'] ?? '').toString();
+        final userId = (participant['user_id'] ?? participant['id'] ?? '')
+            .toString();
         if (userId.isEmpty) continue;
         photoMap[userId] = _extractParticipantPhoto(participant);
-        nameMap[userId] = (participant['display_name'] ??
-                participant['full_name'] ??
-                participant['name'] ??
-                participant['username'] ??
-                _extractNestedValue(participant, const [
-                  'profiles',
-                  'full_name',
-                ]) ??
-                _extractNestedValue(participant, const [
-                  'profile',
-                  'full_name',
-                ]) ??
-                _extractNestedValue(participant, const [
-                  'user',
-                  'full_name',
-                ]) ??
-                'Sem nome')
-            .toString();
+        nameMap[userId] =
+            (participant['display_name'] ??
+                    participant['full_name'] ??
+                    participant['name'] ??
+                    participant['username'] ??
+                    _extractNestedValue(participant, const [
+                      'profiles',
+                      'full_name',
+                    ]) ??
+                    _extractNestedValue(participant, const [
+                      'profile',
+                      'full_name',
+                    ]) ??
+                    _extractNestedValue(participant, const [
+                      'user',
+                      'full_name',
+                    ]) ??
+                    'Sem nome')
+                .toString();
       }
 
       if (!mounted) return;
@@ -1464,30 +1528,32 @@ class _ChatPageState extends State<ChatPage> {
                         separatorBuilder: (_, __) => const SizedBox(height: 10),
                         itemBuilder: (context, index) {
                           final participant = _participants[index];
-                          final userId = (participant['user_id'] ??
-                                  participant['id'] ??
-                                  '')
+                          final userId =
+                              (participant['user_id'] ??
+                                      participant['id'] ??
+                                      '')
+                                  .toString();
+                          final fullName =
+                              (participant['display_name'] ??
+                                      participant['full_name'] ??
+                                      participant['name'] ??
+                                      participant['username'] ??
+                                      _extractNestedValue(participant, const [
+                                        'profiles',
+                                        'full_name',
+                                      ]) ??
+                                      _extractNestedValue(participant, const [
+                                        'profile',
+                                        'full_name',
+                                      ]) ??
+                                      _extractNestedValue(participant, const [
+                                        'user',
+                                        'full_name',
+                                      ]) ??
+                                      'Sem nome')
+                                  .toString();
+                          final role = (participant['role'] ?? 'member')
                               .toString();
-                          final fullName = (participant['display_name'] ??
-                                  participant['full_name'] ??
-                                  participant['name'] ??
-                                  participant['username'] ??
-                                  _extractNestedValue(participant, const [
-                                    'profiles',
-                                    'full_name',
-                                  ]) ??
-                                  _extractNestedValue(participant, const [
-                                    'profile',
-                                    'full_name',
-                                  ]) ??
-                                  _extractNestedValue(participant, const [
-                                    'user',
-                                    'full_name',
-                                  ]) ??
-                                  'Sem nome')
-                              .toString();
-                          final role =
-                              (participant['role'] ?? 'member').toString();
                           final roleLabel = _translatedParticipantRole(role);
                           final phone = (participant['phone'] ?? '').toString();
                           final isMuted =
@@ -1498,8 +1564,9 @@ class _ChatPageState extends State<ChatPage> {
                           final isCreator = userId == _room.createdBy;
                           final isSelf = userId == _chatService.currentUserId;
 
-                          String subtitle =
-                              phone.isNotEmpty ? '$phone • $role' : role;
+                          String subtitle = phone.isNotEmpty
+                              ? '$phone • $role'
+                              : role;
                           if (isMuted) subtitle += ' • silenciado';
                           if (isBanned) subtitle += ' • banido';
 
@@ -1511,9 +1578,7 @@ class _ChatPageState extends State<ChatPage> {
                             tileColor: Colors.white.withOpacity(0.86),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(18),
-                              side: BorderSide(
-                                color: _navy.withOpacity(0.08),
-                              ),
+                              side: BorderSide(color: _navy.withOpacity(0.08)),
                             ),
                             leading: CircleAvatar(
                               radius: 22,
@@ -1555,52 +1620,52 @@ class _ChatPageState extends State<ChatPage> {
                                               if (value == 'promote_admin') {
                                                 await _chatService
                                                     .setParticipantRole(
-                                                  roomId: _room.id,
-                                                  userId: userId,
-                                                  role: 'admin',
-                                                );
+                                                      roomId: _room.id,
+                                                      userId: userId,
+                                                      role: 'admin',
+                                                    );
                                               } else if (value ==
                                                   'remove_admin') {
                                                 await _chatService
                                                     .setParticipantRole(
-                                                  roomId: _room.id,
-                                                  userId: userId,
-                                                  role: 'member',
-                                                );
+                                                      roomId: _room.id,
+                                                      userId: userId,
+                                                      role: 'member',
+                                                    );
                                               } else if (value == 'mute') {
                                                 await _chatService
                                                     .setParticipantMuted(
-                                                  roomId: _room.id,
-                                                  userId: userId,
-                                                  muted: true,
-                                                );
+                                                      roomId: _room.id,
+                                                      userId: userId,
+                                                      muted: true,
+                                                    );
                                               } else if (value == 'unmute') {
                                                 await _chatService
                                                     .setParticipantMuted(
-                                                  roomId: _room.id,
-                                                  userId: userId,
-                                                  muted: false,
-                                                );
+                                                      roomId: _room.id,
+                                                      userId: userId,
+                                                      muted: false,
+                                                    );
                                               } else if (value == 'ban') {
                                                 await _chatService
                                                     .setParticipantBanned(
-                                                  roomId: _room.id,
-                                                  userId: userId,
-                                                  banned: true,
-                                                );
+                                                      roomId: _room.id,
+                                                      userId: userId,
+                                                      banned: true,
+                                                    );
                                               } else if (value == 'unban') {
                                                 await _chatService
                                                     .setParticipantBanned(
-                                                  roomId: _room.id,
-                                                  userId: userId,
-                                                  banned: false,
-                                                );
+                                                      roomId: _room.id,
+                                                      userId: userId,
+                                                      banned: false,
+                                                    );
                                               } else if (value == 'remove') {
                                                 await _chatService
                                                     .removeParticipantFromRoom(
-                                                  roomId: _room.id,
-                                                  userId: userId,
-                                                );
+                                                      roomId: _room.id,
+                                                      userId: userId,
+                                                    );
                                               }
 
                                               await refreshDialog(
@@ -1608,8 +1673,9 @@ class _ChatPageState extends State<ChatPage> {
                                               );
                                             } catch (e) {
                                               if (!mounted) return;
-                                              ScaffoldMessenger.of(context)
-                                                  .showSnackBar(
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
                                                 SnackBar(
                                                   content: Text(
                                                     'Erro ao atualizar participante: $e',
@@ -1660,11 +1726,8 @@ class _ChatPageState extends State<ChatPage> {
                                     ],
                                   )
                                 : role == 'admin'
-                                    ? const Icon(
-                                        Icons.shield,
-                                        color: Colors.blue,
-                                      )
-                                    : null,
+                                ? const Icon(Icons.shield, color: Colors.blue)
+                                : null,
                           );
                         },
                       ),
@@ -1682,9 +1745,7 @@ class _ChatPageState extends State<ChatPage> {
                     label: const Text('Adicionar'),
                     style: TextButton.styleFrom(
                       foregroundColor: _navy,
-                      textStyle: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                      ),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
                 ElevatedButton(
@@ -1780,16 +1841,18 @@ class _ChatPageState extends State<ChatPage> {
                                       const SizedBox(height: 10),
                                   itemBuilder: (context, index) {
                                     final user = users[index];
-                                    final userId =
-                                        (user['id'] ?? '').toString();
-                                    final fullName = (user['display_name'] ??
-                                            user['full_name'] ??
-                                            'Sem nome')
+                                    final userId = (user['id'] ?? '')
                                         .toString();
+                                    final fullName =
+                                        (user['display_name'] ??
+                                                user['full_name'] ??
+                                                'Sem nome')
+                                            .toString();
                                     const phone = '';
                                     const userType = '';
-                                    final isSelected =
-                                        selectedUserIds.contains(userId);
+                                    final isSelected = selectedUserIds.contains(
+                                      userId,
+                                    );
 
                                     String subtitle = '';
                                     if (phone.isNotEmpty &&
@@ -1823,16 +1886,18 @@ class _ChatPageState extends State<ChatPage> {
                                                 });
                                               },
                                         child: AnimatedContainer(
-                                          duration:
-                                              const Duration(milliseconds: 180),
+                                          duration: const Duration(
+                                            milliseconds: 180,
+                                          ),
                                           padding: EdgeInsets.symmetric(
                                             horizontal: isMobile ? 12 : 14,
                                             vertical: isMobile ? 10 : 12,
                                           ),
                                           decoration: BoxDecoration(
                                             color: Colors.white,
-                                            borderRadius:
-                                                BorderRadius.circular(18),
+                                            borderRadius: BorderRadius.circular(
+                                              18,
+                                            ),
                                             border: Border.all(
                                               color: isSelected
                                                   ? _gold
@@ -1841,8 +1906,9 @@ class _ChatPageState extends State<ChatPage> {
                                             ),
                                             boxShadow: [
                                               BoxShadow(
-                                                color: Colors.black
-                                                    .withValues(alpha: 0.04),
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.04,
+                                                ),
                                                 blurRadius: 8,
                                                 offset: const Offset(0, 2),
                                               ),
@@ -1867,8 +1933,9 @@ class _ChatPageState extends State<ChatPage> {
                                                 child: Text(
                                                   initial,
                                                   style: TextStyle(
-                                                    fontSize:
-                                                        isMobile ? 22 : 24,
+                                                    fontSize: isMobile
+                                                        ? 22
+                                                        : 24,
                                                     fontWeight: FontWeight.w600,
                                                     color: _gold,
                                                   ),
@@ -1890,8 +1957,9 @@ class _ChatPageState extends State<ChatPage> {
                                                       overflow:
                                                           TextOverflow.ellipsis,
                                                       style: TextStyle(
-                                                        fontSize:
-                                                            isMobile ? 15 : 16,
+                                                        fontSize: isMobile
+                                                            ? 15
+                                                            : 16,
                                                         fontWeight:
                                                             FontWeight.w700,
                                                         color: const Color(
@@ -1925,8 +1993,9 @@ class _ChatPageState extends State<ChatPage> {
                                               ),
                                               if (isSelected)
                                                 const Padding(
-                                                  padding:
-                                                      EdgeInsets.only(left: 8),
+                                                  padding: EdgeInsets.only(
+                                                    left: 8,
+                                                  ),
                                                   child: Icon(
                                                     Icons.check_circle,
                                                     color: _gold,
@@ -1963,8 +2032,9 @@ class _ChatPageState extends State<ChatPage> {
                                 onPressed: saving || selectedUserIds.isEmpty
                                     ? null
                                     : () async {
-                                        final messenger =
-                                            ScaffoldMessenger.of(context);
+                                        final messenger = ScaffoldMessenger.of(
+                                          context,
+                                        );
 
                                         setDialogState(() {
                                           saving = true;
@@ -1973,9 +2043,10 @@ class _ChatPageState extends State<ChatPage> {
                                         try {
                                           await _chatService
                                               .addParticipantsToRoom(
-                                            roomId: _room.id,
-                                            userIds: selectedUserIds.toList(),
-                                          );
+                                                roomId: _room.id,
+                                                userIds: selectedUserIds
+                                                    .toList(),
+                                              );
 
                                           if (!mounted) return;
                                           Navigator.of(dialogContext).pop();
@@ -1998,14 +2069,13 @@ class _ChatPageState extends State<ChatPage> {
                                   elevation: 0,
                                   backgroundColor: const Color(0xFFE0DBE5),
                                   foregroundColor: const Color(0xFF8C8693),
-                                  disabledBackgroundColor:
-                                      const Color(0xFFE0DBE5),
-                                  disabledForegroundColor:
-                                      const Color(0xFF8C8693),
-                                  minimumSize: Size(
-                                    isMobile ? 92 : 100,
-                                    44,
+                                  disabledBackgroundColor: const Color(
+                                    0xFFE0DBE5,
                                   ),
+                                  disabledForegroundColor: const Color(
+                                    0xFF8C8693,
+                                  ),
+                                  minimumSize: Size(isMobile ? 92 : 100, 44),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(22),
                                   ),
@@ -2086,8 +2156,10 @@ class _ChatPageState extends State<ChatPage> {
             }
 
             return Dialog(
-              insetPadding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 18,
+              ),
               backgroundColor: Colors.transparent,
               child: SafeArea(
                 child: Container(
@@ -2182,8 +2254,9 @@ class _ChatPageState extends State<ChatPage> {
                                 ? null
                                 : () {
                                     setDialogState(() {
-                                      optionControllers
-                                          .add(TextEditingController());
+                                      optionControllers.add(
+                                        TextEditingController(),
+                                      );
                                     });
                                   },
                             icon: const Icon(Icons.add_rounded),
@@ -2208,8 +2281,9 @@ class _ChatPageState extends State<ChatPage> {
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: _gold,
                                   foregroundColor: _navy,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(18),
                                   ),
@@ -2248,9 +2322,9 @@ class _ChatPageState extends State<ChatPage> {
     }
 
     if (created == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enquete criada no grupo.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enquete criada no grupo.')));
     }
   }
 
@@ -2281,15 +2355,17 @@ class _ChatPageState extends State<ChatPage> {
                 } catch (e) {
                   setDialogState(() => voting = false);
                   if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Erro ao votar: $e')),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('Erro ao votar: $e')));
                 }
               }
 
               return Dialog(
-                insetPadding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+                insetPadding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 18,
+                ),
                 backgroundColor: Colors.transparent,
                 child: SafeArea(
                   child: Container(
@@ -2563,9 +2639,7 @@ class _ChatPageState extends State<ChatPage> {
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.92),
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: _gold.withValues(alpha: 0.35),
-                      ),
+                      border: Border.all(color: _gold.withValues(alpha: 0.35)),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.12),
@@ -2649,10 +2723,7 @@ class _ChatPageState extends State<ChatPage> {
       ),
       child: Text(
         text,
-        style: const TextStyle(
-          color: _goldSoft,
-          fontWeight: FontWeight.w600,
-        ),
+        style: const TextStyle(color: _goldSoft, fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -2730,9 +2801,7 @@ class _ChatPageState extends State<ChatPage> {
       decoration: BoxDecoration(
         color: _navy.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(12),
-        border: const Border(
-          left: BorderSide(color: _gold, width: 4),
-        ),
+        border: const Border(left: BorderSide(color: _gold, width: 4)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2767,18 +2836,12 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  bool _isStickerMessage(String? value) {
-    final text = value?.trim() ?? '';
-    return text.startsWith('fig:') ||
-        text.startsWith('🏐') ||
-        text.startsWith('🦉');
-  }
-
   void _insertQuickText(String value) {
     final selection = _controller.selection;
     final currentText = _controller.text;
-    final safeStart =
-        selection.start < 0 ? currentText.length : selection.start;
+    final safeStart = selection.start < 0
+        ? currentText.length
+        : selection.start;
     final safeEnd = selection.end < 0 ? currentText.length : selection.end;
     final nextText = currentText.replaceRange(safeStart, safeEnd, value);
     final nextOffset = safeStart + value.length;
@@ -2799,7 +2862,7 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  Future<void> _sendSticker(String value) async {
+  Future<void> _sendOfficialSticker(_OfficialSticker sticker) async {
     if (_sending) return;
 
     setState(() {
@@ -2808,13 +2871,282 @@ class _ChatPageState extends State<ChatPage> {
     });
 
     try {
-      await _chatService.sendMessage(roomId: _room.id, text: value);
+      await _chatService.sendOfficialSticker(
+        roomId: _room.id,
+        assetPath: sticker.assetPath,
+      );
+      _scrollToBottom(animated: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao enviar: $e')));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _sendSavedSticker(Map<String, dynamic> sticker) async {
+    if (_sending) return;
+    final sourceUrl = (sticker['source_url'] ?? '').toString().trim();
+    final stickerType = (sticker['sticker_type'] ?? 'sticker').toString();
+    if (sourceUrl.isEmpty) return;
+
+    setState(() {
+      _sending = true;
+      _showQuickReactions = false;
+    });
+    try {
+      await _chatService.sendSavedSticker(
+        roomId: _room.id,
+        sourceUrl: sourceUrl,
+        stickerType: stickerType,
+      );
+      if (mounted) _scrollToBottom(animated: true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao enviar: $e')),
+        SnackBar(content: Text('Erro ao enviar figurinha salva: $e')),
       );
     } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _createSticker() async {
+    if (_sending) return;
+
+    final choice = await showModalBottomSheet<_StickerSourceChoice>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7F4EC),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: _gold.withValues(alpha: 0.45)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Criar figurinha',
+                style: TextStyle(
+                  color: _navy,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Use uma foto ou escolha até 8 segundos de um vídeo.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: _navy.withValues(alpha: 0.7)),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildImageSourceButton(
+                      icon: Icons.photo_library_rounded,
+                      label: 'Galeria',
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _StickerSourceChoice(
+                          type: _MediaType.image,
+                          source: ImageSource.gallery,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildImageSourceButton(
+                      icon: Icons.photo_camera_rounded,
+                      label: 'Câmera',
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _StickerSourceChoice(
+                          type: _MediaType.image,
+                          source: ImageSource.camera,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildImageSourceButton(
+                      icon: Icons.video_library_rounded,
+                      label: 'Vídeo',
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _StickerSourceChoice(
+                          type: _MediaType.video,
+                          source: ImageSource.gallery,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildImageSourceButton(
+                      icon: Icons.videocam_rounded,
+                      label: 'Gravar vídeo',
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _StickerSourceChoice(
+                          type: _MediaType.video,
+                          source: ImageSource.camera,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (choice == null) return;
+    if (choice.type == _MediaType.video) {
+      await _createVideoSticker(choice.source);
+      return;
+    }
+
+    final picked = await _imagePicker.pickImage(
+      source: choice.source,
+      imageQuality: 85,
+      maxWidth: 1024,
+      maxHeight: 1024,
+    );
+    if (picked == null || !mounted) return;
+
+    final file = File(picked.path);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Usar como figurinha?'),
+        content: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Image.file(file, width: 240, height: 240, fit: BoxFit.contain),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.send_rounded),
+            label: const Text('Criar e enviar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _sending = true;
+      _showQuickReactions = false;
+    });
+    try {
+      await _chatService.sendCustomSticker(roomId: _room.id, imageFile: file);
+      await _loadSavedStickers();
+      if (mounted) _scrollToBottom(animated: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao criar figurinha: $e')));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _createVideoSticker(ImageSource source) async {
+    final picked = await _imagePicker.pickVideo(
+      source: source,
+      maxDuration: source == ImageSource.camera
+          ? const Duration(seconds: 8)
+          : null,
+    );
+    if (picked == null || !mounted) return;
+
+    final originalFile = File(picked.path);
+    final selection = await showDialog<_VideoTrimSelection>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _VideoStickerTrimDialog(
+        file: originalFile,
+        maxDuration: const Duration(seconds: 8),
+      ),
+    );
+    if (selection == null || !mounted) return;
+
+    setState(() {
+      _sending = true;
+      _showQuickReactions = false;
+    });
+
+    File? compressedFile;
+    try {
+      if (VideoCompress.isCompressing) {
+        await VideoCompress.cancelCompression();
+        VideoCompress.dispose();
+      }
+      final compressed = await VideoCompress.compressVideo(
+        originalFile.path,
+        quality: VideoQuality.Res640x480Quality,
+        deleteOrigin: false,
+        startTime: selection.startSeconds,
+        duration: selection.durationSeconds,
+        includeAudio: false,
+        frameRate: 15,
+      );
+      compressedFile = compressed?.file;
+      if (compressedFile == null) {
+        throw Exception('Não foi possível preparar o vídeo sem áudio.');
+      }
+
+      const preferredMaxBytes = 5 * 1024 * 1024;
+      if (await compressedFile.length() > preferredMaxBytes) {
+        final reduced = await VideoCompress.compressVideo(
+          compressedFile.path,
+          quality: VideoQuality.LowQuality,
+          deleteOrigin: false,
+          includeAudio: false,
+          frameRate: 15,
+        );
+        compressedFile = reduced?.file ?? compressedFile;
+      }
+
+      const absoluteMaxBytes = 6 * 1024 * 1024;
+      if (await compressedFile.length() > absoluteMaxBytes) {
+        throw Exception(
+          'O vídeo ficou maior que 6 MB. Escolha um trecho menor.',
+        );
+      }
+
+      await _chatService.sendVideoSticker(
+        roomId: _room.id,
+        videoFile: compressedFile,
+      );
+      await _loadSavedStickers();
+      if (mounted) _scrollToBottom(animated: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao criar figurinha de vídeo: $e')),
+      );
+    } finally {
+      VideoCompress.dispose();
       if (mounted) setState(() => _sending = false);
     }
   }
@@ -2830,9 +3162,9 @@ class _ChatPageState extends State<ChatPage> {
       if (mounted) setState(() {});
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao votar: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao votar: $e')));
     }
   }
 
@@ -2868,35 +3200,33 @@ class _ChatPageState extends State<ChatPage> {
     try {
       await _chatService.deletePoll(pollId: poll.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enquete excluída.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enquete excluída.')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao excluir enquete: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao excluir enquete: $e')));
     }
   }
 
   Future<void> _togglePinnedPoll(ChatPoll poll) async {
     try {
-      await _chatService.setPollPinned(
-        pollId: poll.id,
-        pinned: !poll.isPinned,
-      );
+      await _chatService.setPollPinned(pollId: poll.id, pinned: !poll.isPinned);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content:
-              Text(poll.isPinned ? 'Enquete desfixada.' : 'Enquete fixada.'),
+          content: Text(
+            poll.isPinned ? 'Enquete desfixada.' : 'Enquete fixada.',
+          ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao atualizar enquete: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao atualizar enquete: $e')));
     }
   }
 
@@ -2920,8 +3250,8 @@ class _ChatPageState extends State<ChatPage> {
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final vote = votes[index];
-                        final name =
-                            (vote['full_name'] ?? 'Sem nome').toString();
+                        final name = (vote['full_name'] ?? 'Sem nome')
+                            .toString();
                         final option = (vote['option_text'] ?? 'Opção removida')
                             .toString();
 
@@ -2934,8 +3264,9 @@ class _ChatPageState extends State<ChatPage> {
                               name.trim().isEmpty
                                   ? '?'
                                   : name.trim()[0].toUpperCase(),
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w900),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
                           ),
                           title: Text(
@@ -2958,9 +3289,9 @@ class _ChatPageState extends State<ChatPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao carregar votos: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao carregar votos: $e')));
     }
   }
 
@@ -2999,9 +3330,9 @@ class _ChatPageState extends State<ChatPage> {
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao excluir grupo: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao excluir grupo: $e')));
     }
   }
 
@@ -3016,8 +3347,9 @@ class _ChatPageState extends State<ChatPage> {
         final polls = query.isEmpty
             ? rawPolls
             : rawPolls.where((poll) {
-                final questionMatches =
-                    poll.question.toLowerCase().contains(query);
+                final questionMatches = poll.question.toLowerCase().contains(
+                  query,
+                );
                 final optionMatches = poll.options.any(
                   (option) => option.text.toLowerCase().contains(query),
                 );
@@ -3045,16 +3377,6 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildQuickReactionsPanel() {
-    const emojis = ['😀', '😂', '😍', '👏', '🔥', '💪', '🏐', '🦉', '✅', '🙏'];
-    const stickers = [
-      '🏐 Bora treinar!',
-      '🦉 Olympus!',
-      '🔥 Fechou!',
-      '💪 Partiu!',
-      '👏 Mandou bem!',
-      '✅ Combinado!',
-    ];
-
     final selectedCategory = _emojiCategories[_emojiCategoryIndex];
 
     return AnimatedSwitcher(
@@ -3065,6 +3387,9 @@ class _ChatPageState extends State<ChatPage> {
               key: const ValueKey('quick_reactions'),
               margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
               padding: const EdgeInsets.all(10),
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.56,
+              ),
               decoration: BoxDecoration(
                 color: const Color(0xFFEFE7D7),
                 borderRadius: BorderRadius.circular(24),
@@ -3077,100 +3402,248 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ],
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: 36,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _emojiCategories.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 6),
-                      itemBuilder: (context, index) {
-                        final category = _emojiCategories[index];
-                        final selected = index == _emojiCategoryIndex;
-                        return ChoiceChip(
-                          selected: selected,
-                          label: Text(category.label),
-                          selectedColor: _gold,
-                          backgroundColor: Colors.white,
-                          labelStyle: TextStyle(
-                            color:
-                                selected ? _navy : _navy.withValues(alpha: 0.7),
-                            fontWeight: FontWeight.w800,
-                          ),
-                          onSelected: (_) {
-                            setState(() => _emojiCategoryIndex = index);
-                          },
-                        );
-                      },
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      height: 36,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _emojiCategories.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 6),
+                        itemBuilder: (context, index) {
+                          final category = _emojiCategories[index];
+                          final selected = index == _emojiCategoryIndex;
+                          return ChoiceChip(
+                            selected: selected,
+                            label: Text(category.label),
+                            selectedColor: _gold,
+                            backgroundColor: Colors.white,
+                            labelStyle: TextStyle(
+                              color: selected
+                                  ? _navy
+                                  : _navy.withValues(alpha: 0.7),
+                              fontWeight: FontWeight.w800,
+                            ),
+                            onSelected: (_) {
+                              setState(() => _emojiCategoryIndex = index);
+                            },
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: selectedCategory.emojis.map((emoji) {
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(20),
-                        onTap: () => _insertQuickText(emoji),
-                        child: Container(
-                          width: 38,
-                          height: 38,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(19),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: selectedCategory.emojis.map((emoji) {
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(20),
+                          onTap: () => _insertQuickText(emoji),
+                          child: Container(
+                            width: 38,
+                            height: 38,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(19),
+                            ),
+                            child: Text(
+                              emoji,
+                              style: const TextStyle(fontSize: 22),
+                            ),
                           ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Expanded(
                           child: Text(
-                            emoji,
-                            style: const TextStyle(fontSize: 22),
+                            'Figurinhas Olympus',
+                            style: TextStyle(
+                              color: _navy,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: stickers.map((sticker) {
-                      return ActionChip(
-                        onPressed: () => _sendSticker(sticker),
-                        backgroundColor: Colors.white,
-                        side: BorderSide(
-                          color: _gold.withValues(alpha: 0.45),
+                        TextButton.icon(
+                          onPressed: _sending ? null : _createSticker,
+                          icon: const Icon(Icons.add_photo_alternate_rounded),
+                          label: const Text('Criar'),
                         ),
-                        label: Text(
-                          sticker,
-                          style: const TextStyle(
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      height: 104,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _officialStickers.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final sticker = _officialStickers[index];
+                          return Semantics(
+                            label: 'Enviar figurinha ${sticker.label}',
+                            button: true,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: _sending
+                                  ? null
+                                  : () => _sendOfficialSticker(sticker),
+                              child: Container(
+                                width: 96,
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: _gold.withValues(alpha: 0.35),
+                                  ),
+                                ),
+                                child: Image.asset(
+                                  sticker.assetPath,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    if (_savedStickers.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Minhas figurinhas',
+                          style: TextStyle(
                             color: _navy,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
-                      );
-                    }).toList(),
-                  ),
-                ],
+                      ),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 92,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _savedStickers.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                          itemBuilder: (context, index) {
+                            final sticker = _savedStickers[index];
+                            final sourceUrl = (sticker['source_url'] ?? '')
+                                .toString();
+                            final isVideo =
+                                sticker['sticker_type'] == 'video_sticker';
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: _sending
+                                  ? null
+                                  : () => _sendSavedSticker(sticker),
+                              child: Container(
+                                width: 86,
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: _gold.withValues(alpha: 0.35),
+                                  ),
+                                ),
+                                child: isVideo
+                                    ? _SavedVideoStickerThumbnail(
+                                        url: _resolveAvatarUrl(sourceUrl) ?? '',
+                                      )
+                                    : sourceUrl.startsWith('asset:')
+                                    ? Image.asset(
+                                        sourceUrl.substring('asset:'.length),
+                                        fit: BoxFit.contain,
+                                      )
+                                    : Image.network(
+                                        _resolveAvatarUrl(sourceUrl) ?? '',
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (_, __, ___) =>
+                                            const Icon(
+                                              Icons.broken_image_rounded,
+                                            ),
+                                      ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
     );
   }
 
-  Widget _buildMessageBubble({
-    required ChatMessage msg,
-    required bool isMine,
-  }) {
-    final bubbleColor =
-        isMine ? const Color(0xFFD9FDD3) : Colors.white.withValues(alpha: 0.94);
+  Widget _buildStickerMessageImage(ChatMessage message) {
+    final rawUrl = message.imageUrl?.trim() ?? '';
+    final width = _stickerDisplaySize();
+    final error = Container(
+      width: width,
+      height: 150,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: const Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.broken_image_rounded, color: _navy),
+          SizedBox(height: 6),
+          Text(
+            'Figurinha indisponível',
+            style: TextStyle(color: _navy, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
 
-    final bubbleBorderColor =
-        isMine ? const Color(0xFFB7EDB0) : Colors.white.withValues(alpha: 0.40);
+    if (rawUrl.startsWith('asset:')) {
+      return Image.asset(
+        rawUrl.substring('asset:'.length),
+        width: width,
+        height: width,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => error,
+      );
+    }
+
+    return Image.network(
+      _resolveAvatarUrl(rawUrl) ?? '',
+      width: width,
+      height: width,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => error,
+    );
+  }
+
+  double _stickerDisplaySize() {
+    return (MediaQuery.of(context).size.width * 0.48).clamp(160.0, 220.0);
+  }
+
+  Widget _buildMessageBubble({required ChatMessage msg, required bool isMine}) {
+    final bubbleColor = isMine
+        ? const Color(0xFFD9FDD3)
+        : Colors.white.withValues(alpha: 0.94);
+
+    final bubbleBorderColor = isMine
+        ? const Color(0xFFB7EDB0)
+        : Colors.white.withValues(alpha: 0.40);
 
     final senderDisplayName =
         _participantNames[msg.senderId] ?? msg.senderName?.trim() ?? '';
 
+    final isSticker = (msg.isSticker || msg.isVideoSticker) && !msg.isDeleted;
     final bubble = GestureDetector(
       onLongPress: () => _showMessageActions(msg),
       onHorizontalDragEnd: (details) {
@@ -3185,24 +3658,32 @@ class _ChatPageState extends State<ChatPage> {
           maxWidth: MediaQuery.of(context).size.width * 0.76,
         ),
         decoration: BoxDecoration(
-          color: bubbleColor,
+          color: isSticker ? Colors.transparent : bubbleColor,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(18),
             topRight: const Radius.circular(18),
             bottomLeft: Radius.circular(isMine ? 18 : 6),
             bottomRight: Radius.circular(isMine ? 6 : 18),
           ),
-          border: Border.all(color: bubbleBorderColor, width: 1),
-          boxShadow: [
-            BoxShadow(
-              color: isMine ? const Color(0x22D4B06A) : const Color(0x12000000),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          border: isSticker
+              ? null
+              : Border.all(color: bubbleBorderColor, width: 1),
+          boxShadow: isSticker
+              ? const []
+              : [
+                  BoxShadow(
+                    color: isMine
+                        ? const Color(0x22D4B06A)
+                        : const Color(0x12000000),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          padding: isSticker
+              ? const EdgeInsets.fromLTRB(4, 4, 4, 2)
+              : const EdgeInsets.fromLTRB(12, 10, 12, 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -3237,7 +3718,14 @@ class _ChatPageState extends State<ChatPage> {
                     senderName: (msg.replyToSenderName ?? '').trim(),
                     text: (msg.replyToText ?? '').trim(),
                   ),
-                if (msg.isImage)
+                if (msg.isVideoSticker)
+                  _VideoStickerPlayer(
+                    url: _resolveAvatarUrl(msg.imageUrl) ?? '',
+                    width: _stickerDisplaySize(),
+                  )
+                else if (msg.isSticker)
+                  _buildStickerMessageImage(msg)
+                else if (msg.isImage)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(14),
                     child: Image.network(
@@ -3290,9 +3778,7 @@ class _ChatPageState extends State<ChatPage> {
                       color: const Color(0xFF10233F),
                       fontSize: 16 * _chatFontScale,
                       height: 1.25,
-                      fontWeight: _isStickerMessage(msg.content)
-                          ? FontWeight.w800
-                          : FontWeight.w500,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -3343,20 +3829,14 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ],
               ),
-              child: Text(
-                reaction,
-                style: const TextStyle(fontSize: 16),
-              ),
+              child: Text(reaction, style: const TextStyle(fontSize: 16)),
             ),
           ),
       ],
     );
 
     if (isMine) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: bubbleWithReaction,
-      );
+      return Align(alignment: Alignment.centerRight, child: bubbleWithReaction);
     }
 
     return Align(
@@ -3381,9 +3861,7 @@ class _ChatPageState extends State<ChatPage> {
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
       decoration: BoxDecoration(
         color: const Color(0xFF0B1E3D).withValues(alpha: 0.92),
-        border: Border(
-          top: BorderSide(color: _gold.withValues(alpha: 0.18)),
-        ),
+        border: Border(top: BorderSide(color: _gold.withValues(alpha: 0.18))),
       ),
       child: Row(
         children: [
@@ -3422,9 +3900,7 @@ class _ChatPageState extends State<ChatPage> {
             decoration: BoxDecoration(
               color: const Color(0xFF0B1E3D).withValues(alpha: 0.86),
               border: Border(
-                top: BorderSide(
-                  color: _gold.withValues(alpha: 0.18),
-                ),
+                top: BorderSide(color: _gold.withValues(alpha: 0.18)),
               ),
             ),
             child: Row(
@@ -3444,19 +3920,14 @@ class _ChatPageState extends State<ChatPage> {
                 ),
                 IconButton(
                   onPressed: _sending ? null : _showMediaSourceSheet,
-                  icon: const Icon(
-                    Icons.attach_file_rounded,
-                    color: _gold,
-                  ),
+                  icon: const Icon(Icons.attach_file_rounded, color: _gold),
                 ),
                 Expanded(
                   child: Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: _gold.withValues(alpha: 0.35),
-                      ),
+                      border: Border.all(color: _gold.withValues(alpha: 0.35)),
                     ),
                     child: TextField(
                       controller: _controller,
@@ -3496,10 +3967,7 @@ class _ChatPageState extends State<ChatPage> {
                               color: Colors.white,
                             ),
                           )
-                        : const Icon(
-                            Icons.send_rounded,
-                            color: Colors.white,
-                          ),
+                        : const Icon(Icons.send_rounded, color: Colors.white),
                   ),
                 ),
               ],
@@ -3525,10 +3993,7 @@ class _ChatPageState extends State<ChatPage> {
               ),
               title: const Text(
                 'Configurações do chat',
-                style: TextStyle(
-                  color: _navy,
-                  fontWeight: FontWeight.w900,
-                ),
+                style: TextStyle(color: _navy, fontWeight: FontWeight.w900),
               ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -3536,10 +4001,7 @@ class _ChatPageState extends State<ChatPage> {
                 children: [
                   const Text(
                     'Tamanho da fonte',
-                    style: TextStyle(
-                      color: _navy,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: TextStyle(color: _navy, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -3560,8 +4022,8 @@ class _ChatPageState extends State<ChatPage> {
                     label: nextScale <= 0.95
                         ? 'Pequena'
                         : nextScale >= 1.18
-                            ? 'Grande'
-                            : 'Normal',
+                        ? 'Grande'
+                        : 'Normal',
                     onChanged: (value) {
                       setDialogState(() => nextScale = value);
                     },
@@ -3599,7 +4061,8 @@ class _ChatPageState extends State<ChatPage> {
     final isGroup = _room.type == 'group';
     final canManageRoom = isGroup && currentUserId == _room.createdBy;
     final isRoomAdmin = isGroup && _myRole == 'admin';
-    final canSend = !_room.isLocked &&
+    final canSend =
+        !_room.isLocked &&
         _room.allowMessages &&
         (!_room.adminOnly || isRoomAdmin);
     final groupPhotoUrl = _displayRoomPhotoUrl();
@@ -3792,8 +4255,10 @@ class _ChatPageState extends State<ChatPage> {
                   value: 'delete_group',
                   child: Row(
                     children: [
-                      Icon(Icons.delete_forever_rounded,
-                          color: Colors.redAccent),
+                      Icon(
+                        Icons.delete_forever_rounded,
+                        color: Colors.redAccent,
+                      ),
                       SizedBox(width: 10),
                       Text('Excluir grupo para todos'),
                     ],
@@ -3811,10 +4276,7 @@ class _ChatPageState extends State<ChatPage> {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [
-                    _navy,
-                    _navyDark,
-                  ],
+                  colors: [_navy, _navyDark],
                 ),
               ),
             ),
@@ -3829,15 +4291,11 @@ class _ChatPageState extends State<ChatPage> {
             ),
           ),
           Positioned.fill(
-            child: Container(
-              color: _navyDark.withValues(alpha: 0.58),
-            ),
+            child: Container(color: _navyDark.withValues(alpha: 0.58)),
           ),
           Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: _ChatLensPainter(gold: _gold),
-              ),
+              child: CustomPaint(painter: _ChatLensPainter(gold: _gold)),
             ),
           ),
           Column(
@@ -3865,8 +4323,10 @@ class _ChatPageState extends State<ChatPage> {
                       hintStyle: TextStyle(
                         color: Colors.white.withValues(alpha: 0.58),
                       ),
-                      prefixIcon:
-                          const Icon(Icons.search_rounded, color: _gold),
+                      prefixIcon: const Icon(
+                        Icons.search_rounded,
+                        color: _gold,
+                      ),
                       suffixIcon: _messageSearchQuery.isEmpty
                           ? null
                           : IconButton(
@@ -3920,7 +4380,8 @@ class _ChatPageState extends State<ChatPage> {
                       _lastStableMessages = incomingMessages;
                     }
 
-                    final messages = incomingMessages.isEmpty &&
+                    final messages =
+                        incomingMessages.isEmpty &&
                             _lastStableMessages.isNotEmpty
                         ? _lastStableMessages
                         : incomingMessages;
@@ -3938,16 +4399,23 @@ class _ChatPageState extends State<ChatPage> {
                     }).toList();
 
                     final visibleMessages = messagesWithLocalReactions
-                        .where((message) =>
-                            !_isPollNotificationMessage(message) &&
-                            !message.isPoll)
+                        .where(
+                          (message) =>
+                              !_isPollNotificationMessage(message) &&
+                              !message.isPoll,
+                        )
                         .where((message) {
-                      final query = _messageSearchQuery.trim().toLowerCase();
-                      if (query.isEmpty) return true;
-                      final content = (message.content ?? '').toLowerCase();
-                      final sender = (message.senderName ?? '').toLowerCase();
-                      return content.contains(query) || sender.contains(query);
-                    }).toList();
+                          final query = _messageSearchQuery
+                              .trim()
+                              .toLowerCase();
+                          if (query.isEmpty) return true;
+                          final content = (message.content ?? '').toLowerCase();
+                          final sender = (message.senderName ?? '')
+                              .toLowerCase();
+                          return content.contains(query) ||
+                              sender.contains(query);
+                        })
+                        .toList();
 
                     if (messages.isNotEmpty) {
                       final lastMessageId = messages.last.id;
@@ -3985,10 +4453,7 @@ class _ChatPageState extends State<ChatPage> {
                         final msg = visibleMessages[index - 1];
                         final isMine = msg.senderId == currentUserId;
 
-                        return _buildMessageBubble(
-                          msg: msg,
-                          isMine: isMine,
-                        );
+                        return _buildMessageBubble(msg: msg, isMine: isMine);
                       },
                     );
                   },
@@ -4010,6 +4475,228 @@ class _EmojiCategory {
   const _EmojiCategory(this.label, this.emojis);
 }
 
+class _OfficialSticker {
+  final String label;
+  final String assetPath;
+
+  const _OfficialSticker(this.label, this.assetPath);
+}
+
+class _StickerSourceChoice {
+  final _MediaType type;
+  final ImageSource source;
+
+  const _StickerSourceChoice({required this.type, required this.source});
+}
+
+class _VideoTrimSelection {
+  final int startSeconds;
+  final int durationSeconds;
+
+  const _VideoTrimSelection({
+    required this.startSeconds,
+    required this.durationSeconds,
+  });
+}
+
+class _VideoStickerTrimDialog extends StatefulWidget {
+  final File file;
+  final Duration maxDuration;
+
+  const _VideoStickerTrimDialog({
+    required this.file,
+    required this.maxDuration,
+  });
+
+  @override
+  State<_VideoStickerTrimDialog> createState() =>
+      _VideoStickerTrimDialogState();
+}
+
+class _VideoStickerTrimDialogState extends State<_VideoStickerTrimDialog> {
+  late final VideoPlayerController _controller;
+  RangeValues _range = const RangeValues(0, 1);
+  double _totalSeconds = 0;
+  bool _failed = false;
+  bool _seeking = false;
+
+  double get _maxClipSeconds => widget.maxDuration.inMilliseconds / 1000;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.file(
+      widget.file,
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    )..addListener(_keepInsideSelection);
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    try {
+      await _controller.initialize();
+      await _controller.setVolume(0);
+      await _controller.setLooping(false);
+      _totalSeconds = _controller.value.duration.inMilliseconds / 1000.0;
+      if (_totalSeconds <= 0) throw Exception('Vídeo sem duração válida');
+      _range = RangeValues(
+        0,
+        _totalSeconds < _maxClipSeconds ? _totalSeconds : _maxClipSeconds,
+      );
+      await _controller.play();
+      if (mounted) setState(() {});
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  Future<void> _keepInsideSelection() async {
+    if (_seeking || !_controller.value.isInitialized) return;
+    final current = _controller.value.position.inMilliseconds / 1000.0;
+    if (current + 0.04 < _range.end) return;
+    _seeking = true;
+    await _controller.seekTo(
+      Duration(milliseconds: (_range.start * 1000).round()),
+    );
+    if (!_controller.value.isPlaying) await _controller.play();
+    _seeking = false;
+  }
+
+  void _updateRange(RangeValues next) {
+    var start = next.start;
+    var end = next.end;
+    final movedStart =
+        (next.start - _range.start).abs() > (next.end - _range.end).abs();
+
+    if (end - start > _maxClipSeconds) {
+      if (movedStart) {
+        end = (start + _maxClipSeconds).clamp(0.0, _totalSeconds);
+      } else {
+        start = (end - _maxClipSeconds).clamp(0.0, _totalSeconds);
+      }
+    }
+
+    const minimumSeconds = 1.0;
+    if (end - start < minimumSeconds && _totalSeconds >= minimumSeconds) {
+      if (movedStart) {
+        start = (end - minimumSeconds).clamp(0.0, _totalSeconds);
+      } else {
+        end = (start + minimumSeconds).clamp(0.0, _totalSeconds);
+      }
+    }
+
+    setState(() => _range = RangeValues(start, end));
+    _controller.seekTo(Duration(milliseconds: (start * 1000).round()));
+  }
+
+  String _formatSeconds(double value) {
+    final total = value.round();
+    final minutes = total ~/ 60;
+    final seconds = total % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  void _confirm() {
+    final start = _range.start.round();
+    final duration = (_range.end - _range.start).round().clamp(
+      1,
+      widget.maxDuration.inSeconds,
+    );
+    Navigator.pop(
+      context,
+      _VideoTrimSelection(startSeconds: start, durationSeconds: duration),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_keepInsideSelection);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Escolha o trecho da figurinha'),
+      content: SizedBox(
+        width: 360,
+        child: _failed
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('Não foi possível abrir esse vídeo.'),
+              )
+            : !_controller.value.isInitialized
+            ? const SizedBox(
+                height: 280,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: SizedBox(
+                      width: 260,
+                      height: 260,
+                      child: FittedBox(
+                        fit: BoxFit.contain,
+                        child: SizedBox(
+                          width: _controller.value.size.width,
+                          height: _controller.value.size.height,
+                          child: VideoPlayer(_controller),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  RangeSlider(
+                    values: _range,
+                    min: 0,
+                    max: _totalSeconds,
+                    labels: RangeLabels(
+                      _formatSeconds(_range.start),
+                      _formatSeconds(_range.end),
+                    ),
+                    onChanged: _updateRange,
+                    onChangeEnd: (_) => _controller.play(),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Início ${_formatSeconds(_range.start)}'),
+                      Text(
+                        '${(_range.end - _range.start).toStringAsFixed(1)} s de 8 s',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      Text('Fim ${_formatSeconds(_range.end)}'),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'A prévia repete somente o trecho selecionado. O áudio será removido.',
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _failed || !_controller.value.isInitialized
+              ? null
+              : _confirm,
+          icon: const Icon(Icons.content_cut_rounded),
+          label: const Text('Criar e enviar'),
+        ),
+      ],
+    );
+  }
+}
+
 enum _MediaType { image, video }
 
 enum _VideoSendQuality { original, dataSaver }
@@ -4019,6 +4706,286 @@ class _MediaSourceChoice {
   final ImageSource source;
 
   const _MediaSourceChoice({required this.type, required this.source});
+}
+
+class _LocalVideoStickerPreview extends StatefulWidget {
+  final File file;
+
+  const _LocalVideoStickerPreview({required this.file});
+
+  @override
+  State<_LocalVideoStickerPreview> createState() =>
+      _LocalVideoStickerPreviewState();
+}
+
+class _LocalVideoStickerPreviewState extends State<_LocalVideoStickerPreview> {
+  late final VideoPlayerController _controller;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.file(
+      widget.file,
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    );
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    try {
+      await _controller.initialize();
+      await _controller.setVolume(0);
+      await _controller.setLooping(true);
+      await _controller.play();
+      if (mounted) setState(() {});
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_failed) {
+      return const SizedBox(
+        width: 220,
+        height: 220,
+        child: Center(child: Icon(Icons.videocam_off_rounded)),
+      );
+    }
+    if (!_controller.value.isInitialized) {
+      return const SizedBox(
+        width: 220,
+        height: 220,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        width: 220,
+        height: 220,
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: SizedBox(
+            width: _controller.value.size.width,
+            height: _controller.value.size.height,
+            child: VideoPlayer(_controller),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SavedVideoStickerThumbnail extends StatefulWidget {
+  final String url;
+
+  const _SavedVideoStickerThumbnail({required this.url});
+
+  @override
+  State<_SavedVideoStickerThumbnail> createState() =>
+      _SavedVideoStickerThumbnailState();
+}
+
+class _SavedVideoStickerThumbnailState
+    extends State<_SavedVideoStickerThumbnail> {
+  VideoPlayerController? _controller;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SavedVideoStickerThumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _controller?.dispose();
+      _controller = null;
+      _failed = false;
+      _initialize();
+    }
+  }
+
+  Future<void> _initialize() async {
+    if (widget.url.isEmpty) {
+      if (mounted) setState(() => _failed = true);
+      return;
+    }
+    final controller = VideoPlayerController.networkUrl(
+      Uri.parse(widget.url),
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    );
+    _controller = controller;
+    try {
+      await controller.initialize();
+      await controller.setVolume(0);
+      final seekPosition =
+          controller.value.duration > const Duration(milliseconds: 120)
+          ? const Duration(milliseconds: 120)
+          : Duration.zero;
+      await controller.seekTo(seekPosition);
+      await controller.pause();
+      if (mounted) setState(() {});
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    if (_failed) {
+      return const Icon(Icons.videocam_off_rounded, color: Color(0xFF0E2A57));
+    }
+    if (controller == null || !controller.value.isInitialized) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(11),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: controller.value.size.width,
+              height: controller.value.size.height,
+              child: VideoPlayer(controller),
+            ),
+          ),
+          const Center(
+            child: Icon(
+              Icons.play_circle_fill_rounded,
+              color: Color(0xFFD4B06A),
+              size: 30,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VideoStickerPlayer extends StatefulWidget {
+  final String url;
+  final double width;
+
+  const _VideoStickerPlayer({required this.url, required this.width});
+
+  @override
+  State<_VideoStickerPlayer> createState() => _VideoStickerPlayerState();
+}
+
+class _VideoStickerPlayerState extends State<_VideoStickerPlayer> {
+  VideoPlayerController? _controller;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VideoStickerPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _controller?.dispose();
+      _controller = null;
+      _failed = false;
+      _initialize();
+    }
+  }
+
+  Future<void> _initialize() async {
+    if (widget.url.isEmpty) {
+      if (mounted) setState(() => _failed = true);
+      return;
+    }
+
+    final controller = VideoPlayerController.networkUrl(
+      Uri.parse(widget.url),
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    );
+    _controller = controller;
+    try {
+      await controller.initialize();
+      await controller.setVolume(0);
+      await controller.setLooping(true);
+      await controller.play();
+      if (mounted) setState(() {});
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    if (_failed) {
+      return SizedBox(
+        width: widget.width,
+        height: 150,
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.videocam_off_rounded, color: Color(0xFF0E2A57)),
+              SizedBox(height: 6),
+              Text('Figurinha de vídeo indisponível'),
+            ],
+          ),
+        ),
+      );
+    }
+    if (controller == null || !controller.value.isInitialized) {
+      return SizedBox(
+        width: widget.width,
+        height: widget.width,
+        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        width: widget.width,
+        height: widget.width,
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: SizedBox(
+            width: controller.value.size.width,
+            height: controller.value.size.height,
+            child: VideoPlayer(controller),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ChatVideoPlayer extends StatefulWidget {
@@ -4034,8 +5001,6 @@ class _ChatVideoPlayer extends StatefulWidget {
 class _ChatVideoPlayerState extends State<_ChatVideoPlayer> {
   VideoPlayerController? _controller;
   bool _failed = false;
-  bool _downloading = false;
-  double _downloadProgress = 0;
 
   @override
   void initState() {
@@ -4087,73 +5052,6 @@ class _ChatVideoPlayerState extends State<_ChatVideoPlayer> {
         controller.play();
       }
     });
-  }
-
-  Future<void> _downloadVideo() async {
-    if (_downloading || widget.url.isEmpty) return;
-
-    setState(() {
-      _downloading = true;
-      _downloadProgress = 0;
-    });
-
-    final tempFile = File(
-      '${Directory.systemTemp.path}${Platform.pathSeparator}'
-      'olympus_video_${DateTime.now().millisecondsSinceEpoch}.mp4',
-    );
-    IOSink? sink;
-    http.Client? client;
-    try {
-      client = http.Client();
-      final request = http.Request('GET', Uri.parse(widget.url));
-      final response = await client.send(request);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('Falha no download (${response.statusCode}).');
-      }
-
-      final totalBytes = response.contentLength ?? 0;
-      var receivedBytes = 0;
-      sink = tempFile.openWrite();
-      await for (final chunk in response.stream) {
-        sink.add(chunk);
-        receivedBytes += chunk.length;
-        if (mounted && totalBytes > 0) {
-          setState(() {
-            _downloadProgress = receivedBytes / totalBytes;
-          });
-        }
-      }
-      await sink.flush();
-      await sink.close();
-      sink = null;
-
-      if (!await Gal.hasAccess(toAlbum: true)) {
-        await Gal.requestAccess(toAlbum: true);
-      }
-      await Gal.putVideo(tempFile.path, album: 'Olympus');
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vídeo salvo na galeria.')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não foi possível baixar o vídeo: $error')),
-      );
-    } finally {
-      await sink?.close();
-      client?.close();
-      if (await tempFile.exists()) {
-        await tempFile.delete();
-      }
-      if (mounted) {
-        setState(() {
-          _downloading = false;
-          _downloadProgress = 0;
-        });
-      }
-    }
   }
 
   @override
@@ -4243,34 +5141,6 @@ class _ChatVideoPlayerState extends State<_ChatVideoPlayer> {
                   ),
                 ),
               ),
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Material(
-                  color: const Color(0x99000000),
-                  shape: const CircleBorder(),
-                  child: IconButton(
-                    tooltip: 'Baixar vídeo',
-                    onPressed: _downloading ? null : _downloadVideo,
-                    icon: _downloading
-                        ? SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              value: _downloadProgress > 0
-                                  ? _downloadProgress
-                                  : null,
-                              strokeWidth: 2.4,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(
-                            Icons.download_rounded,
-                            color: Colors.white,
-                          ),
-                  ),
-                ),
-              ),
             ],
           ),
         ),
@@ -4292,18 +5162,16 @@ class _ChatLensPainter extends CustomPainter {
 
   void _drawLeftLightLeak(Canvas canvas, Size size) {
     final Rect pillRect = Rect.fromLTWH(14, 86, 18, size.height * 0.55);
-    final RRect pill =
-        RRect.fromRectAndRadius(pillRect, const Radius.circular(12));
+    final RRect pill = RRect.fromRectAndRadius(
+      pillRect,
+      const Radius.circular(12),
+    );
 
     final Paint pillPaint = Paint()
       ..shader = const LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [
-          Color(0xFF183A72),
-          Color(0xFF264A7A),
-          Color(0xFF16325F),
-        ],
+        colors: [Color(0xFF183A72), Color(0xFF264A7A), Color(0xFF16325F)],
       ).createShader(pillRect);
 
     canvas.drawRRect(pill, pillPaint);
@@ -4330,8 +5198,11 @@ class _ChatLensPainter extends CustomPainter {
     );
 
     final Offset flareCenter = Offset(19, size.height * 0.40);
-    final Rect flareRect =
-        Rect.fromCenter(center: flareCenter, width: 70, height: 110);
+    final Rect flareRect = Rect.fromCenter(
+      center: flareCenter,
+      width: 70,
+      height: 110,
+    );
 
     final Paint flareGlow = Paint()
       ..shader = RadialGradient(
@@ -4355,9 +5226,7 @@ class _ChatLensPainter extends CustomPainter {
           Color(0xAAFFD978),
           Colors.transparent,
         ],
-      ).createShader(
-        Rect.fromCenter(center: flareCenter, width: 90, height: 4),
-      )
+      ).createShader(Rect.fromCenter(center: flareCenter, width: 90, height: 4))
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
 
     canvas.drawRRect(
@@ -4378,10 +5247,7 @@ class _ChatLensPainter extends CustomPainter {
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [
-          Colors.black.withValues(alpha: 0.22),
-          Colors.transparent,
-        ],
+        colors: [Colors.black.withValues(alpha: 0.22), Colors.transparent],
       ).createShader(topBand);
 
     canvas.drawRect(topBand, topPaint);
