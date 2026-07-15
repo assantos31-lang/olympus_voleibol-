@@ -2,7 +2,7 @@ name: olympus_voleibol
 description: Aplicativo Olympus Voleibol - Gestão de atletas e sócios
 publish_to: 'none'
 
-version: 3.9.0+01
+version: 4.0.0+01
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -22,6 +22,8 @@ dependencies:
   image_picker: ^1.0.7
   video_compress: ^3.1.4
   video_player: ^2.11.1
+  olympus_video_sticker:
+    path: plugins/olympus_video_sticker
   cached_network_image: ^3.3.1
   image: ^4.8.0
   google_fonts: ^6.1.0

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:olympus_video_sticker/olympus_video_sticker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
@@ -262,29 +263,28 @@ class _ChatPageState extends State<ChatPage> {
       final nameMap = <String, String>{};
 
       for (final participant in participants) {
-        final userId = (participant['user_id'] ?? participant['id'] ?? '')
-            .toString();
+        final userId =
+            (participant['user_id'] ?? participant['id'] ?? '').toString();
         if (userId.isEmpty) continue;
 
-        final fullName =
-            (participant['display_name'] ??
-                    participant['full_name'] ??
-                    participant['name'] ??
-                    participant['username'] ??
-                    _extractNestedValue(participant, const [
-                      'profiles',
-                      'full_name',
-                    ]) ??
-                    _extractNestedValue(participant, const [
-                      'profile',
-                      'full_name',
-                    ]) ??
-                    _extractNestedValue(participant, const [
-                      'user',
-                      'full_name',
-                    ]) ??
-                    'Sem nome')
-                .toString();
+        final fullName = (participant['display_name'] ??
+                participant['full_name'] ??
+                participant['name'] ??
+                participant['username'] ??
+                _extractNestedValue(participant, const [
+                  'profiles',
+                  'full_name',
+                ]) ??
+                _extractNestedValue(participant, const [
+                  'profile',
+                  'full_name',
+                ]) ??
+                _extractNestedValue(participant, const [
+                  'user',
+                  'full_name',
+                ]) ??
+                'Sem nome')
+            .toString();
 
         final photoUrl = _extractParticipantPhoto(participant);
 
@@ -805,9 +805,8 @@ class _ChatPageState extends State<ChatPage> {
 
     final cleanEmoji = (emoji ?? '').trim();
     setState(() {
-      _localReactionOverrides[message.id] = cleanEmoji.isEmpty
-          ? null
-          : cleanEmoji;
+      _localReactionOverrides[message.id] =
+          cleanEmoji.isEmpty ? null : cleanEmoji;
     });
 
     try {
@@ -846,40 +845,39 @@ class _ChatPageState extends State<ChatPage> {
                   padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children:
-                        const [
-                          '\u{1F602}',
-                          '\u{2764}\u{FE0F}',
-                          '\u{1F44F}',
-                          '\u{1F525}',
-                          '\u{1F3D0}',
-                          '\u{1F44D}',
-                        ].map((emoji) {
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(22),
-                            onTap: () => Navigator.pop(context, 'react:$emoji'),
-                            child: Container(
-                              width: 42,
-                              height: 42,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.08),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
+                    children: const [
+                      '\u{1F602}',
+                      '\u{2764}\u{FE0F}',
+                      '\u{1F44F}',
+                      '\u{1F525}',
+                      '\u{1F3D0}',
+                      '\u{1F44D}',
+                    ].map((emoji) {
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(22),
+                        onTap: () => Navigator.pop(context, 'react:$emoji'),
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
                               ),
-                              child: Text(
-                                emoji,
-                                style: const TextStyle(fontSize: 22),
-                              ),
-                            ),
-                          );
-                        }).toList(),
+                            ],
+                          ),
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 22),
+                          ),
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ),
                 if ((message.reactionEmoji ?? '').trim().isNotEmpty)
@@ -1236,8 +1234,8 @@ class _ChatPageState extends State<ChatPage> {
                       backgroundImage: selectedImage != null
                           ? FileImage(selectedImage!)
                           : (currentAvatar != null
-                                ? NetworkImage(currentAvatar)
-                                : null),
+                              ? NetworkImage(currentAvatar)
+                              : null),
                       child: selectedImage == null && currentAvatar == null
                           ? const Icon(Icons.camera_alt, color: _gold)
                           : null,
@@ -1255,9 +1253,8 @@ class _ChatPageState extends State<ChatPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed: saving
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(),
+                  onPressed:
+                      saving ? null : () => Navigator.of(dialogContext).pop(),
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
@@ -1287,11 +1284,11 @@ class _ChatPageState extends State<ChatPage> {
                             }
 
                             if (selectedImage != null) {
-                              final avatarPath = await _chatService
-                                  .uploadRoomAvatar(
-                                    roomId: _room.id,
-                                    file: selectedImage!,
-                                  );
+                              final avatarPath =
+                                  await _chatService.uploadRoomAvatar(
+                                roomId: _room.id,
+                                file: selectedImage!,
+                              );
                               await _chatService.updateRoomAvatar(
                                 roomId: _room.id,
                                 avatarUrl: avatarPath,
@@ -1337,9 +1334,8 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _showEditMyChatNameDialog() async {
     final userId = _chatService.currentUserId;
-    final currentName = userId == null
-        ? ''
-        : (_participantNames[userId] ?? '').trim();
+    final currentName =
+        userId == null ? '' : (_participantNames[userId] ?? '').trim();
     final nameController = TextEditingController(text: currentName);
 
     await showDialog(
@@ -1362,9 +1358,8 @@ class _ChatPageState extends State<ChatPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed: saving
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(),
+                  onPressed:
+                      saving ? null : () => Navigator.of(dialogContext).pop(),
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
@@ -1439,29 +1434,28 @@ class _ChatPageState extends State<ChatPage> {
       final nameMap = <String, String>{};
 
       for (final participant in participants) {
-        final userId = (participant['user_id'] ?? participant['id'] ?? '')
-            .toString();
+        final userId =
+            (participant['user_id'] ?? participant['id'] ?? '').toString();
         if (userId.isEmpty) continue;
         photoMap[userId] = _extractParticipantPhoto(participant);
-        nameMap[userId] =
-            (participant['display_name'] ??
-                    participant['full_name'] ??
-                    participant['name'] ??
-                    participant['username'] ??
-                    _extractNestedValue(participant, const [
-                      'profiles',
-                      'full_name',
-                    ]) ??
-                    _extractNestedValue(participant, const [
-                      'profile',
-                      'full_name',
-                    ]) ??
-                    _extractNestedValue(participant, const [
-                      'user',
-                      'full_name',
-                    ]) ??
-                    'Sem nome')
-                .toString();
+        nameMap[userId] = (participant['display_name'] ??
+                participant['full_name'] ??
+                participant['name'] ??
+                participant['username'] ??
+                _extractNestedValue(participant, const [
+                  'profiles',
+                  'full_name',
+                ]) ??
+                _extractNestedValue(participant, const [
+                  'profile',
+                  'full_name',
+                ]) ??
+                _extractNestedValue(participant, const [
+                  'user',
+                  'full_name',
+                ]) ??
+                'Sem nome')
+            .toString();
       }
 
       if (!mounted) return;
@@ -1528,32 +1522,30 @@ class _ChatPageState extends State<ChatPage> {
                         separatorBuilder: (_, __) => const SizedBox(height: 10),
                         itemBuilder: (context, index) {
                           final participant = _participants[index];
-                          final userId =
-                              (participant['user_id'] ??
-                                      participant['id'] ??
-                                      '')
-                                  .toString();
-                          final fullName =
-                              (participant['display_name'] ??
-                                      participant['full_name'] ??
-                                      participant['name'] ??
-                                      participant['username'] ??
-                                      _extractNestedValue(participant, const [
-                                        'profiles',
-                                        'full_name',
-                                      ]) ??
-                                      _extractNestedValue(participant, const [
-                                        'profile',
-                                        'full_name',
-                                      ]) ??
-                                      _extractNestedValue(participant, const [
-                                        'user',
-                                        'full_name',
-                                      ]) ??
-                                      'Sem nome')
-                                  .toString();
-                          final role = (participant['role'] ?? 'member')
+                          final userId = (participant['user_id'] ??
+                                  participant['id'] ??
+                                  '')
                               .toString();
+                          final fullName = (participant['display_name'] ??
+                                  participant['full_name'] ??
+                                  participant['name'] ??
+                                  participant['username'] ??
+                                  _extractNestedValue(participant, const [
+                                    'profiles',
+                                    'full_name',
+                                  ]) ??
+                                  _extractNestedValue(participant, const [
+                                    'profile',
+                                    'full_name',
+                                  ]) ??
+                                  _extractNestedValue(participant, const [
+                                    'user',
+                                    'full_name',
+                                  ]) ??
+                                  'Sem nome')
+                              .toString();
+                          final role =
+                              (participant['role'] ?? 'member').toString();
                           final roleLabel = _translatedParticipantRole(role);
                           final phone = (participant['phone'] ?? '').toString();
                           final isMuted =
@@ -1564,9 +1556,8 @@ class _ChatPageState extends State<ChatPage> {
                           final isCreator = userId == _room.createdBy;
                           final isSelf = userId == _chatService.currentUserId;
 
-                          String subtitle = phone.isNotEmpty
-                              ? '$phone • $role'
-                              : role;
+                          String subtitle =
+                              phone.isNotEmpty ? '$phone • $role' : role;
                           if (isMuted) subtitle += ' • silenciado';
                           if (isBanned) subtitle += ' • banido';
 
@@ -1620,52 +1611,52 @@ class _ChatPageState extends State<ChatPage> {
                                               if (value == 'promote_admin') {
                                                 await _chatService
                                                     .setParticipantRole(
-                                                      roomId: _room.id,
-                                                      userId: userId,
-                                                      role: 'admin',
-                                                    );
+                                                  roomId: _room.id,
+                                                  userId: userId,
+                                                  role: 'admin',
+                                                );
                                               } else if (value ==
                                                   'remove_admin') {
                                                 await _chatService
                                                     .setParticipantRole(
-                                                      roomId: _room.id,
-                                                      userId: userId,
-                                                      role: 'member',
-                                                    );
+                                                  roomId: _room.id,
+                                                  userId: userId,
+                                                  role: 'member',
+                                                );
                                               } else if (value == 'mute') {
                                                 await _chatService
                                                     .setParticipantMuted(
-                                                      roomId: _room.id,
-                                                      userId: userId,
-                                                      muted: true,
-                                                    );
+                                                  roomId: _room.id,
+                                                  userId: userId,
+                                                  muted: true,
+                                                );
                                               } else if (value == 'unmute') {
                                                 await _chatService
                                                     .setParticipantMuted(
-                                                      roomId: _room.id,
-                                                      userId: userId,
-                                                      muted: false,
-                                                    );
+                                                  roomId: _room.id,
+                                                  userId: userId,
+                                                  muted: false,
+                                                );
                                               } else if (value == 'ban') {
                                                 await _chatService
                                                     .setParticipantBanned(
-                                                      roomId: _room.id,
-                                                      userId: userId,
-                                                      banned: true,
-                                                    );
+                                                  roomId: _room.id,
+                                                  userId: userId,
+                                                  banned: true,
+                                                );
                                               } else if (value == 'unban') {
                                                 await _chatService
                                                     .setParticipantBanned(
-                                                      roomId: _room.id,
-                                                      userId: userId,
-                                                      banned: false,
-                                                    );
+                                                  roomId: _room.id,
+                                                  userId: userId,
+                                                  banned: false,
+                                                );
                                               } else if (value == 'remove') {
                                                 await _chatService
                                                     .removeParticipantFromRoom(
-                                                      roomId: _room.id,
-                                                      userId: userId,
-                                                    );
+                                                  roomId: _room.id,
+                                                  userId: userId,
+                                                );
                                               }
 
                                               await refreshDialog(
@@ -1726,8 +1717,9 @@ class _ChatPageState extends State<ChatPage> {
                                     ],
                                   )
                                 : role == 'admin'
-                                ? const Icon(Icons.shield, color: Colors.blue)
-                                : null,
+                                    ? const Icon(Icons.shield,
+                                        color: Colors.blue)
+                                    : null,
                           );
                         },
                       ),
@@ -1841,13 +1833,12 @@ class _ChatPageState extends State<ChatPage> {
                                       const SizedBox(height: 10),
                                   itemBuilder: (context, index) {
                                     final user = users[index];
-                                    final userId = (user['id'] ?? '')
+                                    final userId =
+                                        (user['id'] ?? '').toString();
+                                    final fullName = (user['display_name'] ??
+                                            user['full_name'] ??
+                                            'Sem nome')
                                         .toString();
-                                    final fullName =
-                                        (user['display_name'] ??
-                                                user['full_name'] ??
-                                                'Sem nome')
-                                            .toString();
                                     const phone = '';
                                     const userType = '';
                                     final isSelected = selectedUserIds.contains(
@@ -1933,9 +1924,8 @@ class _ChatPageState extends State<ChatPage> {
                                                 child: Text(
                                                   initial,
                                                   style: TextStyle(
-                                                    fontSize: isMobile
-                                                        ? 22
-                                                        : 24,
+                                                    fontSize:
+                                                        isMobile ? 22 : 24,
                                                     fontWeight: FontWeight.w600,
                                                     color: _gold,
                                                   ),
@@ -1957,9 +1947,8 @@ class _ChatPageState extends State<ChatPage> {
                                                       overflow:
                                                           TextOverflow.ellipsis,
                                                       style: TextStyle(
-                                                        fontSize: isMobile
-                                                            ? 15
-                                                            : 16,
+                                                        fontSize:
+                                                            isMobile ? 15 : 16,
                                                         fontWeight:
                                                             FontWeight.w700,
                                                         color: const Color(
@@ -2043,10 +2032,9 @@ class _ChatPageState extends State<ChatPage> {
                                         try {
                                           await _chatService
                                               .addParticipantsToRoom(
-                                                roomId: _room.id,
-                                                userIds: selectedUserIds
-                                                    .toList(),
-                                              );
+                                            roomId: _room.id,
+                                            userIds: selectedUserIds.toList(),
+                                          );
 
                                           if (!mounted) return;
                                           Navigator.of(dialogContext).pop();
@@ -2839,9 +2827,8 @@ class _ChatPageState extends State<ChatPage> {
   void _insertQuickText(String value) {
     final selection = _controller.selection;
     final currentText = _controller.text;
-    final safeStart = selection.start < 0
-        ? currentText.length
-        : selection.start;
+    final safeStart =
+        selection.start < 0 ? currentText.length : selection.start;
     final safeEnd = selection.end < 0 ? currentText.length : selection.end;
     final nextText = currentText.replaceRange(safeStart, safeEnd, value);
     final nextOffset = safeStart + value.length;
@@ -3073,9 +3060,8 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _createVideoSticker(ImageSource source) async {
     final picked = await _imagePicker.pickVideo(
       source: source,
-      maxDuration: source == ImageSource.camera
-          ? const Duration(seconds: 8)
-          : null,
+      maxDuration:
+          source == ImageSource.camera ? const Duration(seconds: 8) : null,
     );
     if (picked == null || !mounted) return;
 
@@ -3097,26 +3083,40 @@ class _ChatPageState extends State<ChatPage> {
 
     File? compressedFile;
     try {
-      if (VideoCompress.isCompressing) {
-        await VideoCompress.cancelCompression();
-        VideoCompress.dispose();
+      if (Platform.isIOS) {
+        final outputPath = await OlympusVideoSticker.prepare(
+          path: originalFile.path,
+          startSeconds: selection.startSeconds,
+          durationSeconds: selection.durationSeconds,
+        );
+        compressedFile = File(outputPath);
+      } else {
+        if (VideoCompress.isCompressing) {
+          await VideoCompress.cancelCompression();
+          VideoCompress.dispose();
+        }
+        final compressed = await VideoCompress.compressVideo(
+          originalFile.path,
+          quality: VideoQuality.Res640x480Quality,
+          deleteOrigin: false,
+          startTime: selection.startSeconds,
+          duration: selection.durationSeconds,
+          includeAudio: false,
+          frameRate: 15,
+        );
+        compressedFile = compressed?.file;
       }
-      final compressed = await VideoCompress.compressVideo(
-        originalFile.path,
-        quality: VideoQuality.Res640x480Quality,
-        deleteOrigin: false,
-        startTime: selection.startSeconds,
-        duration: selection.durationSeconds,
-        includeAudio: false,
-        frameRate: 15,
-      );
-      compressedFile = compressed?.file;
       if (compressedFile == null) {
         throw Exception('Não foi possível preparar o vídeo sem áudio.');
       }
+      if (!await compressedFile.exists() ||
+          await compressedFile.length() <= 0) {
+        throw Exception('O vídeo preparado está vazio.');
+      }
 
       const preferredMaxBytes = 5 * 1024 * 1024;
-      if (await compressedFile.length() > preferredMaxBytes) {
+      if (!Platform.isIOS &&
+          await compressedFile.length() > preferredMaxBytes) {
         final reduced = await VideoCompress.compressVideo(
           compressedFile.path,
           quality: VideoQuality.LowQuality,
@@ -3146,7 +3146,12 @@ class _ChatPageState extends State<ChatPage> {
         SnackBar(content: Text('Erro ao criar figurinha de vídeo: $e')),
       );
     } finally {
-      VideoCompress.dispose();
+      if (!Platform.isIOS) VideoCompress.dispose();
+      if (Platform.isIOS &&
+          compressedFile != null &&
+          await compressedFile.exists()) {
+        await compressedFile.delete();
+      }
       if (mounted) setState(() => _sending = false);
     }
   }
@@ -3250,8 +3255,8 @@ class _ChatPageState extends State<ChatPage> {
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final vote = votes[index];
-                        final name = (vote['full_name'] ?? 'Sem nome')
-                            .toString();
+                        final name =
+                            (vote['full_name'] ?? 'Sem nome').toString();
                         final option = (vote['option_text'] ?? 'Opção removida')
                             .toString();
 
@@ -3348,8 +3353,8 @@ class _ChatPageState extends State<ChatPage> {
             ? rawPolls
             : rawPolls.where((poll) {
                 final questionMatches = poll.question.toLowerCase().contains(
-                  query,
-                );
+                      query,
+                    );
                 final optionMatches = poll.options.any(
                   (option) => option.text.toLowerCase().contains(query),
                 );
@@ -3535,8 +3540,8 @@ class _ChatPageState extends State<ChatPage> {
                           separatorBuilder: (_, __) => const SizedBox(width: 8),
                           itemBuilder: (context, index) {
                             final sticker = _savedStickers[index];
-                            final sourceUrl = (sticker['source_url'] ?? '')
-                                .toString();
+                            final sourceUrl =
+                                (sticker['source_url'] ?? '').toString();
                             final isVideo =
                                 sticker['sticker_type'] == 'video_sticker';
                             return InkWell(
@@ -3559,18 +3564,19 @@ class _ChatPageState extends State<ChatPage> {
                                         url: _resolveAvatarUrl(sourceUrl) ?? '',
                                       )
                                     : sourceUrl.startsWith('asset:')
-                                    ? Image.asset(
-                                        sourceUrl.substring('asset:'.length),
-                                        fit: BoxFit.contain,
-                                      )
-                                    : Image.network(
-                                        _resolveAvatarUrl(sourceUrl) ?? '',
-                                        fit: BoxFit.contain,
-                                        errorBuilder: (_, __, ___) =>
-                                            const Icon(
+                                        ? Image.asset(
+                                            sourceUrl
+                                                .substring('asset:'.length),
+                                            fit: BoxFit.contain,
+                                          )
+                                        : Image.network(
+                                            _resolveAvatarUrl(sourceUrl) ?? '',
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, __, ___) =>
+                                                const Icon(
                                               Icons.broken_image_rounded,
                                             ),
-                                      ),
+                                          ),
                               ),
                             );
                           },
@@ -3632,13 +3638,11 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildMessageBubble({required ChatMessage msg, required bool isMine}) {
-    final bubbleColor = isMine
-        ? const Color(0xFFD9FDD3)
-        : Colors.white.withValues(alpha: 0.94);
+    final bubbleColor =
+        isMine ? const Color(0xFFD9FDD3) : Colors.white.withValues(alpha: 0.94);
 
-    final bubbleBorderColor = isMine
-        ? const Color(0xFFB7EDB0)
-        : Colors.white.withValues(alpha: 0.40);
+    final bubbleBorderColor =
+        isMine ? const Color(0xFFB7EDB0) : Colors.white.withValues(alpha: 0.40);
 
     final senderDisplayName =
         _participantNames[msg.senderId] ?? msg.senderName?.trim() ?? '';
@@ -3665,9 +3669,8 @@ class _ChatPageState extends State<ChatPage> {
             bottomLeft: Radius.circular(isMine ? 18 : 6),
             bottomRight: Radius.circular(isMine ? 6 : 18),
           ),
-          border: isSticker
-              ? null
-              : Border.all(color: bubbleBorderColor, width: 1),
+          border:
+              isSticker ? null : Border.all(color: bubbleBorderColor, width: 1),
           boxShadow: isSticker
               ? const []
               : [
@@ -4022,8 +4025,8 @@ class _ChatPageState extends State<ChatPage> {
                     label: nextScale <= 0.95
                         ? 'Pequena'
                         : nextScale >= 1.18
-                        ? 'Grande'
-                        : 'Normal',
+                            ? 'Grande'
+                            : 'Normal',
                     onChanged: (value) {
                       setDialogState(() => nextScale = value);
                     },
@@ -4061,8 +4064,7 @@ class _ChatPageState extends State<ChatPage> {
     final isGroup = _room.type == 'group';
     final canManageRoom = isGroup && currentUserId == _room.createdBy;
     final isRoomAdmin = isGroup && _myRole == 'admin';
-    final canSend =
-        !_room.isLocked &&
+    final canSend = !_room.isLocked &&
         _room.allowMessages &&
         (!_room.adminOnly || isRoomAdmin);
     final groupPhotoUrl = _displayRoomPhotoUrl();
@@ -4380,8 +4382,7 @@ class _ChatPageState extends State<ChatPage> {
                       _lastStableMessages = incomingMessages;
                     }
 
-                    final messages =
-                        incomingMessages.isEmpty &&
+                    final messages = incomingMessages.isEmpty &&
                             _lastStableMessages.isNotEmpty
                         ? _lastStableMessages
                         : incomingMessages;
@@ -4400,22 +4401,17 @@ class _ChatPageState extends State<ChatPage> {
 
                     final visibleMessages = messagesWithLocalReactions
                         .where(
-                          (message) =>
-                              !_isPollNotificationMessage(message) &&
-                              !message.isPoll,
-                        )
+                      (message) =>
+                          !_isPollNotificationMessage(message) &&
+                          !message.isPoll,
+                    )
                         .where((message) {
-                          final query = _messageSearchQuery
-                              .trim()
-                              .toLowerCase();
-                          if (query.isEmpty) return true;
-                          final content = (message.content ?? '').toLowerCase();
-                          final sender = (message.senderName ?? '')
-                              .toLowerCase();
-                          return content.contains(query) ||
-                              sender.contains(query);
-                        })
-                        .toList();
+                      final query = _messageSearchQuery.trim().toLowerCase();
+                      if (query.isEmpty) return true;
+                      final content = (message.content ?? '').toLowerCase();
+                      final sender = (message.senderName ?? '').toLowerCase();
+                      return content.contains(query) || sender.contains(query);
+                    }).toList();
 
                     if (messages.isNotEmpty) {
                       final lastMessageId = messages.last.id;
@@ -4514,6 +4510,11 @@ class _VideoStickerTrimDialog extends StatefulWidget {
 }
 
 class _VideoStickerTrimDialogState extends State<_VideoStickerTrimDialog> {
+  static const Color _navy = Color(0xFF0E2A57);
+  static const Color _navyDark = Color(0xFF091428);
+  static const Color _gold = Color(0xFFD4B06A);
+  static const Color _goldSoft = Color(0xFFE8D19A);
+
   late final VideoPlayerController _controller;
   RangeValues _range = const RangeValues(0, 1);
   double _totalSeconds = 0;
@@ -4599,13 +4600,29 @@ class _VideoStickerTrimDialogState extends State<_VideoStickerTrimDialog> {
   void _confirm() {
     final start = _range.start.round();
     final duration = (_range.end - _range.start).round().clamp(
-      1,
-      widget.maxDuration.inSeconds,
-    );
+          1,
+          widget.maxDuration.inSeconds,
+        );
     Navigator.pop(
       context,
       _VideoTrimSelection(startSeconds: start, durationSeconds: duration),
     );
+  }
+
+  Future<void> _togglePlayback() async {
+    if (!_controller.value.isInitialized) return;
+    if (_controller.value.isPlaying) {
+      await _controller.pause();
+    } else {
+      await _controller.play();
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _resumePlayback() async {
+    if (!_controller.value.isInitialized) return;
+    await _controller.play();
+    if (mounted) setState(() {});
   }
 
   @override
@@ -4617,82 +4634,398 @@ class _VideoStickerTrimDialogState extends State<_VideoStickerTrimDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Escolha o trecho da figurinha'),
-      content: SizedBox(
-        width: 360,
-        child: _failed
-            ? const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('Não foi possível abrir esse vídeo.'),
-              )
-            : !_controller.value.isInitialized
-            ? const SizedBox(
-                height: 280,
-                child: Center(child: CircularProgressIndicator()),
-              )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(18),
-                    child: SizedBox(
-                      width: 260,
-                      height: 260,
-                      child: FittedBox(
-                        fit: BoxFit.contain,
-                        child: SizedBox(
-                          width: _controller.value.size.width,
-                          height: _controller.value.size.height,
-                          child: VideoPlayer(_controller),
+    final ready = !_failed && _controller.value.isInitialized;
+    final selectedDuration = ready ? _range.end - _range.start : 0.0;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      child: Container(
+        width: 390,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height - 40,
+        ),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [_navy, _navyDark],
+          ),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: _gold.withValues(alpha: 0.72), width: 1.4),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x66000000),
+              blurRadius: 28,
+              offset: Offset(0, 14),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: _gold.withValues(alpha: 0.16),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _gold.withValues(alpha: 0.55),
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.content_cut_rounded,
+                        color: _goldSoft,
+                        size: 23,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'CRIAR FIGURINHA',
+                            style: TextStyle(
+                              color: _goldSoft,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Escolha o melhor trecho',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 19,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Fechar',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                if (_failed)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Column(
+                      children: [
+                        Icon(
+                          Icons.video_file_outlined,
+                          color: _goldSoft,
+                          size: 40,
+                        ),
+                        SizedBox(height: 10),
+                        Text(
+                          'Não foi possível abrir esse vídeo.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (!ready)
+                  const SizedBox(
+                    height: 280,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(color: _gold),
+                        SizedBox(height: 14),
+                        Text(
+                          'Preparando seu vídeo...',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  )
+                else ...[
+                  Container(
+                    width: 270,
+                    height: 270,
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(
+                        color: _gold.withValues(alpha: 0.72),
+                        width: 1.4,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          FittedBox(
+                            fit: BoxFit.contain,
+                            child: SizedBox(
+                              width: _controller.value.size.width,
+                              height: _controller.value.size.height,
+                              child: VideoPlayer(_controller),
+                            ),
+                          ),
+                          Center(
+                            child: GestureDetector(
+                              onTap: _togglePlayback,
+                              child: Container(
+                                width: 54,
+                                height: 54,
+                                decoration: BoxDecoration(
+                                  color: _navyDark.withValues(alpha: 0.72),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: _goldSoft),
+                                ),
+                                child: Icon(
+                                  _controller.value.isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  color: Colors.white,
+                                  size: 32,
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 10,
+                            right: 10,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _navyDark.withValues(alpha: 0.86),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: _gold.withValues(alpha: 0.65),
+                                ),
+                              ),
+                              child: Text(
+                                '${selectedDuration.toStringAsFixed(1)} s',
+                                style: const TextStyle(
+                                  color: _goldSoft,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: _gold,
+                      inactiveTrackColor: Colors.white24,
+                      rangeThumbShape: const RoundRangeSliderThumbShape(
+                        enabledThumbRadius: 10,
+                        elevation: 3,
+                      ),
+                      thumbColor: _goldSoft,
+                      overlayColor: _gold.withValues(alpha: 0.18),
+                      valueIndicatorColor: _gold,
+                      valueIndicatorTextStyle: const TextStyle(
+                        color: _navyDark,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    child: RangeSlider(
+                      values: _range,
+                      min: 0,
+                      max: _totalSeconds,
+                      labels: RangeLabels(
+                        _formatSeconds(_range.start),
+                        _formatSeconds(_range.end),
+                      ),
+                      onChanged: _updateRange,
+                      onChangeEnd: (_) => _resumePlayback(),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _OlympusTrimTimeCard(
+                          label: 'INÍCIO',
+                          value: _formatSeconds(_range.start),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _OlympusTrimTimeCard(
+                          label: 'DURAÇÃO',
+                          value: '${selectedDuration.toStringAsFixed(1)} s',
+                          highlighted: true,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _OlympusTrimTimeCard(
+                          label: 'FIM',
+                          value: _formatSeconds(_range.end),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(
+                          Icons.volume_off_rounded,
+                          color: _goldSoft,
+                          size: 19,
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Até 8 segundos. A prévia repete o trecho e o áudio será removido.',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white38),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: const Text(
+                          'Cancelar',
+                          style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  RangeSlider(
-                    values: _range,
-                    min: 0,
-                    max: _totalSeconds,
-                    labels: RangeLabels(
-                      _formatSeconds(_range.start),
-                      _formatSeconds(_range.end),
-                    ),
-                    onChanged: _updateRange,
-                    onChangeEnd: (_) => _controller.play(),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Início ${_formatSeconds(_range.start)}'),
-                      Text(
-                        '${(_range.end - _range.start).toStringAsFixed(1)} s de 8 s',
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: FilledButton.icon(
+                        onPressed: ready ? _confirm : null,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _gold,
+                          foregroundColor: _navyDark,
+                          disabledBackgroundColor: Colors.white12,
+                          disabledForegroundColor: Colors.white38,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        icon: const Icon(Icons.auto_awesome_rounded, size: 20),
+                        label: const Text(
+                          'Criar e enviar',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
                       ),
-                      Text('Fim ${_formatSeconds(_range.end)}'),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'A prévia repete somente o trecho selecionado. O áudio será removido.',
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar'),
+    );
+  }
+}
+
+class _OlympusTrimTimeCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool highlighted;
+
+  const _OlympusTrimTimeCard({
+    required this.label,
+    required this.value,
+    this.highlighted = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const gold = Color(0xFFD4B06A);
+    const goldSoft = Color(0xFFE8D19A);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: BoxDecoration(
+        color: highlighted
+            ? gold.withValues(alpha: 0.16)
+            : Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: highlighted ? gold.withValues(alpha: 0.72) : Colors.white12,
         ),
-        FilledButton.icon(
-          onPressed: _failed || !_controller.value.isInitialized
-              ? null
-              : _confirm,
-          icon: const Icon(Icons.content_cut_rounded),
-          label: const Text('Criar e enviar'),
-        ),
-      ],
+      ),
+      child: Column(
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: highlighted ? goldSoft : Colors.white54,
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: TextStyle(
+              color: highlighted ? goldSoft : Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -4832,8 +5165,8 @@ class _SavedVideoStickerThumbnailState
       await controller.setVolume(0);
       final seekPosition =
           controller.value.duration > const Duration(milliseconds: 120)
-          ? const Duration(milliseconds: 120)
-          : Duration.zero;
+              ? const Duration(milliseconds: 120)
+              : Duration.zero;
       await controller.seekTo(seekPosition);
       await controller.pause();
       if (mounted) setState(() {});

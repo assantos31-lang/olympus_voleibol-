@@ -804,6 +804,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.0"
+  olympus_video_sticker:
+    dependency: "direct main"
+    description:
+      path: "plugins/olympus_video_sticker"
+      relative: true
+    source: path
+    version: "1.0.0"
   package_info_plus:
     dependency: "direct main"
     description:
