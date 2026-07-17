@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/chat_message.dart';
 import '../models/chat_poll.dart';
@@ -27,6 +28,8 @@ class ChatRoomListItem {
 
 class ChatService {
   final SupabaseClient supabase = Supabase.instance.client;
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
 
   String? get currentUserId => supabase.auth.currentUser?.id;
 
@@ -36,6 +39,22 @@ class ChatService {
       hash = ((hash * 31) + unit) & 0x7fffffff;
     }
     return 100000 + (hash % 800000);
+  }
+
+  Future<void> dismissRoomNotification(String roomId) async {
+    final cleanRoomId = roomId.trim();
+    if (cleanRoomId.isEmpty) return;
+
+    final tag = 'chat_$cleanRoomId';
+    final notificationId = _stableNotificationId(tag);
+    try {
+      await _localNotifications.cancel(notificationId, tag: tag);
+      await _localNotifications.cancel(notificationId);
+    } catch (error) {
+      debugPrint(
+        '[ChatService] Não foi possível remover a notificação: $error',
+      );
+    }
   }
 
   Future<List<ChatRoom>> getMyRooms() async {
@@ -66,6 +85,55 @@ class ChatService {
   }
 
   Future<List<ChatRoomListItem>> getMyRoomListItems() async {
+    if (currentUserId == null) return [];
+
+    final response = await supabase.rpc('get_my_chat_room_list_v1');
+    final rows = (response as List)
+        .map<Map<String, dynamic>>(
+          (row) => Map<String, dynamic>.from(row as Map),
+        )
+        .toList();
+
+    return rows.map((row) {
+      final lastMessage = row['last_message_id'] == null
+          ? null
+          : <String, dynamic>{
+              'id': row['last_message_id'],
+              'sender_id': row['last_message_sender_id'],
+              'content': row['last_message_content'],
+              'message_type': row['last_message_type'],
+              'image_url': row['last_message_image_url'],
+              'media_deleted_at': row['last_message_media_deleted_at'],
+              'created_at': row['last_message_created_at'],
+              'deleted_at': row['last_message_deleted_at'],
+            };
+
+      return ChatRoomListItem(
+        room: ChatRoom.fromMap({
+          'id': row['room_id'],
+          'name': row['room_name'],
+          'type': row['room_type'],
+          'created_by': row['created_by'],
+          'is_locked': row['is_locked'],
+          'allow_messages': row['allow_messages'],
+          'admin_only': row['admin_only'],
+          'created_at': row['room_created_at'],
+          'avatar_url': row['room_avatar_url'],
+        }),
+        lastMessageText: _previewMessage(lastMessage),
+        lastMessageSenderName: row['last_message_sender_name']?.toString(),
+        lastMessageAt: row['last_message_created_at'] == null
+            ? null
+            : DateTime.parse(row['last_message_created_at'].toString()),
+        unreadCount: (row['unread_count'] as num?)?.toInt() ?? 0,
+        avatarUrl: row['display_avatar_url']?.toString(),
+      );
+    }).toList();
+  }
+
+  // Mantido temporariamente para facilitar rollback. Nao e chamado pela tela.
+  // ignore: unused_element
+  Future<List<ChatRoomListItem>> _getMyRoomListItemsLegacy() async {
     final userId = currentUserId;
     if (userId == null) return [];
 
@@ -308,6 +376,101 @@ class ChatService {
   Stream<List<ChatRoomListItem>> streamMyRoomListItems() {
     final controller = StreamController<List<ChatRoomListItem>>();
     RealtimeChannel? channel;
+    Timer? debounceTimer;
+    Timer? fallbackTimer;
+    var closed = false;
+    var loading = false;
+    var reloadQueued = false;
+
+    Future<void> emit() async {
+      if (closed) return;
+      if (loading) {
+        reloadQueued = true;
+        return;
+      }
+
+      loading = true;
+      try {
+        final items = await getMyRoomListItems();
+        if (!closed && !controller.isClosed) controller.add(items);
+      } catch (error, stackTrace) {
+        if (!closed && !controller.isClosed) {
+          controller.addError(error, stackTrace);
+        }
+      } finally {
+        loading = false;
+        if (reloadQueued && !closed) {
+          reloadQueued = false;
+          unawaited(emit());
+        }
+      }
+    }
+
+    void scheduleReload() {
+      if (closed) return;
+      debounceTimer?.cancel();
+      debounceTimer = Timer(const Duration(milliseconds: 350), emit);
+    }
+
+    controller.onListen = () {
+      unawaited(emit());
+
+      channel = supabase
+          .channel('chat_rooms_live_${currentUserId ?? 'anon'}')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_messages',
+            callback: (_) => scheduleReload(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_room_members',
+            callback: (_) => scheduleReload(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_rooms',
+            callback: (_) => scheduleReload(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_message_reads',
+            callback: (_) => scheduleReload(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_room_hidden_users',
+            callback: (_) => scheduleReload(),
+          )
+          .subscribe();
+
+      fallbackTimer = Timer.periodic(
+        const Duration(minutes: 1),
+        (_) => scheduleReload(),
+      );
+    };
+
+    controller.onCancel = () async {
+      closed = true;
+      debounceTimer?.cancel();
+      fallbackTimer?.cancel();
+      final liveChannel = channel;
+      if (liveChannel != null) await supabase.removeChannel(liveChannel);
+    };
+
+    return controller.stream;
+  }
+
+  // Mantido temporariamente para facilitar rollback. Nao e chamado pela tela.
+  // ignore: unused_element
+  Stream<List<ChatRoomListItem>> _streamMyRoomListItemsLegacy() {
+    final controller = StreamController<List<ChatRoomListItem>>();
+    RealtimeChannel? channel;
     Timer? fallbackTimer;
     var closed = false;
 
@@ -441,6 +604,20 @@ class ChatService {
   }
 
   Future<int> getTotalUnreadCount() async {
+    if (currentUserId == null) return 0;
+
+    try {
+      final response = await supabase.rpc('get_my_chat_unread_total_v1');
+      return (response as num?)?.toInt() ?? 0;
+    } catch (error) {
+      debugPrint('[ChatService] Erro ao buscar badge do chat: $error');
+      return 0;
+    }
+  }
+
+  // Mantido temporariamente para rollback. Nao e usado pelo aplicativo.
+  // ignore: unused_element
+  Future<int> _getTotalUnreadCountLegacy() async {
     final userId = currentUserId;
     if (userId == null) return 0;
 
@@ -928,6 +1105,80 @@ class ChatService {
   Stream<List<ChatMessage>> streamMessages(String roomId) {
     final controller = StreamController<List<ChatMessage>>();
     RealtimeChannel? channel;
+    Timer? debounceTimer;
+    var closed = false;
+    var loading = false;
+    var reloadQueued = false;
+
+    Future<void> emit() async {
+      if (closed || controller.isClosed) return;
+      if (loading) {
+        reloadQueued = true;
+        return;
+      }
+
+      loading = true;
+      try {
+        final messages = await _loadMessagesForRoom(roomId);
+        if (!closed && !controller.isClosed) controller.add(messages);
+      } catch (error, stackTrace) {
+        if (!closed && !controller.isClosed) {
+          controller.addError(error, stackTrace);
+        }
+      } finally {
+        loading = false;
+        if (reloadQueued && !closed) {
+          reloadQueued = false;
+          unawaited(emit());
+        }
+      }
+    }
+
+    void scheduleReload() {
+      if (closed) return;
+      debounceTimer?.cancel();
+      debounceTimer = Timer(const Duration(milliseconds: 250), emit);
+    }
+
+    controller.onListen = () {
+      unawaited(emit());
+      channel = supabase
+          .channel('chat_messages_live_$roomId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_messages',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'room_id',
+              value: roomId,
+            ),
+            callback: (_) => scheduleReload(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_message_reactions',
+            callback: (_) => scheduleReload(),
+          )
+          .subscribe();
+    };
+
+    controller.onCancel = () async {
+      closed = true;
+      debounceTimer?.cancel();
+      final liveChannel = channel;
+      if (liveChannel != null) await supabase.removeChannel(liveChannel);
+    };
+
+    return controller.stream;
+  }
+
+  // Mantido temporariamente para rollback. Nao e usado pelo aplicativo.
+  // ignore: unused_element
+  Stream<List<ChatMessage>> _streamMessagesLegacy(String roomId) {
+    final controller = StreamController<List<ChatMessage>>();
+    RealtimeChannel? channel;
 
     Future<void> emit() async {
       if (controller.isClosed) return;
@@ -979,9 +1230,10 @@ class ChatService {
         .from('chat_messages')
         .select()
         .eq('room_id', roomId)
-        .order('created_at');
+        .order('created_at', ascending: false)
+        .limit(150);
 
-    final rows = data.map<Map<String, dynamic>>((row) {
+    final rows = data.reversed.map<Map<String, dynamic>>((row) {
       return Map<String, dynamic>.from(row);
     }).toList();
 
@@ -990,12 +1242,13 @@ class ChatService {
         .where((id) => id.isNotEmpty)
         .toList();
 
-    final reactionByMessageId = <String, String>{};
+    final reactionCountsByMessageId = <String, Map<String, int>>{};
+    final myReactionByMessageId = <String, String>{};
     if (messageIds.isNotEmpty) {
       try {
         final reactions = await supabase
             .from('chat_message_reactions')
-            .select('message_id, emoji, created_at')
+            .select('message_id, user_id, emoji, created_at')
             .inFilter('message_id', messageIds)
             .order('created_at', ascending: false);
 
@@ -1003,10 +1256,15 @@ class ChatService {
           final reaction = Map<String, dynamic>.from(rawReaction);
           final messageId = (reaction['message_id'] ?? '').toString();
           final emoji = (reaction['emoji'] ?? '').toString().trim();
-          if (messageId.isNotEmpty &&
-              emoji.isNotEmpty &&
-              !reactionByMessageId.containsKey(messageId)) {
-            reactionByMessageId[messageId] = emoji;
+          if (messageId.isNotEmpty && emoji.isNotEmpty) {
+            final counts = reactionCountsByMessageId.putIfAbsent(
+              messageId,
+              () => <String, int>{},
+            );
+            counts[emoji] = (counts[emoji] ?? 0) + 1;
+            if ((reaction['user_id'] ?? '').toString() == currentUserId) {
+              myReactionByMessageId[messageId] = emoji;
+            }
           }
         }
       } catch (_) {
@@ -1018,7 +1276,10 @@ class ChatService {
     final senderIds = <String>{};
     for (final row in rows) {
       final messageId = (row['id'] ?? '').toString();
-      row['reaction_emoji'] = reactionByMessageId[messageId];
+      final counts = reactionCountsByMessageId[messageId] ?? const <String, int>{};
+      row['reaction_counts'] = counts;
+      row['reaction_emoji'] = counts.isEmpty ? null : counts.keys.first;
+      row['my_reaction_emoji'] = myReactionByMessageId[messageId];
       final message = ChatMessage.fromMap(row);
       messages.add(message);
       senderIds.add(message.senderId);
@@ -1045,7 +1306,7 @@ class ChatService {
     }).toList();
   }
 
-  Future<void> sendMessage({
+  Future<ChatMessage> sendMessage({
     required String roomId,
     required String text,
     String? replyToMessageId,
@@ -1056,7 +1317,9 @@ class ChatService {
     if (userId == null) throw Exception('Usuário não autenticado');
 
     final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty) {
+      throw ArgumentError.value(text, 'text', 'Mensagem vazia');
+    }
 
     final payload = <String, dynamic>{
       'room_id': roomId,
@@ -1070,7 +1333,8 @@ class ChatService {
       payload['reply_to_sender_name'] = (replyToSenderName ?? '').trim();
     }
 
-    await supabase.from('chat_messages').insert(payload);
+    final inserted =
+        await supabase.from('chat_messages').insert(payload).select().single();
     await unhideRoomForCurrentUser(roomId);
 
     unawaited(
@@ -1080,6 +1344,8 @@ class ChatService {
         content: trimmed,
       ),
     );
+
+    return ChatMessage.fromMap(Map<String, dynamic>.from(inserted));
   }
 
   Future<void> sendImageMessage({
@@ -1182,6 +1448,19 @@ class ChatService {
       'source_url': sourceUrl,
       'sticker_type': stickerType,
     }, onConflict: 'user_id,source_url');
+  }
+
+  Future<void> deleteSavedSticker(String stickerId) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+    final cleanId = stickerId.trim();
+    if (cleanId.isEmpty) throw Exception('Figurinha inválida');
+
+    await supabase
+        .from('user_saved_stickers')
+        .delete()
+        .eq('id', cleanId)
+        .eq('user_id', userId);
   }
 
   Future<void> _insertVideoStickerMessage({
@@ -1333,6 +1612,50 @@ class ChatService {
     }, onConflict: 'message_id,user_id');
   }
 
+  Future<List<Map<String, dynamic>>> getMessageReactionDetails(
+    String messageId,
+  ) async {
+    final rows = await supabase
+        .from('chat_message_reactions')
+        .select('user_id, emoji, created_at')
+        .eq('message_id', messageId)
+        .order('created_at');
+
+    final reactions = (rows as List)
+        .map<Map<String, dynamic>>(
+          (row) => Map<String, dynamic>.from(row as Map),
+        )
+        .toList();
+    final userIds = reactions
+        .map((reaction) => (reaction['user_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (userIds.isEmpty) return const [];
+
+    final profiles = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .inFilter('id', userIds);
+    final profilesById = <String, Map<String, dynamic>>{};
+    for (final rawProfile in profiles as List) {
+      final profile = Map<String, dynamic>.from(rawProfile as Map);
+      final id = (profile['id'] ?? '').toString();
+      if (id.isNotEmpty) profilesById[id] = profile;
+    }
+
+    return reactions.map((reaction) {
+      final userId = (reaction['user_id'] ?? '').toString();
+      final profile = profilesById[userId];
+      return <String, dynamic>{
+        ...reaction,
+        'full_name': (profile?['full_name'] ?? 'Usuário').toString(),
+        'avatar_url': profile?['avatar_url']?.toString(),
+      };
+    }).toList();
+  }
+
   Future<ChatRoom?> getRoomById(String roomId) async {
     final response = await supabase
         .from('chat_rooms')
@@ -1381,6 +1704,16 @@ class ChatService {
   }
 
   Future<void> markRoomMessagesAsRead(String roomId) async {
+    if (currentUserId == null) return;
+    await supabase.rpc(
+      'mark_my_chat_room_read_v1',
+      params: {'p_room_id': roomId},
+    );
+  }
+
+  // Mantido temporariamente para rollback. Nao e usado pelo aplicativo.
+  // ignore: unused_element
+  Future<void> _markRoomMessagesAsReadLegacy(String roomId) async {
     final userId = currentUserId;
     if (userId == null) return;
 
@@ -1618,6 +1951,16 @@ class ChatService {
       'last_seen': DateTime.now().toUtc().toIso8601String(),
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     });
+  }
+
+  Future<ChatRoom?> getFirstRoomWithPendingPoll() async {
+    if (currentUserId == null) return null;
+
+    final response = await supabase.rpc('get_my_first_pending_poll_room_v1');
+    final roomId = response?.toString().trim() ?? '';
+    if (roomId.isEmpty || roomId == 'null') return null;
+
+    return getRoomById(roomId);
   }
 
   Future<ChatPoll> createPoll({
@@ -1911,7 +2254,7 @@ class ChatService {
       disposed = true;
       fallbackTimer?.cancel();
       if (channel != null) {
-        await supabase.removeChannel(channel!);
+        await supabase.removeChannel(channel);
       }
     };
 
@@ -1963,7 +2306,7 @@ class ChatService {
       disposed = true;
       fallbackTimer?.cancel();
       if (channel != null) {
-        await supabase.removeChannel(channel!);
+        await supabase.removeChannel(channel);
       }
     };
 

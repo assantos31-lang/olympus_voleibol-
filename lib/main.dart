@@ -44,6 +44,8 @@ const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
 bool _handledInitialMessage = false;
 Map<String, dynamic>? _pendingNotificationData;
+String? _lastChatNotificationRoomId;
+DateTime? _lastChatNotificationNavigationAt;
 
 int _stableNotificationId(String value) {
   var hash = 0;
@@ -402,9 +404,24 @@ void _navigateFromNotificationData(Map<String, dynamic> data) {
   }
 
   if (type == 'message' || type == 'chat_message') {
-    navigatorKey.currentState?.pushNamed(
+    final cleanThreadId = threadId?.trim();
+    final now = DateTime.now();
+    final isDuplicateTap = cleanThreadId != null &&
+        cleanThreadId.isNotEmpty &&
+        _lastChatNotificationRoomId == cleanThreadId &&
+        _lastChatNotificationNavigationAt != null &&
+        now.difference(_lastChatNotificationNavigationAt!) <
+            const Duration(seconds: 2);
+
+    if (isDuplicateTap) return;
+
+    _lastChatNotificationRoomId = cleanThreadId;
+    _lastChatNotificationNavigationAt = now;
+
+    navigatorKey.currentState?.pushNamedAndRemoveUntil(
       '/chat-rooms',
-      arguments: {'roomId': threadId},
+      (route) => route.isFirst,
+      arguments: {'roomId': cleanThreadId},
     );
     return;
   }

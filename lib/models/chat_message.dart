@@ -13,6 +13,8 @@ class ChatMessage {
   final String? replyToText;
   final String? replyToSenderName;
   final String? reactionEmoji;
+  final Map<String, int> reactionCounts;
+  final String? myReactionEmoji;
   final DateTime createdAt;
   final DateTime? editedAt;
   final DateTime? deletedAt;
@@ -32,6 +34,8 @@ class ChatMessage {
     this.replyToText,
     this.replyToSenderName,
     this.reactionEmoji,
+    this.reactionCounts = const <String, int>{},
+    this.myReactionEmoji,
     required this.createdAt,
     this.editedAt,
     this.deletedAt,
@@ -57,6 +61,8 @@ class ChatMessage {
       replyToText: map['reply_to_text'] as String?,
       replyToSenderName: map['reply_to_sender_name'] as String?,
       reactionEmoji: map['reaction_emoji'] as String?,
+      reactionCounts: _parseReactionCounts(map['reaction_counts']),
+      myReactionEmoji: map['my_reaction_emoji'] as String?,
       createdAt: DateTime.parse(map['created_at'] as String),
       editedAt: map['edited_at'] == null
           ? null
@@ -71,6 +77,9 @@ class ChatMessage {
     String? senderName,
     String? reactionEmoji,
     bool clearReactionEmoji = false,
+    Map<String, int>? reactionCounts,
+    String? myReactionEmoji,
+    bool clearMyReactionEmoji = false,
   }) {
     return ChatMessage(
       id: id,
@@ -88,6 +97,10 @@ class ChatMessage {
       replyToSenderName: replyToSenderName,
       reactionEmoji:
           clearReactionEmoji ? null : reactionEmoji ?? this.reactionEmoji,
+      reactionCounts: reactionCounts ?? this.reactionCounts,
+      myReactionEmoji: clearMyReactionEmoji
+          ? null
+          : myReactionEmoji ?? this.myReactionEmoji,
       createdAt: createdAt,
       editedAt: editedAt,
       deletedAt: deletedAt,
@@ -112,4 +125,15 @@ class ChatMessage {
   bool get isVideoExpired => isVideo && !hasVideo;
 
   bool get isPoll => messageType == 'poll' && imageUrl != null;
+
+  static Map<String, int> _parseReactionCounts(dynamic raw) {
+    if (raw is! Map) return const <String, int>{};
+    final result = <String, int>{};
+    raw.forEach((key, value) {
+      final emoji = key.toString().trim();
+      final count = value is num ? value.toInt() : int.tryParse('$value') ?? 0;
+      if (emoji.isNotEmpty && count > 0) result[emoji] = count;
+    });
+    return result;
+  }
 }

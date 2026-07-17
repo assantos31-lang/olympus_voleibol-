@@ -18,12 +18,14 @@ class ChatRoomsPage extends StatefulWidget {
 class _ChatRoomsPageState extends State<ChatRoomsPage> {
   final ChatService _chatService = ChatService();
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   final ImagePicker _imagePicker = ImagePicker();
 
   late Future<List<ChatRoomListItem>> _futureRooms;
   late Stream<List<ChatRoomListItem>> _roomsStream;
   bool _isAdmin = false;
   String _searchQuery = '';
+  bool _searchExpanded = false;
   bool _openedInitialRoom = false;
   bool _openedPendingPollRoom = false;
   final Set<String> _pinnedRoomIds = <String>{};
@@ -48,6 +50,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
   void dispose() {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -123,9 +126,10 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              backgroundColor: const Color(0xFFF2EEF5),
+              backgroundColor: _navyDark,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(28),
+                side: BorderSide(color: _gold.withValues(alpha: 0.55)),
               ),
               titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
               contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
@@ -133,8 +137,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
               title: const Text(
                 'Nova conversa',
                 style: TextStyle(
+                  color: Colors.white,
                   fontSize: 19,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
               content: SizedBox(
@@ -191,12 +196,12 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                     borderRadius: BorderRadius.circular(18),
                                     color: isSelected
                                         ? _gold.withValues(alpha: 0.16)
-                                        : Colors.white.withValues(alpha: 0.75),
+                                        : Colors.white.withValues(alpha: 0.08),
                                     border: Border.all(
                                       color: isSelected
                                           ? _gold
                                           : Colors.black
-                                              .withValues(alpha: 0.08),
+                                              .withValues(alpha: 0.18),
                                       width: isSelected ? 1.6 : 1,
                                     ),
                                   ),
@@ -225,7 +230,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                                 style: const TextStyle(
                                                   fontSize: 17,
                                                   fontWeight: FontWeight.w600,
-                                                  color: Color(0xFF2F2A35),
+                                                  color: Colors.white,
                                                 ),
                                               ),
                                               if (subtitle.isNotEmpty) ...[
@@ -261,9 +266,17 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                 TextButton(
                   onPressed:
                       isSaving ? null : () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Cancelar'),
+                  child: const Text('Cancelar',
+                      style: TextStyle(color: Colors.white70)),
                 ),
                 ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _gold,
+                    foregroundColor: _navy,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
                   onPressed: isSaving || selectedUserId == null
                       ? null
                       : () async {
@@ -792,34 +805,202 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     await _savePinnedRooms();
   }
 
-  Future<void> _hideRoomForMe(ChatRoomListItem item) async {
-    final confirmed = await showDialog<bool>(
+  Future<void> _showRoomActions(ChatRoomListItem item) async {
+    final isPinned = _pinnedRoomIds.contains(item.room.id);
+    final action = await showModalBottomSheet<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        title: const Text('Apagar conversa'),
-        content: const Text(
-          'A conversa será apagada apenas para você. A outra pessoa continua '
-          'com a conversa normalmente. Se ela mandar uma nova mensagem, você '
-          'recebe a notificação e a conversa aparece de novo.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancelar'),
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+          decoration: BoxDecoration(
+            color: _navyDark,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: _gold.withValues(alpha: 0.5)),
+            boxShadow: const [
+              BoxShadow(color: Colors.black38, blurRadius: 24),
+            ],
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _gold,
-              foregroundColor: _navy,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(99),
+                ),
               ),
-            ),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Apagar para mim'),
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                tileColor: Colors.white.withValues(alpha: 0.06),
+                leading: Icon(
+                  isPinned
+                      ? Icons.push_pin_outlined
+                      : Icons.push_pin_rounded,
+                  color: _gold,
+                ),
+                title: Text(
+                  isPinned ? 'Desafixar conversa' : 'Fixar conversa',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                onTap: () => Navigator.pop(sheetContext, 'pin'),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                tileColor: Colors.redAccent.withValues(alpha: 0.10),
+                leading: const Icon(Icons.delete_outline_rounded,
+                    color: Colors.redAccent),
+                title: const Text(
+                  'Apagar conversa',
+                  style: TextStyle(
+                    color: Colors.redAccent,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                subtitle: const Text(
+                  'Remove somente para você',
+                  style: TextStyle(color: Colors.white60),
+                ),
+                onTap: () => Navigator.pop(sheetContext, 'hide'),
+              ),
+            ],
           ),
-        ],
+        ),
+      ),
+    );
+
+    if (action == 'pin') {
+      await _togglePinnedRoom(item);
+    } else if (action == 'hide') {
+      await _hideRoomForMe(item);
+    }
+  }
+
+  Future<void> _hideRoomForMe(ChatRoomListItem item) async {
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+          decoration: BoxDecoration(
+            color: _navyDark,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: _gold.withValues(alpha: 0.55)),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black45,
+                blurRadius: 28,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 18),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              Container(
+                width: 62,
+                height: 62,
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withValues(alpha: 0.13),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.redAccent.withValues(alpha: 0.45),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Colors.redAccent,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Apagar conversa?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Ela será removida somente para você. A outra pessoa continuará '
+                'com a conversa e, se enviar uma nova mensagem, o chat aparecerá novamente.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.68),
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.24),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(sheetContext, false),
+                      child: const Text('Cancelar'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _gold,
+                        foregroundColor: _navy,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(sheetContext, true),
+                      icon: const Icon(Icons.delete_outline_rounded, size: 19),
+                      label: const Text(
+                        'Apagar para mim',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
 
@@ -955,15 +1136,16 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
   Widget _buildSearchBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+      padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: _gold.withValues(alpha: 0.35), width: 1.1),
           color: Colors.white.withValues(alpha: 0.06),
         ),
         child: TextField(
           controller: _searchController,
+          focusNode: _searchFocusNode,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
             hintText: 'Pesquisar conversas',
@@ -980,9 +1162,10 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                   )
                 : null,
             border: InputBorder.none,
+            isDense: true,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 14,
-              vertical: 14,
+              vertical: 11,
             ),
           ),
         ),
@@ -1110,28 +1293,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                             const SizedBox(height: 30),
                         ],
                       ),
-                      PopupMenuButton<String>(
-                        onSelected: (value) async {
-                          if (value == 'pin') {
-                            await _togglePinnedRoom(item);
-                          } else if (value == 'hide') {
-                            await _hideRoomForMe(item);
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          PopupMenuItem<String>(
-                            value: 'pin',
-                            child: Text(
-                              isPinned
-                                  ? 'Desafixar conversa'
-                                  : 'Fixar conversa',
-                            ),
-                          ),
-                          const PopupMenuItem<String>(
-                            value: 'hide',
-                            child: Text('Apagar conversa'),
-                          ),
-                        ],
+                      IconButton(
+                        tooltip: 'Opções da conversa',
+                        onPressed: () => _showRoomActions(item),
                         icon: const Icon(
                           Icons.more_vert,
                           color: _navy,
@@ -1176,14 +1340,17 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
   Widget _buildContent(List<ChatRoomListItem> rooms) {
     final filteredRooms = _filterRooms(rooms);
+    final headerCount = _searchExpanded ? 1 : 0;
 
     return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 120),
-      itemCount: filteredRooms.isEmpty ? 2 : filteredRooms.length + 1,
+      itemCount: filteredRooms.isEmpty
+          ? headerCount + 1
+          : filteredRooms.length + headerCount,
       separatorBuilder: (_, __) => const SizedBox(height: 2),
       itemBuilder: (context, index) {
-        if (index == 0) {
+        if (_searchExpanded && index == 0) {
           return _buildSearchBar();
         }
 
@@ -1204,8 +1371,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
           );
         }
 
-        final item = filteredRooms[index - 1];
-        return _buildRoomTile(item, index - 1);
+        final roomIndex = index - headerCount;
+        final item = filteredRooms[roomIndex];
+        return _buildRoomTile(item, roomIndex);
       },
     );
   }
@@ -1276,6 +1444,29 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
           ),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: _searchExpanded ? 'Fechar pesquisa' : 'Pesquisar',
+            onPressed: () {
+              setState(() {
+                _searchExpanded = !_searchExpanded;
+                if (!_searchExpanded) _searchController.clear();
+              });
+              if (_searchExpanded) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _searchFocusNode.requestFocus();
+                });
+              } else {
+                _searchFocusNode.unfocus();
+              }
+            },
+            icon: Icon(
+              _searchExpanded ? Icons.close_rounded : Icons.search_rounded,
+              color: _gold,
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
       ),
       floatingActionButton: SafeArea(
         minimum: const EdgeInsets.only(bottom: 12),
