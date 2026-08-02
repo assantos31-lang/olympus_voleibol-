@@ -6,6 +6,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// Trabalha em paralelo com o campo user_type existente (retrocompatível).
 class RoleService {
   final SupabaseClient _supabase = Supabase.instance.client;
+  static const Duration _cacheDuration = Duration(minutes: 2);
+  static final Map<String, _RoleCacheEntry> _rolesCache = {};
+  static final Map<String, Future<List<String>>> _rolesInFlight = {};
 
   // ─── Papéis válidos ────────────────────────────────────────────────────────
 
@@ -28,7 +31,38 @@ class RoleService {
   // ─── Leitura ───────────────────────────────────────────────────────────────
 
   /// Retorna todos os papéis ativos de um usuário.
-  Future<List<String>> getUserRoles(String userId) async {
+  Future<List<String>> getUserRoles(
+    String userId, {
+    bool forceRefresh = false,
+  }) async {
+    final now = DateTime.now();
+    final cached = _rolesCache[userId];
+    if (!forceRefresh && cached != null && cached.expiresAt.isAfter(now)) {
+      return List<String>.from(cached.roles);
+    }
+
+    final pending = _rolesInFlight[userId];
+    if (!forceRefresh && pending != null) {
+      return List<String>.from(await pending);
+    }
+
+    final request = _fetchUserRoles(userId);
+    _rolesInFlight[userId] = request;
+    try {
+      final roles = await request;
+      _rolesCache[userId] = _RoleCacheEntry(
+        List<String>.unmodifiable(roles),
+        now.add(_cacheDuration),
+      );
+      return List<String>.from(roles);
+    } finally {
+      if (identical(_rolesInFlight[userId], request)) {
+        _rolesInFlight.remove(userId);
+      }
+    }
+  }
+
+  Future<List<String>> _fetchUserRoles(String userId) async {
     try {
       final response = await _supabase
           .from('user_roles')
@@ -93,6 +127,7 @@ class RoleService {
       },
       onConflict: 'user_id,role',
     );
+    invalidateUser(userId);
   }
 
   /// Remove (desativa) um papel do usuário.
@@ -114,6 +149,7 @@ class RoleService {
         })
         .eq('user_id', userId)
         .eq('role', role);
+    invalidateUser(userId);
   }
 
   /// Define os papéis de um usuário substituindo os anteriores.
@@ -157,6 +193,17 @@ class RoleService {
       'user_type': primaryRole,
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('id', userId);
+    invalidateUser(userId);
+  }
+
+  static void invalidateUser(String userId) {
+    _rolesCache.remove(userId);
+    _rolesInFlight.remove(userId);
+  }
+
+  static void clearCache() {
+    _rolesCache.clear();
+    _rolesInFlight.clear();
   }
 
   /// Verifica se um usuário possui determinado papel ativo.
@@ -226,4 +273,11 @@ class RoleService {
       return ['member'];
     }
   }
+}
+
+class _RoleCacheEntry {
+  const _RoleCacheEntry(this.roles, this.expiresAt);
+
+  final List<String> roles;
+  final DateTime expiresAt;
 }

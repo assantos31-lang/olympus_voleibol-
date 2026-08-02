@@ -168,6 +168,7 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
         return;
       }
 
+      final rolesFuture = _roleService.getUserRoles(user.id);
       final profile = await supabase
           .from('profiles')
           .select(
@@ -211,7 +212,7 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
       }
 
       // ── NOVO: carrega múltiplos papéis ──────────────────────────────────────
-      final roles = await _roleService.getUserRoles(user.id);
+      final roles = await rolesFuture;
 
       // Garante ao menos um papel (fallback para user_type original)
       final effectiveRoles = roles.isNotEmpty ? roles : [userType];

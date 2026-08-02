@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/permission_service.dart';
+import '../../widgets/event_address_link.dart';
 import 'coach_championship_scout_page.dart' as championship_scout;
 import 'coach_quick_athlete_evaluation_page.dart';
 import 'coach_training_plan_detail_page.dart';
@@ -647,12 +648,26 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
 
   String _formatarDataHora(Map<String, dynamic> evento) {
     final data = (evento['event_date'] ?? '').toString().trim();
-    final hora = (evento['event_time'] ?? '').toString().trim();
+    final hora = _formatarHora(evento['event_time']);
 
     if (data.isEmpty && hora.isEmpty) return 'Sem data definida';
     if (data.isEmpty) return hora;
     if (hora.isEmpty) return data;
     return '$data • $hora';
+  }
+
+  String _formatarHora(dynamic rawValue) {
+    final value = (rawValue ?? '').toString().trim();
+    if (value.isEmpty) return '';
+    final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(value);
+    if (match == null) return value;
+    final hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2)!);
+    if (hour == null || minute == null || hour > 23 || minute > 59) {
+      return value;
+    }
+    return '${hour.toString().padLeft(2, '0')}:'
+        '${minute.toString().padLeft(2, '0')}';
   }
 
   String _formatarEndereco(Map<String, dynamic> evento) {
@@ -2631,6 +2646,234 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
     );
   }
 
+  Future<void> _mostrarConfirmacoesTreino(
+    Map<String, dynamic> treino,
+  ) async {
+    final eventId = (treino['id'] ?? '').toString().trim();
+    if (eventId.isEmpty) {
+      _showError('Não foi possível identificar este treino.');
+      return;
+    }
+
+    var loadingVisible = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => const Center(
+        child: CircularProgressIndicator(color: olympusGold),
+      ),
+    );
+
+    try {
+      final response = await _supabase.rpc(
+        'get_agenda_event_convocados',
+        params: {'p_event_id': eventId},
+      );
+      final participantes = (response as List<dynamic>)
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .where((participante) {
+        final tipo =
+            (participante['user_type'] ?? '').toString().trim().toLowerCase();
+        return tipo == 'athlete' || tipo == 'atleta';
+      }).toList()
+        ..sort((a, b) {
+          const ordem = {'accepted': 0, 'pending': 1, 'rejected': 2};
+          final statusA = _normalizarStatusConvocacao(a['status']);
+          final statusB = _normalizarStatusConvocacao(b['status']);
+          final porStatus = (ordem[statusA] ?? 1).compareTo(
+            ordem[statusB] ?? 1,
+          );
+          if (porStatus != 0) return porStatus;
+          return (a['full_name'] ?? '').toString().toLowerCase().compareTo(
+                (b['full_name'] ?? '').toString().toLowerCase(),
+              );
+        });
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      loadingVisible = false;
+
+      final aceitaram = participantes
+          .where(
+            (participante) =>
+                _normalizarStatusConvocacao(participante['status']) ==
+                'accepted',
+          )
+          .length;
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            constraints: BoxConstraints(
+              maxWidth: 520,
+              maxHeight: MediaQuery.of(dialogContext).size.height * 0.75,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.people_outline_rounded,
+                      color: olympusGold,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Confirmações: ${(treino['event_name'] ?? 'Treino').toString()}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: olympusBlue,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Text(
+                            '$aceitaram aceitaram de ${participantes.length} atletas',
+                            style: const TextStyle(
+                              color: olympusMuted,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Fechar',
+                      onPressed: () => Navigator.pop(dialogContext),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                const Divider(height: 28),
+                if (participantes.isEmpty)
+                  const Flexible(
+                    child: Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 32),
+                        child: Text(
+                          'Nenhum atleta convocado para este treino.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: olympusMuted),
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: participantes.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final participante = participantes[index];
+                        final status = _normalizarStatusConvocacao(
+                          participante['status'],
+                        );
+                        final aceitou = status == 'accepted';
+                        final recusou = status == 'rejected';
+                        final cor = aceitou
+                            ? olympusSuccess
+                            : recusou
+                                ? olympusDanger
+                                : olympusWarning;
+                        final rotulo = aceitou
+                            ? 'Aceitou'
+                            : recusou
+                                ? 'Recusou'
+                                : 'Pendente';
+                        final justificativa =
+                            (participante['justification'] ?? '')
+                                .toString()
+                                .trim();
+
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: cor.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: cor.withValues(alpha: 0.28),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    aceitou
+                                        ? Icons.check_circle_rounded
+                                        : recusou
+                                            ? Icons.cancel_rounded
+                                            : Icons.schedule_rounded,
+                                    color: cor,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      (participante['full_name'] ?? 'Sem nome')
+                                          .toString(),
+                                      style: const TextStyle(
+                                        color: olympusText,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    rotulo,
+                                    style: TextStyle(
+                                      color: cor,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (recusou && justificativa.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Justificativa: $justificativa',
+                                  style: const TextStyle(
+                                    color: olympusDanger,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      if (loadingVisible) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      _showError('Erro ao carregar confirmações: $e');
+    }
+  }
+
   Widget _buildTreinoCard(Map<String, dynamic> treino) {
     final isMobile = _isMobile(context);
     final tipoEvento = _normalizarTipoEvento(
@@ -2708,6 +2951,34 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                       ],
                     ),
                   ),
+                  const Spacer(),
+                  PopupMenuButton<String>(
+                    tooltip: 'Opções do treino',
+                    icon: const Icon(
+                      Icons.more_vert_rounded,
+                      color: olympusBlue,
+                    ),
+                    onSelected: (value) {
+                      if (value == 'confirmacoes') {
+                        _mostrarConfirmacoesTreino(treino);
+                      }
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem<String>(
+                        value: 'confirmacoes',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.how_to_reg_outlined,
+                              color: olympusBlue,
+                            ),
+                            SizedBox(width: 10),
+                            Text('Ver confirmações'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -2768,8 +3039,12 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
               ),
               if (endereco.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text(
-                  endereco,
+                EventAddressLink(
+                  event: treino,
+                  address: endereco,
+                  iconColor: olympusSubtle,
+                  iconSize: 15,
+                  maxLines: 2,
                   style: TextStyle(
                     color: olympusSubtle,
                     fontSize: isMobile ? 12 : 13,

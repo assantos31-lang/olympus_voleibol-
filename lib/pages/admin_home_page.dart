@@ -41,8 +41,10 @@ class _AdminHomePageState extends State<AdminHomePage>
   RealtimeChannel? _messagesRealtimeChannel;
   RealtimeChannel? _eventsRealtimeChannel;
   Timer? _adminBadgesFallbackTimer;
+  StreamSubscription<int>? _chatUnreadSubscription;
   int unreadMessagesCount = 0;
   int chatUnreadCount = 0;
+  bool _refreshingRealtimeBadges = false;
 
   @override
   void initState() {
@@ -51,6 +53,20 @@ class _AdminHomePageState extends State<AdminHomePage>
     _refreshRealtimeBadges();
     _loadAdminPermissions();
     _setupRealtimeListeners();
+    _listenChatUnreadCount();
+  }
+
+  void _listenChatUnreadCount() {
+    _chatUnreadSubscription?.cancel();
+    _chatUnreadSubscription = _chatService.streamTotalUnreadCount().listen(
+      (total) {
+        if (!mounted || total == chatUnreadCount) return;
+        setState(() => chatUnreadCount = total);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('Erro ao atualizar badge do chat: $error');
+      },
+    );
   }
 
   Future<void> _loadAdminPermissions() async {
@@ -65,19 +81,30 @@ class _AdminHomePageState extends State<AdminHomePage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _startAdminFallbackTimer();
       _refreshRealtimeBadges();
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _adminBadgesFallbackTimer?.cancel();
+      _adminBadgesFallbackTimer = null;
     }
   }
 
   Future<void> _refreshRealtimeBadges() async {
-    if (!mounted) return;
+    if (!mounted || _refreshingRealtimeBadges) return;
+    _refreshingRealtimeBadges = true;
 
-    await Future.wait([
-      _fetchMonthBirthdays(),
-      _fetchPendingFinancialReceiptsCount(),
-      _fetchUnreadMessagesCount(),
-      _fetchChatUnreadCount(),
-    ]);
+    try {
+      await Future.wait([
+        _fetchMonthBirthdays(),
+        _fetchPendingFinancialReceiptsCount(),
+        _fetchUnreadMessagesCount(),
+        _fetchChatUnreadCount(),
+      ]);
+    } finally {
+      _refreshingRealtimeBadges = false;
+    }
   }
 
   void _setupRealtimeListeners() {
@@ -86,8 +113,12 @@ class _AdminHomePageState extends State<AdminHomePage>
     _listenForAdminMessages();
     _listenForEvents();
 
+    _startAdminFallbackTimer();
+  }
+
+  void _startAdminFallbackTimer() {
     _adminBadgesFallbackTimer ??= Timer.periodic(
-      const Duration(seconds: 10),
+      const Duration(seconds: 60),
       (_) => _refreshRealtimeBadges(),
     );
   }
@@ -96,6 +127,7 @@ class _AdminHomePageState extends State<AdminHomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _adminBadgesFallbackTimer?.cancel();
+    _chatUnreadSubscription?.cancel();
     if (_financialReceiptsChannel != null) {
       supabase.removeChannel(_financialReceiptsChannel!);
     }

@@ -24,8 +24,8 @@ class AthleteCoachEvaluationPage extends StatefulWidget {
       _AthleteCoachEvaluationPageState();
 }
 
-class _AthleteCoachEvaluationPageState
-    extends State<AthleteCoachEvaluationPage> {
+class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
+    with WidgetsBindingObserver {
   static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusBg = Color(0xFFF4F7FB);
@@ -62,6 +62,7 @@ class _AthleteCoachEvaluationPageState
   List<Map<String, dynamic>> _events = [];
   List<Map<String, dynamic>> _coaches = [];
   List<Map<String, dynamic>> _monthlyCoaches = [];
+  RealtimeChannel? _settingsChannel;
 
   String _selectedEventId = '';
   String _selectedCoachId = '';
@@ -87,11 +88,17 @@ class _AthleteCoachEvaluationPageState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadInitial();
+    _setupSettingsRealtime();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    if (_settingsChannel != null) {
+      Supabase.instance.client.removeChannel(_settingsChannel!);
+    }
     _positiveController.dispose();
     _improvementController.dispose();
     _commentController.dispose();
@@ -103,6 +110,65 @@ class _AthleteCoachEvaluationPageState
   }
 
   String _asString(dynamic value) => (value ?? '').toString().trim();
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshMonthlySettings();
+    }
+  }
+
+  void _setupSettingsRealtime() {
+    final userId = Supabase.instance.client.auth.currentUser?.id ?? 'athlete';
+    _settingsChannel = Supabase.instance.client
+        .channel('coach-evaluation-settings-$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'app_settings',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'key',
+            value: CoachEvaluationService.settingKey,
+          ),
+          callback: (_) => _refreshMonthlySettings(),
+        )
+        .subscribe();
+  }
+
+  Future<void> _refreshMonthlySettings() async {
+    try {
+      final results = await Future.wait<dynamic>([
+        _service.isMonthlyEvaluationEnabled(),
+        _service.loadMonthlyEnabledCoaches(),
+      ]);
+      if (!mounted) return;
+
+      final enabled = results[0] == true;
+      final coaches = List<Map<String, dynamic>>.from(results[1] as List);
+      final availableIds = coaches
+          .map((coach) => _asString(coach['id']))
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      final nextSelected = availableIds.contains(_selectedMonthlyCoachId)
+          ? _selectedMonthlyCoachId
+          : coaches.isNotEmpty
+              ? _asString(coaches.first['id'])
+              : '';
+
+      setState(() {
+        _monthlyEnabled = enabled;
+        _monthlyCoaches = coaches;
+        _selectedMonthlyCoachId = nextSelected;
+        if (!enabled && _mode == _CoachEvaluationMode.monthly) {
+          _mode = _CoachEvaluationMode.menu;
+        }
+      });
+    } catch (_) {
+      // O botão Atualizar continua disponível como fallback caso o Realtime
+      // da tabela app_settings não esteja habilitado no Supabase.
+    }
+  }
 
   Future<void> _loadInitial() async {
     setState(() {
@@ -122,9 +188,7 @@ class _AthleteCoachEvaluationPageState
         year: _selectedYear,
       );
 
-      final monthlyCoaches = await _service.loadMonthlyEnabledCoaches(
-        athleteId: user.id,
-      );
+      final monthlyCoaches = await _service.loadMonthlyEnabledCoaches();
 
       if (!mounted) return;
       setState(() {
@@ -766,12 +830,8 @@ class _AthleteCoachEvaluationPageState
           badge: _monthlyEnabled ? 'Liberado' : 'Bloqueado',
           onTap: _monthlyEnabled
               ? () async {
-                  final user = Supabase.instance.client.auth.currentUser;
-                  if (user == null) return;
                   final enabledCoaches =
-                      await _service.loadMonthlyEnabledCoaches(
-                    athleteId: user.id,
-                  );
+                      await _service.loadMonthlyEnabledCoaches();
                   if (!mounted) return;
                   setState(() {
                     _monthlyCoaches = enabledCoaches;

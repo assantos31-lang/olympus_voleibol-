@@ -142,16 +142,24 @@ class _CoachMessageThreadPageState extends State<CoachMessageThreadPage> {
         _loading = false;
       });
 
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-        }
-      });
+      _scrollToLatestAfterLayout();
     } catch (e) {
       _showSnack('Erro ao carregar conversa: $e');
       if (mounted) {
         setState(() => _loading = false);
       }
+    }
+  }
+
+  void _scrollToLatestAfterLayout() {
+    void jump() {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => jump());
+    for (final delay in const [120, 350, 750, 1400]) {
+      Future<void>.delayed(Duration(milliseconds: delay), jump);
     }
   }
 

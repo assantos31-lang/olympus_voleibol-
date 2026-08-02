@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../pages/admin_competitions_page.dart';
@@ -33,6 +34,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
 
   bool _isLoading = true;
   bool _isBackgroundReady = false;
+  bool _refreshingDashboard = false;
+  bool _loadingSecondaryDashboardData = false;
   int _competitionNewCount = 0;
   int _unreadMessagesCount = 0;
   int _chatUnreadCount = 0;
@@ -45,6 +48,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
   RealtimeChannel? _trainingPlanRealtimeChannel;
   RealtimeChannel? _coachEvaluationsRealtimeChannel;
   Timer? _messagesBadgeFallbackTimer;
+  StreamSubscription<int>? _chatUnreadSubscription;
   Timer? _intelligenceDebounceTimer;
   bool _hasLoadedOnce = false;
   DateTime? _lastMessageNotificationAt;
@@ -95,6 +99,20 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _refreshDashboard();
+    _listenChatUnreadCount();
+  }
+
+  void _listenChatUnreadCount() {
+    _chatUnreadSubscription?.cancel();
+    _chatUnreadSubscription = _chatService.streamTotalUnreadCount().listen(
+      (total) {
+        if (!mounted || total == _chatUnreadCount) return;
+        setState(() => _chatUnreadCount = total);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('Erro ao atualizar badge do chat: $error');
+      },
+    );
   }
 
   @override
@@ -116,31 +134,38 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
   }
 
   Future<void> _refreshDashboard() async {
-    if (!mounted) return;
-
-    if (!_hasLoadedOnce) {
-      setState(() => _isLoading = true);
-    }
+    if (!mounted || _refreshingDashboard) return;
+    _refreshingDashboard = true;
 
     try {
-      await _loadCoachProfile().timeout(const Duration(seconds: 8));
-    } catch (e) {
-      debugPrint('Perfil do técnico carregado parcialmente: $e');
-    }
+      if (!_hasLoadedOnce) {
+        setState(() => _isLoading = true);
+      }
 
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _hasLoadedOnce = true;
-      });
-      _setupRealtimeListeners();
-    }
+      try {
+        await _loadCoachProfile().timeout(const Duration(seconds: 8));
+      } catch (e) {
+        debugPrint('Perfil do técnico carregado parcialmente: $e');
+      }
 
-    // Os indicadores entram progressivamente sem manter a tela inteira presa.
-    unawaited(_loadSecondaryDashboardData());
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _hasLoadedOnce = true;
+        });
+        _setupRealtimeListeners();
+      }
+
+      // Os indicadores entram progressivamente sem manter a tela inteira presa.
+      unawaited(_loadSecondaryDashboardData());
+    } finally {
+      _refreshingDashboard = false;
+    }
   }
 
   Future<void> _loadSecondaryDashboardData() async {
+    if (_loadingSecondaryDashboardData) return;
+    _loadingSecondaryDashboardData = true;
     try {
       await Future.wait([
         _loadCompetitionNewCount(),
@@ -152,6 +177,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       ]).timeout(const Duration(seconds: 22));
     } catch (e) {
       debugPrint('Indicadores do dashboard carregados parcialmente: $e');
+    } finally {
+      _loadingSecondaryDashboardData = false;
     }
   }
 
@@ -166,7 +193,13 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _startMessagesFallbackTimer();
       _refreshDashboard();
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _messagesBadgeFallbackTimer?.cancel();
+      _messagesBadgeFallbackTimer = null;
     }
   }
 
@@ -800,8 +833,12 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       );
     });
 
+    _startMessagesFallbackTimer();
+  }
+
+  void _startMessagesFallbackTimer() {
     _messagesBadgeFallbackTimer ??= Timer.periodic(
-      const Duration(seconds: 30),
+      const Duration(seconds: 60),
       (_) {
         _loadUnreadMessagesCount(showNotification: true);
         _loadChatUnreadCount();
@@ -1070,10 +1107,13 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         child: Container(
           color: const Color(0xFF113457),
           child: hasPhoto
-              ? Image.network(
-                  _coachAvatarUrl,
+              ? CachedNetworkImage(
+                  imageUrl: _coachAvatarUrl,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildCoachInitialsFallback(),
+                  memCacheWidth: 240,
+                  memCacheHeight: 240,
+                  fadeInDuration: const Duration(milliseconds: 120),
+                  errorWidget: (_, __, ___) => _buildCoachInitialsFallback(),
                 )
               : _buildCoachInitialsFallback(),
         ),
@@ -2605,11 +2645,13 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
               Positioned.fill(
                 child: Opacity(
                   opacity: 0.20,
-                  child: Image.network(
-                    _coachAvatarUrl.trim(),
+                  child: CachedNetworkImage(
+                    imageUrl: _coachAvatarUrl.trim(),
                     fit: BoxFit.cover,
                     alignment: const Alignment(0, -0.86),
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    memCacheWidth: 900,
+                    fadeInDuration: const Duration(milliseconds: 120),
+                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
                   ),
                 ),
               ),
@@ -3066,6 +3108,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       supabase.removeChannel(_coachEvaluationsRealtimeChannel!);
     }
     _messagesBadgeFallbackTimer?.cancel();
+    _chatUnreadSubscription?.cancel();
     _intelligenceDebounceTimer?.cancel();
     _nextCommitmentExpiryTimer?.cancel();
     super.dispose();

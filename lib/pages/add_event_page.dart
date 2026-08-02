@@ -89,8 +89,9 @@ class _AddEventPageState extends State<AddEventPage> {
         }
 
         _dateController.text = widget.evento!['event_date'] ?? '';
-        _timeController.text = widget.evento!['event_time'] ?? '';
-        _endTimeController.text = widget.evento!['event_end_time'] ?? '';
+        _timeController.text = _formatTimeHHmm(widget.evento!['event_time']);
+        _endTimeController.text =
+            _formatTimeHHmm(widget.evento!['event_end_time']);
         _setsFormat = widget.evento!['set_format'] ?? '1 Set';
         _cepController.text = widget.evento!['cep'] ?? '';
         _ruaController.text = widget.evento!['street'] ?? '';
@@ -481,9 +482,16 @@ class _AddEventPageState extends State<AddEventPage> {
   }
 
   Future<void> _selectTime(BuildContext context) async {
+    final currentParts = _formatTimeHHmm(_timeController.text).split(':');
+    final initialTime = currentParts.length == 2
+        ? TimeOfDay(
+            hour: int.tryParse(currentParts[0]) ?? TimeOfDay.now().hour,
+            minute: int.tryParse(currentParts[1]) ?? TimeOfDay.now().minute,
+          )
+        : TimeOfDay.now();
     final TimeOfDay? picked = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay.now(),
+      initialTime: initialTime,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -507,7 +515,7 @@ class _AddEventPageState extends State<AddEventPage> {
     if (picked != null) {
       if (mounted) {
         setState(() {
-          _timeController.text = picked.format(context);
+          _timeController.text = _formatTimeOfDay(picked);
         });
       }
     }
@@ -535,8 +543,27 @@ class _AddEventPageState extends State<AddEventPage> {
       ),
     );
     if (picked != null && mounted) {
-      setState(() => _endTimeController.text = picked.format(context));
+      setState(() => _endTimeController.text = _formatTimeOfDay(picked));
     }
+  }
+
+  String _formatTimeOfDay(TimeOfDay value) {
+    return '${value.hour.toString().padLeft(2, '0')}:'
+        '${value.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _formatTimeHHmm(dynamic rawValue) {
+    final value = (rawValue ?? '').toString().trim();
+    if (value.isEmpty) return '';
+    final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(value);
+    if (match == null) return value;
+    final hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2)!);
+    if (hour == null || minute == null || hour > 23 || minute > 59) {
+      return value;
+    }
+    return '${hour.toString().padLeft(2, '0')}:'
+        '${minute.toString().padLeft(2, '0')}';
   }
 
   DateTime? _buildEventStartAt() {
@@ -638,19 +665,82 @@ class _AddEventPageState extends State<AddEventPage> {
         if (_selectedTechnicianIds.contains(userId)) {
           _selectedTechnicianIds.remove(userId);
         } else {
-          final previousCoachIds = _selectedTechnicianIds.toList();
-          _selectedTechnicianIds.clear();
           _selectedTechnicianIds.add(userId);
           _selectedAthleteIds.remove(userId);
-
-          for (final previousCoachId in previousCoachIds) {
-            final canPlay = _athletesList.any(
-              (athlete) => athlete['uid'] == previousCoachId,
-            );
-            if (canPlay) _selectedAthleteIds.add(previousCoachId);
-          }
         }
       });
+    }
+  }
+
+  bool _eventDetailsChanged(Map<String, dynamic> eventData) {
+    if (!_isEditing || widget.evento == null) return true;
+    const comparedKeys = <String>{
+      'event_name',
+      'event_type',
+      'event_date',
+      'event_time',
+      'event_end_time',
+      'cep',
+      'street',
+      'street_number',
+      'neighborhood',
+      'city',
+      'state',
+      'set_format',
+      'allow_checkin',
+      'enable_ride_logistics',
+      'gender',
+      'championship_name',
+    };
+
+    String normalized(String key, dynamic value) {
+      if (key == 'event_time' || key == 'event_end_time') {
+        return _formatTimeHHmm(value);
+      }
+      if (value is bool) return value ? 'true' : 'false';
+      return (value ?? '').toString().trim();
+    }
+
+    return comparedKeys.any(
+      (key) =>
+          normalized(key, widget.evento![key]) !=
+          normalized(key, eventData[key]),
+    );
+  }
+
+  Future<void> _notifyConvocationChanges({
+    required String eventId,
+    required String eventName,
+    required Set<String> addedUserIds,
+    required Set<String> removedUserIds,
+    required Set<String> roleChangedUserIds,
+  }) async {
+    final supabase = Supabase.instance.client;
+    final changes = <String, String>{
+      for (final userId in addedUserIds)
+        userId: 'Você foi adicionado ao evento "$eventName".',
+      for (final userId in removedUserIds)
+        userId: 'Você foi removido do evento "$eventName".',
+      for (final userId in roleChangedUserIds)
+        userId: 'Sua participação no evento "$eventName" foi atualizada.',
+    };
+
+    for (final change in changes.entries) {
+      try {
+        await supabase.functions.invoke(
+          'send-push-notification',
+          body: {
+            'userId': change.key,
+            'title': 'Atualização de evento',
+            'body': change.value,
+            'type': 'event',
+            'eventId': eventId,
+            'recordId': eventId,
+          },
+        );
+      } catch (e) {
+        debugPrint('Erro ao notificar participante ${change.key}: $e');
+      }
     }
   }
 
@@ -745,6 +835,10 @@ class _AddEventPageState extends State<AddEventPage> {
         return;
       }
 
+      final normalizedStartTime = _formatTimeHHmm(_timeController.text);
+      final normalizedEndTime = _formatTimeHHmm(_endTimeController.text);
+      final shouldSendNotifications =
+          !_isEditing || eventEndAt.isAfter(DateTime.now());
       final eventData = {
         'user_id': user.id,
         'event_name': _opponentController.text.isNotEmpty
@@ -752,8 +846,8 @@ class _AddEventPageState extends State<AddEventPage> {
             : 'Evento ${_selectedType.name}',
         'event_type': _selectedType.name,
         'event_date': _dateController.text,
-        'event_time': _timeController.text,
-        'event_end_time': _endTimeController.text,
+        'event_time': normalizedStartTime,
+        'event_end_time': normalizedEndTime,
         'event_start_at': eventStartAt.toUtc().toIso8601String(),
         'cep': _cepController.text,
         'street': _ruaController.text,
@@ -774,6 +868,7 @@ class _AddEventPageState extends State<AddEventPage> {
         'latitude': coords['latitude'],
         'longitude': coords['longitude'],
       };
+      final eventDetailsChanged = _eventDetailsChanged(eventData);
 
       dynamic response;
 
@@ -803,14 +898,25 @@ class _AddEventPageState extends State<AddEventPage> {
 
       final existingConvocations = await supabase
           .from('convocations')
-          .select('user_id')
+          .select('user_id, event_role')
           .eq('event_id', eventId);
 
-      final existingUserIds = existingConvocations
-          .map<String>((c) => c['user_id'].toString())
-          .toSet();
+      final existingRoles = <String, String>{
+        for (final convocation in existingConvocations)
+          (convocation['user_id'] ?? '').toString():
+              (convocation['event_role'] ?? 'athlete')
+                  .toString()
+                  .trim()
+                  .toLowerCase(),
+      }..remove('');
+      final existingUserIds = existingRoles.keys.toSet();
 
       final userIdsToDelete = existingUserIds.difference(selectedUserIds);
+      final userIdsToAdd = selectedUserIds.difference(existingUserIds);
+      final userIdsWithRoleChange = selectedUserIds
+          .intersection(existingUserIds)
+          .where((userId) => existingRoles[userId] != selectedRoles[userId])
+          .toSet();
 
       if (userIdsToDelete.isNotEmpty) {
         await supabase
@@ -849,16 +955,36 @@ class _AddEventPageState extends State<AddEventPage> {
 // ==========================================================
 
       try {
-        final notificationResponse = await supabase.functions.invoke(
-          'send-event-notification',
-          body: {
-            'eventId': eventId,
-          },
-        );
+        dynamic notificationResponse;
+        if (!shouldSendNotifications) {
+          debugPrint(
+            'Notificação ignorada: edição de evento já encerrado.',
+          );
+        } else if (!_isEditing || eventDetailsChanged) {
+          // Criação ou mudança nos dados do evento: todos os convocados
+          // atuais recebem a atualização.
+          notificationResponse = await supabase.functions.invoke(
+            'send-event-notification',
+            body: {'eventId': eventId},
+          );
+        } else if (userIdsToAdd.isNotEmpty ||
+            userIdsToDelete.isNotEmpty ||
+            userIdsWithRoleChange.isNotEmpty) {
+          // Se apenas a lista mudou, somente os participantes afetados recebem.
+          await _notifyConvocationChanges(
+            eventId: eventId.toString(),
+            eventName: eventData['event_name'].toString(),
+            addedUserIds: userIdsToAdd,
+            removedUserIds: userIdsToDelete,
+            roleChangedUserIds: userIdsWithRoleChange,
+          );
+        }
 
         debugPrint("==========================================");
         debugPrint("SEND EVENT NOTIFICATION");
-        debugPrint(notificationResponse.data.toString());
+        if (notificationResponse != null) {
+          debugPrint(notificationResponse.data.toString());
+        }
         debugPrint("==========================================");
       } catch (e) {
         debugPrint("==========================================");

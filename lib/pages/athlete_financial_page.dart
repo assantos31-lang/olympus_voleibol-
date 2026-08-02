@@ -9,6 +9,7 @@ import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 import '../models/financial_record_model.dart';
 import '../services/permission_service.dart';
+import '../services/olympus_memory_cache.dart';
 
 class AthleteFinancialPage extends StatefulWidget {
   const AthleteFinancialPage({super.key});
@@ -29,6 +30,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   List<FinancialRecord> _records = [];
   List<FinancialRecord> _allRecords = [];
   bool _isLoading = true;
+  bool _loadingRecords = false;
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
   String _selectedType = 'all';
@@ -50,7 +52,38 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
     _parallaxScrollController.addListener(_handleParallaxScroll);
     _initFinancialNotifications();
     _markFinancialAsViewed();
+    _restoreAthleteFinancialCache();
     _loadFinancialFilters();
+  }
+
+  String get _financialCacheKey =>
+      'athlete_financial:${_supabase.auth.currentUser?.id ?? 'guest'}';
+
+  void _restoreAthleteFinancialCache() {
+    final cached = OlympusMemoryCache.read<Map<String, dynamic>>(
+      _financialCacheKey,
+    );
+    if (cached == null) return;
+    final all =
+        (cached['all'] as List?)?.whereType<FinancialRecord>().toList() ??
+            <FinancialRecord>[];
+    final visible =
+        (cached['visible'] as List?)?.whereType<FinancialRecord>().toList() ??
+            <FinancialRecord>[];
+    if (all.isEmpty) return;
+    setState(() {
+      _allRecords = all;
+      _records = visible;
+      _isLoading = false;
+    });
+    _calculateCounters();
+  }
+
+  void _saveAthleteFinancialCache() {
+    OlympusMemoryCache.write<Map<String, dynamic>>(_financialCacheKey, {
+      'all': List<FinancialRecord>.from(_allRecords),
+      'visible': List<FinancialRecord>.from(_records),
+    });
   }
 
   void _handleParallaxScroll() {
@@ -136,54 +169,73 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   }
 
   Future<void> _loadRecords() async {
-    setState(() => _isLoading = true);
-    final currentUserId = _supabase.auth.currentUser!.id;
+    if (_loadingRecords) return;
+    _loadingRecords = true;
+    setState(() => _isLoading = _records.isEmpty);
+    try {
+      final currentUserId = _supabase.auth.currentUser!.id;
 
-    var query = _supabase
-        .from('financial_records')
-        .select()
-        .eq('athlete_id', currentUserId);
+      var query = _supabase
+          .from('financial_records')
+          .select()
+          .eq('athlete_id', currentUserId);
 
-    if (_selectedType == 'all') {
-      query = query.inFilter('type', _allowedTypes);
-    } else {
-      query = query.eq('type', _selectedType);
+      if (_selectedType == 'all') {
+        query = query.inFilter('type', _allowedTypes);
+      } else {
+        query = query.eq('type', _selectedType);
+      }
+
+      final response = await query.order('created_at', ascending: false);
+
+      final allAllowedRecords =
+          (response as List).map((r) => FinancialRecord.fromMap(r)).toList();
+
+      final filteredRecords = allAllowedRecords.where((record) {
+        final isSelectedMonthYear =
+            record.month == _selectedMonth && record.year == _selectedYear;
+
+        final dueDate = _getDueDate(record);
+        final now = DateTime.now();
+        final todayOnly = DateTime(now.year, now.month, now.day);
+        final dueDateOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
+        final isApproved = record.status == 'approved';
+        final isOverdue = !isApproved && todayOnly.isAfter(dueDateOnly);
+        final isPending = record.status == 'pending' && !isOverdue;
+
+        final matchesBase = isSelectedMonthYear || isOverdue;
+        if (!matchesBase) return false;
+
+        if (_quickFilter == 'overdue') return isOverdue;
+        if (_quickFilter == 'pending') return isPending;
+        if (_quickFilter == 'paid') return isApproved;
+        return true;
+      }).toList();
+
+      if (!mounted) return;
+      setState(() {
+        _allRecords = allAllowedRecords;
+        _records = filteredRecords;
+        _isLoading = false;
+      });
+      _calculateCounters();
+      _saveAthleteFinancialCache();
+      await _scheduleFinancialNotifications();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _records.isEmpty
+                ? 'Erro ao carregar financeiro: $e'
+                : 'Não foi possível atualizar. Dados anteriores mantidos.',
+          ),
+        ),
+      );
+    } finally {
+      _loadingRecords = false;
     }
-
-    final response = await query.order('created_at', ascending: false);
-
-    final allAllowedRecords =
-        (response as List).map((r) => FinancialRecord.fromMap(r)).toList();
-
-    final filteredRecords = allAllowedRecords.where((record) {
-      final isSelectedMonthYear =
-          record.month == _selectedMonth && record.year == _selectedYear;
-
-      final dueDate = _getDueDate(record);
-      final now = DateTime.now();
-      final todayOnly = DateTime(now.year, now.month, now.day);
-      final dueDateOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
-      final isApproved = record.status == 'approved';
-      final isOverdue = !isApproved && todayOnly.isAfter(dueDateOnly);
-      final isPending = record.status == 'pending' && !isOverdue;
-
-      final matchesBase = isSelectedMonthYear || isOverdue;
-      if (!matchesBase) return false;
-
-      if (_quickFilter == 'overdue') return isOverdue;
-      if (_quickFilter == 'pending') return isPending;
-      if (_quickFilter == 'paid') return isApproved;
-      return true;
-    }).toList();
-
-    if (!mounted) return;
-    setState(() {
-      _allRecords = allAllowedRecords;
-      _records = filteredRecords;
-      _isLoading = false;
-    });
-    _calculateCounters();
-    await _scheduleFinancialNotifications();
   }
 
   // ✅ NOVO: Calcular contadores de atrasos e novos boletos
@@ -1484,7 +1536,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadRecords,
+            onPressed: _loadingRecords ? null : _loadRecords,
           ),
         ],
       ),
@@ -1496,6 +1548,11 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
           Column(
             children: [
               _buildAthleteUpgradeHeader(),
+              if (_loadingRecords && _records.isNotEmpty)
+                const LinearProgressIndicator(
+                  minHeight: 3,
+                  color: olympusGold,
+                ),
               Expanded(
                 child: _isLoading
                     ? const Center(

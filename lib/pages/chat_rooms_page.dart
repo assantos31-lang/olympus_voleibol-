@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -110,9 +111,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
       users = await _chatService.getSelectableUsers();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao carregar usuários: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao carregar usuários: $e')));
       return;
     }
 
@@ -159,10 +160,11 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                           itemBuilder: (context, index) {
                             final user = users[index];
                             final userId = (user['id'] ?? '').toString();
-                            final fullName = (user['display_name'] ??
-                                    user['full_name'] ??
-                                    'Sem nome')
-                                .toString();
+                            final fullName =
+                                (user['display_name'] ??
+                                        user['full_name'] ??
+                                        'Sem nome')
+                                    .toString();
                             final photoUrl = _resolveAvatarUrl(
                               (user['avatar_url'] ?? '').toString(),
                             );
@@ -200,8 +202,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                     border: Border.all(
                                       color: isSelected
                                           ? _gold
-                                          : Colors.black
-                                              .withValues(alpha: 0.18),
+                                          : Colors.black.withValues(
+                                              alpha: 0.18,
+                                            ),
                                       width: isSelected ? 1.6 : 1,
                                     ),
                                   ),
@@ -244,7 +247,8 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                                     fontSize: 13,
                                                     color: Colors.black
                                                         .withValues(
-                                                            alpha: 0.55),
+                                                          alpha: 0.55,
+                                                        ),
                                                     fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
@@ -264,10 +268,13 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed:
-                      isSaving ? null : () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Cancelar',
-                      style: TextStyle(color: Colors.white70)),
+                  onPressed: isSaving
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text(
+                    'Cancelar',
+                    style: TextStyle(color: Colors.white70),
+                  ),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
@@ -343,9 +350,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
       users = await _chatService.getSelectableUsers();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao carregar usuários: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao carregar usuários: $e')));
       return;
     }
 
@@ -357,8 +364,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
         bool isSaving = false;
 
         Future<void> pickImage(StateSetter setDialogState) async {
-          final picked =
-              await _imagePicker.pickImage(source: ImageSource.gallery);
+          final picked = await _imagePicker.pickImage(
+            source: ImageSource.gallery,
+          );
           if (picked == null) return;
           setDialogState(() {
             selectedImage = File(picked.path);
@@ -400,8 +408,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       GestureDetector(
-                        onTap:
-                            isSaving ? null : () => pickImage(setDialogState),
+                        onTap: isSaving
+                            ? null
+                            : () => pickImage(setDialogState),
                         child: Container(
                           width: 84,
                           height: 84,
@@ -470,10 +479,11 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                             itemBuilder: (context, index) {
                               final user = users[index];
                               final userId = (user['id'] ?? '').toString();
-                              final fullName = (user['display_name'] ??
-                                      user['full_name'] ??
-                                      'Sem nome')
-                                  .toString();
+                              final fullName =
+                                  (user['display_name'] ??
+                                          user['full_name'] ??
+                                          'Sem nome')
+                                      .toString();
                               const phone = '';
                               const userTypeLabel = '';
 
@@ -528,11 +538,13 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                               : (value) {
                                                   setDialogState(() {
                                                     if (value == true) {
-                                                      selectedUserIds
-                                                          .add(userId);
+                                                      selectedUserIds.add(
+                                                        userId,
+                                                      );
                                                     } else {
-                                                      selectedUserIds
-                                                          .remove(userId);
+                                                      selectedUserIds.remove(
+                                                        userId,
+                                                      );
                                                     }
                                                   });
                                                 },
@@ -581,8 +593,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed:
-                      isSaving ? null : () => Navigator.of(dialogContext).pop(),
+                  onPressed: isSaving
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
@@ -697,8 +710,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     String? photoUrl,
     double size = 50,
   }) {
-    final initial =
-        fullName.trim().isNotEmpty ? fullName.trim()[0].toUpperCase() : 'U';
+    final initial = fullName.trim().isNotEmpty
+        ? fullName.trim()[0].toUpperCase()
+        : 'U';
 
     return Container(
       width: size,
@@ -710,11 +724,13 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
       ),
       child: ClipOval(
         child: photoUrl != null && photoUrl.isNotEmpty
-            ? Image.network(
-                photoUrl,
+            ? CachedNetworkImage(
+                imageUrl: photoUrl,
                 fit: BoxFit.cover,
-                gaplessPlayback: true,
-                errorBuilder: (_, __, ___) => Center(
+                memCacheWidth: 240,
+                memCacheHeight: 240,
+                fadeInDuration: const Duration(milliseconds: 120),
+                errorWidget: (_, __, ___) => Center(
                   child: Text(
                     initial,
                     style: const TextStyle(
@@ -818,9 +834,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
             color: _navyDark,
             borderRadius: BorderRadius.circular(28),
             border: Border.all(color: _gold.withValues(alpha: 0.5)),
-            boxShadow: const [
-              BoxShadow(color: Colors.black38, blurRadius: 24),
-            ],
+            boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 24)],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -840,9 +854,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                 ),
                 tileColor: Colors.white.withValues(alpha: 0.06),
                 leading: Icon(
-                  isPinned
-                      ? Icons.push_pin_outlined
-                      : Icons.push_pin_rounded,
+                  isPinned ? Icons.push_pin_outlined : Icons.push_pin_rounded,
                   color: _gold,
                 ),
                 title: Text(
@@ -860,8 +872,10 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                   borderRadius: BorderRadius.circular(18),
                 ),
                 tileColor: Colors.redAccent.withValues(alpha: 0.10),
-                leading: const Icon(Icons.delete_outline_rounded,
-                    color: Colors.redAccent),
+                leading: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Colors.redAccent,
+                ),
                 title: const Text(
                   'Apagar conversa',
                   style: TextStyle(
@@ -1016,9 +1030,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
       await _reload();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao apagar conversa: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao apagar conversa: $e')));
     }
   }
 
@@ -1033,8 +1047,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
       final rooms = await _chatService.getMyRoomListItems();
       for (final item in rooms) {
         if (item.room.type != 'group') continue;
-        final pendingPolls =
-            await _chatService.getPendingPollsForRoom(item.room.id);
+        final pendingPolls = await _chatService.getPendingPollsForRoom(
+          item.room.id,
+        );
         if (pendingPolls.isEmpty) continue;
 
         if (!mounted) return;
@@ -1077,19 +1092,22 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
     if (item.unreadCount > 0) {
       return Container(
-        constraints: const BoxConstraints(minWidth: 46, minHeight: 30),
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+        padding: const EdgeInsets.symmetric(horizontal: 7),
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: _gold,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(999),
+          boxShadow: [
+            BoxShadow(color: _gold.withValues(alpha: 0.28), blurRadius: 9),
+          ],
         ),
         child: Text(
           item.unreadCount > 99 ? '99+' : item.unreadCount.toString(),
           style: const TextStyle(
             color: _navyDark,
             fontWeight: FontWeight.w800,
-            fontSize: 13,
+            fontSize: 11.5,
           ),
         ),
       );
@@ -1113,7 +1131,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     return _buildUserAvatar(
       fullName: name.isNotEmpty ? name : 'C',
       photoUrl: photoUrl,
-      size: 58,
+      size: 54,
     );
   }
 
@@ -1136,12 +1154,19 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
   Widget _buildSearchBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
+      padding: const EdgeInsets.fromLTRB(4, 2, 4, 10),
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _gold.withValues(alpha: 0.35), width: 1.1),
-          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _gold.withValues(alpha: 0.28)),
+          color: const Color(0xFF132F52).withValues(alpha: 0.94),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.16),
+              blurRadius: 14,
+              offset: const Offset(0, 7),
+            ),
+          ],
         ),
         child: TextField(
           controller: _searchController,
@@ -1149,9 +1174,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
             hintText: 'Pesquisar conversas',
-            hintStyle: TextStyle(
-              color: Colors.white.withValues(alpha: 0.65),
-            ),
+            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.65)),
             prefixIcon: const Icon(Icons.search, color: _gold),
             suffixIcon: _searchQuery.isNotEmpty
                 ? IconButton(
@@ -1178,19 +1201,18 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     final subtitle = _buildRoomSubtitle(item);
     final trailingWidget = _buildTrailing(item);
     final isPinned = _pinnedRoomIds.contains(room.id);
+    final hasUnread = item.unreadCount > 0;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(18),
           onTap: () async {
             await Navigator.push(
               context,
-              MaterialPageRoute(
-                builder: (_) => ChatPage(room: room),
-              ),
+              MaterialPageRoute(builder: (_) => ChatPage(room: room)),
             );
 
             if (!mounted) return;
@@ -1198,25 +1220,35 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
           },
           child: Ink(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(18),
               border: Border.all(
-                color: Colors.white.withValues(alpha: 0.22),
-                width: 1,
+                color: hasUnread
+                    ? _gold.withValues(alpha: 0.62)
+                    : Colors.white.withValues(alpha: 0.11),
+                width: hasUnread ? 1.3 : 1,
               ),
-              color: Colors.white.withValues(alpha: 0.92),
+              gradient: LinearGradient(
+                colors: hasUnread
+                    ? const [Color(0xFF193E68), Color(0xFF102B4B)]
+                    : const [Color(0xE8122E50), Color(0xE80B213D)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.16),
-                  blurRadius: 18,
-                  offset: const Offset(0, 10),
+                  color: Colors.black.withValues(alpha: 0.20),
+                  blurRadius: 14,
+                  offset: const Offset(0, 7),
                 ),
               ],
             ),
             child: Stack(
               children: [
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 11,
+                  ),
                   child: Row(
                     children: [
                       _buildAvatar(item),
@@ -1230,9 +1262,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                color: _navy,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w900,
                               ),
                             ),
                             if (isPinned) ...[
@@ -1263,9 +1295,13 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: _navy.withValues(alpha: 0.64),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
+                                color: Colors.white.withValues(
+                                  alpha: hasUnread ? 0.86 : 0.62,
+                                ),
+                                fontSize: 12.5,
+                                fontWeight: hasUnread
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
                               ),
                             ),
                           ],
@@ -1280,8 +1316,10 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                             child: Text(
                               _formatLastMessageTime(item.lastMessageAt),
                               style: TextStyle(
-                                color: _navy.withValues(alpha: 0.62),
-                                fontSize: 12,
+                                color: hasUnread
+                                    ? _gold
+                                    : Colors.white.withValues(alpha: 0.50),
+                                fontSize: 11.5,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
@@ -1296,9 +1334,14 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                       IconButton(
                         tooltip: 'Opções da conversa',
                         onPressed: () => _showRoomActions(item),
-                        icon: const Icon(
-                          Icons.more_vert,
-                          color: _navy,
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(
+                          minWidth: 34,
+                          minHeight: 38,
+                        ),
+                        icon: Icon(
+                          Icons.more_vert_rounded,
+                          color: Colors.white.withValues(alpha: 0.72),
                         ),
                       ),
                     ],
@@ -1338,9 +1381,104 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     return filtered;
   }
 
+  Widget _buildConversationOverview(List<ChatRoomListItem> rooms) {
+    final unreadTotal = rooms.fold<int>(
+      0,
+      (total, item) => total + item.unreadCount,
+    );
+    final pinnedTotal = rooms
+        .where((item) => _pinnedRoomIds.contains(item.room.id))
+        .length;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+      padding: const EdgeInsets.fromLTRB(16, 15, 14, 15),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF173D69), Color(0xFF0B2545)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: _gold.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.22),
+            blurRadius: 18,
+            offset: const Offset(0, 9),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: _gold.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: _gold.withValues(alpha: 0.36)),
+            ),
+            child: const Icon(Icons.forum_rounded, color: _gold, size: 25),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Suas conversas',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  unreadTotal > 0
+                      ? '$unreadTotal mensagem${unreadTotal == 1 ? '' : 's'} não lida${unreadTotal == 1 ? '' : 's'}'
+                      : 'Tudo em dia por aqui',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.68),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (pinnedTotal > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.push_pin_rounded, color: _gold, size: 14),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$pinnedTotal',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildContent(List<ChatRoomListItem> rooms) {
     final filteredRooms = _filterRooms(rooms);
-    final headerCount = _searchExpanded ? 1 : 0;
+    final headerCount = _searchExpanded ? 2 : 1;
 
     return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -1350,7 +1488,11 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
           : filteredRooms.length + headerCount,
       separatorBuilder: (_, __) => const SizedBox(height: 2),
       itemBuilder: (context, index) {
-        if (_searchExpanded && index == 0) {
+        if (index == 0) {
+          return _buildConversationOverview(rooms);
+        }
+
+        if (_searchExpanded && index == 1) {
           return _buildSearchBar();
         }
 
@@ -1362,10 +1504,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                 _searchQuery.isEmpty
                     ? 'Você não participa de nenhum chat'
                     : 'Nenhuma conversa encontrada',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 15,
-                ),
+                style: const TextStyle(color: Colors.white70, fontSize: 15),
               ),
             ),
           );
@@ -1410,10 +1549,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
   Widget _buildFloatingParticles() {
     return IgnorePointer(
-      child: CustomPaint(
-        painter: _SparklePainter(),
-        size: Size.infinite,
-      ),
+      child: CustomPaint(painter: _SparklePainter(), size: Size.infinite),
     );
   }
 
@@ -1421,12 +1557,13 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _navy,
-      extendBodyBehindAppBar: true,
+      extendBodyBehindAppBar: false,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.transparent,
+        backgroundColor: _navyDark,
         foregroundColor: Colors.white,
-        titleSpacing: 0,
+        titleSpacing: 4,
+        surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(
             Icons.arrow_back_ios_new_rounded,
@@ -1443,7 +1580,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
             fontWeight: FontWeight.w800,
           ),
         ),
-        centerTitle: true,
+        centerTitle: false,
         actions: [
           IconButton(
             tooltip: _searchExpanded ? 'Fechar pesquisa' : 'Pesquisar',
@@ -1478,10 +1615,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                 heroTag: 'create_group',
                 onPressed: _showCreateGroupDialog,
                 backgroundColor: _gold,
-                child: const Icon(
-                  Icons.groups_rounded,
-                  color: _navy,
-                ),
+                child: const Icon(Icons.groups_rounded, color: _navy),
               ),
               const SizedBox(height: 12),
             ],
@@ -1501,10 +1635,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              _navy,
-              _navyDark,
-            ],
+            colors: [_navy, _navyDark],
           ),
         ),
         child: Stack(
@@ -1519,31 +1650,14 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
               ),
             ),
             Positioned.fill(
-              child: Container(
-                color: _navyDark.withValues(alpha: 0.56),
-              ),
+              child: Container(color: _navyDark.withValues(alpha: 0.56)),
             ),
             SafeArea(
+              top: false,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                padding: EdgeInsets.zero,
                 child: Stack(
                   children: [
-                    Positioned.fill(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(26),
-                          border: Border.all(
-                            color: _gold.withValues(alpha: 0.45),
-                            width: 1.3,
-                          ),
-                          color: Colors.white.withValues(alpha: 0.03),
-                        ),
-                      ),
-                    ),
-                    _buildEdgeGlow(top: 188, left: -10, size: 48),
-                    _buildEdgeGlow(top: 335, left: -14, size: 46),
-                    _buildEdgeGlow(top: 98, right: -10, size: 46),
-                    _buildFloatingParticles(),
                     StreamBuilder<List<ChatRoomListItem>>(
                       stream: _roomsStream,
                       builder: (context, snapshot) {
@@ -1558,8 +1672,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                         if (snapshot.hasError) {
                           return Center(
                             child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 28),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 28,
+                              ),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -1590,8 +1705,9 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                     'Verifique a conexão e toque para atualizar.',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.72),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.72,
+                                      ),
                                       fontSize: 13,
                                     ),
                                   ),
@@ -1617,10 +1733,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                           color: _gold,
                           backgroundColor: _navy,
                           onRefresh: _reload,
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: 14),
-                            child: _buildContent(rooms),
-                          ),
+                          child: _buildContent(rooms),
                         );
                       },
                     ),

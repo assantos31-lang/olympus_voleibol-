@@ -24,11 +24,31 @@ class PushTokenService {
 
   static const String _installationIdKey = 'push_installation_id';
 
+  static void _debugLog(String? message, {int? wrapWidth}) {
+    if (kDebugMode) {
+      debugPrint(message, wrapWidth: wrapWidth);
+    }
+  }
+
+  static void _debugStack({
+    StackTrace? stackTrace,
+    String? label,
+    int? maxFrames,
+  }) {
+    if (kDebugMode) {
+      debugPrintStack(
+        stackTrace: stackTrace,
+        label: label,
+        maxFrames: maxFrames,
+      );
+    }
+  }
+
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
 
-    debugPrint('[PushTokenService] init()');
+    _debugLog('[PushTokenService] init()');
 
     await _configureForegroundPresentation();
     _listenAuthChanges();
@@ -43,7 +63,7 @@ class PushTokenService {
         badge: true,
         sound: true,
       );
-      debugPrint('[PushTokenService] iOS foreground OK');
+      _debugLog('[PushTokenService] iOS foreground OK');
     }
   }
 
@@ -54,7 +74,7 @@ class PushTokenService {
       final event = data.event;
       final session = data.session;
 
-      debugPrint(
+      _debugLog(
         '[PushTokenService] auth change | event=$event | user=${session?.user.id}',
       );
 
@@ -68,8 +88,8 @@ class PushTokenService {
           await clearUserOnLogout();
         }
       } catch (e, st) {
-        debugPrint('[PushTokenService] ERRO auth listener: $e');
-        debugPrintStack(stackTrace: st);
+        _debugLog('[PushTokenService] ERRO auth listener: $e');
+        _debugStack(stackTrace: st);
       }
     });
   }
@@ -78,21 +98,21 @@ class PushTokenService {
     _tokenRefreshSub?.cancel();
 
     _tokenRefreshSub = _messaging.onTokenRefresh.listen((token) async {
-      debugPrint('[PushTokenService] token refresh');
+      _debugLog('[PushTokenService] token refresh');
 
       try {
         if (Platform.isIOS) {
           final apns = await _messaging.getAPNSToken();
 
           if (apns == null || apns.isEmpty) {
-            debugPrint('[PushTokenService] refresh ignorado sem APNS');
+            _debugLog('[PushTokenService] refresh ignorado sem APNS');
             return;
           }
         }
 
         final user = _supabase.auth.currentUser;
         if (user == null) {
-          debugPrint('[PushTokenService] refresh ignorado sem user');
+          _debugLog('[PushTokenService] refresh ignorado sem user');
           return;
         }
 
@@ -103,8 +123,8 @@ class PushTokenService {
           permissionStatus: permission.authorizationStatus.name,
         );
       } catch (e, st) {
-        debugPrint('[PushTokenService] ERRO refresh: $e');
-        debugPrintStack(stackTrace: st);
+        _debugLog('[PushTokenService] ERRO refresh: $e');
+        _debugStack(stackTrace: st);
       }
     });
   }
@@ -119,7 +139,7 @@ class PushTokenService {
     final newId = _uuid.v4();
     await _storage.write(key: _installationIdKey, value: newId);
 
-    debugPrint('[PushTokenService] installation_id criado: $newId');
+    _debugLog('[PushTokenService] installation_id criado: $newId');
 
     return newId;
   }
@@ -132,7 +152,7 @@ class PushTokenService {
       provisional: false,
     );
 
-    debugPrint(
+    _debugLog(
       '[PushTokenService] permission: ${settings.authorizationStatus}',
     );
 
@@ -144,14 +164,14 @@ class PushTokenService {
       for (int attempt = 1; attempt <= 12; attempt++) {
         final apnsToken = await _messaging.getAPNSToken();
 
-        debugPrint(
+        _debugLog(
           '[PushTokenService] iOS tentativa $attempt | apns=${apnsToken != null && apnsToken.isNotEmpty}',
         );
 
         if (apnsToken != null && apnsToken.isNotEmpty) {
           final fcmToken = await _messaging.getToken();
 
-          debugPrint(
+          _debugLog(
             '[PushTokenService] iOS tentativa $attempt | fcm=${fcmToken != null && fcmToken.isNotEmpty}',
           );
 
@@ -168,7 +188,7 @@ class PushTokenService {
 
     final token = await _messaging.getToken();
 
-    debugPrint('[PushTokenService] Android token obtido: ${token != null}');
+    _debugLog('[PushTokenService] Android token obtido: ${token != null}');
 
     return token;
   }
@@ -176,18 +196,18 @@ class PushTokenService {
   Future<void> syncCurrentUserTokenIfPossible() async {
     final user = _supabase.auth.currentUser;
 
-    debugPrint('[PushTokenService] USER: ${user?.id}');
+    _debugLog('[PushTokenService] USER: ${user?.id}');
 
     if (user == null) {
-      debugPrint('[PushTokenService] sem user');
+      _debugLog('[PushTokenService] sem user');
       return;
     }
 
-    debugPrint('[PushTokenService] sync user=${user.id}');
+    _debugLog('[PushTokenService] sync user=${user.id}');
 
     final permission = await requestPermissionIfNeeded();
 
-    debugPrint(
+    _debugLog(
       '[PushTokenService] PERMISSION: ${permission.authorizationStatus}',
     );
 
@@ -197,10 +217,10 @@ class PushTokenService {
       for (int i = 1; i <= 10; i++) {
         apns = await _messaging.getAPNSToken();
 
-        debugPrint('[PushTokenService] aguardando APNS tentativa $i');
+        _debugLog('[PushTokenService] aguardando APNS tentativa $i');
 
         if (apns != null && apns.isNotEmpty) {
-          debugPrint('[PushTokenService] APNS OK');
+          _debugLog('[PushTokenService] APNS OK');
           break;
         }
 
@@ -208,17 +228,19 @@ class PushTokenService {
       }
 
       if (apns == null || apns.isEmpty) {
-        debugPrint('[PushTokenService] APNS nao disponivel, abortando sync');
+        _debugLog('[PushTokenService] APNS nao disponivel, abortando sync');
         return;
       }
     }
 
     final token = await _obtainTokenRobustly();
 
-    debugPrint('[PushTokenService] TOKEN: $token');
+    _debugLog(
+      '[PushTokenService] token obtido: ${token != null && token.isNotEmpty}',
+    );
 
     if (token == null || token.isEmpty) {
-      debugPrint('[PushTokenService] token null');
+      _debugLog('[PushTokenService] token null');
       return;
     }
 
@@ -235,7 +257,7 @@ class PushTokenService {
     final user = _supabase.auth.currentUser;
 
     if (user == null) {
-      debugPrint('[PushTokenService] sem user no upsert');
+      _debugLog('[PushTokenService] sem user no upsert');
       return;
     }
 
@@ -256,9 +278,11 @@ class PushTokenService {
       'app_version': version,
     };
 
-    debugPrint('[PushTokenService] vai salvar token');
-    debugPrint('[PushTokenService] user no upsert: ${user.id}');
-    debugPrint(payload.toString());
+    _debugLog('[PushTokenService] vai salvar token');
+    _debugLog('[PushTokenService] user no upsert: ${user.id}');
+    _debugLog(
+      '[PushTokenService] payload preparado | plataforma=${payload['platform']} | versao=${payload['app_version']}',
+    );
 
     try {
       await _supabase.rpc(
@@ -272,21 +296,21 @@ class PushTokenService {
         },
       );
 
-      debugPrint('[PushTokenService] salvo via RPC');
+      _debugLog('[PushTokenService] salvo via RPC');
     } catch (rpcError, rpcStack) {
-      debugPrint(
+      _debugLog(
           '[PushTokenService] erro RPC register_user_push_token: $rpcError');
-      debugPrintStack(stackTrace: rpcStack);
+      _debugStack(stackTrace: rpcStack);
 
       try {
         await _supabase
             .from('user_push_tokens')
             .upsert(payload, onConflict: 'installation_id');
 
-        debugPrint('[PushTokenService] salvo via fallback upsert');
+        _debugLog('[PushTokenService] salvo via fallback upsert');
       } catch (e, st) {
-        debugPrint('[PushTokenService] erro fallback upsert: $e');
-        debugPrintStack(stackTrace: st);
+        _debugLog('[PushTokenService] erro fallback upsert: $e');
+        _debugStack(stackTrace: st);
       }
     }
 
@@ -300,16 +324,16 @@ class PushTokenService {
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', userId);
 
-      debugPrint('[PushTokenService] profiles.push_token atualizado');
+      _debugLog('[PushTokenService] profiles.push_token atualizado');
     } catch (e, st) {
-      debugPrint(
+      _debugLog(
           '[PushTokenService] erro ao atualizar profiles.push_token: $e');
-      debugPrintStack(stackTrace: st);
+      _debugStack(stackTrace: st);
     }
   }
 
   Future<void> syncAfterLogin() async {
-    debugPrint('[PushTokenService] syncAfterLogin');
+    _debugLog('[PushTokenService] syncAfterLogin');
 
     int attempts = 0;
 
@@ -321,18 +345,26 @@ class PushTokenService {
     final user = _supabase.auth.currentUser;
 
     if (user == null) {
-      debugPrint('[PushTokenService] user ainda null');
+      _debugLog('[PushTokenService] user ainda null');
       return;
     }
 
-    debugPrint('[PushTokenService] user OK: ${user.id}');
+    _debugLog('[PushTokenService] user OK: ${user.id}');
 
     await syncCurrentUserTokenIfPossible();
   }
 
   Future<void> clearUserOnLogout() async {
+    final userId = _supabase.auth.currentUser?.id;
     final installationId = await _getOrCreateInstallationId();
     final now = DateTime.now().toUtc().toIso8601String();
+    String? currentToken;
+
+    try {
+      currentToken = await _messaging.getToken();
+    } catch (e) {
+      _debugLog('[PushTokenService] token indisponível no logout: $e');
+    }
 
     try {
       await _supabase.from('user_push_tokens').update({
@@ -341,10 +373,32 @@ class PushTokenService {
         'last_seen_at': now,
       }).eq('installation_id', installationId);
 
-      debugPrint('[PushTokenService] logout OK');
+      _debugLog('[PushTokenService] logout OK');
     } catch (e, st) {
-      debugPrint('[PushTokenService] erro logout: $e');
-      debugPrintStack(stackTrace: st);
+      _debugLog('[PushTokenService] erro logout: $e');
+      _debugStack(stackTrace: st);
+    }
+
+    // Compatibilidade com instalações antigas que ainda consultam
+    // profiles.push_token. A condição pelo token evita apagar o vínculo de
+    // outro aparelho que continue conectado à mesma conta.
+    if (userId != null && currentToken != null && currentToken.isNotEmpty) {
+      try {
+        await _supabase
+            .from('profiles')
+            .update({
+              'push_token': null,
+              'updated_at': now,
+            })
+            .eq('id', userId)
+            .eq('push_token', currentToken);
+        _debugLog('[PushTokenService] profiles.push_token limpo no logout');
+      } catch (e, st) {
+        _debugLog(
+          '[PushTokenService] erro ao limpar profiles.push_token: $e',
+        );
+        _debugStack(stackTrace: st);
+      }
     }
   }
 
@@ -394,8 +448,8 @@ class PushTokenService {
       await syncCurrentUserTokenIfPossible();
       return 'SYNC_OK';
     } catch (e, st) {
-      debugPrint('[PushTokenService] erro debug: $e');
-      debugPrintStack(stackTrace: st);
+      _debugLog('[PushTokenService] erro debug: $e');
+      _debugStack(stackTrace: st);
       return 'SYNC_ERROR: $e';
     }
   }

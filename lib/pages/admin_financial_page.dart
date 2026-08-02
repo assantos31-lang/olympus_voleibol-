@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/financial_record_model.dart';
+import '../services/olympus_memory_cache.dart';
 
 class AdminFinancialPage extends StatefulWidget {
   const AdminFinancialPage({super.key});
@@ -32,6 +33,7 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
   DateTime? _customStartDate;
   DateTime? _customEndDate;
   bool _showDashboardPage = true;
+  bool _loadingRecords = false;
 
   @override
   void initState() {
@@ -42,10 +44,39 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
 
   Future<void> _initializePage() async {
     await _loadSavedFinancialFilters();
+    _restoreFinancialCache();
     await _loadAthletes();
     await _loadPixKeyModels();
     await _loadDashboardRecords();
     await _loadRecords();
+  }
+
+  String get _financialCacheKey =>
+      'admin_financial:${_supabase.auth.currentUser?.id ?? 'guest'}:'
+      '$_selectedYear:$_selectedMonth:$_selectedStatus:$_selectedType:'
+      '$_selectedAthleteId:$_onlyWithReceipt:'
+      '${_customStartDate?.toIso8601String() ?? 'none'}:'
+      '${_customEndDate?.toIso8601String() ?? 'none'}';
+
+  void _restoreFinancialCache() {
+    final cached = OlympusMemoryCache.read<Map<String, dynamic>>(
+      _financialCacheKey,
+    );
+    if (cached == null) return;
+    final records =
+        (cached['records'] as List?)?.whereType<FinancialRecord>().toList() ??
+            <FinancialRecord>[];
+    if (records.isEmpty) return;
+    setState(() {
+      _records = records;
+      _isLoading = false;
+    });
+  }
+
+  void _saveFinancialCache() {
+    OlympusMemoryCache.write<Map<String, dynamic>>(_financialCacheKey, {
+      'records': List<FinancialRecord>.from(_records),
+    });
   }
 
   Future<void> _loadSavedFinancialFilters() async {
@@ -768,8 +799,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
   bool get _isViewingOverdueRecords => _selectedStatus == 'overdue';
 
   Future<void> _loadRecords() async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
+    if (!mounted || _loadingRecords) return;
+    _loadingRecords = true;
+    setState(() => _isLoading = _records.isEmpty);
 
     try {
       debugPrint(
@@ -805,10 +837,11 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
 
       debugPrint('📊 Executando query...');
       final response = await query.order('created_at', ascending: false);
-      debugPrint('✅ RETORNO DO BANCO: ${(response as List).length} registros');
+      final responseRows = response as List;
+      debugPrint('✅ RETORNO DO BANCO: ${responseRows.length} registros');
 
       final records =
-          (response as List).map((r) => FinancialRecord.fromMap(r)).toList();
+          responseRows.map((r) => FinancialRecord.fromMap(r)).toList();
       debugPrint('📋 Após mapeamento: ${records.length} registros');
 
       final athleteIds = records.map((r) => r.athleteId).toSet().toList();
@@ -828,6 +861,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
           _records = records;
           _isLoading = false;
         });
+        _saveFinancialCache();
         debugPrint('🎯 FINAL: ${_records.length} registros na tela');
         await _loadDashboardRecords();
       }
@@ -835,7 +869,18 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       debugPrint('❌ ERRO: $e');
       if (mounted) {
         setState(() => _isLoading = false);
+        if (_records.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Não foi possível atualizar. Dados anteriores mantidos.',
+              ),
+            ),
+          );
+        }
       }
+    } finally {
+      _loadingRecords = false;
     }
   }
 
@@ -5052,6 +5097,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       final today = DateTime.now();
       return dueDate.isBefore(DateTime(today.year, today.month, today.day));
     }).fold<double>(0, (sum, r) => sum + r.value);
+    final filteredRecords = _getFilteredRecords();
 
     return WillPopScope(
       onWillPop: _handleFinancialBack,
@@ -5107,6 +5153,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
             ? _buildDashboardHomePage()
             : Column(
                 children: [
+                  if (_loadingRecords && _records.isNotEmpty)
+                    const LinearProgressIndicator(minHeight: 3),
                   Container(
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
                     decoration: const BoxDecoration(
@@ -5557,9 +5605,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                               )
                             : ListView.builder(
                                 padding: const EdgeInsets.all(12),
-                                itemCount: _getFilteredRecords().length,
+                                itemCount: filteredRecords.length,
                                 itemBuilder: (context, index) {
-                                  final record = _getFilteredRecords()[index];
+                                  final record = filteredRecords[index];
                                   final typeColor = _getTypeColor(record.type);
                                   final dueDate =
                                       '${record.day.toString().padLeft(2, '0')}/${record.month.toString().padLeft(2, '0')}/${record.year}';

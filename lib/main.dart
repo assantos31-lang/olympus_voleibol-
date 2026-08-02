@@ -33,6 +33,7 @@ import 'pages/profiles_page.dart';
 import 'services/auth_service.dart';
 import 'services/active_chat_service.dart';
 import 'services/badge_service.dart';
+import 'services/chat_service.dart';
 import 'services/push_token_service.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -65,9 +66,72 @@ const AndroidNotificationChannel channel = AndroidNotificationChannel(
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await _markChatPushDelivered(message.data, initializeSupabase: true);
+}
+
+Map<String, dynamic> _normalizedPushData(Map<String, dynamic> rawData) {
+  final normalized = Map<String, dynamic>.from(rawData);
+  final nested = rawData['data'];
+  if (nested is Map) {
+    normalized.addAll(Map<String, dynamic>.from(nested));
+  } else if (nested is String && nested.trim().isNotEmpty) {
+    try {
+      final decoded = jsonDecode(nested);
+      if (decoded is Map) {
+        normalized.addAll(Map<String, dynamic>.from(decoded));
+      }
+    } catch (_) {
+      // Alguns provedores enviam somente os campos no nivel principal.
+    }
+  }
+  return normalized;
+}
+
+String? _chatRoomIdFromPush(Map<String, dynamic> rawData) {
+  final data = _normalizedPushData(rawData);
+  final type = (data['type'] ?? data['notification_type'] ?? '')
+      .toString()
+      .trim()
+      .toLowerCase();
+  if (type != 'message' && type != 'chat_message') return null;
+  final roomId = (data['roomId'] ??
+          data['room_id'] ??
+          data['threadId'] ??
+          data['thread_id'])
+      ?.toString()
+      .trim();
+  return roomId == null || roomId.isEmpty ? null : roomId;
+}
+
+Future<void> _markChatPushDelivered(
+  Map<String, dynamic> rawData, {
+  bool initializeSupabase = false,
+}) async {
+  final roomId = _chatRoomIdFromPush(rawData);
+  if (roomId == null) return;
+
+  try {
+    if (initializeSupabase) {
+      try {
+        Supabase.instance.client;
+      } catch (_) {
+        await Supabase.initialize(
+          url: 'https://wucxbbspybemvkqgqtou.supabase.co',
+          anonKey: 'sb_publishable_jfe15-g7mYFo0mSI9tuDtw_dI6qrnx4',
+        );
+      }
+    }
+
+    final client = Supabase.instance.client;
+    if (client.auth.currentUser == null) return;
+    await client.rpc(
+      'mark_my_chat_messages_delivered_v1',
+      params: {'p_room_id': roomId},
+    );
+  } catch (error) {
+    debugPrint('Nao foi possivel confirmar a entrega do push: $error');
+  }
 }
 
 bool _isBrokenAndroidEncryptedStorageError(Object error) {
@@ -110,48 +174,59 @@ Future<void> _initializeSupabase() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final imageCache = PaintingBinding.instance.imageCache;
+  imageCache.maximumSize = 250;
+  imageCache.maximumSizeBytes = 80 << 20;
 
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    var firebaseReady = false;
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      firebaseReady = true;
+    } catch (error) {
+      debugPrint('Firebase indisponível na inicialização: $error');
+    }
 
-    if (!kIsWeb) {
+    if (firebaseReady && !kIsWeb) {
       FirebaseMessaging.onBackgroundMessage(
         _firebaseMessagingBackgroundHandler,
       );
     }
 
-    await flutterLocalNotificationsPlugin.initialize(
-      const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        iOS: DarwinInitializationSettings(),
-      ),
-      onDidReceiveNotificationResponse: (NotificationResponse response) {
-        final payload = response.payload;
-        if (payload == null || payload.isEmpty) return;
+    try {
+      await flutterLocalNotificationsPlugin.initialize(
+        const InitializationSettings(
+          android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+          iOS: DarwinInitializationSettings(),
+        ),
+        onDidReceiveNotificationResponse: (NotificationResponse response) {
+          final payload = response.payload;
+          if (payload == null || payload.isEmpty) return;
 
-        try {
-          final data = Map<String, dynamic>.from(jsonDecode(payload) as Map);
-          _navigateFromNotificationData(data);
-        } catch (e) {
-          debugPrint('Erro ao processar payload da notificaÃ§Ã£o local: $e');
-        }
-      },
-    );
+          try {
+            final data = Map<String, dynamic>.from(jsonDecode(payload) as Map);
+            _navigateFromNotificationData(data);
+          } catch (e) {
+            debugPrint('Erro ao processar payload da notificaÃ§Ã£o local: $e');
+          }
+        },
+      );
 
-    await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(channel);
+      await flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(channel);
+    } catch (error) {
+      debugPrint('Notificações locais indisponíveis na inicialização: $error');
+    }
 
     await _initializeSupabase();
 
     runApp(
       MultiProvider(
-        providers: [
-          Provider<AuthService>(create: (_) => AuthService()),
-        ],
+        providers: [Provider<AuthService>(create: (_) => AuthService())],
         child: const MyApp(),
       ),
     );
@@ -169,10 +244,7 @@ Future<void> main() async {
               padding: const EdgeInsets.all(24),
               child: Text(
                 'Erro ao iniciar o aplicativo:\n\n$e',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                ),
+                style: const TextStyle(color: Colors.white, fontSize: 14),
                 textAlign: TextAlign.center,
               ),
             ),
@@ -234,10 +306,11 @@ Future<void> _setupPushNotifications() async {
   FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
     debugPrint('Push em foreground: ${message.notification?.title}');
 
+    await _markChatPushDelivered(message.data);
     final notification = message.notification;
 
     if (notification != null) {
-      final data = message.data;
+      final data = _normalizedPushData(message.data);
       final type = (data['type'] ?? data['notification_type'] ?? '')
           .toString()
           .toLowerCase();
@@ -266,10 +339,9 @@ Future<void> _setupPushNotifications() async {
       final groupKey = isChatNotification ? 'chat_$roomId' : null;
 
       if (isChatNotification && ActiveChatService.isRoomOpen(roomId)) {
-        await flutterLocalNotificationsPlugin.cancel(
-          notificationId,
-          tag: groupKey,
-        );
+        final chatService = ChatService();
+        await chatService.dismissRoomNotification(roomId);
+        await chatService.markRoomMessagesAsRead(roomId);
         await BadgeService.updateBadge();
         return;
       }
@@ -289,11 +361,9 @@ Future<void> _setupPushNotifications() async {
             setAsGroupSummary: false,
             tag: groupKey,
           ),
-          iOS: DarwinNotificationDetails(
-            threadIdentifier: groupKey,
-          ),
+          iOS: DarwinNotificationDetails(threadIdentifier: groupKey),
         ),
-        payload: jsonEncode(message.data),
+        payload: jsonEncode(data),
       );
     }
 
@@ -301,6 +371,7 @@ Future<void> _setupPushNotifications() async {
   });
 
   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
+    await _markChatPushDelivered(message.data);
     debugPrint('Push aberto pelo usuário: ${message.messageId}');
     await BadgeService.updateBadge();
     _handleNotificationTap(message);
@@ -314,6 +385,7 @@ Future<void> _setupPushNotifications() async {
     if (initialMessage != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await Future<void>.delayed(const Duration(milliseconds: 700));
+        await _markChatPushDelivered(initialMessage.data);
         _handleNotificationTap(initialMessage);
       });
     }
@@ -448,8 +520,12 @@ Future<void> _openPlatformMessages() async {
     navigator.push(
       MaterialPageRoute(builder: (_) => const AthleteMessagesPage()),
     );
-  } else if ({'coach', 'treinador', 'tecnico', 'técnico'}
-      .contains(primaryRole)) {
+  } else if ({
+    'coach',
+    'treinador',
+    'tecnico',
+    'técnico',
+  }.contains(primaryRole)) {
     navigator.push(
       MaterialPageRoute(builder: (_) => const CoachMessagesPage()),
     );
@@ -481,16 +557,57 @@ void _openAthleteAgenda({String? eventId}) {
     return;
   }
 
-  navigator.pushNamed(
-    '/athlete-agenda',
-    arguments: {
-      'eventId': eventId,
-    },
-  );
+  navigator.pushNamed('/athlete-agenda', arguments: {'eventId': eventId});
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  DateTime? _lastResumeSyncAt;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+
+    final now = DateTime.now();
+    final lastSyncAt = _lastResumeSyncAt;
+    if (lastSyncAt != null &&
+        now.difference(lastSyncAt) < const Duration(seconds: 5)) {
+      return;
+    }
+
+    _lastResumeSyncAt = now;
+    unawaited(_syncServicesAfterResume());
+  }
+
+  Future<void> _syncServicesAfterResume() async {
+    try {
+      await Future.wait<void>([
+        PushTokenService.instance.syncCurrentUserTokenIfPossible(),
+        BadgeService.updateBadge(),
+        ChatService().markMyPendingMessagesDelivered(),
+      ]);
+    } catch (error) {
+      debugPrint('Falha ao sincronizar servicos ao retomar o app: $error');
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -504,14 +621,8 @@ class MyApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('pt', 'BR'),
-        Locale('en', 'US'),
-      ],
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        useMaterial3: true,
-      ),
+      supportedLocales: const [Locale('pt', 'BR'), Locale('en', 'US')],
+      theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
       initialRoute: '/',
       routes: {
         '/': (context) => const AppBootstrapPage(),
@@ -566,34 +677,22 @@ class _AppBootstrapPageState extends State<AppBootstrapPage> {
 
   Future<void> _bootstrap() async {
     try {
-      await _setupPushNotifications();
-
-      if (!mounted) return;
-
-      setState(() {
-        _isReady = true;
-      });
+      await _setupPushNotifications().timeout(const Duration(seconds: 12));
+    } on TimeoutException {
+      debugPrint('Tempo limite ao configurar notificacoes; o app continuara.');
     } catch (e) {
       debugPrint('Erro no bootstrap do app: $e');
 
       if (_isBrokenAndroidEncryptedStorageError(e)) {
         await _clearBrokenSecureStorage();
-
-        if (!mounted) return;
-
-        setState(() {
-          _isReady = true;
-          _hasError = false;
-          _errorMessage = '';
-        });
-        return;
       }
-
+    } finally {
       if (!mounted) return;
 
       setState(() {
-        _hasError = true;
-        _errorMessage = e.toString();
+        _isReady = true;
+        _hasError = false;
+        _errorMessage = '';
       });
     }
   }
@@ -653,9 +752,7 @@ class _AppBootstrapPageState extends State<AppBootstrapPage> {
     }
 
     if (!_isReady) {
-      return const PremiumLoadingScreen(
-        text: 'Iniciando aplicativo...',
-      );
+      return const PremiumLoadingScreen(text: 'Iniciando aplicativo...');
     }
 
     return const AuthWrapper();
@@ -680,9 +777,7 @@ class PremiumLoadingScreen extends StatelessWidget {
             ),
           ),
           Positioned.fill(
-            child: Container(
-              color: Colors.black.withOpacity(0.55),
-            ),
+            child: Container(color: Colors.black.withOpacity(0.55)),
           ),
           const Positioned.fill(
             child: DecoratedBox(
@@ -703,9 +798,7 @@ class PremiumLoadingScreen extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const CircularProgressIndicator(
-                  color: Color(0xFFFFD54F),
-                ),
+                const CircularProgressIndicator(color: Color(0xFFFFD54F)),
                 const SizedBox(height: 20),
                 Text(
                   text,
@@ -758,9 +851,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
             _auth.currentSession != null && _auth.currentUser != null;
 
         if (!_initialAuthResolved && !hasSession) {
-          return const PremiumLoadingScreen(
-            text: 'Restaurando sessão...',
-          );
+          return const PremiumLoadingScreen(text: 'Restaurando sessão...');
         }
 
         if (hasSession) {
@@ -769,6 +860,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               PushTokenService.instance.syncCurrentUserTokenIfPossible();
               BadgeService.updateBadge();
+              ChatService().markMyPendingMessagesDelivered();
               _flushPendingNotification();
             });
           }
@@ -780,9 +872,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
         if (!_initialAuthResolved &&
             snapshot.connectionState == ConnectionState.waiting) {
-          return const PremiumLoadingScreen(
-            text: 'Restaurando sessão...',
-          );
+          return const PremiumLoadingScreen(text: 'Restaurando sessão...');
         }
 
         return const LoginPage();
@@ -861,9 +951,7 @@ class _AdminOnlyProfilesRouteState extends State<AdminOnlyProfilesRoute> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const PremiumLoadingScreen(
-        text: 'Carregando...',
-      );
+      return const PremiumLoadingScreen(text: 'Carregando...');
     }
 
     if (!_isAdmin) {

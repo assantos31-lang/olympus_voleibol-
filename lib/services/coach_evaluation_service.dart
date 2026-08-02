@@ -9,6 +9,27 @@ class CoachEvaluationService {
 
   static const String settingKey = 'coach_evaluation';
 
+  static const Set<String> _coachRoleNames = {
+    'coach',
+    'trainer',
+    'treinador',
+    'tecnico',
+    'técnico',
+    'technician',
+  };
+
+  bool _isCoachRole(dynamic value) {
+    final role = (value ?? '').toString().trim().toLowerCase();
+    return _coachRoleNames.contains(role);
+  }
+
+  bool _isActive(dynamic value) {
+    if (value == null) return true;
+    if (value is bool) return value;
+    final normalized = value.toString().trim().toLowerCase();
+    return normalized != 'false' && normalized != '0';
+  }
+
   Future<List<Map<String, dynamic>>> _loadCoachProfilesByIds(
     Iterable<String> rawIds,
   ) async {
@@ -17,23 +38,16 @@ class CoachEvaluationService {
 
     final profilesResponse = await _client
         .from('profiles')
-        .select('id, full_name, avatar_url, user_type')
+        .select('id, full_name, avatar_url, user_type, is_active')
         .inFilter('id', ids)
-        .eq('is_active', true)
         .order('full_name');
-    final profiles = List<Map<String, dynamic>>.from(profilesResponse);
+    final profiles = List<Map<String, dynamic>>.from(profilesResponse)
+        .where((profile) => _isActive(profile['is_active']))
+        .toList();
 
     final coachIds = profiles
         .where((profile) {
-          final type =
-              (profile['user_type'] ?? '').toString().trim().toLowerCase();
-          return const {
-            'coach',
-            'treinador',
-            'tecnico',
-            'técnico',
-            'technician',
-          }.contains(type);
+          return _isCoachRole(profile['user_type']);
         })
         .map((profile) => (profile['id'] ?? '').toString())
         .toSet();
@@ -42,11 +56,11 @@ class CoachEvaluationService {
       final roleRows = await _client
           .from('user_roles')
           .select('user_id, role, is_active')
-          .inFilter('user_id', ids)
-          .eq('role', 'coach')
-          .eq('is_active', true);
+          .inFilter('user_id', ids);
       coachIds.addAll(
         List<Map<String, dynamic>>.from(roleRows)
+            .where((row) =>
+                _isActive(row['is_active']) && _isCoachRole(row['role']))
             .map((row) => (row['user_id'] ?? '').toString())
             .where((id) => id.isNotEmpty),
       );
@@ -184,25 +198,42 @@ class CoachEvaluationService {
   }
 
   Future<List<Map<String, dynamic>>> loadCoaches() async {
+    // Perfis antigos podem ter apenas profiles.user_type = coach, enquanto
+    // contas mais novas/multifunção usam user_roles. As duas fontes precisam
+    // ser combinadas; usar user_roles como fonte exclusiva ocultava técnicos.
+    final profileRows = await _client
+        .from('profiles')
+        .select('id, full_name, avatar_url, user_type, is_active');
+    final profiles = List<Map<String, dynamic>>.from(profileRows)
+        .where((profile) => _isActive(profile['is_active']))
+        .toList();
+
+    final coachRoleIds = <String>{};
     try {
-      final roleRows = await _client
-          .from('user_roles')
-          .select('user_id')
-          .eq('role', 'coach')
-          .eq('is_active', true);
-      return _loadCoachProfilesByIds(
+      final roleRows =
+          await _client.from('user_roles').select('user_id, role, is_active');
+      coachRoleIds.addAll(
         List<Map<String, dynamic>>.from(roleRows)
-            .map((row) => (row['user_id'] ?? '').toString()),
+            .where((row) =>
+                _isActive(row['is_active']) && _isCoachRole(row['role']))
+            .map((row) => (row['user_id'] ?? '').toString().trim())
+            .where((id) => id.isNotEmpty),
       );
     } catch (_) {
-      final rows = await _client
-          .from('profiles')
-          .select('id, full_name, avatar_url, user_type')
-          .eq('user_type', 'coach')
-          .eq('is_active', true)
-          .order('full_name');
-      return List<Map<String, dynamic>>.from(rows);
+      // Mantém compatibilidade com instalações que ainda não possuem
+      // user_roles; nesses casos profiles.user_type continua sendo a fonte.
     }
+
+    final coaches = profiles.where((profile) {
+      final id = (profile['id'] ?? '').toString().trim();
+      return coachRoleIds.contains(id) || _isCoachRole(profile['user_type']);
+    }).toList()
+      ..sort((a, b) => (a['full_name'] ?? '')
+          .toString()
+          .toLowerCase()
+          .compareTo((b['full_name'] ?? '').toString().toLowerCase()));
+
+    return coaches;
   }
 
   Future<List<Map<String, dynamic>>> loadMonthlyEnabledCoaches({

@@ -2,6 +2,8 @@ import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'chat_service.dart';
+
 class BadgeService {
   static final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -27,7 +29,8 @@ class BadgeService {
         total += ((row['unread_count'] ?? 0) as num).toInt();
       }
 
-      await setBadge(total);
+      final chatUnread = await ChatService().getTotalUnreadCount();
+      await setBadge(total + chatUnread);
     } catch (e, st) {
       debugPrint('[BadgeService] Erro ao atualizar badge: $e');
       debugPrintStack(stackTrace: st);

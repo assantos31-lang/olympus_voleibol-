@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:ui';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -247,7 +248,7 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
     return CircleAvatar(
       radius: 26,
       backgroundColor: olympusGold.withOpacity(0.18),
-      backgroundImage: hasAvatar ? NetworkImage(avatarUrl) : null,
+      backgroundImage: hasAvatar ? CachedNetworkImageProvider(avatarUrl) : null,
       child: !hasAvatar
           ? Text(
               fullName.isNotEmpty ? fullName[0].toUpperCase() : '?',

@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/badge_service.dart';
+import '../../services/olympus_memory_cache.dart';
 import 'coach_message_thread_page.dart';
 
 export 'coach_message_thread_page.dart';
@@ -21,6 +22,8 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
 
   bool _loading = true;
   bool _refreshing = false;
+  bool _loadInProgress = false;
+  bool _openingThread = false;
   List<Map<String, dynamic>> _threads = [];
   RealtimeChannel? _threadsChannel;
   RealtimeChannel? _messagesChannel;
@@ -36,8 +39,23 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
   }
 
   Future<void> _bootstrap() async {
+    _restoreThreadsCache();
     await _loadThreads(showLoader: true);
     _setupRealtime();
+  }
+
+  String get _threadsCacheKey =>
+      'coach_messages:${_currentUser()?.id ?? 'guest'}';
+
+  void _restoreThreadsCache() {
+    final cached = OlympusMemoryCache.read<List<Map<String, dynamic>>>(
+      _threadsCacheKey,
+    );
+    if (cached == null || cached.isEmpty) return;
+    setState(() {
+      _threads = List<Map<String, dynamic>>.from(cached);
+      _loading = false;
+    });
   }
 
   @override
@@ -88,6 +106,7 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
   }
 
   Future<void> _loadThreads({required bool showLoader}) async {
+    if (_loadInProgress) return;
     final user = _currentUser();
 
     if (mounted) {
@@ -109,12 +128,13 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
       }
       return;
     }
+    _loadInProgress = true;
 
     debugPrint('CoachMessagesPage user.id=${user.id} email=${user.email}');
 
     if (mounted) {
       setState(() {
-        if (showLoader) {
+        if (showLoader && _threads.isEmpty) {
           _loading = true;
         } else {
           _refreshing = true;
@@ -182,6 +202,20 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
       }
 
       final loadedThreads = <Map<String, dynamic>>[];
+      final lastMessagesResponse = await supabase
+          .from('app_messages')
+          .select('thread_id, body, sender_name, sender_type, created_at')
+          .inFilter('thread_id', threadIds)
+          .order('created_at', ascending: false)
+          .limit(500);
+      final lastMessageByThread = <String, Map<String, dynamic>>{};
+      for (final rawMessage in lastMessagesResponse) {
+        final message = Map<String, dynamic>.from(rawMessage);
+        final messageThreadId = (message['thread_id'] ?? '').toString();
+        if (messageThreadId.isNotEmpty) {
+          lastMessageByThread.putIfAbsent(messageThreadId, () => message);
+        }
+      }
 
       for (final participant in participantRows) {
         final threadId = (participant['thread_id'] ?? '').toString();
@@ -192,21 +226,13 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
         );
         if (thread.isEmpty) continue;
 
-        final lastMessageResponse = await supabase
-            .from('app_messages')
-            .select('body, sender_name, sender_type, created_at')
-            .eq('thread_id', threadId)
-            .order('created_at', ascending: false)
-            .limit(1)
-            .maybeSingle();
-
         loadedThreads.add({
           ...thread,
           'thread_id': threadId,
           'unread_count': participant['unread_count'] ?? 0,
           'last_read_at': participant['last_read_at'],
           'is_admin_sender': participant['is_admin_sender'],
-          'last_message': lastMessageResponse,
+          'last_message': lastMessageByThread[threadId],
         });
       }
 
@@ -230,6 +256,10 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
               'Participantes encontrados, mas nenhuma thread retornou da app_message_threads.';
         }
       });
+      OlympusMemoryCache.write<List<Map<String, dynamic>>>(
+        _threadsCacheKey,
+        List<Map<String, dynamic>>.from(loadedThreads),
+      );
       await BadgeService.updateBadge();
     } catch (e) {
       _showSnack('Erro ao carregar mensagens: $e');
@@ -239,6 +269,7 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
         });
       }
     } finally {
+      _loadInProgress = false;
       if (mounted) {
         setState(() {
           _loading = false;
@@ -249,35 +280,89 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
   }
 
   Future<void> _openThread(Map<String, dynamic> thread) async {
+    if (_openingThread) return;
     final threadId = (thread['thread_id'] ?? thread['id'] ?? '').toString();
     if (threadId.isEmpty) return;
+    _openingThread = true;
 
-    final updated = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => CoachMessageThreadPage(
-          threadId: threadId,
-          subject: (thread['subject'] ?? 'Mensagem').toString(),
-          allowReply: thread['allow_reply'] == true,
+    try {
+      final updated = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => CoachMessageThreadPage(
+            threadId: threadId,
+            subject: (thread['subject'] ?? 'Mensagem').toString(),
+            allowReply: thread['allow_reply'] == true,
+          ),
         ),
+      );
+
+      if (updated == true && mounted) {
+        setState(() {
+          final index = _threads.indexWhere(
+            (t) => (t['thread_id'] ?? t['id']).toString() == threadId,
+          );
+
+          if (index != -1) {
+            _threads[index] = {
+              ..._threads[index],
+              'unread_count': 0,
+            };
+          }
+        });
+      }
+
+      await _loadThreads(showLoader: false);
+    } finally {
+      _openingThread = false;
+    }
+  }
+
+  Future<void> _deleteThreadForMe(Map<String, dynamic> thread) async {
+    final user = _currentUser();
+    final threadId = (thread['thread_id'] ?? thread['id'] ?? '').toString();
+    if (user == null || threadId.isEmpty) return;
+
+    final subject = (thread['subject'] ?? 'esta conversa').toString();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir conversa'),
+        content: Text(
+          'Deseja excluir "$subject" da sua lista? '
+          'Ela continuará disponível para os outros participantes.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Excluir'),
+          ),
+        ],
       ),
     );
+    if (confirmed != true) return;
 
-    if (updated == true && mounted) {
+    try {
+      await supabase
+          .from('app_message_participants')
+          .delete()
+          .eq('thread_id', threadId)
+          .eq('user_id', user.id);
+      if (!mounted) return;
       setState(() {
-        final index = _threads.indexWhere(
-          (t) => (t['thread_id'] ?? t['id']).toString() == threadId,
+        _threads.removeWhere(
+          (item) => (item['thread_id'] ?? item['id']).toString() == threadId,
         );
-
-        if (index != -1) {
-          _threads[index] = {
-            ..._threads[index],
-            'unread_count': 0,
-          };
-        }
       });
+      await BadgeService.updateBadge();
+      _showSnack('Conversa excluída da sua lista.');
+    } catch (e) {
+      _showSnack('Erro ao excluir conversa: $e');
     }
-
-    await _loadThreads(showLoader: false);
   }
 
   String _formatDateTime(dynamic value) {
@@ -603,7 +688,32 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
                         ],
                       ),
                     ),
-                    SizedBox(width: isCompact ? 8 : 10),
+                    PopupMenuButton<String>(
+                      tooltip: 'Opções da conversa',
+                      icon: Icon(
+                        Icons.more_vert_rounded,
+                        size: isCompact ? 20 : 22,
+                        color: Colors.white.withOpacity(0.88),
+                      ),
+                      onSelected: (value) {
+                        if (value == 'delete') {
+                          _deleteThreadForMe(thread);
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem<String>(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete_outline),
+                              SizedBox(width: 10),
+                              Text('Excluir conversa'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(width: isCompact ? 2 : 4),
                     Icon(
                       Icons.arrow_forward_ios_rounded,
                       size: isCompact ? 16 : 18,

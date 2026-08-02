@@ -2,7 +2,10 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../widgets/olympus_async_state.dart';
 
 class AthleteStatisticsPage extends StatefulWidget {
   const AthleteStatisticsPage({super.key});
@@ -58,6 +61,7 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
   static final DateTime _statsRuleStartDate = DateTime(2026, 5, 1);
 
   bool _loading = true;
+  bool _loadInProgress = false;
   String? _error;
   Map<String, dynamic>? _profile;
   List<Map<String, dynamic>> _convocations = [];
@@ -73,6 +77,8 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
   }
 
   Future<void> _loadData() async {
+    if (_loadInProgress) return;
+    _loadInProgress = true;
     setState(() {
       _loading = true;
       _error = null;
@@ -84,28 +90,32 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
         throw Exception('Usuário não autenticado.');
       }
 
-      final profileRows = await _supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url, gender, user_type')
-          .eq('id', user.id)
-          .limit(1);
+      final results = await Future.wait<dynamic>([
+        _supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url, gender, user_type')
+            .eq('id', user.id)
+            .limit(1),
+        _supabase
+            .from('convocations')
+            .select(
+              'id, user_id, event_id, status, justification, created_at, '
+              'events!$_eventsEmbedFk(id, event_name, event_type, gender, '
+              'event_date, event_time, championship_name)',
+            )
+            .eq('user_id', user.id),
+        _supabase
+            .from('checkins')
+            .select(
+              'id, user_id, event_id, check_in_status, created_at, checked_in_at, '
+              'check_in_latitude, check_in_longitude, latitude, longitude',
+            )
+            .eq('user_id', user.id),
+      ]).timeout(const Duration(seconds: 15));
 
-      final convocationRows = await _supabase
-          .from('convocations')
-          .select(
-            'id, user_id, event_id, status, justification, created_at, '
-            'events!$_eventsEmbedFk(id, event_name, event_type, gender, '
-            'event_date, event_time, championship_name)',
-          )
-          .eq('user_id', user.id);
-
-      final checkinRows = await _supabase
-          .from('checkins')
-          .select(
-            'id, user_id, event_id, check_in_status, created_at, checked_in_at, '
-            'check_in_latitude, check_in_longitude, latitude, longitude',
-          )
-          .eq('user_id', user.id);
+      final profileRows = results[0];
+      final convocationRows = results[1];
+      final checkinRows = results[2];
 
       final profiles = List<Map<String, dynamic>>.from(profileRows as List);
       final convocations = List<Map<String, dynamic>>.from(
@@ -160,6 +170,8 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
         _error = 'Erro ao carregar estatísticas: $e';
         _loading = false;
       });
+    } finally {
+      _loadInProgress = false;
     }
   }
 
@@ -561,8 +573,9 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
             child: CircleAvatar(
               radius: 31,
               backgroundColor: olympusGold,
-              backgroundImage:
-                  avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+              backgroundImage: avatarUrl.isNotEmpty
+                  ? CachedNetworkImageProvider(avatarUrl)
+                  : null,
               child: avatarUrl.isEmpty
                   ? Text(
                       fullName.isNotEmpty ? fullName[0].toUpperCase() : '?',
@@ -806,11 +819,13 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
               children: [
                 if (avatarUrl.isNotEmpty)
                   Positioned.fill(
-                    child: Image.network(
-                      avatarUrl,
+                    child: CachedNetworkImage(
+                      imageUrl: avatarUrl,
                       fit: BoxFit.cover,
                       alignment: athleteImageAlignment,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      memCacheWidth: 1000,
+                      fadeInDuration: const Duration(milliseconds: 120),
+                      errorWidget: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),
                 Positioned.fill(
@@ -1180,24 +1195,11 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
           children: [
             Positioned.fill(child: _background()),
             if (_loading)
-              const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
+              const OlympusLoadingState(message: 'Carregando estatísticas...')
             else if (_error != null)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(22),
-                  child: Text(
-                    _error!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
+              OlympusErrorState(
+                message: 'Não foi possível carregar as estatísticas.',
+                onRetry: _loadData,
               )
             else
               RefreshIndicator(
@@ -1399,6 +1401,7 @@ class _AthleteStatisticsDetailPageState
   static const String _eventsEmbedFk = 'convocations_event_id_fkey';
 
   bool _loading = true;
+  bool _loadInProgress = false;
   String? _error;
 
   Map<String, dynamic>? _profile;
@@ -2085,6 +2088,8 @@ class _AthleteStatisticsDetailPageState
   }
 
   Future<void> _loadData() async {
+    if (_loadInProgress) return;
+    _loadInProgress = true;
     setState(() {
       _loading = true;
       _error = null;
@@ -2096,17 +2101,60 @@ class _AthleteStatisticsDetailPageState
         throw Exception('Usuário não autenticado.');
       }
 
-      final profileRows = await _supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url, gender, user_type')
-          .eq('id', user.id)
-          .limit(1);
+      final results = await Future.wait<dynamic>([
+        _supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url, gender, user_type')
+            .eq('id', user.id)
+            .limit(1),
+        _safeSelect(
+          'training_evaluations',
+          'id, event_id, coach_id, athlete_id, tipo, slot, motivo, fundamento, observacao, created_at, score',
+        ),
+        _safeSelect(
+          'checkins',
+          'id, user_id, event_id, check_in_status, created_at, checked_in_at, check_in_latitude, check_in_longitude',
+          userId: user.id,
+        ),
+        _safeSelect(
+          'convocations',
+          'id, user_id, event_id, status, justification, created_at, events!$_eventsEmbedFk (id, event_name, event_type, gender, event_date, event_time, championship_name)',
+          userId: user.id,
+        ),
+        _loadMessages(user.id),
+        _loadTrainingPlanBlocks(),
+        _safeSelect(
+          'match_scouts',
+          'id, event_id, coach_id, athlete_id, set_number, '
+              'saque_ponto, saque_erro, '
+              'recepcao_boa, recepcao_erro, '
+              'levantamento_bom, levantamento_erro, '
+              'ataque_ponto, ataque_erro, '
+              'bloqueio_ponto, bloqueio_erro, '
+              'defesa_boa, defesa_erro, '
+              'observacao, created_at, updated_at',
+        ),
+        _safeSelect(
+          'match_scout_action_details',
+          'id, event_id, coach_id, athlete_id, set_number, foundation, '
+              'action_result, action_subtype, action_description, '
+              'action_quality, action_impact, weight, created_at',
+        ),
+      ]);
 
-      final profiles = List<Map<String, dynamic>>.from(profileRows as List);
-
-      final evaluationsRows = await _safeSelect(
-        'training_evaluations',
-        'id, event_id, coach_id, athlete_id, tipo, slot, motivo, fundamento, observacao, created_at, score',
+      final profiles = List<Map<String, dynamic>>.from(results[0] as List);
+      final evaluationsRows = List<Map<String, dynamic>>.from(
+        results[1] as List,
+      );
+      final checkins = List<Map<String, dynamic>>.from(results[2] as List);
+      final convocations = List<Map<String, dynamic>>.from(results[3] as List);
+      final messages = List<Map<String, dynamic>>.from(results[4] as List);
+      final trainingPlanBlocks = List<Map<String, dynamic>>.from(
+        results[5] as List,
+      );
+      final matchScouts = List<Map<String, dynamic>>.from(results[6] as List);
+      final matchScoutActionDetails = List<Map<String, dynamic>>.from(
+        results[7] as List,
       );
 
       final evaluations = evaluationsRows.where((row) {
@@ -2117,40 +2165,6 @@ class _AthleteStatisticsDetailPageState
           final bd = _parseDate(b['created_at']) ?? DateTime(1900);
           return bd.compareTo(ad);
         });
-
-      final checkins = await _safeSelect(
-        'checkins',
-        'id, user_id, event_id, check_in_status, created_at, checked_in_at, check_in_latitude, check_in_longitude',
-        userId: user.id,
-      );
-
-      final convocations = await _safeSelect(
-        'convocations',
-        'id, user_id, event_id, status, justification, created_at, events!$_eventsEmbedFk (id, event_name, event_type, gender, event_date, event_time, championship_name)',
-        userId: user.id,
-      );
-
-      final messages = await _loadMessages(user.id);
-      final trainingPlanBlocks = await _loadTrainingPlanBlocks();
-
-      final matchScouts = await _safeSelect(
-        'match_scouts',
-        'id, event_id, coach_id, athlete_id, set_number, '
-            'saque_ponto, saque_erro, '
-            'recepcao_boa, recepcao_erro, '
-            'levantamento_bom, levantamento_erro, '
-            'ataque_ponto, ataque_erro, '
-            'bloqueio_ponto, bloqueio_erro, '
-            'defesa_boa, defesa_erro, '
-            'observacao, created_at, updated_at',
-      );
-
-      final matchScoutActionDetails = await _safeSelect(
-        'match_scout_action_details',
-        'id, event_id, coach_id, athlete_id, set_number, foundation, '
-            'action_result, action_subtype, action_description, '
-            'action_quality, action_impact, weight, created_at',
-      );
 
       final athleteMatchScouts = matchScouts.where((row) {
         return (row['athlete_id'] ?? '').toString() == user.id;
@@ -2214,6 +2228,8 @@ class _AthleteStatisticsDetailPageState
         _error = 'Erro ao carregar estatísticas: $e';
         _loading = false;
       });
+    } finally {
+      _loadInProgress = false;
     }
   }
 
@@ -3407,11 +3423,13 @@ class _AthleteStatisticsDetailPageState
                       sigmaX: dynamicBlur,
                       sigmaY: dynamicBlur,
                     ),
-                    child: Image.network(
-                      avatarUrl,
+                    child: CachedNetworkImage(
+                      imageUrl: avatarUrl,
                       fit: BoxFit.contain,
                       alignment: alignment,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      memCacheWidth: 1000,
+                      fadeInDuration: const Duration(milliseconds: 120),
+                      errorWidget: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),
                 ),
@@ -3519,7 +3537,7 @@ class _AthleteStatisticsDetailPageState
                   radius: 31,
                   backgroundColor: olympusGold,
                   backgroundImage: avatarUrl.trim().isNotEmpty
-                      ? NetworkImage(avatarUrl)
+                      ? CachedNetworkImageProvider(avatarUrl)
                       : null,
                   child: avatarUrl.trim().isEmpty
                       ? Text(
@@ -7298,24 +7316,11 @@ class _AthleteStatisticsDetailPageState
           children: [
             Positioned.fill(child: _background()),
             if (_loading)
-              const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
+              const OlympusLoadingState(message: 'Carregando estatísticas...')
             else if (_error != null)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(22),
-                  child: Text(
-                    _error!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
+              OlympusErrorState(
+                message: 'Não foi possível carregar as estatísticas.',
+                onRetry: _loadData,
               )
             else
               RefreshIndicator(

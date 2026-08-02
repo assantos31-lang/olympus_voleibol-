@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import '../pages/add_event_page.dart';
 import '../services/permission_service.dart'; // ✅ NOVO
 import '../services/role_service.dart';
+import '../services/olympus_memory_cache.dart';
+import '../widgets/event_address_link.dart';
 
 class AgendaPage extends StatefulWidget {
   const AgendaPage({Key? key}) : super(key: key);
@@ -41,6 +43,10 @@ class _AgendaPageState extends State<AgendaPage> {
   // {eventId: {'total_convocados': n, 'total_aceitos': n, 'total_pendentes': n, 'total_recusados': n}}
   Map<String, Map<String, int>> _convocationStats = {};
   bool _loading = true;
+  bool _loadingEvents = false;
+  bool _openingAgendaPage = false;
+  static const int _eventPageSize = 30;
+  int _visibleEventLimit = _eventPageSize;
   String? _error;
   String _filtroSelecionado = 'Todos';
   String _filtroMes = '';
@@ -62,8 +68,58 @@ class _AgendaPageState extends State<AgendaPage> {
   Future<void> _initializeAgenda() async {
     await _checkPermission();
     if (!mounted || !_hasPermission) return;
+    _restoreAgendaCache();
     await _buscarEventos();
     _listenForEventChanges();
+  }
+
+  String get _agendaCacheKey =>
+      'agenda:${_supabase.auth.currentUser?.id ?? 'guest'}:${_isAdmin ? 'admin' : 'user'}';
+
+  void _restoreAgendaCache() {
+    final cached = OlympusMemoryCache.read<Map<String, dynamic>>(
+      _agendaCacheKey,
+    );
+    if (cached == null) return;
+    final events = List<Map<String, dynamic>>.from(
+      (cached['events'] as List?) ?? const [],
+    );
+    if (events.isEmpty) return;
+
+    Map<String, Map<String, int>> restoreIntMap(dynamic raw) {
+      if (raw is! Map) return <String, Map<String, int>>{};
+      final restored = <String, Map<String, int>>{};
+      raw.forEach((key, value) {
+        if (value is! Map) return;
+        restored[key.toString()] = value.map<String, int>(
+          (innerKey, innerValue) => MapEntry(
+            innerKey.toString(),
+            innerValue is num
+                ? innerValue.toInt()
+                : int.tryParse(innerValue.toString()) ?? 0,
+          ),
+        );
+      });
+      return restored;
+    }
+
+    setState(() {
+      _eventos = events;
+      _quantidadeConvocados = restoreIntMap(cached['called']);
+      _checkinInfo = restoreIntMap(cached['checkin']);
+      _convocationStats = restoreIntMap(cached['stats']);
+      _loading = false;
+    });
+    _aplicarFiltros();
+  }
+
+  void _saveAgendaCache() {
+    OlympusMemoryCache.write<Map<String, dynamic>>(_agendaCacheKey, {
+      'events': List<Map<String, dynamic>>.from(_eventos),
+      'called': Map<String, Map<String, int>>.from(_quantidadeConvocados),
+      'checkin': Map<String, Map<String, int>>.from(_checkinInfo),
+      'stats': Map<String, Map<String, int>>.from(_convocationStats),
+    });
   }
 
   void _listenForEventChanges() {
@@ -167,8 +223,10 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 
   Future<void> _buscarEventos() async {
+    if (_loadingEvents) return;
+    _loadingEvents = true;
     setState(() {
-      _loading = true;
+      _loading = _eventos.isEmpty;
       _error = null;
     });
     try {
@@ -197,11 +255,23 @@ class _AgendaPageState extends State<AgendaPage> {
       // Mantemos suas funções, mas com correções internas
       await _buscarQuantidadeConvocados();
       await _buscarCheckinInfo();
+      _saveAgendaCache();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _error = 'Erro ao buscar eventos: $e';
+        _error = _eventos.isEmpty ? 'Erro ao buscar eventos: $e' : null;
         _loading = false;
       });
+      if (_eventos.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Não foi possível atualizar. Dados anteriores mantidos.'),
+          ),
+        );
+      }
+    } finally {
+      _loadingEvents = false;
     }
   }
 
@@ -335,6 +405,20 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
+  String _formatarHora(dynamic rawValue) {
+    final value = (rawValue ?? '').toString().trim();
+    if (value.isEmpty) return '';
+    final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(value);
+    if (match == null) return value;
+    final hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2)!);
+    if (hour == null || minute == null || hour > 23 || minute > 59) {
+      return value;
+    }
+    return '${hour.toString().padLeft(2, '0')}:'
+        '${minute.toString().padLeft(2, '0')}';
+  }
+
   bool _isEventoPassado(Map<String, dynamic> evento) {
     final dataHora = _parseEventoDateTime(evento);
 
@@ -428,8 +512,15 @@ class _AgendaPageState extends State<AgendaPage> {
 
     setState(() {
       _eventosFiltrados = eventosFiltrados;
+      _visibleEventLimit = _eventPageSize;
     });
   }
+
+  int get _eventosVisiveisCount => _eventosFiltrados.length < _visibleEventLimit
+      ? _eventosFiltrados.length
+      : _visibleEventLimit;
+
+  bool get _temMaisEventos => _eventosFiltrados.length > _visibleEventLimit;
 
   Future<void> _refreshEventos() async {
     await _buscarEventos();
@@ -998,24 +1089,36 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 
   void _navegarParaCadastroEvento() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const AddEventPage()),
-    );
-    if (result == true) {
-      _refreshEventos();
+    if (_openingAgendaPage) return;
+    _openingAgendaPage = true;
+    try {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const AddEventPage()),
+      );
+      if (result == true) {
+        await _refreshEventos();
+      }
+    } finally {
+      _openingAgendaPage = false;
     }
   }
 
   void _editarEvento(Map<String, dynamic> evento) async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AddEventPage(evento: evento),
-      ),
-    );
-    if (result == true) {
-      _refreshEventos();
+    if (_openingAgendaPage) return;
+    _openingAgendaPage = true;
+    try {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AddEventPage(evento: evento),
+        ),
+      );
+      if (result == true) {
+        await _refreshEventos();
+      }
+    } finally {
+      _openingAgendaPage = false;
     }
   }
 
@@ -3870,7 +3973,7 @@ class _AgendaPageState extends State<AgendaPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _refreshEventos,
+            onPressed: _loadingEvents ? null : _refreshEventos,
             color: Colors.white,
           ),
         ],
@@ -3982,6 +4085,12 @@ class _AgendaPageState extends State<AgendaPage> {
               ],
             ),
           ),
+          if (_loadingEvents && _eventos.isNotEmpty)
+            const LinearProgressIndicator(
+              minHeight: 3,
+              color: olympusGold,
+              backgroundColor: Color(0xFFE8EEF5),
+            ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -4034,8 +4143,29 @@ class _AgendaPageState extends State<AgendaPage> {
                             onRefresh: _refreshEventos,
                             child: ListView.builder(
                               padding: const EdgeInsets.all(16),
-                              itemCount: _eventosFiltrados.length,
+                              itemCount: _eventosVisiveisCount +
+                                  (_temMaisEventos ? 1 : 0),
                               itemBuilder: (context, index) {
+                                if (index == _eventosVisiveisCount) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(
+                                      top: 4,
+                                      bottom: 20,
+                                    ),
+                                    child: OutlinedButton.icon(
+                                      onPressed: () {
+                                        setState(() {
+                                          _visibleEventLimit += _eventPageSize;
+                                        });
+                                      },
+                                      icon:
+                                          const Icon(Icons.expand_more_rounded),
+                                      label: Text(
+                                        'Carregar mais eventos (${_eventosFiltrados.length - _eventosVisiveisCount})',
+                                      ),
+                                    ),
+                                  );
+                                }
                                 final evento = _eventosFiltrados[index];
                                 final eventId = evento['id']?.toString() ?? '';
                                 final quantidades =
@@ -4446,7 +4576,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                             ),
                                             const SizedBox(width: 8),
                                             Text(
-                                              evento['event_time'] ?? '',
+                                              _formatarHora(
+                                                evento['event_time'],
+                                              ),
                                               style: TextStyle(
                                                   color: Colors.grey[700]),
                                             ),
@@ -4455,27 +4587,14 @@ class _AgendaPageState extends State<AgendaPage> {
                                         // ✅ ENDEREÇO MOVIDO PARA ABAIXO DO RELÓGIO
                                         if (enderecoCompleto != null) ...[
                                           const SizedBox(height: 4),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.location_on,
-                                                size: 16,
-                                                color: Colors.grey[600],
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  enderecoCompleto,
-                                                  style: TextStyle(
-                                                    color: Colors.grey[700],
-                                                    fontSize: 13,
-                                                  ),
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                            ],
+                                          EventAddressLink(
+                                            event: evento,
+                                            address: enderecoCompleto,
+                                            iconColor: Colors.grey[700],
+                                            style: TextStyle(
+                                              color: Colors.grey[700],
+                                              fontSize: 13,
+                                            ),
                                           ),
                                         ],
                                         Row(
@@ -4893,7 +5012,7 @@ class _AgendaPageState extends State<AgendaPage> {
                     _buildDetailRow(
                       Icons.access_time,
                       'Horário',
-                      evento['event_time'] ?? '',
+                      _formatarHora(evento['event_time']),
                     ),
                     _buildDetailRow(
                       Icons.category,
@@ -4927,8 +5046,17 @@ class _AgendaPageState extends State<AgendaPage> {
                             color: olympusBlue,
                           )),
                       const SizedBox(height: 8),
-                      _buildDetailRow(Icons.location_on, 'Endereço',
-                          '${evento['street']}, ${evento['street_number']}'),
+                      EventAddressLink(
+                        event: evento,
+                        address: EventMapLauncher.buildAddress(evento),
+                        iconColor: olympusGold,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: olympusBlue,
+                        ),
+                        maxLines: 3,
+                      ),
                       _buildDetailRow(
                           Icons.map, 'Bairro', evento['neighborhood'] ?? ''),
                       _buildDetailRow(Icons.home, 'Cidade',

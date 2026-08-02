@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import 'admin_athletes_statistics_page.dart';
 
@@ -20,7 +21,9 @@ class _AdminListResponsive {
   }
 
   static int athletesCrossAxisCount(
-      BuildContext context, double availableWidth) {
+    BuildContext context,
+    double availableWidth,
+  ) {
     final width = availableWidth.isFinite
         ? availableWidth
         : _AdminListResponsive.width(context);
@@ -98,12 +101,12 @@ class _AdminAthletesStatisticsListPageState
 
   String _evaluationSearchText(Map<String, dynamic> row) {
     return [
-      row['tipo'],
-      row['slot'],
-      row['motivo'],
-      row['fundamento'],
-      row['observacao'],
-    ]
+          row['tipo'],
+          row['slot'],
+          row['motivo'],
+          row['fundamento'],
+          row['observacao'],
+        ]
         .map(_normalizeEvaluationText)
         .where((value) => value.isNotEmpty)
         .join(' ');
@@ -300,7 +303,9 @@ class _AdminAthletesStatisticsListPageState
           (athlete['id'] ?? '').toString(): athlete,
       };
 
-      final convocationRows = await _supabase.from('convocations').select('''
+      final convocationRows = await _supabase
+          .from('convocations')
+          .select('''
 user_id,
 event_id,
 status,
@@ -311,7 +316,8 @@ gender,
 event_date,
 event_time
 )
-''').inFilter('user_id', ids);
+''')
+          .inFilter('user_id', ids);
 
       final convokedTrainingEventIdsByAthlete = <String, Set<String>>{};
       final expiredWithoutCheckinByAthlete = <String, Set<String>>{};
@@ -345,7 +351,8 @@ event_time
             .putIfAbsent(athleteId, () => <String>{})
             .add(eventId);
 
-        final checkinClosed = eventDate != null &&
+        final checkinClosed =
+            eventDate != null &&
             now.isAfter(eventDate.add(const Duration(minutes: 30)));
 
         if (checkinClosed) {
@@ -363,10 +370,10 @@ event_time
       final checkinRows = allTrainingEventIds.isEmpty
           ? <dynamic>[]
           : await _supabase
-              .from('checkins')
-              .select('user_id, event_id, check_in_status')
-              .inFilter('user_id', ids)
-              .inFilter('event_id', allTrainingEventIds);
+                .from('checkins')
+                .select('user_id, event_id, check_in_status')
+                .inFilter('user_id', ids)
+                .inFilter('event_id', allTrainingEventIds);
 
       final presenceByAthlete = <String, Set<String>>{};
 
@@ -487,11 +494,34 @@ event_time
           .select(
             'id, full_name, email, phone, avatar_url, user_type, gender, court_position, performance_level, performance_level_rank',
           )
-          .neq('user_type', 'admin')
           .eq('is_active', true)
           .order('full_name', ascending: true);
 
-      final athletes = List<Map<String, dynamic>>.from(rows as List);
+      final allProfiles = List<Map<String, dynamic>>.from(rows as List);
+      final athleteIds = <String>{
+        for (final profile in allProfiles)
+          if (_asString(profile['user_type']) == 'athlete')
+            _asString(profile['id']),
+      };
+
+      try {
+        final roleRows = await _supabase
+            .from('user_roles')
+            .select('user_id')
+            .eq('role', 'athlete')
+            .eq('is_active', true);
+
+        for (final row in List<Map<String, dynamic>>.from(roleRows as List)) {
+          final userId = _asString(row['user_id']);
+          if (userId.isNotEmpty) athleteIds.add(userId);
+        }
+      } catch (e) {
+        debugPrint('Nao foi possivel complementar atletas por papeis: $e');
+      }
+
+      final athletes = allProfiles
+          .where((profile) => athleteIds.contains(_asString(profile['id'])))
+          .toList();
       final stats = await _loadAthletesStats(
         athletes.map((athlete) => _asString(athlete['id'])),
         athletes,
@@ -550,6 +580,15 @@ event_time
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 
+  String? _resolveAvatarUrl(dynamic rawValue) {
+    final value = _asString(rawValue);
+    if (value.isEmpty) return null;
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    return _supabase.storage.from('avatars').getPublicUrl(value);
+  }
+
   List<Map<String, dynamic>> get _filteredAthletes {
     final query = _search.trim().toLowerCase();
 
@@ -597,20 +636,15 @@ event_time
     final athleteId = _asString(athlete['id']);
 
     if (athleteId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Atleta sem ID válido.'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Atleta sem ID válido.')));
       return;
     }
 
     Navigator.push(
       context,
-      AthleteStatisticsPage.route(
-        athleteId: athleteId,
-        adminView: true,
-      ),
+      AthleteStatisticsPage.route(athleteId: athleteId, adminView: true),
     );
   }
 
@@ -867,9 +901,7 @@ event_time
         color: selected ? olympusBlue : olympusMuted,
         fontWeight: FontWeight.w900,
       ),
-      side: BorderSide(
-        color: selected ? olympusGold : olympusBorder,
-      ),
+      side: BorderSide(color: selected ? olympusGold : olympusBorder),
       onSelected: (_) => onTap(),
     );
   }
@@ -891,9 +923,7 @@ event_time
         color: selected ? color : olympusMuted,
         fontWeight: FontWeight.w900,
       ),
-      side: BorderSide(
-        color: selected ? color : olympusBorder,
-      ),
+      side: BorderSide(color: selected ? color : olympusBorder),
       onSelected: (_) =>
           setState(() => _selectedStatus = selected ? '' : value),
     );
@@ -903,7 +933,7 @@ event_time
     final name = _asString(athlete['full_name']).isEmpty
         ? 'Sem nome'
         : _asString(athlete['full_name']);
-    final avatarUrl = _asString(athlete['avatar_url']);
+    final avatarUrl = _resolveAvatarUrl(athlete['avatar_url']);
     final position = _asString(athlete['court_position']).isEmpty
         ? 'Sem posição'
         : _asString(athlete['court_position']);
@@ -955,22 +985,43 @@ event_time
                           width: 2,
                         ),
                       ),
-                      child: CircleAvatar(
-                        radius: 29,
-                        backgroundColor: olympusGold,
-                        backgroundImage: avatarUrl.isNotEmpty
-                            ? NetworkImage(avatarUrl)
-                            : null,
-                        child: avatarUrl.isEmpty
-                            ? Text(
-                                _initials(name),
-                                style: const TextStyle(
-                                  color: olympusBlue,
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w900,
+                      child: ClipOval(
+                        child: avatarUrl == null
+                            ? Container(
+                                color: olympusGold,
+                                alignment: Alignment.center,
+                                child: Text(
+                                  _initials(name),
+                                  style: const TextStyle(
+                                    color: olympusBlue,
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w900,
+                                  ),
                                 ),
                               )
-                            : null,
+                            : CachedNetworkImage(
+                                imageUrl: avatarUrl,
+                                fit: BoxFit.cover,
+                                width: 60,
+                                height: 60,
+                                memCacheWidth: 220,
+                                memCacheHeight: 220,
+                                fadeInDuration: const Duration(
+                                  milliseconds: 120,
+                                ),
+                                errorWidget: (_, __, ___) => Container(
+                                  color: olympusGold,
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    _initials(name),
+                                    style: const TextStyle(
+                                      color: olympusBlue,
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -1055,10 +1106,7 @@ event_time
                           color: statusColor.withOpacity(0.24),
                         ),
                       ),
-                      child: Icon(
-                        Icons.bar_chart_rounded,
-                        color: statusColor,
-                      ),
+                      child: Icon(Icons.bar_chart_rounded, color: statusColor),
                     ),
                   ],
                 ),
@@ -1070,10 +1118,7 @@ event_time
     );
   }
 
-  Widget _miniStatusBadge({
-    required String label,
-    required Color color,
-  }) {
+  Widget _miniStatusBadge({required String label, required Color color}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -1191,9 +1236,9 @@ event_time
                 builder: (context, constraints) {
                   final crossAxisCount =
                       _AdminListResponsive.athletesCrossAxisCount(
-                    context,
-                    constraints.maxWidth,
-                  );
+                        context,
+                        constraints.maxWidth,
+                      );
 
                   if (crossAxisCount == 1) {
                     return Column(
@@ -1264,10 +1309,10 @@ class _AdminAthleteStats {
   });
 
   const _AdminAthleteStats.empty()
-      : presencas = 0,
-        faltas = 0,
-        destaques = 0,
-        atencoes = 0;
+    : presencas = 0,
+      faltas = 0,
+      destaques = 0,
+      atencoes = 0;
 
   final int presencas;
   final int faltas;

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_masked_text2/flutter_masked_text2.dart';
@@ -32,6 +33,7 @@ class AthleteDashboardPage extends StatefulWidget {
 class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   final supabase = Supabase.instance.client;
+  bool _refreshingDashboard = false;
   final _authService = AuthService();
   final ChatService _chatService = ChatService();
   final PermissionService _permissionService = PermissionService();
@@ -76,6 +78,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   RealtimeChannel? _monthlyHistoryRealtimeChannel;
   RealtimeChannel? _trainingEvaluationsRealtimeChannel;
   Timer? _dashboardBadgeFallbackTimer;
+  StreamSubscription<int>? _chatUnreadSubscription;
 
   int _confirmedPresenceCount = 0;
   int _acceptedButAbsentCount = 0;
@@ -141,27 +144,52 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
       ),
     );
     _refreshDashboard();
+    _listenChatUnreadCount();
+  }
+
+  void _listenChatUnreadCount() {
+    _chatUnreadSubscription?.cancel();
+    _chatUnreadSubscription = _chatService.streamTotalUnreadCount().listen(
+      (total) {
+        if (!mounted || total == _chatUnreadCount) return;
+        setState(() => _chatUnreadCount = total);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('Erro ao atualizar badge do chat: $error');
+      },
+    );
   }
 
   Future<void> _refreshDashboard() async {
-    if (!mounted) return;
+    if (!mounted || _refreshingDashboard) return;
+    _refreshingDashboard = true;
     setState(() {
       _isLoading = true;
       _isLoadingTodayBirthdays = true;
     });
 
-    await Future.wait([
-      _loadProfile(),
-      _loadTodayBirthdays(),
-      _loadBirthdaysPermission(),
-      _loadChatPermission(),
-    ]);
+    try {
+      await Future.wait([
+        _loadProfile(),
+        _loadTodayBirthdays(),
+        _loadBirthdaysPermission(),
+        _loadChatPermission(),
+      ]);
+    } finally {
+      _refreshingDashboard = false;
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _startDashboardFallbackTimer();
       _refreshDashboard();
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _dashboardBadgeFallbackTimer?.cancel();
+      _dashboardBadgeFallbackTimer = null;
     }
   }
 
@@ -652,8 +680,12 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
       );
     });
 
+    _startDashboardFallbackTimer();
+  }
+
+  void _startDashboardFallbackTimer() {
     _dashboardBadgeFallbackTimer ??= Timer.periodic(
-      const Duration(seconds: 10),
+      const Duration(seconds: 60),
       (_) => _refreshRealtimeBadgesFallback(),
     );
   }
@@ -668,12 +700,6 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
       _loadPendingCount(),
       _loadOverdueFinancialCount(),
       _loadNewFinancialCount(),
-      _loadWeekEvents(),
-      _loadAttendanceAndPerformance(),
-      _loadGenderRanking(_profile),
-      _loadMonthlyHistory(),
-      _loadTodayBirthdays(),
-      _loadBirthdaysPermission(),
     ]);
   }
 
@@ -1123,8 +1149,9 @@ event_time
           CircleAvatar(
             radius: 16,
             backgroundColor: olympusBlue.withOpacity(0.12),
-            backgroundImage:
-                avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+            backgroundImage: avatarUrl.isNotEmpty
+                ? CachedNetworkImageProvider(avatarUrl)
+                : null,
             child: avatarUrl.isEmpty
                 ? Text(
                     firstName.isNotEmpty ? firstName[0].toUpperCase() : '?',
@@ -3013,8 +3040,9 @@ event_time
                   CircleAvatar(
                     radius: 26,
                     backgroundColor: const Color(0xFF143A5B),
-                    backgroundImage:
-                        avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                    backgroundImage: avatarUrl.isNotEmpty
+                        ? CachedNetworkImageProvider(avatarUrl)
+                        : null,
                     child: avatarUrl.isEmpty
                         ? Text(
                             name.isNotEmpty ? name[0].toUpperCase() : '?',
@@ -3113,10 +3141,12 @@ event_time
               child: Opacity(
                 opacity: 0.18,
                 child: avatarUrl != null && avatarUrl.isNotEmpty
-                    ? Image.network(
-                        avatarUrl,
+                    ? CachedNetworkImage(
+                        imageUrl: avatarUrl,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        memCacheWidth: 900,
+                        fadeInDuration: const Duration(milliseconds: 120),
+                        errorWidget: (_, __, ___) => const SizedBox.shrink(),
                       )
                     : const SizedBox.shrink(),
               ),
@@ -3190,10 +3220,15 @@ event_time
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(21),
                                 child: avatarUrl != null && avatarUrl.isNotEmpty
-                                    ? Image.network(
-                                        avatarUrl,
+                                    ? CachedNetworkImage(
+                                        imageUrl: avatarUrl,
                                         fit: BoxFit.cover,
-                                        errorBuilder: (c, o, s) =>
+                                        memCacheWidth: 240,
+                                        memCacheHeight: 240,
+                                        fadeInDuration: const Duration(
+                                          milliseconds: 120,
+                                        ),
+                                        errorWidget: (c, o, s) =>
                                             _buildAvatarPlaceholder(firstName),
                                       )
                                     : _buildAvatarPlaceholder(firstName),
@@ -5150,6 +5185,7 @@ event_time
       supabase.removeChannel(_trainingEvaluationsRealtimeChannel!);
     }
     _dashboardBadgeFallbackTimer?.cancel();
+    _chatUnreadSubscription?.cancel();
     super.dispose();
   }
 
@@ -5599,7 +5635,9 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                                               profile['avatar_url']
                                                   .toString()
                                                   .isNotEmpty
-                                          ? NetworkImage(profile['avatar_url'])
+                                          ? CachedNetworkImageProvider(
+                                              profile['avatar_url'].toString(),
+                                            )
                                           : null,
                                   child: profile['avatar_url'] == null ||
                                           profile['avatar_url']
@@ -6795,10 +6833,13 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
     }
     if (widget.profile['avatar_url'] != null &&
         widget.profile['avatar_url'].toString().isNotEmpty) {
-      return Image.network(
-        widget.profile['avatar_url'],
+      return CachedNetworkImage(
+        imageUrl: widget.profile['avatar_url'].toString(),
         fit: BoxFit.cover,
-        errorBuilder: (c, o, s) =>
+        memCacheWidth: 320,
+        memCacheHeight: 320,
+        fadeInDuration: const Duration(milliseconds: 120),
+        errorWidget: (c, o, s) =>
             const Icon(Icons.person, size: 60, color: Colors.grey),
       );
     }

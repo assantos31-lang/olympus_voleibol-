@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_masked_text2/flutter_masked_text2.dart';
 import 'dart:convert';
@@ -95,8 +97,36 @@ class _ProfilesPageState extends State<ProfilesPage> {
           .from('profiles')
           .select()
           .order('full_name', ascending: true);
+
+      final loadedProfiles = List<Map<String, dynamic>>.from(response);
+      final rolesByUser = <String, List<String>>{};
+
+      try {
+        final roleRows = await supabase
+            .from('user_roles')
+            .select('user_id, role')
+            .eq('is_active', true);
+
+        for (final row in List<Map<String, dynamic>>.from(roleRows)) {
+          final userId = (row['user_id'] ?? '').toString().trim();
+          final role = (row['role'] ?? '').toString().trim();
+          if (userId.isEmpty || role.isEmpty) continue;
+          rolesByUser.putIfAbsent(userId, () => <String>[]).add(role);
+        }
+      } catch (e) {
+        debugPrint('Nao foi possivel carregar papeis adicionais: $e');
+      }
+
+      for (final profile in loadedProfiles) {
+        final userId = (profile['id'] ?? '').toString().trim();
+        final primaryRole = (profile['user_type'] ?? 'member').toString();
+        final roles = rolesByUser[userId] ?? <String>[];
+        if (!roles.contains(primaryRole)) roles.add(primaryRole);
+        profile['active_roles'] = roles.toSet().toList();
+      }
+
       setState(() {
-        profiles = List<Map<String, dynamic>>.from(response);
+        profiles = loadedProfiles;
         isLoading = false;
       });
     } catch (e) {
@@ -209,8 +239,34 @@ class _ProfilesPageState extends State<ProfilesPage> {
     return profile['is_active'] != false;
   }
 
+  List<String> _rolesForProfile(Map<String, dynamic> profile) {
+    final rawRoles = profile['active_roles'];
+    final roles = rawRoles is List
+        ? rawRoles
+              .map((role) => role.toString().trim())
+              .where((role) => role.isNotEmpty)
+              .toSet()
+              .toList()
+        : <String>[];
+    final primaryRole = (profile['user_type'] ?? 'member').toString().trim();
+    if (primaryRole.isNotEmpty && !roles.contains(primaryRole)) {
+      roles.add(primaryRole);
+    }
+    return roles;
+  }
+
+  String _visualRoleForProfile(Map<String, dynamic> profile) {
+    final roles = _rolesForProfile(profile);
+    if (roles.contains('athlete')) return 'athlete';
+    if (roles.contains('coach')) return 'coach';
+    if (roles.contains('admin')) return 'admin';
+    return roles.isEmpty ? 'member' : roles.first;
+  }
+
   Future<void> _setProfileActive(
-      Map<String, dynamic> profile, bool isActive) async {
+    Map<String, dynamic> profile,
+    bool isActive,
+  ) async {
     final id = (profile['id'] ?? '').toString();
     if (id.isEmpty) return;
 
@@ -239,9 +295,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
 
     if (confirm != true) return;
 
-    await updateProfile(id, {
-      'is_active': isActive,
-    });
+    await updateProfile(id, {'is_active': isActive});
   }
 
   static const Map<int, String> _trainingWeekdayLabels = {
@@ -351,7 +405,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
     final orderedDays = selectedDays.toList()..sort();
     await supabase
         .from('profiles')
-        .update({'training_weekdays': orderedDays}).eq('id', userId);
+        .update({'training_weekdays': orderedDays})
+        .eq('id', userId);
     profile['training_weekdays'] = orderedDays;
     await fetchProfiles();
     if (!mounted) return;
@@ -510,8 +565,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                 selectedColor: olympusGold,
                 backgroundColor: const Color(0xFFF4F7FB),
                 side: BorderSide(
-                  color:
-                      selected ? olympusGold : Colors.white.withOpacity(0.70),
+                  color: selected
+                      ? olympusGold
+                      : Colors.white.withOpacity(0.70),
                 ),
                 labelStyle: TextStyle(
                   color: selected ? olympusBlue : olympusBlue.withOpacity(0.88),
@@ -558,9 +614,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
   }
 
-  Future<String> _resetUserPasswordByFunction({
-    required String userId,
-  }) async {
+  Future<String> _resetUserPasswordByFunction({required String userId}) async {
     final session = supabase.auth.currentSession;
 
     if (session == null) {
@@ -569,12 +623,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
 
     final response = await supabase.functions.invoke(
       'reset-user-password',
-      headers: {
-        'Authorization': 'Bearer ${session.accessToken}',
-      },
-      body: {
-        'user_id': userId,
-      },
+      headers: {'Authorization': 'Bearer ${session.accessToken}'},
+      body: {'user_id': userId},
     );
 
     if (response.status < 200 || response.status >= 300) {
@@ -600,8 +650,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
   Future<void> _showResetPasswordDialog(Map<String, dynamic> profile) async {
     final userId = (profile['id'] ?? '').toString().trim();
     final userName = (profile['full_name'] ?? 'Usuário').toString().trim();
-    final email =
-        (profile['email'] ?? profile['email_address'] ?? '').toString().trim();
+    final email = (profile['email'] ?? profile['email_address'] ?? '')
+        .toString()
+        .trim();
 
     if (userId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -702,8 +753,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       isLoading
                           ? 'Resetando senha'
                           : isSaved
-                              ? 'Senha atualizada'
-                              : 'Erro ao atualizar senha',
+                          ? 'Senha atualizada'
+                          : 'Erro ao atualizar senha',
                     ),
                   ),
                 ],
@@ -725,10 +776,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       const SizedBox(height: 4),
                       Text(
                         email,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[700],
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                       ),
                     ],
                     const SizedBox(height: 16),
@@ -813,8 +861,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                               onPressed: generatedPassword.isEmpty
                                   ? null
                                   : () => _copyAdminPasswordOnly(
-                                        generatedPassword,
-                                      ),
+                                      generatedPassword,
+                                    ),
                               icon: const Icon(Icons.copy),
                               label: const Text('Copiar senha'),
                             ),
@@ -825,10 +873,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                               onPressed: generatedPassword.isEmpty
                                   ? null
                                   : () => _copyAdminPasswordMessage(
-                                        userName: userName,
-                                        email: email,
-                                        password: generatedPassword,
-                                      ),
+                                      userName: userName,
+                                      email: email,
+                                      password: generatedPassword,
+                                    ),
                               icon: const Icon(Icons.message_outlined),
                               label: const Text('Copiar mensagem'),
                             ),
@@ -850,8 +898,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed:
-                      isLoading ? null : () => Navigator.pop(dialogContext),
+                  onPressed: isLoading
+                      ? null
+                      : () => Navigator.pop(dialogContext),
                   child: const Text('Fechar'),
                 ),
                 if (!isLoading && errorMessage != null)
@@ -890,10 +939,11 @@ class _ProfilesPageState extends State<ProfilesPage> {
     final userId = profile['id'];
     final userName = profile['full_name'] ?? 'Usuário';
 
-    final currentPermissions =
-        await _permissionService.getUserPermissions(userId);
-    final visibilityPermissions =
-        await _permissionService.getRankingEvaluationVisibility(userId);
+    final currentPermissions = await _permissionService.getUserPermissions(
+      userId,
+    );
+    final visibilityPermissions = await _permissionService
+        .getRankingEvaluationVisibility(userId);
     final agendaFilters = await _permissionService.getAgendaFilters(userId);
     var activeRoles = await _roleService.getUserRoles(userId);
 
@@ -1007,12 +1057,14 @@ class _ProfilesPageState extends State<ProfilesPage> {
     bool showInEvaluations =
         visibilityPermissions['show_in_evaluations'] ?? false;
 
-    String selectedCoachTeamGender =
-        _normalizeCoachTeamGender(profile['coach_team_gender']);
+    String selectedCoachTeamGender = _normalizeCoachTeamGender(
+      profile['coach_team_gender'],
+    );
 
     // ── Estado local reativo para o papel primário ───────────────────────────
-    String currentUserType =
-        (profile['user_type'] ?? 'member').toString().trim();
+    String currentUserType = (profile['user_type'] ?? 'member')
+        .toString()
+        .trim();
     // ────────────────────────────────────────────────────────────────────────
 
     bool showMonthFilter = agendaFilters['show_month_filter'] ?? true;
@@ -1150,8 +1202,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           userName: userName,
                           currentPrimaryRole: currentUserType,
                           onRolesSaved: (newPrimaryRole) async {
-                            final refreshedRoles =
-                                await _roleService.getUserRoles(userId);
+                            final refreshedRoles = await _roleService
+                                .getUserRoles(userId);
                             if (!context.mounted) return;
                             setDialogState(() {
                               activeRoles = refreshedRoles;
@@ -1179,47 +1231,55 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: [
-                      ('access', 'Acessos', Icons.grid_view_rounded),
-                      if (activeRoles.contains('admin'))
-                        ('admin', 'Admin', Icons.admin_panel_settings_outlined),
-                      if (activeRoles.contains('coach'))
-                        ('coach', 'Técnico', Icons.sports_rounded),
-                      if (activeRoles.contains('athlete'))
-                        ('visibility', 'Atleta', Icons.visibility_outlined),
-                      if (permissionValues['agenda'] == true)
-                        ('agenda', 'Agenda', Icons.calendar_month_outlined),
-                      if (permissionValues['financeiro'] == true)
-                        ('finance', 'Financeiro', Icons.payments_outlined),
-                    ].map((item) {
-                      final selected = selectedPermissionSection == item.$1;
-                      return ChoiceChip(
-                        avatar: Icon(
-                          item.$3,
-                          size: 16,
-                          color: selected ? Colors.white : olympusBlue,
-                        ),
-                        label: Text(item.$2),
-                        labelPadding: const EdgeInsets.symmetric(horizontal: 2),
-                        selected: selected,
-                        showCheckmark: false,
-                        selectedColor: olympusBlue,
-                        backgroundColor: Colors.white,
-                        side: BorderSide(
-                          color:
-                              selected ? olympusBlue : const Color(0xFFE4EDF5),
-                        ),
-                        labelStyle: TextStyle(
-                          color: selected ? Colors.white : olympusBlue,
-                          fontWeight: FontWeight.w800,
-                        ),
-                        onSelected: (_) {
-                          setDialogState(() {
-                            selectedPermissionSection = item.$1;
-                          });
-                        },
-                      );
-                    }).toList(),
+                    children:
+                        [
+                          ('access', 'Acessos', Icons.grid_view_rounded),
+                          if (activeRoles.contains('admin'))
+                            (
+                              'admin',
+                              'Admin',
+                              Icons.admin_panel_settings_outlined,
+                            ),
+                          if (activeRoles.contains('coach'))
+                            ('coach', 'Técnico', Icons.sports_rounded),
+                          if (activeRoles.contains('athlete'))
+                            ('visibility', 'Atleta', Icons.visibility_outlined),
+                          if (permissionValues['agenda'] == true)
+                            ('agenda', 'Agenda', Icons.calendar_month_outlined),
+                          if (permissionValues['financeiro'] == true)
+                            ('finance', 'Financeiro', Icons.payments_outlined),
+                        ].map((item) {
+                          final selected = selectedPermissionSection == item.$1;
+                          return ChoiceChip(
+                            avatar: Icon(
+                              item.$3,
+                              size: 16,
+                              color: selected ? Colors.white : olympusBlue,
+                            ),
+                            label: Text(item.$2),
+                            labelPadding: const EdgeInsets.symmetric(
+                              horizontal: 2,
+                            ),
+                            selected: selected,
+                            showCheckmark: false,
+                            selectedColor: olympusBlue,
+                            backgroundColor: Colors.white,
+                            side: BorderSide(
+                              color: selected
+                                  ? olympusBlue
+                                  : const Color(0xFFE4EDF5),
+                            ),
+                            labelStyle: TextStyle(
+                              color: selected ? Colors.white : olympusBlue,
+                              fontWeight: FontWeight.w800,
+                            ),
+                            onSelected: (_) {
+                              setDialogState(() {
+                                selectedPermissionSection = item.$1;
+                              });
+                            },
+                          );
+                        }).toList(),
                   ),
 
                   const SizedBox(height: 12),
@@ -1295,8 +1355,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                   content: Text(
                                     'Permissão de ${title.toLowerCase()} ${value ? 'concedida' : 'revogada'} com sucesso!',
                                   ),
-                                  backgroundColor:
-                                      value ? Colors.green : Colors.orange,
+                                  backgroundColor: value
+                                      ? Colors.green
+                                      : Colors.orange,
                                 ),
                               );
                             }
@@ -1304,8 +1365,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content:
-                                      Text('Erro ao atualizar permissão: $e'),
+                                  content: Text(
+                                    'Erro ao atualizar permissão: $e',
+                                  ),
                                   backgroundColor: Colors.red,
                                 ),
                               );
@@ -1390,8 +1452,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 content: Text(
                                   'Visibilidade no ranking ${value ? 'habilitada' : 'desabilitada'} com sucesso!',
                                 ),
-                                backgroundColor:
-                                    value ? Colors.green : Colors.orange,
+                                backgroundColor: value
+                                    ? Colors.green
+                                    : Colors.orange,
                               ),
                             );
                           }
@@ -1429,8 +1492,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 content: Text(
                                   'Visibilidade nas avaliações ${value ? 'habilitada' : 'desabilitada'} com sucesso!',
                                 ),
-                                backgroundColor:
-                                    value ? Colors.green : Colors.orange,
+                                backgroundColor: value
+                                    ? Colors.green
+                                    : Colors.orange,
                               ),
                             );
                           }
@@ -1466,8 +1530,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Mostrar filtro de mês'),
-                      subtitle:
-                          const Text('Permitir que o atleta veja o filtro Mês'),
+                      subtitle: const Text(
+                        'Permitir que o atleta veja o filtro Mês',
+                      ),
                       value: showMonthFilter,
                       activeColor: olympusGold,
                       onChanged: (value) async {
@@ -1482,8 +1547,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 content: Text(
                                   'Filtro de mês ${value ? 'habilitado' : 'desabilitado'} com sucesso!',
                                 ),
-                                backgroundColor:
-                                    value ? Colors.green : Colors.orange,
+                                backgroundColor: value
+                                    ? Colors.green
+                                    : Colors.orange,
                               ),
                             );
                           }
@@ -1491,8 +1557,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content:
-                                    Text('Erro ao atualizar filtro de mês: $e'),
+                                content: Text(
+                                  'Erro ao atualizar filtro de mês: $e',
+                                ),
                                 backgroundColor: Colors.red,
                               ),
                             );
@@ -1509,66 +1576,72 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: [
-                        {'value': 'treino', 'label': 'Treino'},
-                        {'value': 'amistoso', 'label': 'Amistoso'},
-                        {'value': 'campeonato', 'label': 'Campeonatos'},
-                      ].map((item) {
-                        final value = item['value']!;
-                        final selected = allowedEventTypes.contains(value);
-                        return FilterChip(
-                          label: Text(item['label']!),
-                          selected: selected,
-                          selectedColor: olympusGold.withOpacity(0.2),
-                          checkmarkColor: olympusBlue,
-                          onSelected: (enabled) async {
-                            final updated =
-                                List<String>.from(allowedEventTypes);
-                            if (enabled) {
-                              if (!updated.contains(value)) updated.add(value);
-                            } else {
-                              updated.remove(value);
-                            }
-                            if (updated.isEmpty) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                        'Selecione pelo menos um tipo de evento.'),
-                                    backgroundColor: Colors.orange,
-                                  ),
+                      children:
+                          [
+                            {'value': 'treino', 'label': 'Treino'},
+                            {'value': 'amistoso', 'label': 'Amistoso'},
+                            {'value': 'campeonato', 'label': 'Campeonatos'},
+                          ].map((item) {
+                            final value = item['value']!;
+                            final selected = allowedEventTypes.contains(value);
+                            return FilterChip(
+                              label: Text(item['label']!),
+                              selected: selected,
+                              selectedColor: olympusGold.withOpacity(0.2),
+                              checkmarkColor: olympusBlue,
+                              onSelected: (enabled) async {
+                                final updated = List<String>.from(
+                                  allowedEventTypes,
                                 );
-                              }
-                              return;
-                            }
-                            try {
-                              setDialogState(() {
-                                allowedEventTypes
-                                  ..clear()
-                                  ..addAll(updated);
-                              });
-                              await saveAgendaFilters();
-                            } catch (e) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                        'Erro ao atualizar tipos de evento: $e'),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                        );
-                      }).toList(),
+                                if (enabled) {
+                                  if (!updated.contains(value))
+                                    updated.add(value);
+                                } else {
+                                  updated.remove(value);
+                                }
+                                if (updated.isEmpty) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Selecione pelo menos um tipo de evento.',
+                                        ),
+                                        backgroundColor: Colors.orange,
+                                      ),
+                                    );
+                                  }
+                                  return;
+                                }
+                                try {
+                                  setDialogState(() {
+                                    allowedEventTypes
+                                      ..clear()
+                                      ..addAll(updated);
+                                  });
+                                  await saveAgendaFilters();
+                                } catch (e) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Erro ao atualizar tipos de evento: $e',
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                            );
+                          }).toList(),
                     ),
                     const SizedBox(height: 16),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Mostrar filtro de status'),
                       subtitle: const Text(
-                          'Permitir que o atleta veja o filtro Status da Convocação'),
+                        'Permitir que o atleta veja o filtro Status da Convocação',
+                      ),
                       value: showStatusFilter,
                       activeColor: olympusGold,
                       onChanged: (value) async {
@@ -1583,8 +1656,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 content: Text(
                                   'Filtro de status ${value ? 'habilitado' : 'desabilitado'} com sucesso!',
                                 ),
-                                backgroundColor:
-                                    value ? Colors.green : Colors.orange,
+                                backgroundColor: value
+                                    ? Colors.green
+                                    : Colors.orange,
                               ),
                             );
                           }
@@ -1593,7 +1667,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                    'Erro ao atualizar filtro de status: $e'),
+                                  'Erro ao atualizar filtro de status: $e',
+                                ),
                                 backgroundColor: Colors.red,
                               ),
                             );
@@ -1611,62 +1686,70 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children: [
-                          {'value': 'accepted', 'label': 'Aceitou'},
-                          {'value': 'rejected', 'label': 'Recusou'},
-                          {'value': 'pending', 'label': 'Pendentes'},
-                        ].map((item) {
-                          final value = item['value']!;
-                          final selected =
-                              allowedConvocationStatuses.contains(value);
-                          return FilterChip(
-                            label: Text(item['label']!),
-                            selected: selected,
-                            selectedColor: olympusGold.withOpacity(0.2),
-                            checkmarkColor: olympusBlue,
-                            onSelected: (enabled) async {
-                              final updated =
-                                  List<String>.from(allowedConvocationStatuses);
-                              if (enabled) {
-                                if (!updated.contains(value)) {
-                                  updated.add(value);
-                                }
-                              } else {
-                                updated.remove(value);
-                              }
-                              if (updated.isEmpty) {
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                          'Selecione pelo menos um status de convocação.'),
-                                      backgroundColor: Colors.orange,
-                                    ),
+                        children:
+                            [
+                              {'value': 'accepted', 'label': 'Aceitou'},
+                              {'value': 'rejected', 'label': 'Recusou'},
+                              {'value': 'pending', 'label': 'Pendentes'},
+                            ].map((item) {
+                              final value = item['value']!;
+                              final selected = allowedConvocationStatuses
+                                  .contains(value);
+                              return FilterChip(
+                                label: Text(item['label']!),
+                                selected: selected,
+                                selectedColor: olympusGold.withOpacity(0.2),
+                                checkmarkColor: olympusBlue,
+                                onSelected: (enabled) async {
+                                  final updated = List<String>.from(
+                                    allowedConvocationStatuses,
                                   );
-                                }
-                                return;
-                              }
-                              try {
-                                setDialogState(() {
-                                  allowedConvocationStatuses
-                                    ..clear()
-                                    ..addAll(updated);
-                                });
-                                await saveAgendaFilters();
-                              } catch (e) {
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                          'Erro ao atualizar status permitidos: $e'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              }
-                            },
-                          );
-                        }).toList(),
+                                  if (enabled) {
+                                    if (!updated.contains(value)) {
+                                      updated.add(value);
+                                    }
+                                  } else {
+                                    updated.remove(value);
+                                  }
+                                  if (updated.isEmpty) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Selecione pelo menos um status de convocação.',
+                                          ),
+                                          backgroundColor: Colors.orange,
+                                        ),
+                                      );
+                                    }
+                                    return;
+                                  }
+                                  try {
+                                    setDialogState(() {
+                                      allowedConvocationStatuses
+                                        ..clear()
+                                        ..addAll(updated);
+                                    });
+                                    await saveAgendaFilters();
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Erro ao atualizar status permitidos: $e',
+                                          ),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                              );
+                            }).toList(),
                       ),
                     ],
                   ],
@@ -1704,8 +1787,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 content: Text(
                                   'Opção Ver convocados ${value ? 'habilitada' : 'desabilitada'} com sucesso!',
                                 ),
-                                backgroundColor:
-                                    value ? Colors.green : Colors.orange,
+                                backgroundColor: value
+                                    ? Colors.green
+                                    : Colors.orange,
                               ),
                             );
                           }
@@ -1743,8 +1827,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 content: Text(
                                   'Opção Exportar dados do jogo ${value ? 'habilitada' : 'desabilitada'} com sucesso!',
                                 ),
-                                backgroundColor:
-                                    value ? Colors.green : Colors.orange,
+                                backgroundColor: value
+                                    ? Colors.green
+                                    : Colors.orange,
                               ),
                             );
                           }
@@ -1785,72 +1870,77 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: [
-                        {'value': 'monthly', 'label': 'Mensalidade'},
-                        {'value': 'games', 'label': 'Jogos'},
-                        {'value': 'maintenance', 'label': 'Manutenção'},
-                        {'value': 'other', 'label': 'Outros'},
-                      ].map((item) {
-                        final value = item['value']!;
-                        final selected = allowedFinancialTypes.contains(value);
-                        return FilterChip(
-                          label: Text(item['label']!),
-                          selected: selected,
-                          selectedColor: olympusGold.withOpacity(0.2),
-                          checkmarkColor: olympusBlue,
-                          onSelected: (enabled) async {
-                            final updated =
-                                List<String>.from(allowedFinancialTypes);
-                            if (enabled) {
-                              if (!updated.contains(value)) updated.add(value);
-                            } else {
-                              updated.remove(value);
-                            }
-                            if (updated.isEmpty) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Selecione pelo menos um tipo financeiro.',
-                                    ),
-                                    backgroundColor: Colors.orange,
-                                  ),
+                      children:
+                          [
+                            {'value': 'monthly', 'label': 'Mensalidade'},
+                            {'value': 'games', 'label': 'Jogos'},
+                            {'value': 'maintenance', 'label': 'Manutenção'},
+                            {'value': 'other', 'label': 'Outros'},
+                          ].map((item) {
+                            final value = item['value']!;
+                            final selected = allowedFinancialTypes.contains(
+                              value,
+                            );
+                            return FilterChip(
+                              label: Text(item['label']!),
+                              selected: selected,
+                              selectedColor: olympusGold.withOpacity(0.2),
+                              checkmarkColor: olympusBlue,
+                              onSelected: (enabled) async {
+                                final updated = List<String>.from(
+                                  allowedFinancialTypes,
                                 );
-                              }
-                              return;
-                            }
-                            try {
-                              setDialogState(() {
-                                allowedFinancialTypes
-                                  ..clear()
-                                  ..addAll(updated);
-                              });
-                              await saveFinancialFilters();
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Tipos do financeiro atualizados com sucesso!',
-                                    ),
-                                    backgroundColor: Colors.green,
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Erro ao atualizar tipos financeiros: $e',
-                                    ),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                        );
-                      }).toList(),
+                                if (enabled) {
+                                  if (!updated.contains(value))
+                                    updated.add(value);
+                                } else {
+                                  updated.remove(value);
+                                }
+                                if (updated.isEmpty) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Selecione pelo menos um tipo financeiro.',
+                                        ),
+                                        backgroundColor: Colors.orange,
+                                      ),
+                                    );
+                                  }
+                                  return;
+                                }
+                                try {
+                                  setDialogState(() {
+                                    allowedFinancialTypes
+                                      ..clear()
+                                      ..addAll(updated);
+                                  });
+                                  await saveFinancialFilters();
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Tipos do financeiro atualizados com sucesso!',
+                                        ),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Erro ao atualizar tipos financeiros: $e',
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                            );
+                          }).toList(),
                     ),
                   ],
                 ],
@@ -1901,8 +1991,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
     const chars =
         'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#\$%^&*';
     Random random = Random();
-    return List.generate(12, (index) => chars[random.nextInt(chars.length)])
-        .join();
+    return List.generate(
+      12,
+      (index) => chars[random.nextInt(chars.length)],
+    ).join();
   }
 
   void _showPasswordResultDialog(String password, String email) {
@@ -1920,9 +2012,13 @@ class _ProfilesPageState extends State<ProfilesPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('E-mail:'),
-            Text(email,
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, color: olympusBlue)),
+            Text(
+              email,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: olympusBlue,
+              ),
+            ),
             const SizedBox(height: 10),
             const Text('Senha gerada automaticamente:'),
             const SizedBox(height: 10),
@@ -1952,9 +2048,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     tooltip: 'Copiar e-mail e senha',
                     onPressed: () {
                       Clipboard.setData(
-                        ClipboardData(
-                          text: 'E-mail: $email\nSenha: $password',
-                        ),
+                        ClipboardData(text: 'E-mail: $email\nSenha: $password'),
                       );
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -2017,8 +2111,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     prefixIcon: const Icon(Icons.person, color: olympusGold),
                     border: const OutlineInputBorder(),
                     focusedBorder: OutlineInputBorder(
-                      borderSide:
-                          const BorderSide(color: olympusGold, width: 2),
+                      borderSide: const BorderSide(
+                        color: olympusGold,
+                        width: 2,
+                      ),
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
@@ -2033,8 +2129,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     prefixIcon: const Icon(Icons.email, color: olympusGold),
                     border: const OutlineInputBorder(),
                     focusedBorder: OutlineInputBorder(
-                      borderSide:
-                          const BorderSide(color: olympusGold, width: 2),
+                      borderSide: const BorderSide(
+                        color: olympusGold,
+                        width: 2,
+                      ),
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
@@ -2049,8 +2147,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     prefixIcon: const Icon(Icons.phone, color: olympusGold),
                     border: const OutlineInputBorder(),
                     focusedBorder: OutlineInputBorder(
-                      borderSide:
-                          const BorderSide(color: olympusGold, width: 2),
+                      borderSide: const BorderSide(
+                        color: olympusGold,
+                        width: 2,
+                      ),
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
@@ -2063,8 +2163,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     prefixIcon: const Icon(Icons.badge, color: olympusGold),
                     border: const OutlineInputBorder(),
                     focusedBorder: OutlineInputBorder(
-                      borderSide:
-                          const BorderSide(color: olympusGold, width: 2),
+                      borderSide: const BorderSide(
+                        color: olympusGold,
+                        width: 2,
+                      ),
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
@@ -2073,7 +2175,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     DropdownMenuItem(value: 'athlete', child: Text('Atleta')),
                     DropdownMenuItem(value: 'coach', child: Text('Técnico')),
                     DropdownMenuItem(
-                        value: 'admin', child: Text('Administrador')),
+                      value: 'admin',
+                      child: Text('Administrador'),
+                    ),
                   ],
                   onChanged: isSubmitting
                       ? null
@@ -2088,8 +2192,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
           ),
           actions: [
             TextButton(
-              onPressed:
-                  isSubmitting ? null : () => Navigator.pop(dialogContext),
+              onPressed: isSubmitting
+                  ? null
+                  : () => Navigator.pop(dialogContext),
               child: const Text('Cancelar'),
             ),
             ElevatedButton.icon(
@@ -2127,7 +2232,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         if (adminRefreshToken != null) {
                           await supabase.auth.setSession(adminRefreshToken);
                           await Future.delayed(
-                              const Duration(milliseconds: 300));
+                            const Duration(milliseconds: 300),
+                          );
                         }
 
                         if (adminUserId != null &&
@@ -2141,13 +2247,19 @@ class _ProfilesPageState extends State<ProfilesPage> {
 
                         await Future.delayed(const Duration(milliseconds: 500));
 
-                        await supabase.from('profiles').update({
-                          'full_name': nameCtrl.text.trim(),
-                          'phone': phoneCtrl.text.replaceAll(RegExp(r'\D'), ''),
-                          'user_type': selectedType,
-                          'is_active': true,
-                          'updated_at': DateTime.now().toIso8601String(),
-                        }).eq('id', userId);
+                        await supabase
+                            .from('profiles')
+                            .update({
+                              'full_name': nameCtrl.text.trim(),
+                              'phone': phoneCtrl.text.replaceAll(
+                                RegExp(r'\D'),
+                                '',
+                              ),
+                              'user_type': selectedType,
+                              'is_active': true,
+                              'updated_at': DateTime.now().toIso8601String(),
+                            })
+                            .eq('id', userId);
 
                         if (!mounted) return;
 
@@ -2162,7 +2274,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                             await supabase.auth.setSession(adminRefreshToken);
                           } catch (restoreError) {
                             debugPrint(
-                                '❌ Erro ao restaurar sessão do admin: $restoreError');
+                              '❌ Erro ao restaurar sessão do admin: $restoreError',
+                            );
                           }
                         }
 
@@ -2172,12 +2285,13 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         if (e.toString().contains('Database error')) {
                           errorMessage =
                               'Erro no banco. Verifique se o trigger está configurado corretamente.';
-                        } else if (e
-                            .toString()
-                            .contains('User already registered')) {
+                        } else if (e.toString().contains(
+                          'User already registered',
+                        )) {
                           errorMessage = 'E-mail já cadastrado.';
                         } else if (e.toString().contains(
-                            'Não foi possível restaurar a sessão do administrador')) {
+                          'Não foi possível restaurar a sessão do administrador',
+                        )) {
                           errorMessage =
                               'Usuário criado, mas a sessão do admin não foi restaurada corretamente.';
                         }
@@ -2219,7 +2333,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
   List<Map<String, dynamic>> _getFilteredProfiles() {
     final filtered = profiles.where((profile) {
       final gender = (profile['gender'] ?? '').toString().trim();
-      final userType = (profile['user_type'] ?? '').toString().trim();
+      final roles = _rolesForProfile(profile);
       final isActive = _isProfileActive(profile);
       final searchText = [
         profile['full_name'],
@@ -2231,9 +2345,11 @@ class _ProfilesPageState extends State<ProfilesPage> {
       final matchesStatus = _showInactiveUsers ? !isActive : isActive;
       final matchesGender =
           _selectedGenderFilter == 'Todos' || gender == _selectedGenderFilter;
-      final matchesUserType = _selectedUserTypeFilter == 'Todos' ||
-          userType == _selectedUserTypeFilter;
-      final matchesSearch = _profilesSearchQuery.trim().isEmpty ||
+      final matchesUserType =
+          _selectedUserTypeFilter == 'Todos' ||
+          roles.contains(_selectedUserTypeFilter);
+      final matchesSearch =
+          _profilesSearchQuery.trim().isEmpty ||
           searchText.contains(_profilesSearchQuery.trim().toLowerCase());
 
       return matchesStatus && matchesGender && matchesUserType && matchesSearch;
@@ -2308,8 +2424,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                 isDense: true,
                 filled: true,
                 fillColor: Colors.white.withOpacity(0.10),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide(color: Colors.white.withOpacity(0.12)),
@@ -2350,10 +2468,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: selected
-                ? [
-                    olympusGold.withOpacity(0.34),
-                    olympusGold.withOpacity(0.18),
-                  ]
+                ? [olympusGold.withOpacity(0.34), olympusGold.withOpacity(0.18)]
                 : [
                     Colors.white.withOpacity(0.10),
                     Colors.white.withOpacity(0.06),
@@ -2452,7 +2567,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                 items: const [
                   DropdownMenuItem(value: 'Todos', child: Text('Todos')),
                   DropdownMenuItem(
-                      value: 'Masculino', child: Text('Masculino')),
+                    value: 'Masculino',
+                    child: Text('Masculino'),
+                  ),
                   DropdownMenuItem(value: 'Feminino', child: Text('Feminino')),
                 ],
                 onChanged: (value) {
@@ -2473,7 +2590,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   DropdownMenuItem(value: 'athlete', child: Text('Atleta')),
                   DropdownMenuItem(value: 'coach', child: Text('Técnico')),
                   DropdownMenuItem(
-                      value: 'admin', child: Text('Administrador')),
+                    value: 'admin',
+                    child: Text('Administrador'),
+                  ),
                 ],
                 onChanged: (value) {
                   if (value != null) setSheetState(() => userType = value);
@@ -2521,7 +2640,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
   }
 
   Widget _buildCompactFiltersBar(int resultsCount) {
-    final appliedFilters = (_selectedGenderFilter != 'Todos' ? 1 : 0) +
+    final appliedFilters =
+        (_selectedGenderFilter != 'Todos' ? 1 : 0) +
         (_selectedUserTypeFilter != 'Todos' ? 1 : 0);
 
     return Padding(
@@ -2544,8 +2664,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         _profilesSearchController.clear();
                         setState(() => _profilesSearchQuery = '');
                       },
-                      icon: const Icon(Icons.close_rounded,
-                          color: Colors.white70),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white70,
+                      ),
                     ),
               filled: true,
               fillColor: Colors.white.withOpacity(0.11),
@@ -2664,7 +2786,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                 items: const [
                   DropdownMenuItem(value: 'Todos', child: Text('Todos')),
                   DropdownMenuItem(
-                      value: 'Masculino', child: Text('Masculino')),
+                    value: 'Masculino',
+                    child: Text('Masculino'),
+                  ),
                   DropdownMenuItem(value: 'Feminino', child: Text('Feminino')),
                 ],
                 onChanged: (value) {
@@ -2683,7 +2807,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   DropdownMenuItem(value: 'athlete', child: Text('Atleta')),
                   DropdownMenuItem(value: 'coach', child: Text('Técnico')),
                   DropdownMenuItem(
-                      value: 'admin', child: Text('Administrador')),
+                    value: 'admin',
+                    child: Text('Administrador'),
+                  ),
                 ],
                 onChanged: (value) {
                   if (value == null) return;
@@ -2738,8 +2864,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: olympusGold.withOpacity(0.18),
                     borderRadius: BorderRadius.circular(999),
@@ -2762,9 +2890,59 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
   }
 
+  String? _resolveProfileAvatarUrl(dynamic rawValue) {
+    final value = (rawValue ?? '').toString().trim();
+    if (value.isEmpty) return null;
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    return supabase.storage.from('avatars').getPublicUrl(value);
+  }
+
+  int _roleSortIndex(String role) {
+    const order = <String>['athlete', 'coach', 'admin', 'member'];
+    final index = order.indexOf(role);
+    return index < 0 ? order.length : index;
+  }
+
+  IconData _iconForRole(String role) {
+    switch (role) {
+      case 'athlete':
+        return Icons.sports_volleyball_rounded;
+      case 'coach':
+        return Icons.sports_rounded;
+      case 'admin':
+        return Icons.admin_panel_settings_rounded;
+      default:
+        return Icons.person_outline_rounded;
+    }
+  }
+
+  Widget _profileAvatarFallback(
+    Map<String, dynamic> profile,
+    String visualRole,
+  ) {
+    final name = (profile['full_name'] ?? '').toString().trim();
+    return Container(
+      color: _getColorForType(visualRole).withOpacity(0.18),
+      alignment: Alignment.center,
+      child: Text(
+        name.isEmpty ? '?' : name[0].toUpperCase(),
+        style: TextStyle(
+          color: _getColorForType(visualRole),
+          fontWeight: FontWeight.w900,
+          fontSize: 19,
+        ),
+      ),
+    );
+  }
+
   Widget _buildProfileCard(Map<String, dynamic> profile) {
-    final avatarUrl = profile['avatar_url'];
-    final userType = (profile['user_type'] ?? '').toString();
+    final avatarUrl = _resolveProfileAvatarUrl(profile['avatar_url']);
+    final activeRoles = _rolesForProfile(profile)
+      ..sort((a, b) => _roleSortIndex(a).compareTo(_roleSortIndex(b)));
+    final userType = _visualRoleForProfile(profile);
+    final isAthlete = activeRoles.contains('athlete');
     final phone = (profile['phone'] ?? '').toString();
     final cpf = (profile['cpf'] ?? '').toString();
     final gender = (profile['gender'] ?? '').toString();
@@ -2829,24 +3007,27 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           width: 2,
                         ),
                       ),
-                      child: CircleAvatar(
-                        radius: 24,
-                        backgroundColor:
-                            _getColorForType(userType).withOpacity(0.16),
-                        backgroundImage:
-                            avatarUrl != null && avatarUrl.toString().isNotEmpty
-                                ? NetworkImage(avatarUrl)
-                                : null,
-                        child: avatarUrl == null || avatarUrl.toString().isEmpty
-                            ? Text(
-                                profile['full_name']?[0]?.toUpperCase() ?? '?',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 19,
+                      child: ClipOval(
+                        child: avatarUrl == null
+                            ? _profileAvatarFallback(profile, userType)
+                            : CachedNetworkImage(
+                                imageUrl: avatarUrl,
+                                fit: BoxFit.cover,
+                                width: 50,
+                                height: 50,
+                                memCacheWidth: 180,
+                                memCacheHeight: 180,
+                                fadeInDuration: const Duration(
+                                  milliseconds: 120,
                                 ),
-                              )
-                            : null,
+                                placeholder: (_, __) => Container(
+                                  color: _getColorForType(
+                                    userType,
+                                  ).withOpacity(0.12),
+                                ),
+                                errorWidget: (_, __, ___) =>
+                                    _profileAvatarFallback(profile, userType),
+                              ),
                       ),
                     ),
                     const SizedBox(width: 11),
@@ -2868,10 +3049,12 @@ class _ProfilesPageState extends State<ProfilesPage> {
                             spacing: 6,
                             runSpacing: 6,
                             children: [
-                              _buildBadge(
-                                icon: Icons.badge_outlined,
-                                label: _getTypeLabel(userType),
-                                color: _getColorForType(userType),
+                              ...activeRoles.map(
+                                (role) => _buildBadge(
+                                  icon: _iconForRole(role),
+                                  label: _getTypeLabel(role),
+                                  color: _getColorForType(role),
+                                ),
                               ),
                               if (!isActive)
                                 _buildBadge(
@@ -2888,8 +3071,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                               if (userType == 'coach')
                                 _buildBadge(
                                   icon: Icons.groups_2_outlined,
-                                  label:
-                                      _getCoachTeamGenderLabel(coachTeamGender),
+                                  label: _getCoachTeamGenderLabel(
+                                    coachTeamGender,
+                                  ),
                                   color: olympusGold,
                                 ),
                             ],
@@ -2929,9 +3113,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(18),
-                        side: BorderSide(
-                          color: olympusGold.withOpacity(0.28),
-                        ),
+                        side: BorderSide(color: olympusGold.withOpacity(0.28)),
                       ),
                       onSelected: (value) {
                         if (value == 'edit') {
@@ -2946,7 +3128,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           _showResetPasswordDialog(profile);
                         } else if (value == 'toggle_active') {
                           _setProfileActive(
-                              profile, !_isProfileActive(profile));
+                            profile,
+                            !_isProfileActive(profile),
+                          );
                         }
                       },
                       itemBuilder: (context) => [
@@ -2960,7 +3144,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           icon: Icons.lock_person_outlined,
                           label: 'Permissões',
                         ),
-                        if (userType == 'athlete')
+                        if (isAthlete)
                           _buildProfileMenuItem(
                             value: 'training_days',
                             icon: Icons.calendar_month_outlined,
@@ -3068,10 +3252,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
   }
 
-  Widget _buildProfileInfoLine({
-    required IconData icon,
-    required String text,
-  }) {
+  Widget _buildProfileInfoLine({required IconData icon, required String text}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -3208,9 +3389,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
     final filteredProfiles = _getFilteredProfiles();
 
     if (_isCheckingAccess) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -3230,7 +3409,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   return Text(
                     '👤 ${_getUserTypeLabel(snapshot.data)}',
                     style: TextStyle(
-                        fontSize: 12, color: olympusGold.withOpacity(0.9)),
+                      fontSize: 12,
+                      color: olympusGold.withOpacity(0.9),
+                    ),
                   );
                 }
                 return const SizedBox.shrink();
@@ -3263,10 +3444,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
               }
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: fetchProfiles,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: fetchProfiles),
         ],
       ),
       body: Stack(
@@ -3290,7 +3468,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 padding: const EdgeInsets.fromLTRB(8, 4, 8, 92),
                                 itemBuilder: (context, index) {
                                   return _buildProfileCard(
-                                      filteredProfiles[index]);
+                                    filteredProfiles[index],
+                                  );
                                 },
                               ),
                       ),
@@ -3377,11 +3556,7 @@ class ProfileFormDialog extends StatefulWidget {
   final Map<String, dynamic>? profile;
   final Future<void> Function(Map<String, dynamic> data) onSave;
 
-  const ProfileFormDialog({
-    super.key,
-    this.profile,
-    required this.onSave,
-  });
+  const ProfileFormDialog({super.key, this.profile, required this.onSave});
 
   @override
   State<ProfileFormDialog> createState() => _ProfileFormDialogState();
@@ -3435,32 +3610,49 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
   @override
   void initState() {
     super.initState();
-    _fullNameController =
-        TextEditingController(text: widget.profile?['full_name'] ?? '');
+    _fullNameController = TextEditingController(
+      text: widget.profile?['full_name'] ?? '',
+    );
     _phoneController = MaskedTextController(
-        mask: '(00) 00000-0000', text: widget.profile?['phone'] ?? '');
-    _birthDateController =
-        TextEditingController(text: widget.profile?['birth_date'] ?? '');
+      mask: '(00) 00000-0000',
+      text: widget.profile?['phone'] ?? '',
+    );
+    _birthDateController = TextEditingController(
+      text: widget.profile?['birth_date'] ?? '',
+    );
     _rgController = MaskedTextController(
-        mask: '00.000.000-0', text: widget.profile?['rg'] ?? '');
+      mask: '00.000.000-0',
+      text: widget.profile?['rg'] ?? '',
+    );
     _cpfController = MaskedTextController(
-        mask: '000.000.000-00', text: widget.profile?['cpf'] ?? '');
+      mask: '000.000.000-00',
+      text: widget.profile?['cpf'] ?? '',
+    );
     _zipCodeController = MaskedTextController(
-        mask: '00000-000', text: widget.profile?['zip_code'] ?? '');
-    _streetController =
-        TextEditingController(text: widget.profile?['street'] ?? '');
-    _streetNumberController =
-        TextEditingController(text: widget.profile?['street_number'] ?? '');
-    _complementController =
-        TextEditingController(text: widget.profile?['complement'] ?? '');
-    _neighborhoodController =
-        TextEditingController(text: widget.profile?['neighborhood'] ?? '');
-    _cityController =
-        TextEditingController(text: widget.profile?['city'] ?? '');
-    _stateController =
-        TextEditingController(text: widget.profile?['state'] ?? '');
-    _avatarUrlController =
-        TextEditingController(text: widget.profile?['avatar_url'] ?? '');
+      mask: '00000-000',
+      text: widget.profile?['zip_code'] ?? '',
+    );
+    _streetController = TextEditingController(
+      text: widget.profile?['street'] ?? '',
+    );
+    _streetNumberController = TextEditingController(
+      text: widget.profile?['street_number'] ?? '',
+    );
+    _complementController = TextEditingController(
+      text: widget.profile?['complement'] ?? '',
+    );
+    _neighborhoodController = TextEditingController(
+      text: widget.profile?['neighborhood'] ?? '',
+    );
+    _cityController = TextEditingController(
+      text: widget.profile?['city'] ?? '',
+    );
+    _stateController = TextEditingController(
+      text: widget.profile?['state'] ?? '',
+    );
+    _avatarUrlController = TextEditingController(
+      text: widget.profile?['avatar_url'] ?? '',
+    );
     _selectedUserType = widget.profile?['user_type'] ?? 'member';
     _selectedGender = widget.profile?['gender'] ?? '';
     _selectedPosition = widget.profile?['court_position'] ?? '';
@@ -3477,8 +3669,9 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
   Future<void> _fetchAddressByCep(String cep) async {
     setState(() => _isFetchingCep = true);
     try {
-      final response =
-          await http.get(Uri.parse('https://viacep.com.br/ws/$cep/json/'));
+      final response = await http.get(
+        Uri.parse('https://viacep.com.br/ws/$cep/json/'),
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['erro'] == null && mounted) {
@@ -3506,12 +3699,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
 
   Future<void> _pickImage() async {
     try {
-      final XFile? image = await _picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 85,
-      );
+      final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
       if (image != null) setState(() => _selectedImage = image);
     } catch (e) {
       debugPrint('Erro ao selecionar imagem: $e');
@@ -3533,10 +3721,41 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
       final fileName =
           '${DateTime.now().millisecondsSinceEpoch}_${_fullNameController.text.replaceAll(RegExp(r"\D"), "")}.jpg';
       final supabase = Supabase.instance.client;
-      final Uint8List? fileBytes = await _selectedImage!.readAsBytes();
-      if (fileBytes == null) return null;
-      await supabase.storage.from('avatars').uploadBinary(fileName, fileBytes,
-          fileOptions: const FileOptions(upsert: true));
+      final sourceBytes = await _selectedImage!.readAsBytes();
+      final decoded = img.decodeImage(sourceBytes);
+      if (decoded == null) {
+        throw const FormatException('Formato de imagem nao suportado.');
+      }
+
+      final oriented = img.bakeOrientation(decoded);
+      final squareSize = min(oriented.width, oriented.height);
+      final cropped = img.copyCrop(
+        oriented,
+        x: (oriented.width - squareSize) ~/ 2,
+        y: (oriented.height - squareSize) ~/ 2,
+        width: squareSize,
+        height: squareSize,
+      );
+      final normalized = img.copyResize(
+        cropped,
+        width: 800,
+        height: 800,
+        interpolation: img.Interpolation.cubic,
+      );
+      final fileBytes = Uint8List.fromList(
+        img.encodeJpg(normalized, quality: 88),
+      );
+
+      await supabase.storage
+          .from('avatars')
+          .uploadBinary(
+            fileName,
+            fileBytes,
+            fileOptions: const FileOptions(
+              upsert: true,
+              contentType: 'image/jpeg',
+            ),
+          );
       return supabase.storage.from('avatars').getPublicUrl(fileName);
     } catch (e) {
       debugPrint('Erro ao fazer upload: $e');
@@ -3671,15 +3890,20 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                     child: TextButton.icon(
                       onPressed: _pickImage,
                       icon: const Icon(Icons.photo_camera, color: olympusGold),
-                      label: const Text('Selecionar Foto',
-                          style: TextStyle(color: olympusBlue)),
+                      label: const Text(
+                        'Selecionar Foto',
+                        style: TextStyle(color: olympusBlue),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _fullNameController,
                     decoration: _inputDecoration(
-                        'Nome Completo *', Icons.person, olympusGold),
+                      'Nome Completo *',
+                      Icons.person,
+                      olympusGold,
+                    ),
                     validator: (v) =>
                         v?.isEmpty ?? true ? 'Campo obrigatório' : null,
                   ),
@@ -3687,13 +3911,18 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                   DropdownButtonFormField<String>(
                     value: _selectedUserType,
                     decoration: _inputDecoration(
-                        'Tipo de Usuário *', Icons.badge, olympusGold),
+                      'Tipo de Usuário *',
+                      Icons.badge,
+                      olympusGold,
+                    ),
                     items: const [
                       DropdownMenuItem(value: 'member', child: Text('Membro')),
                       DropdownMenuItem(value: 'athlete', child: Text('Atleta')),
                       DropdownMenuItem(value: 'coach', child: Text('Técnico')),
                       DropdownMenuItem(
-                          value: 'admin', child: Text('Administrador')),
+                        value: 'admin',
+                        child: Text('Administrador'),
+                      ),
                     ],
                     onChanged: (value) {
                       if (value == null) return;
@@ -3713,7 +3942,10 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                         child: TextFormField(
                           controller: _cpfController,
                           decoration: _inputDecoration(
-                              'CPF *', Icons.credit_card, olympusGold),
+                            'CPF *',
+                            Icons.credit_card,
+                            olympusGold,
+                          ),
                           keyboardType: TextInputType.number,
                           validator: (v) => _removeMask(v).length != 11
                               ? 'CPF inválido'
@@ -3725,7 +3957,10 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                         child: TextFormField(
                           controller: _rgController,
                           decoration: _inputDecoration(
-                              'RG *', Icons.credit_card, olympusGold),
+                            'RG *',
+                            Icons.credit_card,
+                            olympusGold,
+                          ),
                           keyboardType: TextInputType.number,
                           validator: (v) =>
                               v?.isEmpty ?? true ? 'Campo obrigatório' : null,
@@ -3740,7 +3975,10 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                         child: TextFormField(
                           controller: _phoneController,
                           decoration: _inputDecoration(
-                              'Telefone *', Icons.phone, olympusGold),
+                            'Telefone *',
+                            Icons.phone,
+                            olympusGold,
+                          ),
                           keyboardType: TextInputType.phone,
                           validator: (v) => _removeMask(v).length < 10
                               ? 'Telefone inválido'
@@ -3754,12 +3992,19 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                               ? _selectedGender
                               : null,
                           decoration: _inputDecoration(
-                              'Gênero *', Icons.transgender, olympusGold),
+                            'Gênero *',
+                            Icons.transgender,
+                            olympusGold,
+                          ),
                           items: const [
                             DropdownMenuItem(
-                                value: 'Masculino', child: Text('Masculino')),
+                              value: 'Masculino',
+                              child: Text('Masculino'),
+                            ),
                             DropdownMenuItem(
-                                value: 'Feminino', child: Text('Feminino')),
+                              value: 'Feminino',
+                              child: Text('Feminino'),
+                            ),
                           ],
                           onChanged: (value) => setState(() {
                             _selectedGender = value ?? '';
@@ -3777,16 +4022,22 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                     decoration: InputDecoration(
                       labelText: 'Data de Nascimento',
                       border: const OutlineInputBorder(),
-                      prefixIcon:
-                          const Icon(Icons.calendar_today, color: olympusGold),
+                      prefixIcon: const Icon(
+                        Icons.calendar_today,
+                        color: olympusGold,
+                      ),
                       suffixIcon: IconButton(
-                        icon: const Icon(Icons.calendar_today,
-                            color: olympusGold),
+                        icon: const Icon(
+                          Icons.calendar_today,
+                          color: olympusGold,
+                        ),
                         onPressed: _selectDate,
                       ),
                       focusedBorder: OutlineInputBorder(
-                        borderSide:
-                            const BorderSide(color: olympusGold, width: 2),
+                        borderSide: const BorderSide(
+                          color: olympusGold,
+                          width: 2,
+                        ),
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
@@ -3799,13 +4050,18 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                       value: _selectedPosition.isNotEmpty
                           ? _selectedPosition
                           : null,
-                      decoration: _inputDecoration('Posição na Quadra',
-                          Icons.sports_volleyball, olympusGold),
+                      decoration: _inputDecoration(
+                        'Posição na Quadra',
+                        Icons.sports_volleyball,
+                        olympusGold,
+                      ),
                       items: _positions[_selectedGender]!
-                          .map((pos) => DropdownMenuItem(
-                                value: pos['value'],
-                                child: Text(pos['label']!),
-                              ))
+                          .map(
+                            (pos) => DropdownMenuItem(
+                              value: pos['value'],
+                              child: Text(pos['label']!),
+                            ),
+                          )
                           .toList(),
                       onChanged: (value) =>
                           setState(() => _selectedPosition = value ?? ''),
@@ -3813,15 +4069,20 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      const Icon(Icons.location_on,
-                          color: olympusGold, size: 20),
+                      const Icon(
+                        Icons.location_on,
+                        color: olympusGold,
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
-                      const Text('Endereço',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: olympusBlue,
-                          )),
+                      const Text(
+                        'Endereço',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: olympusBlue,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -3830,22 +4091,27 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                     decoration: InputDecoration(
                       labelText: 'CEP *',
                       border: const OutlineInputBorder(),
-                      prefixIcon:
-                          const Icon(Icons.location_on, color: olympusGold),
+                      prefixIcon: const Icon(
+                        Icons.location_on,
+                        color: olympusGold,
+                      ),
                       suffixIcon: _isFetchingCep
                           ? const SizedBox(
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(olympusGold),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  olympusGold,
+                                ),
                               ),
                             )
                           : null,
                       focusedBorder: OutlineInputBorder(
-                        borderSide:
-                            const BorderSide(color: olympusGold, width: 2),
+                        borderSide: const BorderSide(
+                          color: olympusGold,
+                          width: 2,
+                        ),
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
@@ -3862,7 +4128,10 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                         child: TextFormField(
                           controller: _streetController,
                           decoration: _inputDecoration(
-                              'Rua *', Icons.home, olympusGold),
+                            'Rua *',
+                            Icons.home,
+                            olympusGold,
+                          ),
                           validator: (v) =>
                               v?.isEmpty ?? true ? 'Campo obrigatório' : null,
                         ),
@@ -3872,7 +4141,10 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                         child: TextFormField(
                           controller: _streetNumberController,
                           decoration: _inputDecoration(
-                              'Número *', Icons.numbers, olympusGold),
+                            'Número *',
+                            Icons.numbers,
+                            olympusGold,
+                          ),
                           keyboardType: TextInputType.number,
                           validator: (v) =>
                               v?.isEmpty ?? true ? 'Campo obrigatório' : null,
@@ -3884,13 +4156,19 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                   TextFormField(
                     controller: _complementController,
                     decoration: _inputDecoration(
-                        'Complemento', Icons.info_outline, olympusGold),
+                      'Complemento',
+                      Icons.info_outline,
+                      olympusGold,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _neighborhoodController,
                     decoration: _inputDecoration(
-                        'Bairro *', Icons.location_city, olympusGold),
+                      'Bairro *',
+                      Icons.location_city,
+                      olympusGold,
+                    ),
                     validator: (v) =>
                         v?.isEmpty ?? true ? 'Campo obrigatório' : null,
                   ),
@@ -3902,7 +4180,10 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                         child: TextFormField(
                           controller: _cityController,
                           decoration: _inputDecoration(
-                              'Cidade *', Icons.location_city, olympusGold),
+                            'Cidade *',
+                            Icons.location_city,
+                            olympusGold,
+                          ),
                           validator: (v) =>
                               v?.isEmpty ?? true ? 'Campo obrigatório' : null,
                         ),
@@ -3912,7 +4193,10 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                         child: TextFormField(
                           controller: _stateController,
                           decoration: _inputDecoration(
-                              'Estado *', Icons.map, olympusGold),
+                            'Estado *',
+                            Icons.map,
+                            olympusGold,
+                          ),
                           maxLength: 2,
                           validator: (v) =>
                               v?.isEmpty ?? true ? 'Campo obrigatório' : null,
@@ -3949,10 +4233,13 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: olympusGold,
                   foregroundColor: olympusBlue,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
                 child: _isLoading || _isUploading
                     ? const SizedBox(
@@ -3960,14 +4247,17 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(olympusBlue),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            olympusBlue,
+                          ),
                         ),
                       )
                     : Text(
                         widget.profile == null ? 'Cadastrar' : 'Salvar',
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 14),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
               ),
             ],
@@ -3978,7 +4268,10 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
   }
 
   InputDecoration _inputDecoration(
-      String label, IconData icon, Color iconColor) {
+    String label,
+    IconData icon,
+    Color iconColor,
+  ) {
     return InputDecoration(
       labelText: label,
       border: const OutlineInputBorder(),

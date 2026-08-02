@@ -48,6 +48,20 @@ class ChatService {
     final tag = 'chat_$cleanRoomId';
     final notificationId = _stableNotificationId(tag);
     try {
+      final activeNotifications =
+          await _localNotifications.getActiveNotifications();
+      for (final notification in activeNotifications) {
+        final belongsToRoom =
+            notification.tag == tag || notification.groupKey == tag;
+        final activeId = notification.id;
+        if (belongsToRoom && activeId != null) {
+          await _localNotifications.cancel(
+            activeId,
+            tag: notification.tag,
+          );
+          await _localNotifications.cancel(activeId);
+        }
+      }
       await _localNotifications.cancel(notificationId, tag: tag);
       await _localNotifications.cancel(notificationId);
     } catch (error) {
@@ -365,6 +379,8 @@ class ChatService {
       return caption.isEmpty ? '🎥 Vídeo' : '🎥 $caption';
     }
 
+    if (type == 'audio') return '🎤 Mensagem de áudio';
+
     if (type == 'poll') {
       final question = (message['content'] ?? '').toString().trim();
       return question.isEmpty ? '?? Enquete' : '?? Enquete: $question';
@@ -567,7 +583,7 @@ class ChatService {
     final userId = currentUserId;
     final response = await supabase
         .from('profiles')
-        .select('id, full_name, user_type, phone, avatar_url')
+        .select('id, full_name, user_type, avatar_url')
         .eq('is_active', true)
         .order('full_name');
 
@@ -606,13 +622,106 @@ class ChatService {
   Future<int> getTotalUnreadCount() async {
     if (currentUserId == null) return 0;
 
+    int? rpcTotal;
     try {
       final response = await supabase.rpc('get_my_chat_unread_total_v1');
-      return (response as num?)?.toInt() ?? 0;
+      rpcTotal = (response as num?)?.toInt() ?? 0;
+      if (rpcTotal > 0) return rpcTotal;
     } catch (error) {
-      debugPrint('[ChatService] Erro ao buscar badge do chat: $error');
-      return 0;
+      debugPrint(
+        '[ChatService] RPC do badge indisponível; usando lista de salas: $error',
+      );
     }
+
+    try {
+      final roomItems = await getMyRoomListItems();
+      return roomItems.fold<int>(0, (total, item) => total + item.unreadCount);
+    } catch (error) {
+      debugPrint(
+        '[ChatService] Lista de salas indisponível; usando contador legado: $error',
+      );
+    }
+
+    if (rpcTotal != null) return rpcTotal;
+    return _getTotalUnreadCountLegacy();
+  }
+
+  Stream<int> streamTotalUnreadCount() {
+    final controller = StreamController<int>();
+    RealtimeChannel? channel;
+    Timer? debounceTimer;
+    Timer? fallbackTimer;
+    var closed = false;
+    var loading = false;
+    var reloadQueued = false;
+
+    Future<void> emit() async {
+      if (closed || controller.isClosed) return;
+      if (loading) {
+        reloadQueued = true;
+        return;
+      }
+      loading = true;
+      try {
+        final total = await getTotalUnreadCount();
+        if (!closed && !controller.isClosed) controller.add(total);
+      } catch (error, stackTrace) {
+        if (!closed && !controller.isClosed) {
+          controller.addError(error, stackTrace);
+        }
+      } finally {
+        loading = false;
+        if (reloadQueued && !closed) {
+          reloadQueued = false;
+          unawaited(emit());
+        }
+      }
+    }
+
+    void scheduleReload() {
+      if (closed) return;
+      debounceTimer?.cancel();
+      debounceTimer = Timer(const Duration(milliseconds: 220), emit);
+    }
+
+    controller.onListen = () {
+      unawaited(emit());
+      channel = supabase
+          .channel('chat_unread_total_${currentUserId ?? 'anon'}')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_messages',
+            callback: (_) => scheduleReload(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_message_reads',
+            callback: (_) => scheduleReload(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_room_members',
+            callback: (_) => scheduleReload(),
+          )
+          .subscribe();
+      fallbackTimer = Timer.periodic(
+        const Duration(seconds: 12),
+        (_) => unawaited(emit()),
+      );
+    };
+
+    controller.onCancel = () async {
+      closed = true;
+      debounceTimer?.cancel();
+      fallbackTimer?.cancel();
+      final liveChannel = channel;
+      if (liveChannel != null) await supabase.removeChannel(liveChannel);
+    };
+
+    return controller.stream.distinct();
   }
 
   // Mantido temporariamente para rollback. Nao e usado pelo aplicativo.
@@ -903,6 +1012,33 @@ class ChatService {
     return path;
   }
 
+  Future<String> uploadChatAudio({
+    required String roomId,
+    required File file,
+  }) async {
+    final extension = file.path.split('.').last.toLowerCase();
+    final safeExtension = extension.isEmpty ? 'm4a' : extension;
+    final path =
+        'chat_messages/$roomId/audio_${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
+
+    await supabase.storage.from('avatars').upload(
+          path,
+          file,
+          fileOptions: FileOptions(
+            upsert: false,
+            contentType: switch (safeExtension) {
+              'aac' => 'audio/aac',
+              'mp3' => 'audio/mpeg',
+              'wav' => 'audio/wav',
+              'ogg' => 'audio/ogg',
+              _ => 'audio/mp4',
+            },
+          ),
+        );
+
+    return path;
+  }
+
   String _videoContentType(String extension) {
     switch (extension) {
       case 'mov':
@@ -1106,9 +1242,18 @@ class ChatService {
     final controller = StreamController<List<ChatMessage>>();
     RealtimeChannel? channel;
     Timer? debounceTimer;
+    Timer? receiptsTimer;
+    Timer? messageSyncTimer;
     var closed = false;
     var loading = false;
     var reloadQueued = false;
+    var firstLoad = true;
+    List<ChatMessage> lastEmittedMessages = const <ChatMessage>[];
+
+    void addMessages(List<ChatMessage> messages) {
+      lastEmittedMessages = messages;
+      if (!closed && !controller.isClosed) controller.add(messages);
+    }
 
     Future<void> emit() async {
       if (closed || controller.isClosed) return;
@@ -1119,12 +1264,62 @@ class ChatService {
 
       loading = true;
       try {
-        final messages = await _loadMessagesForRoom(roomId);
-        if (!closed && !controller.isClosed) controller.add(messages);
+        final messages = await _loadMessagesForRoom(
+          roomId,
+          includeMetadata: !firstLoad,
+        );
+        addMessages(messages);
+        if (firstLoad && !closed) {
+          firstLoad = false;
+          try {
+            final enrichedMessages = await _loadMessagesForRoom(roomId);
+            if (!closed && !controller.isClosed) {
+              addMessages(enrichedMessages);
+            }
+          } catch (_) {
+            // A lista basica ja foi exibida; complementos podem chegar depois.
+          }
+        }
       } catch (error, stackTrace) {
         if (!closed && !controller.isClosed) {
           controller.addError(error, stackTrace);
         }
+      } finally {
+        loading = false;
+        if (reloadQueued && !closed) {
+          reloadQueued = false;
+          unawaited(emit());
+        }
+      }
+    }
+
+    Future<void> emitFast() async {
+      if (closed || controller.isClosed || loading) return;
+      loading = true;
+      try {
+        final basicMessages = await _loadMessagesForRoom(
+          roomId,
+          includeMetadata: false,
+        );
+        final previousById = <String, ChatMessage>{
+          for (final message in lastEmittedMessages) message.id: message,
+        };
+        final merged = basicMessages.map<ChatMessage>((message) {
+          final previous = previousById[message.id];
+          if (previous == null) return message;
+          return message.copyWith(
+            senderName: previous.senderName,
+            reactionEmoji: previous.reactionEmoji,
+            reactionCounts: previous.reactionCounts,
+            myReactionEmoji: previous.myReactionEmoji,
+            recipientCount: previous.recipientCount,
+            deliveredCount: previous.deliveredCount,
+            readCount: previous.readCount,
+          );
+        }).toList(growable: false);
+        addMessages(merged);
+      } catch (_) {
+        // O sincronismo rapido e reserva; o Realtime continua principal.
       } finally {
         loading = false;
         if (reloadQueued && !closed) {
@@ -1161,12 +1356,34 @@ class ChatService {
             table: 'chat_message_reactions',
             callback: (_) => scheduleReload(),
           )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_message_reads',
+            callback: (_) => scheduleReload(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'chat_message_deliveries',
+            callback: (_) => scheduleReload(),
+          )
           .subscribe();
+      receiptsTimer = Timer.periodic(
+        const Duration(seconds: 6),
+        (_) => scheduleReload(),
+      );
+      messageSyncTimer = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => unawaited(emitFast()),
+      );
     };
 
     controller.onCancel = () async {
       closed = true;
       debounceTimer?.cancel();
+      receiptsTimer?.cancel();
+      messageSyncTimer?.cancel();
       final liveChannel = channel;
       if (liveChannel != null) await supabase.removeChannel(liveChannel);
     };
@@ -1225,17 +1442,136 @@ class ChatService {
     return controller.stream;
   }
 
-  Future<List<ChatMessage>> _loadMessagesForRoom(String roomId) async {
-    final data = await supabase
+  Future<List<ChatMessage>> getLatestMessages(
+    String roomId, {
+    int limit = 50,
+  }) {
+    return _loadMessagesForRoom(
+      roomId,
+      limit: limit,
+      includeMetadata: false,
+    );
+  }
+
+  Future<List<ChatMessage>> getOlderMessages({
+    required String roomId,
+    required DateTime before,
+    int limit = 50,
+  }) {
+    return _loadMessagesForRoom(
+      roomId,
+      before: before,
+      limit: limit,
+    );
+  }
+
+  Future<List<ChatMessage>> searchMessages({
+    required String roomId,
+    required String query,
+    int limit = 80,
+  }) async {
+    final cleanQuery = query.trim();
+    if (cleanQuery.length < 2) return const [];
+    final rows = await supabase
         .from('chat_messages')
         .select()
         .eq('room_id', roomId)
+        .isFilter('deleted_at', null)
+        .ilike('content', '%$cleanQuery%')
         .order('created_at', ascending: false)
-        .limit(150);
+        .limit(limit.clamp(20, 100).toInt())
+        .timeout(const Duration(seconds: 8));
+
+    final messages = rows
+        .map<ChatMessage>(
+          (row) => ChatMessage.fromMap(Map<String, dynamic>.from(row)),
+        )
+        .toList();
+    final senderIds = messages.map((message) => message.senderId).toSet();
+    if (senderIds.isEmpty) return messages;
+    dynamic profiles;
+    try {
+      profiles = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .inFilter('id', senderIds.toList())
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      return messages;
+    }
+    final names = <String, String>{
+      for (final profile in profiles)
+        (profile['id'] ?? '').toString():
+            (profile['full_name'] ?? '').toString(),
+    };
+    return messages
+        .map((message) => message.copyWith(senderName: names[message.senderId]))
+        .toList();
+  }
+
+  Future<Set<String>> getUnreadMessageIds(
+    String roomId, {
+    int limit = 100,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return const <String>{};
+    try {
+      final messageRows = await supabase
+          .from('chat_messages')
+          .select('id')
+          .eq('room_id', roomId)
+          .neq('sender_id', userId)
+          .order('created_at', ascending: false)
+          .limit(limit.clamp(20, 150).toInt());
+      final messageIds = messageRows
+          .map<String>((row) => (row['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      if (messageIds.isEmpty) return const <String>{};
+      final readRows = await supabase
+          .from('chat_message_reads')
+          .select('message_id')
+          .eq('user_id', userId)
+          .inFilter('message_id', messageIds.toList());
+      final readIds = readRows
+          .map<String>((row) => (row['message_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      return messageIds.difference(readIds);
+    } catch (_) {
+      return const <String>{};
+    }
+  }
+
+  Future<List<ChatMessage>> _loadMessagesForRoom(
+    String roomId, {
+    DateTime? before,
+    int limit = 50,
+    bool includeMetadata = true,
+  }) async {
+    // Nao limite o tempo da consulta principal. Em conversas grandes ou em
+    // redes moveis, cancelar esta requisicao era a causa da tela de erro.
+    // Somente os metadados opcionais abaixo possuem timeout.
+    dynamic query =
+        supabase.from('chat_messages').select().eq('room_id', roomId);
+    if (before != null) {
+      query = query.lt('created_at', before.toUtc().toIso8601String());
+    }
+    final data = await query
+        .order('created_at', ascending: false)
+        .limit(limit.clamp(1, 100).toInt());
 
     final rows = data.reversed.map<Map<String, dynamic>>((row) {
       return Map<String, dynamic>.from(row);
     }).toList();
+
+    if (!includeMetadata) {
+      // No Flutter Web, o tear-off direto do factory pode ser inferido como
+      // dynamic e produzir List<dynamic>, quebrando o retorno do Future.
+      return rows
+          .map<ChatMessage>((row) => ChatMessage.fromMap(row))
+          .toList(growable: false);
+    }
 
     final messageIds = rows
         .map((row) => (row['id'] ?? '').toString())
@@ -1244,13 +1580,15 @@ class ChatService {
 
     final reactionCountsByMessageId = <String, Map<String, int>>{};
     final myReactionByMessageId = <String, String>{};
+    final receiptCountsByMessageId = <String, Map<String, int>>{};
     if (messageIds.isNotEmpty) {
       try {
         final reactions = await supabase
             .from('chat_message_reactions')
             .select('message_id, user_id, emoji, created_at')
             .inFilter('message_id', messageIds)
-            .order('created_at', ascending: false);
+            .order('created_at', ascending: false)
+            .timeout(const Duration(seconds: 2));
 
         for (final rawReaction in reactions) {
           final reaction = Map<String, dynamic>.from(rawReaction);
@@ -1272,14 +1610,61 @@ class ChatService {
       }
     }
 
+    if (messageIds.isNotEmpty) {
+      try {
+        final receiptRows = await supabase.rpc(
+          'get_chat_message_receipt_counts_v1',
+          params: {'p_room_id': roomId},
+        ).timeout(const Duration(seconds: 2));
+
+        for (final rawReceipt in receiptRows as List) {
+          final receipt = Map<String, dynamic>.from(rawReceipt);
+          final messageId = (receipt['message_id'] ?? '').toString();
+          if (messageId.isEmpty) continue;
+          receiptCountsByMessageId[messageId] = {
+            'recipient_count':
+                (receipt['recipient_count'] as num?)?.toInt() ?? 0,
+            'delivered_count':
+                (receipt['delivered_count'] as num?)?.toInt() ?? 0,
+            'read_count': (receipt['read_count'] as num?)?.toInt() ?? 0,
+          };
+        }
+      } catch (_) {
+        // Mantem os tiques corretos mesmo se a RPC estiver temporariamente
+        // indisponivel ou ultrapassar o tempo de resposta.
+        try {
+          final sentMessageIds = rows
+              .where(
+                (row) => (row['sender_id'] ?? '').toString() == currentUserId,
+              )
+              .map((row) => (row['id'] ?? '').toString())
+              .where((id) => id.isNotEmpty)
+              .toList(growable: false);
+          receiptCountsByMessageId.addAll(
+            await _loadReceiptCountsFallback(
+              roomId: roomId,
+              messageIds: sentMessageIds,
+            ).timeout(const Duration(seconds: 4)),
+          );
+        } catch (_) {
+          // O chat continua utilizavel; o proximo sincronismo tenta novamente.
+        }
+      }
+    }
+
     final messages = <ChatMessage>[];
     final senderIds = <String>{};
     for (final row in rows) {
       final messageId = (row['id'] ?? '').toString();
-      final counts = reactionCountsByMessageId[messageId] ?? const <String, int>{};
+      final counts =
+          reactionCountsByMessageId[messageId] ?? const <String, int>{};
       row['reaction_counts'] = counts;
       row['reaction_emoji'] = counts.isEmpty ? null : counts.keys.first;
       row['my_reaction_emoji'] = myReactionByMessageId[messageId];
+      final receiptCounts = receiptCountsByMessageId[messageId];
+      row['recipient_count'] = receiptCounts?['recipient_count'] ?? 0;
+      row['delivered_count'] = receiptCounts?['delivered_count'] ?? 0;
+      row['read_count'] = receiptCounts?['read_count'] ?? 0;
       final message = ChatMessage.fromMap(row);
       messages.add(message);
       senderIds.add(message.senderId);
@@ -1287,10 +1672,16 @@ class ChatService {
 
     if (senderIds.isEmpty) return messages;
 
-    final profiles = await supabase
-        .from('profiles')
-        .select('id, full_name, avatar_url')
-        .inFilter('id', senderIds.toList());
+    dynamic profiles;
+    try {
+      profiles = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url')
+          .inFilter('id', senderIds.toList())
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      return messages;
+    }
 
     final profileMap = <String, String>{};
     for (final profile in profiles) {
@@ -1304,6 +1695,73 @@ class ChatService {
     return messages.map((message) {
       return message.copyWith(senderName: profileMap[message.senderId]);
     }).toList();
+  }
+
+  Future<Map<String, Map<String, int>>> _loadReceiptCountsFallback({
+    required String roomId,
+    required List<String> messageIds,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null || messageIds.isEmpty) return const {};
+
+    final results = await Future.wait<dynamic>([
+      supabase
+          .from('chat_room_members')
+          .select('user_id, is_banned')
+          .eq('room_id', roomId),
+      supabase
+          .from('chat_message_deliveries')
+          .select('message_id, user_id')
+          .inFilter('message_id', messageIds),
+      supabase
+          .from('chat_message_reads')
+          .select('message_id, user_id')
+          .inFilter('message_id', messageIds),
+    ]);
+
+    final activeRecipients = (results[0] as List)
+        .map<Map<String, dynamic>>(
+          (row) => Map<String, dynamic>.from(row as Map),
+        )
+        .where(
+          (row) =>
+              (row['user_id'] ?? '').toString() != userId &&
+              row['is_banned'] != true,
+        )
+        .map((row) => (row['user_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    final deliveredByMessage = <String, Set<String>>{};
+    for (final rawRow in results[1] as List) {
+      final row = Map<String, dynamic>.from(rawRow as Map);
+      final messageId = (row['message_id'] ?? '').toString();
+      final recipientId = (row['user_id'] ?? '').toString();
+      if (messageId.isNotEmpty && activeRecipients.contains(recipientId)) {
+        deliveredByMessage
+            .putIfAbsent(messageId, () => <String>{})
+            .add(recipientId);
+      }
+    }
+
+    final readByMessage = <String, Set<String>>{};
+    for (final rawRow in results[2] as List) {
+      final row = Map<String, dynamic>.from(rawRow as Map);
+      final messageId = (row['message_id'] ?? '').toString();
+      final recipientId = (row['user_id'] ?? '').toString();
+      if (messageId.isNotEmpty && activeRecipients.contains(recipientId)) {
+        readByMessage.putIfAbsent(messageId, () => <String>{}).add(recipientId);
+      }
+    }
+
+    return <String, Map<String, int>>{
+      for (final messageId in messageIds)
+        messageId: <String, int>{
+          'recipient_count': activeRecipients.length,
+          'delivered_count': deliveredByMessage[messageId]?.length ?? 0,
+          'read_count': readByMessage[messageId]?.length ?? 0,
+        },
+    };
   }
 
   Future<ChatMessage> sendMessage({
@@ -1552,6 +2010,36 @@ class ChatService {
     );
   }
 
+  Future<void> sendAudioMessage({
+    required String roomId,
+    required File audioFile,
+    required Duration duration,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+
+    final audioPath = await uploadChatAudio(roomId: roomId, file: audioFile);
+    final durationSeconds = duration.inSeconds.clamp(1, 3600);
+
+    await supabase.from('chat_messages').insert({
+      'room_id': roomId,
+      'sender_id': userId,
+      'content': durationSeconds.toString(),
+      'message_type': 'audio',
+      // A coluna de mídia existente também armazena o caminho do áudio.
+      'image_url': audioPath,
+    });
+    await unhideRoomForCurrentUser(roomId);
+
+    unawaited(
+      _sendPushToRoomParticipants(
+        roomId: roomId,
+        senderId: userId,
+        content: '🎤 Mensagem de áudio',
+      ),
+    );
+  }
+
   Future<void> editMessage({
     required String messageId,
     required String text,
@@ -1703,12 +2191,29 @@ class ChatService {
     return response?['role']?.toString();
   }
 
+  Future<void> markMyPendingMessagesDelivered({String? roomId}) async {
+    if (currentUserId == null) return;
+    try {
+      await supabase.rpc(
+        'mark_my_chat_messages_delivered_v1',
+        params: {'p_room_id': roomId},
+      );
+    } catch (_) {
+      // Mantem compatibilidade antes da migracao de entregas.
+    }
+  }
+
   Future<void> markRoomMessagesAsRead(String roomId) async {
     if (currentUserId == null) return;
-    await supabase.rpc(
-      'mark_my_chat_room_read_v1',
-      params: {'p_room_id': roomId},
-    );
+    await markMyPendingMessagesDelivered(roomId: roomId);
+    try {
+      await supabase.rpc(
+        'mark_my_chat_room_read_v1',
+        params: {'p_room_id': roomId},
+      );
+    } catch (_) {
+      await _markRoomMessagesAsReadLegacy(roomId);
+    }
   }
 
   // Mantido temporariamente para rollback. Nao e usado pelo aplicativo.
@@ -1782,7 +2287,7 @@ class ChatService {
 
     final profilesResponse = await supabase
         .from('profiles')
-        .select('id, full_name, phone, user_type, avatar_url')
+        .select('id, full_name, user_type, avatar_url')
         .inFilter('id', userIds);
 
     final profileMap = <String, Map<String, dynamic>>{};
@@ -1804,7 +2309,6 @@ class ChatService {
         'is_muted': member['is_muted'] as bool? ?? false,
         'is_banned': member['is_banned'] as bool? ?? false,
         'full_name': (profile['full_name'] ?? 'Sem nome').toString(),
-        'phone': (profile['phone'] ?? '').toString(),
         'user_type': (profile['user_type'] ?? '').toString(),
         'avatar_url': (profile['avatar_url'] ?? '').toString(),
         'display_name': compactPersonName(
@@ -1812,6 +2316,66 @@ class ChatService {
         ),
       };
     }).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getMessageReadReceipts({
+    required String roomId,
+    required String messageId,
+    required String senderId,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuario nao autenticado.');
+    if (senderId != userId) {
+      throw Exception('Somente o autor pode visualizar as leituras.');
+    }
+
+    try {
+      final response = await supabase.rpc(
+        'get_chat_message_read_status_v1',
+        params: {'p_message_id': messageId},
+      );
+
+      return List<Map<String, dynamic>>.from(response as List).map((row) {
+        final fullName = (row['full_name'] ?? 'Sem nome').toString();
+        return {
+          ...row,
+          'full_name': fullName,
+          'display_name': compactPersonName(fullName),
+          'has_read': row['has_read'] == true,
+        };
+      }).toList();
+    } catch (_) {
+      // Compatibilidade durante a instalacao da funcao SQL. Se a policy atual
+      // permitir a leitura, a tela continua funcionando sem interromper o chat.
+      final participants = await getRoomParticipants(roomId);
+      final readsResponse = await supabase
+          .from('chat_message_reads')
+          .select('user_id')
+          .eq('message_id', messageId);
+
+      final readUserIds = (readsResponse as List)
+          .map((row) => (row['user_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      return participants
+          .where((participant) {
+            final participantId =
+                (participant['user_id'] ?? '').toString().trim();
+            return participantId.isNotEmpty &&
+                participantId != senderId &&
+                participant['is_banned'] != true;
+          })
+          .map(
+            (participant) => {
+              ...participant,
+              'has_read': readUserIds.contains(
+                (participant['user_id'] ?? '').toString(),
+              ),
+            },
+          )
+          .toList();
+    }
   }
 
   Future<List<Map<String, dynamic>>> getAvailableUsersForRoom(
@@ -1836,41 +2400,78 @@ class ChatService {
     required List<String> userIds,
   }) async {
     if (userIds.isEmpty) return;
-
-    final existingMembersResponse = await supabase
-        .from('chat_room_members')
-        .select('user_id')
-        .eq('room_id', roomId)
-        .inFilter('user_id', userIds);
-
-    final existingIds = existingMembersResponse
-        .map<String>((e) => (e['user_id'] ?? '').toString())
-        .where((id) => id.isNotEmpty)
-        .toSet();
-
-    final newUserIds =
-        userIds.where((userId) => !existingIds.contains(userId)).toList();
-
-    if (newUserIds.isEmpty) return;
-
-    final inserts = newUserIds
-        .map(
-          (userId) => {'room_id': roomId, 'user_id': userId, 'role': 'member'},
-        )
-        .toList();
-
-    await supabase.from('chat_room_members').insert(inserts);
+    await supabase.rpc(
+      'add_chat_room_participants_v1',
+      params: {'p_room_id': roomId, 'p_user_ids': userIds},
+    );
   }
 
   Future<void> removeParticipantFromRoom({
     required String roomId,
     required String userId,
   }) async {
+    await supabase.rpc(
+      'manage_chat_participant_v1',
+      params: {
+        'p_room_id': roomId,
+        'p_user_id': userId,
+        'p_action': 'remove',
+        'p_value': null,
+      },
+    );
+  }
+
+  Future<List<ChatMessage>> getPinnedMessages(String roomId) async {
+    try {
+      final pins = await supabase
+          .from('chat_pinned_messages')
+          .select('message_id')
+          .eq('room_id', roomId)
+          .order('created_at', ascending: false)
+          .limit(10);
+      final messageIds = pins
+          .map<String>((row) => (row['message_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+      if (messageIds.isEmpty) return const [];
+
+      final rows = await supabase
+          .from('chat_messages')
+          .select()
+          .inFilter('id', messageIds);
+      final byId = <String, ChatMessage>{};
+      for (final raw in rows) {
+        final message = ChatMessage.fromMap(Map<String, dynamic>.from(raw));
+        byId[message.id] = message;
+      }
+      return messageIds.map((id) => byId[id]).whereType<ChatMessage>().toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> pinMessage({
+    required String roomId,
+    required String messageId,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) throw Exception('Usuário não autenticado');
+    await supabase.from('chat_pinned_messages').upsert({
+      'room_id': roomId,
+      'message_id': messageId,
+      'pinned_by': userId,
+    }, onConflict: 'room_id,message_id');
+  }
+
+  Future<void> unpinMessage({
+    required String roomId,
+    required String messageId,
+  }) async {
     await supabase
-        .from('chat_room_members')
+        .from('chat_pinned_messages')
         .delete()
         .eq('room_id', roomId)
-        .eq('user_id', userId);
+        .eq('message_id', messageId);
   }
 
   Future<void> setParticipantRole({
@@ -1878,11 +2479,15 @@ class ChatService {
     required String userId,
     required String role,
   }) async {
-    await supabase
-        .from('chat_room_members')
-        .update({'role': role})
-        .eq('room_id', roomId)
-        .eq('user_id', userId);
+    await supabase.rpc(
+      'manage_chat_participant_v1',
+      params: {
+        'p_room_id': roomId,
+        'p_user_id': userId,
+        'p_action': 'role',
+        'p_value': role,
+      },
+    );
   }
 
   Future<void> setParticipantMuted({
@@ -1890,11 +2495,15 @@ class ChatService {
     required String userId,
     required bool muted,
   }) async {
-    await supabase
-        .from('chat_room_members')
-        .update({'is_muted': muted})
-        .eq('room_id', roomId)
-        .eq('user_id', userId);
+    await supabase.rpc(
+      'manage_chat_participant_v1',
+      params: {
+        'p_room_id': roomId,
+        'p_user_id': userId,
+        'p_action': 'mute',
+        'p_value': muted.toString(),
+      },
+    );
   }
 
   Future<void> setParticipantBanned({
@@ -1902,11 +2511,15 @@ class ChatService {
     required String userId,
     required bool banned,
   }) async {
-    await supabase
-        .from('chat_room_members')
-        .update({'is_banned': banned})
-        .eq('room_id', roomId)
-        .eq('user_id', userId);
+    await supabase.rpc(
+      'manage_chat_participant_v1',
+      params: {
+        'p_room_id': roomId,
+        'p_user_id': userId,
+        'p_action': 'ban',
+        'p_value': banned.toString(),
+      },
+    );
   }
 
   Future<void> deleteRoomForCurrentUser(String roomId) async {
@@ -2015,7 +2628,10 @@ class ChatService {
       });
     }
 
-    await supabase.from('chat_poll_options').insert(optionRows);
+    final insertedOptionRows = await supabase
+        .from('chat_poll_options')
+        .insert(optionRows)
+        .select('id, poll_id, option_text, position');
 
     await sendMessage(
       roomId: roomId,
@@ -2023,7 +2639,7 @@ class ChatService {
           '📊 Enquete criada: ${question.trim()}\nAbra esta conversa para votar.',
     );
 
-    final insertedOptions = optionRows
+    final insertedOptions = (insertedOptionRows as List)
         .map((row) => ChatPollOption.fromMap(Map<String, dynamic>.from(row)))
         .toList();
 

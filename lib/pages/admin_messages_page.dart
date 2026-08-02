@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/app_message_service.dart';
+import '../services/olympus_memory_cache.dart';
+
 class AdminMessagesPage extends StatefulWidget {
   const AdminMessagesPage({super.key});
 
@@ -18,6 +21,10 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
   bool _showSentSection = false;
   String _scheduledMonthFilter = 'Todos';
   String _sentMonthFilter = 'Todos';
+  static const int _sentPageSize = 50;
+  int _sentLoadLimit = _sentPageSize;
+  bool _hasMoreSentThreads = false;
+  bool _openingMessagesPage = false;
 
   List<Map<String, dynamic>> _sentThreads = [];
   List<Map<String, dynamic>> _scheduledMessages = [];
@@ -30,10 +37,46 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
   }
 
   Future<void> _bootstrap() async {
+    _restoreMessagesCache();
     await Future.wait([
       _loadSentThreads(),
       _loadScheduledMessages(),
     ]);
+  }
+
+  String get _messagesCacheKey =>
+      'admin_messages:${supabase.auth.currentUser?.id ?? 'guest'}';
+
+  void _restoreMessagesCache() {
+    final cached = OlympusMemoryCache.read<Map<String, dynamic>>(
+      _messagesCacheKey,
+    );
+    if (cached == null) return;
+
+    final sent = List<Map<String, dynamic>>.from(
+      (cached['sent'] as List?) ?? const [],
+    );
+    final scheduled = List<Map<String, dynamic>>.from(
+      (cached['scheduled'] as List?) ?? const [],
+    );
+    if (sent.isEmpty && scheduled.isEmpty) return;
+
+    setState(() {
+      _sentThreads = sent;
+      _scheduledMessages = scheduled;
+      _sentLoadLimit = (cached['limit'] as num?)?.toInt() ?? _sentPageSize;
+      _hasMoreSentThreads = cached['has_more'] == true;
+      _loading = false;
+    });
+  }
+
+  void _saveMessagesCache() {
+    OlympusMemoryCache.write<Map<String, dynamic>>(_messagesCacheKey, {
+      'sent': List<Map<String, dynamic>>.from(_sentThreads),
+      'scheduled': List<Map<String, dynamic>>.from(_scheduledMessages),
+      'limit': _sentLoadLimit,
+      'has_more': _hasMoreSentThreads,
+    });
   }
 
   Future<void> _loadSentThreads() async {
@@ -59,11 +102,17 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
             'allow_reply, app_message_participants(user_id)',
           )
           .or('created_by.eq.${admin.id},created_by_type.eq.system')
-          .order('created_at', ascending: false);
+          .order('created_at', ascending: false)
+          .limit(_sentLoadLimit + 1);
+
+      final loaded = List<Map<String, dynamic>>.from(response);
+      final hasMore = loaded.length > _sentLoadLimit;
+      final visible = hasMore ? loaded.take(_sentLoadLimit).toList() : loaded;
 
       if (!mounted) return;
       setState(() {
-        _sentThreads = List<Map<String, dynamic>>.from(response);
+        _sentThreads = visible;
+        _hasMoreSentThreads = hasMore;
         _selectedThreadIds.removeWhere(
           (id) =>
               !_sentThreads.any((item) => (item['id'] ?? '').toString() == id),
@@ -72,6 +121,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
           _sentMonthFilter = 'Todos';
         }
       });
+      _saveMessagesCache();
     } catch (e) {
       _showSnack('Erro ao carregar histórico: $e');
     } finally {
@@ -82,6 +132,12 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
         });
       }
     }
+  }
+
+  Future<void> _loadMoreSentThreads() async {
+    if (_loadingHistory || !_hasMoreSentThreads) return;
+    setState(() => _sentLoadLimit += _sentPageSize);
+    await _loadSentThreads();
   }
 
   Future<void> _loadScheduledMessages() async {
@@ -121,6 +177,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
           _scheduledMonthFilter = 'Todos';
         }
       });
+      _saveMessagesCache();
     } catch (e) {
       _showSnack('Erro ao carregar agendamentos: $e');
     } finally {
@@ -141,33 +198,45 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
   }
 
   Future<void> _openThread(Map<String, dynamic> thread) async {
+    if (_openingMessagesPage) return;
     final threadId = (thread['id'] ?? '').toString();
     if (threadId.isEmpty) return;
+    _openingMessagesPage = true;
 
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => AdminMessageThreadPage(
-          threadId: threadId,
-          subject: (thread['subject'] ?? 'Mensagem').toString(),
-          allowReply: thread['allow_reply'] == true,
+    try {
+      final result = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => AdminMessageThreadPage(
+            threadId: threadId,
+            subject: (thread['subject'] ?? 'Mensagem').toString(),
+            allowReply: thread['allow_reply'] == true,
+          ),
         ),
-      ),
-    );
+      );
 
-    if (result == true) {
-      await _refreshAll();
+      if (result == true) {
+        await _refreshAll();
+      }
+    } finally {
+      _openingMessagesPage = false;
     }
   }
 
   Future<void> _openCreatePage() async {
-    final created = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => const AdminCreateMessagePage(),
-      ),
-    );
+    if (_openingMessagesPage) return;
+    _openingMessagesPage = true;
+    try {
+      final created = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => const AdminCreateMessagePage(),
+        ),
+      );
 
-    if (created == true) {
-      await _refreshAll();
+      if (created == true) {
+        await _refreshAll();
+      }
+    } finally {
+      _openingMessagesPage = false;
     }
   }
 
@@ -1129,8 +1198,27 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
                         ),
                       ),
                     )
-                  else
+                  else ...[
                     ..._visibleSentThreads.map(_buildThreadCard),
+                    if (_hasMoreSentThreads && _sentMonthFilter == 'Todos')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 8),
+                        child: OutlinedButton.icon(
+                          onPressed:
+                              _loadingHistory ? null : _loadMoreSentThreads,
+                          icon: _loadingHistory
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.expand_more_rounded),
+                          label: const Text('Carregar mensagens anteriores'),
+                        ),
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -2682,6 +2770,7 @@ class AdminMessageThreadPage extends StatefulWidget {
 
 class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
   final SupabaseClient supabase = Supabase.instance.client;
+  final AppMessageService _messageService = AppMessageService();
   final TextEditingController _replyController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -2975,6 +3064,45 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
     return (message['sender_id'] ?? '').toString() == admin.id;
   }
 
+  Future<void> _deleteMessage(Map<String, dynamic> message) async {
+    final messageId = (message['id'] ?? '').toString();
+    if (messageId.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir mensagem'),
+        content: const Text(
+          'Deseja excluir esta mensagem para todos os participantes?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await _messageService.deleteMessageForEveryone(
+        threadId: widget.threadId,
+        messageId: messageId,
+        allowAnySender: true,
+      );
+      await _loadMessages();
+      _showSnack('Mensagem excluída para todos.');
+    } catch (e) {
+      _showSnack('Erro ao excluir mensagem: $e');
+    }
+  }
+
   String _formatDateTime(dynamic value) {
     final date = value is DateTime
         ? value.toLocal()
@@ -3214,13 +3342,48 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        senderName.isEmpty
-                                            ? (isMine ? 'Você' : 'Usuário')
-                                            : (isMine ? 'Você' : senderName),
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              senderName.isEmpty
+                                                  ? (isMine
+                                                      ? 'Você'
+                                                      : 'Usuário')
+                                                  : (isMine
+                                                      ? 'Você'
+                                                      : senderName),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                          PopupMenuButton<String>(
+                                            tooltip: 'Opções da mensagem',
+                                            padding: EdgeInsets.zero,
+                                            icon: const Icon(
+                                              Icons.more_vert,
+                                              size: 20,
+                                            ),
+                                            onSelected: (value) {
+                                              if (value == 'delete') {
+                                                _deleteMessage(message);
+                                              }
+                                            },
+                                            itemBuilder: (_) => const [
+                                              PopupMenuItem<String>(
+                                                value: 'delete',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.delete_outline),
+                                                    SizedBox(width: 10),
+                                                    Text('Excluir mensagem'),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
                                       const SizedBox(height: 6),
                                       Text(body),

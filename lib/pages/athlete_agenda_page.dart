@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../coach/pages/training_plan_readonly_sheet.dart';
 import '../services/permission_service.dart';
+import '../widgets/event_address_link.dart';
 
 class AthleteAgendaPage extends StatefulWidget {
   const AthleteAgendaPage({Key? key}) : super(key: key);
@@ -317,6 +318,20 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       }
     } catch (_) {}
     return null;
+  }
+
+  String _formatarHora(dynamic rawValue) {
+    final value = (rawValue ?? '').toString().trim();
+    if (value.isEmpty) return '';
+    final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(value);
+    if (match == null) return value;
+    final hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2)!);
+    if (hour == null || minute == null || hour > 23 || minute > 59) {
+      return value;
+    }
+    return '${hour.toString().padLeft(2, '0')}:'
+        '${minute.toString().padLeft(2, '0')}';
   }
 
   bool _isEventoPassado(Map<String, dynamic> evento) {
@@ -3532,9 +3547,10 @@ enable_ride_logistics
                                                         const SizedBox(
                                                             width: 6),
                                                         Text(
-                                                          (evento['event_time'] ??
-                                                                  '')
-                                                              .toString(),
+                                                          _formatarHora(
+                                                            evento[
+                                                                'event_time'],
+                                                          ),
                                                           style: TextStyle(
                                                             color: Colors
                                                                 .grey[700],
@@ -3550,33 +3566,21 @@ enable_ride_logistics
                                                         enderecoCompleto
                                                             .isNotEmpty) ...[
                                                       const SizedBox(height: 2),
-                                                      Row(
-                                                        children: [
-                                                          Icon(
-                                                              Icons.location_on,
-                                                              size: 15,
-                                                              color: Colors
-                                                                  .grey[600]),
-                                                          const SizedBox(
-                                                              width: 6),
-                                                          Expanded(
-                                                            child: Text(
-                                                              enderecoCompleto,
-                                                              style: TextStyle(
-                                                                color: Colors
-                                                                    .grey[700],
-                                                                fontSize: 12,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w500,
-                                                              ),
-                                                              maxLines: 1,
-                                                              overflow:
-                                                                  TextOverflow
-                                                                      .ellipsis,
-                                                            ),
-                                                          ),
-                                                        ],
+                                                      EventAddressLink(
+                                                        event: evento,
+                                                        address:
+                                                            enderecoCompleto,
+                                                        iconColor:
+                                                            Colors.grey[700],
+                                                        iconSize: 15,
+                                                        maxLines: 1,
+                                                        style: TextStyle(
+                                                          color:
+                                                              Colors.grey[700],
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                        ),
                                                       ),
                                                     ],
                                                     const SizedBox(height: 8),
@@ -4026,7 +4030,7 @@ enable_ride_logistics
         _formatarData((evento['event_date'] ?? '').toString()).split('|');
     final data = dataFormatada.isNotEmpty ? dataFormatada[0] : '';
     final diaSemana = dataFormatada.length > 1 ? dataFormatada[1] : '';
-    final hora = (evento['event_time'] ?? '').toString();
+    final hora = _formatarHora(evento['event_time']);
     final corTipo = _getCorTipoEvento(eventType);
     final avisoCheckIn = _getCheckInCountdownMessage(evento);
 

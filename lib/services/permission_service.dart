@@ -3,8 +3,18 @@ import 'dart:convert';
 
 class PermissionService {
   final SupabaseClient _supabase = Supabase.instance.client;
+  static const Duration _cacheDuration = Duration(minutes: 2);
+  static final Map<String, _PermissionCacheEntry> _permissionCache = {};
+  static final Map<String, Future<Map<String, bool>>> _permissionsInFlight = {};
 
   Future<bool> hasAccess(String userId, String pageName) async {
+    final permissions = await getUserPermissions(userId);
+    return permissions[pageName] ?? true;
+  }
+
+  // Mantido como fallback de compatibilidade para diagnostico.
+  // ignore: unused_element
+  Future<bool> _hasAccessLegacy(String userId, String pageName) async {
     try {
       final response = await _supabase
           .from('page_permissions')
@@ -53,13 +63,45 @@ class PermissionService {
       } else {
         await _supabase.from('page_permissions').insert(data);
       }
+      invalidateUser(userId);
     } catch (e) {
       print('❌ Erro ao atualizar permissão: $e');
       rethrow;
     }
   }
 
-  Future<Map<String, bool>> getUserPermissions(String userId) async {
+  Future<Map<String, bool>> getUserPermissions(
+    String userId, {
+    bool forceRefresh = false,
+  }) async {
+    final now = DateTime.now();
+    final cached = _permissionCache[userId];
+    if (!forceRefresh && cached != null && cached.expiresAt.isAfter(now)) {
+      return Map<String, bool>.from(cached.permissions);
+    }
+
+    final pending = _permissionsInFlight[userId];
+    if (!forceRefresh && pending != null) {
+      return Map<String, bool>.from(await pending);
+    }
+
+    final request = _fetchUserPermissions(userId);
+    _permissionsInFlight[userId] = request;
+    try {
+      final permissions = await request;
+      _permissionCache[userId] = _PermissionCacheEntry(
+        Map<String, bool>.unmodifiable(permissions),
+        now.add(_cacheDuration),
+      );
+      return Map<String, bool>.from(permissions);
+    } finally {
+      if (identical(_permissionsInFlight[userId], request)) {
+        _permissionsInFlight.remove(userId);
+      }
+    }
+  }
+
+  Future<Map<String, bool>> _fetchUserPermissions(String userId) async {
     try {
       final response = await _supabase
           .from('page_permissions')
@@ -587,4 +629,21 @@ class PermissionService {
         )
         .toList();
   }
+
+  static void invalidateUser(String userId) {
+    _permissionCache.remove(userId);
+    _permissionsInFlight.remove(userId);
+  }
+
+  static void clearCache() {
+    _permissionCache.clear();
+    _permissionsInFlight.clear();
+  }
+}
+
+class _PermissionCacheEntry {
+  const _PermissionCacheEntry(this.permissions, this.expiresAt);
+
+  final Map<String, bool> permissions;
+  final DateTime expiresAt;
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -1493,7 +1494,7 @@ class _ChampionshipCard extends StatelessWidget {
                 ),
                 image: imageUrl != null && imageUrl!.isNotEmpty
                     ? DecorationImage(
-                        image: NetworkImage(imageUrl!),
+                        image: CachedNetworkImageProvider(imageUrl!),
                         fit: BoxFit.cover,
                       )
                     : null,
@@ -1520,7 +1521,7 @@ class _ChampionshipCard extends StatelessWidget {
               ),
               image: imageUrl != null && imageUrl!.isNotEmpty
                   ? DecorationImage(
-                      image: NetworkImage(imageUrl!),
+                      image: CachedNetworkImageProvider(imageUrl!),
                       fit: BoxFit.cover,
                     )
                   : null,
@@ -1947,7 +1948,7 @@ class HallOfAchievementsPage extends StatelessWidget {
                                         image: achievement.imageUrl != null &&
                                                 achievement.imageUrl!.isNotEmpty
                                             ? DecorationImage(
-                                                image: NetworkImage(
+                                                image: CachedNetworkImageProvider(
                                                   achievement.imageUrl!,
                                                 ),
                                                 fit: BoxFit.cover,
@@ -2152,7 +2153,10 @@ class TournamentPhotosGalleryPage extends StatelessWidget {
           ),
           body: Center(
             child: InteractiveViewer(
-              child: Image.network(imageUrl, fit: BoxFit.contain),
+              child: Image(
+                image: CachedNetworkImageProvider(imageUrl),
+                fit: BoxFit.contain,
+              ),
             ),
           ),
         ),
@@ -2204,8 +2208,8 @@ class TournamentPhotosGalleryPage extends StatelessWidget {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            Image.network(
-                              imageUrl,
+                            Image(
+                              image: CachedNetworkImageProvider(imageUrl),
                               fit: BoxFit.cover,
                               loadingBuilder: (context, child, progress) {
                                 if (progress == null) return child;
@@ -2441,8 +2445,8 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
           ),
           body: Center(
             child: InteractiveViewer(
-              child: Image.network(
-                imageUrl,
+              child: Image(
+                image: CachedNetworkImageProvider(imageUrl),
                 fit: BoxFit.contain,
                 loadingBuilder: (context, child, progress) {
                   if (progress == null) return child;
@@ -3003,8 +3007,8 @@ class _EventCardPhotoPreview extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Image.network(
-              imageUrl,
+            Image(
+              image: CachedNetworkImageProvider(imageUrl),
               fit: BoxFit.cover,
               loadingBuilder: (context, child, progress) {
                 if (progress == null) return child;
@@ -3855,7 +3859,7 @@ class _FeaturedMatchPageState extends State<FeaturedMatchPage> {
                         ),
                         image: _imageUrl != null && _imageUrl!.isNotEmpty
                             ? DecorationImage(
-                                image: NetworkImage(_imageUrl!),
+                                image: CachedNetworkImageProvider(_imageUrl!),
                                 fit: BoxFit.cover,
                               )
                             : null,
@@ -4179,8 +4183,10 @@ class _EventPhotosPageState extends State<EventPhotosPage> {
                           onTap: () => _viewPhoto(photo['image_url']),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: Image.network(
-                              photo['image_url'],
+                            child: Image(
+                              image: CachedNetworkImageProvider(
+                                photo['image_url'].toString(),
+                              ),
                               fit: BoxFit.cover,
                               loadingBuilder: (context, child, progress) {
                                 if (progress == null) return child;
@@ -4245,7 +4251,10 @@ class _EventPhotosPageState extends State<EventPhotosPage> {
           ),
           body: Center(
             child: InteractiveViewer(
-              child: Image.network(imageUrl, fit: BoxFit.contain),
+              child: Image(
+                image: CachedNetworkImageProvider(imageUrl),
+                fit: BoxFit.contain,
+              ),
             ),
           ),
         ),
