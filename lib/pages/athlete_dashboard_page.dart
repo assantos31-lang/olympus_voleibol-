@@ -3099,11 +3099,20 @@ event_time
     );
   }
 
+  String? _resolvedAthleteAvatarUrl() {
+    final value = (_profile?['avatar_url'] ?? '').toString().trim();
+    if (value.isEmpty) return null;
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    return supabase.storage.from('avatars').getPublicUrl(value);
+  }
+
   Widget _buildAthleteInfoCard() {
     final firstName =
         _profile?['full_name']?.toString().split(' ').first ?? 'Atleta';
     final position = _profile?['court_position']?.toString() ?? 'Não definida';
-    final avatarUrl = _profile?['avatar_url']?.toString();
+    final avatarUrl = _resolvedAthleteAvatarUrl();
 
     return Container(
       margin: const EdgeInsets.all(16),
@@ -3191,7 +3200,7 @@ event_time
                             width: 90,
                             height: 90,
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(24),
+                              shape: BoxShape.circle,
                               gradient: const LinearGradient(
                                 colors: [
                                   Color(0xFFF0D771),
@@ -3213,27 +3222,34 @@ event_time
                                 ),
                               ],
                             ),
-                            padding: const EdgeInsets.all(2.6),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(22),
-                                color: const Color(0xFF113457),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(21),
-                                child: avatarUrl != null && avatarUrl.isNotEmpty
-                                    ? CachedNetworkImage(
-                                        imageUrl: avatarUrl,
-                                        fit: BoxFit.cover,
-                                        memCacheWidth: 240,
-                                        memCacheHeight: 240,
-                                        fadeInDuration: const Duration(
-                                          milliseconds: 120,
-                                        ),
-                                        errorWidget: (c, o, s) =>
-                                            _buildAvatarPlaceholder(firstName),
-                                      )
-                                    : _buildAvatarPlaceholder(firstName),
+                            padding: const EdgeInsets.all(3),
+                            child: ClipOval(
+                              clipBehavior: Clip.antiAlias,
+                              child: SizedBox.square(
+                                dimension: 84,
+                                child: ColoredBox(
+                                  color: const Color(0xFF113457),
+                                  child: avatarUrl != null
+                                      ? CachedNetworkImage(
+                                          imageUrl: avatarUrl,
+                                          width: 84,
+                                          height: 84,
+                                          fit: BoxFit.cover,
+                                          alignment: Alignment.topCenter,
+                                          memCacheWidth: 252,
+                                          memCacheHeight: 252,
+                                          fadeInDuration: const Duration(
+                                            milliseconds: 120,
+                                          ),
+                                          placeholder: (_, __) =>
+                                              _buildAvatarPlaceholder(
+                                                  firstName),
+                                          errorWidget: (c, o, s) =>
+                                              _buildAvatarPlaceholder(
+                                                  firstName),
+                                        )
+                                      : _buildAvatarPlaceholder(firstName),
+                                ),
                               ),
                             ),
                           ),
