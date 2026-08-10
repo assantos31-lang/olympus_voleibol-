@@ -1421,7 +1421,7 @@ class _AthleteStatisticsDetailPageState
   String? _selectedChampionshipGameId;
 
   final ScrollController _scrollController = ScrollController();
-  double _scrollOffset = 0;
+  final ValueNotifier<double> _scrollOffsetNotifier = ValueNotifier<double>(0);
 
   @override
   void initState() {
@@ -1436,18 +1436,15 @@ class _AthleteStatisticsDetailPageState
     if (!_scrollController.hasClients) return;
 
     final nextOffset = _scrollController.offset;
-    if ((nextOffset - _scrollOffset).abs() < 1.5) return;
-
-    if (!mounted) return;
-    setState(() {
-      _scrollOffset = nextOffset;
-    });
+    if ((nextOffset - _scrollOffsetNotifier.value).abs() < 2.5) return;
+    _scrollOffsetNotifier.value = nextOffset;
   }
 
   @override
   void dispose() {
     _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
+    _scrollOffsetNotifier.dispose();
     super.dispose();
   }
 
@@ -3363,34 +3360,27 @@ class _AthleteStatisticsDetailPageState
           ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(22),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            padding: padding ?? const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.94),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.white.withOpacity(0.52)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.14),
-                  blurRadius: 16,
-                  offset: const Offset(0, 7),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: children,
-            ),
+        child: Container(
+          padding: padding ?? const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.94),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.white.withOpacity(0.52)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.14),
+                blurRadius: 16,
+                offset: const Offset(0, 7),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
           ),
         ),
       ),
     );
-  }
-
-  double get _athleteImageScrollProgress {
-    return (_scrollOffset / 420).clamp(0.0, 1.0).toDouble();
   }
 
   Widget _athleteParallaxLayer({
@@ -3403,73 +3393,78 @@ class _AthleteStatisticsDetailPageState
     final avatarUrl = (_profile?['avatar_url'] ?? '').toString().trim();
     if (avatarUrl.isEmpty) return const SizedBox.shrink();
 
-    final progress = _athleteImageScrollProgress;
-    final dynamicBlur = 1.0 + (progress * 2.4);
-    final yOffset = -_scrollOffset * parallaxFactor;
-
     return Positioned.fill(
       child: IgnorePointer(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Transform.translate(
-              offset: Offset(0, yOffset),
-              child: Transform.scale(
-                scale: scale + (progress * 0.045),
-                child: Opacity(
-                  opacity: opacity,
-                  child: ImageFiltered(
-                    imageFilter: ImageFilter.blur(
-                      sigmaX: dynamicBlur,
-                      sigmaY: dynamicBlur,
-                    ),
-                    child: CachedNetworkImage(
-                      imageUrl: avatarUrl,
-                      fit: BoxFit.contain,
-                      alignment: alignment,
-                      memCacheWidth: 1000,
-                      fadeInDuration: const Duration(milliseconds: 120),
-                      errorWidget: (_, __, ___) => const SizedBox.shrink(),
+        child: ValueListenableBuilder<double>(
+          valueListenable: _scrollOffsetNotifier,
+          builder: (context, scrollOffset, _) {
+            final progress = (scrollOffset / 420).clamp(0.0, 1.0).toDouble();
+            final dynamicBlur = 1.0 + (progress * 2.4);
+            final yOffset = -scrollOffset * parallaxFactor;
+
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                Transform.translate(
+                  offset: Offset(0, yOffset),
+                  child: Transform.scale(
+                    scale: scale + (progress * 0.045),
+                    child: Opacity(
+                      opacity: opacity,
+                      child: ImageFiltered(
+                        imageFilter: ImageFilter.blur(
+                          sigmaX: dynamicBlur,
+                          sigmaY: dynamicBlur,
+                        ),
+                        child: CachedNetworkImage(
+                          imageUrl: avatarUrl,
+                          fit: BoxFit.contain,
+                          alignment: alignment,
+                          memCacheWidth: 1000,
+                          fadeInDuration: const Duration(milliseconds: 120),
+                          errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: strongerBottomShade
-                      ? [
-                          const Color(0xFF06172B).withOpacity(0.40),
-                          olympusBlue.withOpacity(0.18),
-                          const Color(0xFF06172B).withOpacity(0.60),
-                        ]
-                      : [
-                          const Color(0xFF06172B).withOpacity(0.58),
-                          olympusBlue.withOpacity(0.12),
-                          const Color(0xFF06172B).withOpacity(0.36),
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: strongerBottomShade
+                          ? [
+                              const Color(0xFF06172B).withOpacity(0.40),
+                              olympusBlue.withOpacity(0.18),
+                              const Color(0xFF06172B).withOpacity(0.60),
+                            ]
+                          : [
+                              const Color(0xFF06172B).withOpacity(0.58),
+                              olympusBlue.withOpacity(0.12),
+                              const Color(0xFF06172B).withOpacity(0.36),
+                            ],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          const Color(0xFF071A30).withOpacity(0.70),
+                          const Color(0xFF123861).withOpacity(0.35),
+                          const Color(0xFF2C5F8D).withOpacity(0.25),
                         ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      const Color(0xFF071A30).withOpacity(0.70),
-                      const Color(0xFF123861).withOpacity(0.35),
-                      const Color(0xFF2C5F8D).withOpacity(0.25),
-                    ],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );

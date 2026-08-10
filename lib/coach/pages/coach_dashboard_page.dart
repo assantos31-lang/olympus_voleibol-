@@ -2900,182 +2900,179 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
               borderRadius: BorderRadius.circular(cardRadius),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(cardRadius),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.white.withOpacity(0.24),
-                          Colors.white.withOpacity(0.16),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(cardRadius),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.22),
-                          blurRadius: 18,
-                          offset: const Offset(0, 8),
-                        ),
-                        BoxShadow(
-                          color: color.withOpacity(0.14),
-                          blurRadius: 14,
-                          spreadRadius: 0.8,
-                        ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white.withOpacity(0.24),
+                        Colors.white.withOpacity(0.16),
                       ],
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.34),
-                        width: 1.25,
-                      ),
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Positioned(
-                          top: -20,
-                          right: -12,
-                          child: Container(
-                            width: isCompact ? 68 : 76,
-                            height: isCompact ? 68 : 76,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white.withOpacity(0.10),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: Container(
-                            height: 1,
+                    borderRadius: BorderRadius.circular(cardRadius),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.22),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                      BoxShadow(
+                        color: color.withOpacity(0.14),
+                        blurRadius: 14,
+                        spreadRadius: 0.8,
+                      ),
+                    ],
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.34),
+                      width: 1.25,
+                    ),
+                  ),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned(
+                        top: -20,
+                        right: -12,
+                        child: Container(
+                          width: isCompact ? 68 : 76,
+                          height: isCompact ? 68 : 76,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
                             color: Colors.white.withOpacity(0.10),
                           ),
                         ),
-                        Padding(
-                          padding: EdgeInsets.all(cardPadding),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: iconBoxSize,
-                                height: iconBoxSize,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.10),
-                                  borderRadius: BorderRadius.circular(
-                                    isCompact ? 14 : 16,
-                                  ),
-                                  border: Border.all(
-                                    color: Colors.white.withOpacity(0.16),
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: color.withOpacity(0.16),
-                                      blurRadius: 10,
-                                      spreadRadius: 0.4,
-                                    ),
-                                  ],
-                                ),
-                                child: Icon(
-                                  icon,
-                                  size: iconSize,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              SizedBox(width: isCompact ? 12 : 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      title,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: titleSize,
-                                        fontWeight: FontWeight.w800,
-                                        color: Colors.white,
-                                        height: 1.05,
-                                      ),
-                                    ),
-                                    SizedBox(height: isCompact ? 5 : 6),
-                                    Text(
-                                      subtitle,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: subtitleSize,
-                                        color: Colors.white.withOpacity(0.88),
-                                        fontWeight: FontWeight.w500,
-                                        height: 1.22,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              SizedBox(width: isCompact ? 10 : 12),
-                              Container(
-                                width: isCompact ? 30 : 34,
-                                height: isCompact ? 30 : 34,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.08),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.white.withOpacity(0.14),
-                                  ),
-                                ),
-                                child: Icon(
-                                  Icons.arrow_forward_ios_rounded,
-                                  color: Colors.white.withOpacity(0.80),
-                                  size: arrowSize,
-                                ),
-                              ),
-                            ],
-                          ),
+                      ),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          height: 1,
+                          color: Colors.white.withOpacity(0.10),
                         ),
-                        if (badgeCount != null && badgeCount > 0)
-                          Positioned(
-                            right: badgeRight,
-                            top: badgeTop,
-                            child: Container(
-                              constraints: BoxConstraints(
-                                minWidth: isCompact ? 24 : 26,
-                              ),
-                              padding: EdgeInsets.symmetric(
-                                horizontal: isCompact ? 7 : 9,
-                                vertical: isCompact ? 4 : 5,
-                              ),
+                      ),
+                      Padding(
+                        padding: EdgeInsets.all(cardPadding),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: iconBoxSize,
+                              height: iconBoxSize,
                               decoration: BoxDecoration(
-                                color: Colors.red,
-                                borderRadius: BorderRadius.circular(999),
+                                color: Colors.white.withOpacity(0.10),
+                                borderRadius: BorderRadius.circular(
+                                  isCompact ? 14 : 16,
+                                ),
                                 border: Border.all(
-                                  color: Colors.white,
-                                  width: 1.8,
+                                  color: Colors.white.withOpacity(0.16),
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.red.withOpacity(0.38),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
+                                    color: color.withOpacity(0.16),
+                                    blurRadius: 10,
+                                    spreadRadius: 0.4,
                                   ),
                                 ],
                               ),
-                              child: Text(
-                                badgeCount.toString(),
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: isCompact ? 11.5 : 12.5,
-                                  fontWeight: FontWeight.w800,
-                                  height: 1,
+                              child: Icon(
+                                icon,
+                                size: iconSize,
+                                color: Colors.white,
+                              ),
+                            ),
+                            SizedBox(width: isCompact ? 12 : 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: titleSize,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                      height: 1.05,
+                                    ),
+                                  ),
+                                  SizedBox(height: isCompact ? 5 : 6),
+                                  Text(
+                                    subtitle,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: subtitleSize,
+                                      color: Colors.white.withOpacity(0.88),
+                                      fontWeight: FontWeight.w500,
+                                      height: 1.22,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(width: isCompact ? 10 : 12),
+                            Container(
+                              width: isCompact ? 30 : 34,
+                              height: isCompact ? 30 : 34,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.14),
                                 ),
+                              ),
+                              child: Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                color: Colors.white.withOpacity(0.80),
+                                size: arrowSize,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (badgeCount != null && badgeCount > 0)
+                        Positioned(
+                          right: badgeRight,
+                          top: badgeTop,
+                          child: Container(
+                            constraints: BoxConstraints(
+                              minWidth: isCompact ? 24 : 26,
+                            ),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: isCompact ? 7 : 9,
+                              vertical: isCompact ? 4 : 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 1.8,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.red.withOpacity(0.38),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              badgeCount.toString(),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: isCompact ? 11.5 : 12.5,
+                                fontWeight: FontWeight.w800,
+                                height: 1,
                               ),
                             ),
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -3114,6 +3111,49 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     super.dispose();
   }
 
+  Widget _buildDashboardLoadingState() {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 24),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.96),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: olympusGold.withOpacity(0.72)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.22),
+              blurRadius: 22,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 34,
+              height: 34,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                color: olympusGold,
+              ),
+            ),
+            SizedBox(height: 14),
+            Text(
+              'Carregando sua área...',
+              style: TextStyle(
+                color: olympusBlue,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -3142,13 +3182,11 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         child: Stack(
           fit: StackFit.expand,
           children: [
-            _buildPremiumDashboardBackground(),
+            RepaintBoundary(
+              child: _buildPremiumDashboardBackground(),
+            ),
             if (_isLoading)
-              const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
+              _buildDashboardLoadingState()
             else
               SafeArea(
                 top: false,

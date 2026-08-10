@@ -4297,10 +4297,13 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
     }
     if (widget.profile?['avatar_url'] != null &&
         widget.profile!['avatar_url'].toString().isNotEmpty) {
-      return Image.network(
-        widget.profile!['avatar_url'],
+      return CachedNetworkImage(
+        imageUrl: widget.profile!['avatar_url'].toString(),
         fit: BoxFit.cover,
-        errorBuilder: (c, o, s) =>
+        memCacheWidth: 320,
+        maxWidthDiskCache: 640,
+        fadeInDuration: const Duration(milliseconds: 120),
+        errorWidget: (c, o, s) =>
             const Icon(Icons.person, size: 60, color: Colors.grey),
       );
     }

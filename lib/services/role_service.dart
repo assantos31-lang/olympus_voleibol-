@@ -219,8 +219,31 @@ class RoleService {
 
       return response != null;
     } catch (e) {
-      return false;
+      // user_roles pode estar protegida por RLS. Nesse caso, preserva a
+      // compatibilidade com o papel primario salvo em profiles.
+      return (await getPrimaryRole(userId)).toLowerCase() ==
+          role.toLowerCase();
     }
+  }
+
+  /// Verifica com seguranca se o usuario autenticado possui perfil Admin.
+  Future<bool> isCurrentUserAdmin() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return false;
+
+    try {
+      final response = await _supabase.rpc('is_current_user_admin_v1');
+      if (response is bool) return response;
+      if (response != null) {
+        return response.toString().toLowerCase() == 'true';
+      }
+    } catch (_) {
+      // Fallback enquanto a migration ainda nao foi instalada no banco.
+    }
+
+    final primaryRole = await getPrimaryRole(user.id);
+    if (primaryRole.toLowerCase() == 'admin') return true;
+    return hasRole(user.id, 'admin');
   }
 
   // ─── Listagem para admin ───────────────────────────────────────────────────

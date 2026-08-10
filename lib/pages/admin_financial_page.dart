@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/financial_record_model.dart';
+import '../services/financial_access_service.dart';
 import '../services/olympus_memory_cache.dart';
 
 class AdminFinancialPage extends StatefulWidget {
@@ -16,6 +18,8 @@ class AdminFinancialPage extends StatefulWidget {
 
 class _AdminFinancialPageState extends State<AdminFinancialPage> {
   final _supabase = Supabase.instance.client;
+  final FinancialAccessService _financialAccessService =
+      FinancialAccessService();
   List<FinancialRecord> _records = [];
   List<FinancialRecord> _dashboardRecords = [];
   Map<String, Map<String, dynamic>> _athleteData = {};
@@ -34,12 +38,151 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
   DateTime? _customEndDate;
   bool _showDashboardPage = true;
   bool _loadingRecords = false;
+  bool _blockOverdueAthletes = false;
+  bool _loadingAccessSetting = true;
+  bool _savingAccessSetting = false;
 
   @override
   void initState() {
     super.initState();
     _initializePage();
     _listenForReceiptNotifications();
+    _loadFinancialAccessSetting();
+  }
+
+  Future<void> _loadFinancialAccessSetting() async {
+    try {
+      final enabled = await _financialAccessService.getBlockOverdueAthletes();
+      if (!mounted) return;
+      setState(() {
+        _blockOverdueAthletes = enabled;
+        _loadingAccessSetting = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _loadingAccessSetting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível carregar a regra: $error')),
+      );
+    }
+  }
+
+  Future<void> _setFinancialAccessSetting(bool enabled) async {
+    if (_savingAccessSetting) return;
+    setState(() => _savingAccessSetting = true);
+    try {
+      await _financialAccessService.setBlockOverdueAthletes(enabled);
+      if (!mounted) return;
+      setState(() => _blockOverdueAthletes = enabled);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            enabled
+                ? 'Bloqueio por mensalidade atrasada ativado.'
+                : 'Bloqueio por mensalidade atrasada desativado.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível alterar a regra: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _savingAccessSetting = false);
+    }
+  }
+
+  Widget _buildFinancialAccessControlCard() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF9E8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2BB5B)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 2),
+            child: Icon(
+              Icons.sports_volleyball_rounded,
+              color: Color(0xFF123463),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Controle de acesso por mensalidade',
+                  style: TextStyle(
+                    color: Color(0xFF123463),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Ative a regra e escolha individualmente quais atletas inadimplentes serão bloqueados.',
+                  style: TextStyle(
+                    color: Color(0xFF52657C),
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: _showOverdueAthleteBlockPicker,
+                  icon: const Icon(Icons.manage_accounts_rounded, size: 18),
+                  label: const Text('Escolher atletas'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF123463),
+                    side: const BorderSide(color: Color(0xFFE2BB5B)),
+                    visualDensity: VisualDensity.compact,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (_loadingAccessSetting || _savingAccessSetting)
+            const SizedBox(
+              width: 28,
+              height: 28,
+              child: Padding(
+                padding: EdgeInsets.all(5),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            Switch.adaptive(
+              value: _blockOverdueAthletes,
+              onChanged: _setFinancialAccessSetting,
+              activeThumbColor: const Color(0xFF0F9D58),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showOverdueAthleteBlockPicker() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _OverdueAthleteBlockSheet(
+        service: _financialAccessService,
+        enforcementEnabled: _blockOverdueAthletes,
+      ),
+    );
   }
 
   Future<void> _initializePage() async {
@@ -96,8 +239,9 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
                 _selectedAthleteId;
         _onlyWithReceipt = prefs.getBool('admin_financial_only_with_receipt') ??
             _onlyWithReceipt;
-        final savedStartDate =
-            prefs.getString('admin_financial_custom_start_date');
+        final savedStartDate = prefs.getString(
+          'admin_financial_custom_start_date',
+        );
         final savedEndDate = prefs.getString('admin_financial_custom_end_date');
         _customStartDate =
             savedStartDate == null ? null : DateTime.tryParse(savedStartDate);
@@ -261,7 +405,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-              'Telefone de ${_getAthleteName(record.athleteId)} nao encontrado.'),
+            'Telefone de ${_getAthleteName(record.athleteId)} nao encontrado.',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -293,10 +438,14 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
 
     final entries = grouped.entries.toList()
       ..sort((a, b) {
-        final valueA =
-            a.value.fold<double>(0, (sum, record) => sum + record.value);
-        final valueB =
-            b.value.fold<double>(0, (sum, record) => sum + record.value);
+        final valueA = a.value.fold<double>(
+          0,
+          (sum, record) => sum + record.value,
+        );
+        final valueB = b.value.fold<double>(
+          0,
+          (sum, record) => sum + record.value,
+        );
         return valueB.compareTo(valueA);
       });
 
@@ -339,8 +488,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                         color: const Color(0xFF25D366).withOpacity(0.12),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.chat_rounded,
-                          color: Color(0xFF25D366)),
+                      child: const Icon(
+                        Icons.chat_rounded,
+                        color: Color(0xFF25D366),
+                      ),
                     ),
                     const SizedBox(width: 10),
                     const Expanded(
@@ -382,14 +533,17 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                       final entry = entries[index];
                       final records = entry.value;
                       final total = records.fold<double>(
-                          0, (sum, record) => sum + record.value);
-                      final oldest = records.reduce((a, b) =>
-                          _recordDueDate(a).isBefore(_recordDueDate(b))
-                              ? a
-                              : b);
-                      final hasPhone =
-                          _sanitizePhoneForWhatsApp(_getAthletePhone(entry.key))
-                              .isNotEmpty;
+                        0,
+                        (sum, record) => sum + record.value,
+                      );
+                      final oldest = records.reduce(
+                        (a, b) => _recordDueDate(a).isBefore(_recordDueDate(b))
+                            ? a
+                            : b,
+                      );
+                      final hasPhone = _sanitizePhoneForWhatsApp(
+                        _getAthletePhone(entry.key),
+                      ).isNotEmpty;
 
                       return Container(
                         padding: const EdgeInsets.all(10),
@@ -402,8 +556,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                           children: [
                             CircleAvatar(
                               backgroundColor: Colors.red.withOpacity(0.10),
-                              child:
-                                  const Icon(Icons.person, color: Colors.red),
+                              child: const Icon(
+                                Icons.person,
+                                color: Colors.red,
+                              ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
@@ -599,11 +755,15 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
     try {
       final prefs = await SharedPreferences.getInstance();
       final encodedModels = _pixKeyModels
-          .map((model) =>
-              '${Uri.encodeComponent(model['name'] ?? '')}|${Uri.encodeComponent(model['type'] ?? '')}|${Uri.encodeComponent(model['key'] ?? '')}')
+          .map(
+            (model) =>
+                '${Uri.encodeComponent(model['name'] ?? '')}|${Uri.encodeComponent(model['type'] ?? '')}|${Uri.encodeComponent(model['key'] ?? '')}',
+          )
           .toList();
       await prefs.setStringList(
-          'admin_financial_pix_key_models', encodedModels);
+        'admin_financial_pix_key_models',
+        encodedModels,
+      );
     } catch (e) {
       debugPrint('Erro ao salvar modelos Pix localmente: $e');
     }
@@ -651,11 +811,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       return sameKey || sameName;
     });
 
-    final model = {
-      'name': cleanName,
-      'type': type,
-      'key': cleanKey,
-    };
+    final model = {'name': cleanName, 'type': type, 'key': cleanKey};
 
     if (existingIndex >= 0) {
       _pixKeyModels[existingIndex] = model;
@@ -663,9 +819,11 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       _pixKeyModels.add(model);
     }
 
-    _pixKeyModels.sort((a, b) => (a['name'] ?? '')
-        .toLowerCase()
-        .compareTo((b['name'] ?? '').toLowerCase()));
+    _pixKeyModels.sort(
+      (a, b) => (a['name'] ?? '').toLowerCase().compareTo(
+            (b['name'] ?? '').toLowerCase(),
+          ),
+    );
 
     if (persist) {
       await _savePixKeyModelsLocally();
@@ -785,10 +943,12 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       if (mounted) {
         setState(() {
           _athletes = List<Map<String, dynamic>>.from(response)
-            ..sort((a, b) => (a['full_name'] ?? '')
-                .toString()
-                .toLowerCase()
-                .compareTo((b['full_name'] ?? '').toString().toLowerCase()));
+            ..sort(
+              (a, b) => (a['full_name'] ?? '')
+                  .toString()
+                  .toLowerCase()
+                  .compareTo((b['full_name'] ?? '').toString().toLowerCase()),
+            );
         });
       }
     } catch (e) {
@@ -805,7 +965,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
 
     try {
       debugPrint(
-          '🔍 BUSCANDO: mês=$_selectedMonth, ano=$_selectedYear, tipo=$_selectedType');
+        '🔍 BUSCANDO: mês=$_selectedMonth, ano=$_selectedYear, tipo=$_selectedType',
+      );
 
       var query = _supabase
           .from('financial_records')
@@ -852,7 +1013,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
             .filter('id', 'in', "(${athleteIds.join(',')})");
 
         _athleteData = {
-          for (var athlete in athletesResponse as List) athlete['id']: athlete
+          for (var athlete in athletesResponse as List) athlete['id']: athlete,
         };
       }
 
@@ -975,8 +1136,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
     final valueController = TextEditingController(
       text: 'R\$ ${record.value.toStringAsFixed(2).replaceAll('.', ',')}',
     );
-    final descriptionController =
-        TextEditingController(text: record.description ?? '');
+    final descriptionController = TextEditingController(
+      text: record.description ?? '',
+    );
     int selectedDay = record.day;
     int selectedMonth = record.month;
     int selectedYear = record.year;
@@ -1001,8 +1163,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
         prefixIcon: Icon(icon, size: 18, color: const Color(0xFF2C3E5A)),
         filled: true,
         fillColor: const Color(0xFFF6F8FB),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
+        ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFE1E6ED)),
@@ -1035,8 +1199,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => Dialog(
-          insetPadding:
-              const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 24,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
@@ -1214,10 +1380,12 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                   isExpanded: true,
                                   borderRadius: BorderRadius.circular(14),
                                   items: List.generate(31, (i) => i + 1)
-                                      .map((d) => DropdownMenuItem(
-                                            value: d,
-                                            child: Text(d.toString()),
-                                          ))
+                                      .map(
+                                        (d) => DropdownMenuItem(
+                                          value: d,
+                                          child: Text(d.toString()),
+                                        ),
+                                      )
                                       .toList(),
                                   onChanged: (value) {
                                     setDialogState(() {
@@ -1237,14 +1405,16 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                   isExpanded: true,
                                   borderRadius: BorderRadius.circular(14),
                                   items: List.generate(12, (i) => i + 1)
-                                      .map((m) => DropdownMenuItem(
-                                            value: m,
-                                            child: Text(
-                                              DateFormat.MMM('pt_BR')
-                                                  .format(DateTime(2024, m))
-                                                  .replaceAll('.', ''),
-                                            ),
-                                          ))
+                                      .map(
+                                        (m) => DropdownMenuItem(
+                                          value: m,
+                                          child: Text(
+                                            DateFormat.MMM('pt_BR')
+                                                .format(DateTime(2024, m))
+                                                .replaceAll('.', ''),
+                                          ),
+                                        ),
+                                      )
                                       .toList(),
                                   onChanged: (value) {
                                     setDialogState(() {
@@ -1264,10 +1434,12 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                   isExpanded: true,
                                   borderRadius: BorderRadius.circular(14),
                                   items: [2026, 2027, 2028, 2029, 2030]
-                                      .map((y) => DropdownMenuItem(
-                                            value: y,
-                                            child: Text(y.toString()),
-                                          ))
+                                      .map(
+                                        (y) => DropdownMenuItem(
+                                          value: y,
+                                          child: Text(y.toString()),
+                                        ),
+                                      )
                                       .toList(),
                                   onChanged: (value) {
                                     setDialogState(() {
@@ -1305,8 +1477,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                             onPressed: () async {
                               if (formKey.currentState!.validate()) {
                                 try {
-                                  final parsedValue =
-                                      parseCurrencyValue(valueController.text)!;
+                                  final parsedValue = parseCurrencyValue(
+                                    valueController.text,
+                                  )!;
 
                                   await _supabase
                                       .from('financial_records')
@@ -1509,8 +1682,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      const Icon(Icons.person_search_rounded,
-                          color: Color(0xFF2C3E5A)),
+                      const Icon(
+                        Icons.person_search_rounded,
+                        color: Color(0xFF2C3E5A),
+                      ),
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
@@ -1564,8 +1739,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                     contentPadding: EdgeInsets.zero,
                     leading: CircleAvatar(
                       backgroundColor: const Color(0xFF2C3E5A).withOpacity(0.1),
-                      child: const Icon(Icons.groups_rounded,
-                          color: Color(0xFF2C3E5A)),
+                      child: const Icon(
+                        Icons.groups_rounded,
+                        color: Color(0xFF2C3E5A),
+                      ),
                     ),
                     title: const Text(
                       'Todos os atletas',
@@ -1607,10 +1784,13 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                               return ListTile(
                                 contentPadding: EdgeInsets.zero,
                                 leading: CircleAvatar(
-                                  backgroundColor:
-                                      const Color(0xFF4A6FA5).withOpacity(0.12),
-                                  child: const Icon(Icons.person,
-                                      color: Color(0xFF4A6FA5)),
+                                  backgroundColor: const Color(
+                                    0xFF4A6FA5,
+                                  ).withOpacity(0.12),
+                                  child: const Icon(
+                                    Icons.person,
+                                    color: Color(0xFF4A6FA5),
+                                  ),
                                 ),
                                 title: Text(
                                   athlete['full_name']?.toString() ??
@@ -1622,11 +1802,14 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                 ),
                                 subtitle: Text(
                                   _getGenderLabel(
-                                      athlete['gender']?.toString()),
+                                    athlete['gender']?.toString(),
+                                  ),
                                 ),
                                 trailing: isSelected
-                                    ? const Icon(Icons.check_circle,
-                                        color: Colors.green)
+                                    ? const Icon(
+                                        Icons.check_circle,
+                                        color: Colors.green,
+                                      )
                                     : null,
                                 onTap: athleteId.isEmpty
                                     ? null
@@ -1654,14 +1837,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
   List<TextInputFormatter> _getPixInputFormatters(String type) {
     switch (type) {
       case 'phone':
-        return [
-          FilteringTextInputFormatter.allow(RegExp(r'[0-9()\-\s+]')),
-        ];
+        return [FilteringTextInputFormatter.allow(RegExp(r'[0-9()\-\s+]'))];
       case 'cpf':
       case 'cnpj':
-        return [
-          FilteringTextInputFormatter.allow(RegExp(r'[0-9./\-]')),
-        ];
+        return [FilteringTextInputFormatter.allow(RegExp(r'[0-9./\-]'))];
       default:
         return [];
     }
@@ -1854,17 +2033,26 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                       value: selectedAthleteId,
                       decoration: const InputDecoration(
                         labelText: 'Atleta *',
-                        labelStyle:
-                            TextStyle(fontSize: 11, color: Color(0xFF1565C0)),
+                        labelStyle: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF1565C0),
+                        ),
                         border: InputBorder.none,
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
                       ),
-                      hint: const Text('Selecione um atleta',
-                          style: TextStyle(fontSize: 12)),
+                      hint: const Text(
+                        'Selecione um atleta',
+                        style: TextStyle(fontSize: 12),
+                      ),
                       isExpanded: true,
-                      icon: const Icon(Icons.keyboard_arrow_down,
-                          color: Color(0xFF1976D2), size: 18),
+                      icon: const Icon(
+                        Icons.keyboard_arrow_down,
+                        color: Color(0xFF1976D2),
+                        size: 18,
+                      ),
                       style: const TextStyle(fontSize: 12),
                       items: [
                         const DropdownMenuItem<String>(
@@ -1895,7 +2083,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                 ),
                                 Text(
                                   _getGenderLabel(
-                                      athlete['gender']?.toString()),
+                                    athlete['gender']?.toString(),
+                                  ),
                                   style: const TextStyle(
                                     fontSize: 9,
                                     color: Color(0xFF757575),
@@ -1982,15 +2171,22 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                         value: selectedGenderFilter,
                         decoration: const InputDecoration(
                           labelText: 'Filtrar por gênero',
-                          labelStyle:
-                              TextStyle(fontSize: 11, color: Color(0xFF00838F)),
+                          labelStyle: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF00838F),
+                          ),
                           border: InputBorder.none,
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
                         ),
                         isExpanded: true,
-                        icon: const Icon(Icons.keyboard_arrow_down,
-                            color: Color(0xFF0097A7), size: 18),
+                        icon: const Icon(
+                          Icons.keyboard_arrow_down,
+                          color: Color(0xFF0097A7),
+                          size: 18,
+                        ),
                         style: const TextStyle(fontSize: 12),
                         items: const [
                           DropdownMenuItem(
@@ -2045,26 +2241,29 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                             .toList();
                         final allFilteredSelected =
                             filteredAthleteIds.isNotEmpty &&
-                                filteredAthleteIds
-                                    .every(selectedAthleteIds.contains);
+                                filteredAthleteIds.every(
+                                  selectedAthleteIds.contains,
+                                );
 
                         return Column(
                           children: [
                             Container(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
                               decoration: BoxDecoration(
                                 gradient: const LinearGradient(
                                   colors: [
                                     Color(0xFFE8F5E9),
-                                    Color(0xFFC8E6C9)
+                                    Color(0xFFC8E6C9),
                                   ],
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                 ),
                                 borderRadius: BorderRadius.circular(8),
-                                border:
-                                    Border.all(color: const Color(0xFFA5D6A7)),
+                                border: Border.all(
+                                  color: const Color(0xFFA5D6A7),
+                                ),
                               ),
                               child: CheckboxListTile(
                                 dense: true,
@@ -2087,11 +2286,13 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                 onChanged: (checked) {
                                   setDialogState(() {
                                     if (checked == true) {
-                                      selectedAthleteIds
-                                          .addAll(filteredAthleteIds);
+                                      selectedAthleteIds.addAll(
+                                        filteredAthleteIds,
+                                      );
                                     } else {
-                                      selectedAthleteIds
-                                          .removeAll(filteredAthleteIds);
+                                      selectedAthleteIds.removeAll(
+                                        filteredAthleteIds,
+                                      );
                                     }
                                   });
                                 },
@@ -2100,20 +2301,22 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                             const SizedBox(height: 8),
                             Container(
                               constraints: const BoxConstraints(maxHeight: 180),
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
                               decoration: BoxDecoration(
                                 gradient: const LinearGradient(
                                   colors: [
                                     Color(0xFFF1F8E9),
-                                    Color(0xFFDCEDC8)
+                                    Color(0xFFDCEDC8),
                                   ],
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                 ),
                                 borderRadius: BorderRadius.circular(8),
-                                border:
-                                    Border.all(color: const Color(0xFFC5E1A5)),
+                                border: Border.all(
+                                  color: const Color(0xFFC5E1A5),
+                                ),
                               ),
                               child: SingleChildScrollView(
                                 child: Column(
@@ -2122,8 +2325,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                     return CheckboxListTile(
                                       dense: true,
                                       contentPadding: EdgeInsets.zero,
-                                      value: selectedAthleteIds
-                                          .contains(athleteId),
+                                      value: selectedAthleteIds.contains(
+                                        athleteId,
+                                      ),
                                       title: Text(
                                         athlete['full_name'] ?? 'Sem nome',
                                         style: const TextStyle(
@@ -2134,7 +2338,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                       ),
                                       subtitle: Text(
                                         _getGenderLabel(
-                                            athlete['gender']?.toString()),
+                                          athlete['gender']?.toString(),
+                                        ),
                                         style: const TextStyle(fontSize: 10),
                                       ),
                                       controlAffinity:
@@ -2144,8 +2349,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                           if (checked == true) {
                                             selectedAthleteIds.add(athleteId);
                                           } else {
-                                            selectedAthleteIds
-                                                .remove(athleteId);
+                                            selectedAthleteIds.remove(
+                                              athleteId,
+                                            );
                                           }
                                         });
                                       },
@@ -2175,15 +2381,22 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                       value: selectedType,
                       decoration: const InputDecoration(
                         labelText: 'Tipo *',
-                        labelStyle:
-                            TextStyle(fontSize: 11, color: Color(0xFF7B1FA2)),
+                        labelStyle: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF7B1FA2),
+                        ),
                         border: InputBorder.none,
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
                       ),
                       isExpanded: true,
-                      icon: const Icon(Icons.keyboard_arrow_down,
-                          color: Color(0xFF8E24AA), size: 18),
+                      icon: const Icon(
+                        Icons.keyboard_arrow_down,
+                        color: Color(0xFF8E24AA),
+                        size: 18,
+                      ),
                       style: const TextStyle(fontSize: 12),
                       items: const [
                         DropdownMenuItem(
@@ -2255,13 +2468,17 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                       controller: valueController,
                       decoration: const InputDecoration(
                         labelText: 'Valor (R\$) *',
-                        labelStyle:
-                            TextStyle(fontSize: 11, color: Color(0xFF388E3C)),
+                        labelStyle: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF388E3C),
+                        ),
                         border: InputBorder.none,
                         prefixText: 'R\$ ',
                         hintText: '0,00',
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
                       ),
                       style: const TextStyle(fontSize: 12),
                       keyboardType: TextInputType.number,
@@ -2285,8 +2502,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                   ),
                   const SizedBox(height: 8),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFFFFFDE7), Color(0xFFFFF9C4)],
@@ -2372,17 +2591,26 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                       value: selectedPixKeyType,
                       decoration: const InputDecoration(
                         labelText: 'Tipo da Chave Pix *',
-                        labelStyle:
-                            TextStyle(fontSize: 11, color: Color(0xFF3949AB)),
+                        labelStyle: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF3949AB),
+                        ),
                         border: InputBorder.none,
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
                       ),
                       isExpanded: true,
-                      icon: const Icon(Icons.keyboard_arrow_down,
-                          color: Color(0xFF5C6BC0), size: 18),
+                      icon: const Icon(
+                        Icons.keyboard_arrow_down,
+                        color: Color(0xFF5C6BC0),
+                        size: 18,
+                      ),
                       style: const TextStyle(
-                          fontSize: 12, color: Color(0xFF424242)),
+                        fontSize: 12,
+                        color: Color(0xFF424242),
+                      ),
                       items: const [
                         DropdownMenuItem(
                           value: 'phone',
@@ -2449,14 +2677,17 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                         border: InputBorder.none,
                         hintText: _getPixHintText(selectedPixKeyType),
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 8),
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
                       ),
                       style: const TextStyle(fontSize: 12),
                       keyboardType: selectedPixKeyType == 'phone'
                           ? TextInputType.phone
                           : TextInputType.number,
-                      inputFormatters:
-                          _getPixInputFormatters(selectedPixKeyType),
+                      inputFormatters: _getPixInputFormatters(
+                        selectedPixKeyType,
+                      ),
                       validator: (value) =>
                           _validatePixKey(value, selectedPixKeyType),
                     ),
@@ -2478,12 +2709,16 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                         controller: descriptionController,
                         decoration: const InputDecoration(
                           labelText: 'Descrição *',
-                          labelStyle:
-                              TextStyle(fontSize: 11, color: Color(0xFFF57C00)),
+                          labelStyle: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFFF57C00),
+                          ),
                           border: InputBorder.none,
                           hintText: 'Informe do que se trata',
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
                         ),
                         style: const TextStyle(fontSize: 12),
                         maxLines: 2,
@@ -2517,14 +2752,21 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                             decoration: const InputDecoration(
                               labelText: 'Dia *',
                               labelStyle: TextStyle(
-                                  fontSize: 11, color: Color(0xFF616161)),
+                                fontSize: 11,
+                                color: Color(0xFF616161),
+                              ),
                               border: InputBorder.none,
                               contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 8),
+                                horizontal: 8,
+                                vertical: 8,
+                              ),
                             ),
                             isExpanded: true,
-                            icon: const Icon(Icons.keyboard_arrow_down,
-                                color: Color(0xFF757575), size: 18),
+                            icon: const Icon(
+                              Icons.keyboard_arrow_down,
+                              color: Color(0xFF757575),
+                              size: 18,
+                            ),
                             style: const TextStyle(fontSize: 12),
                             items: List.generate(31, (i) => i + 1).map((d) {
                               return DropdownMenuItem(
@@ -2563,21 +2805,29 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                             decoration: const InputDecoration(
                               labelText: 'Mês *',
                               labelStyle: TextStyle(
-                                  fontSize: 11, color: Color(0xFF616161)),
+                                fontSize: 11,
+                                color: Color(0xFF616161),
+                              ),
                               border: InputBorder.none,
                               contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 8),
+                                horizontal: 8,
+                                vertical: 8,
+                              ),
                             ),
                             isExpanded: true,
-                            icon: const Icon(Icons.keyboard_arrow_down,
-                                color: Color(0xFF757575), size: 18),
+                            icon: const Icon(
+                              Icons.keyboard_arrow_down,
+                              color: Color(0xFF757575),
+                              size: 18,
+                            ),
                             style: const TextStyle(fontSize: 12),
                             items: List.generate(12, (i) => i + 1).map((m) {
                               return DropdownMenuItem(
                                 value: m,
                                 child: Text(
-                                  DateFormat.MMMM('pt_BR')
-                                      .format(DateTime(2024, m)),
+                                  DateFormat.MMMM(
+                                    'pt_BR',
+                                  ).format(DateTime(2024, m)),
                                   style: const TextStyle(
                                     fontSize: 12,
                                     color: Color(0xFF424242),
@@ -2610,14 +2860,21 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                             decoration: const InputDecoration(
                               labelText: 'Ano *',
                               labelStyle: TextStyle(
-                                  fontSize: 11, color: Color(0xFF616161)),
+                                fontSize: 11,
+                                color: Color(0xFF616161),
+                              ),
                               border: InputBorder.none,
                               contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 8),
+                                horizontal: 8,
+                                vertical: 8,
+                              ),
                             ),
                             isExpanded: true,
-                            icon: const Icon(Icons.keyboard_arrow_down,
-                                color: Color(0xFF757575), size: 18),
+                            icon: const Icon(
+                              Icons.keyboard_arrow_down,
+                              color: Color(0xFF757575),
+                              size: 18,
+                            ),
                             style: const TextStyle(fontSize: 12),
                             items: [2026, 2027, 2028, 2029, 2030].map((y) {
                               return DropdownMenuItem(
@@ -2669,25 +2926,30 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                     if (selectedAthleteId == 'all') {
                       final targetAthletes = selectMultipleUsers
                           ? _athletes
-                              .where((athlete) => selectedAthleteIds
-                                  .contains(athlete['id'] as String))
+                              .where(
+                                (athlete) => selectedAthleteIds.contains(
+                                  athlete['id'] as String,
+                                ),
+                              )
                               .toList()
                           : _athletes;
 
                       final records = targetAthletes
-                          .map((athlete) => {
-                                'athlete_id': athlete['id'],
-                                'type': selectedType,
-                                'value': double.parse(numericValue),
-                                'description': finalDescription,
-                                'pix_key': pixKeyController.text.trim(),
-                                'pix_key_type': selectedPixKeyType,
-                                'day': selectedDay,
-                                'month': selectedMonth,
-                                'year': selectedYear,
-                                'status': 'pending',
-                                'created_at': DateTime.now().toIso8601String(),
-                              })
+                          .map(
+                            (athlete) => {
+                              'athlete_id': athlete['id'],
+                              'type': selectedType,
+                              'value': double.parse(numericValue),
+                              'description': finalDescription,
+                              'pix_key': pixKeyController.text.trim(),
+                              'pix_key_type': selectedPixKeyType,
+                              'day': selectedDay,
+                              'month': selectedMonth,
+                              'year': selectedYear,
+                              'status': 'pending',
+                              'created_at': DateTime.now().toIso8601String(),
+                            },
+                          )
                           .toList();
 
                       final response = await _supabase
@@ -2695,8 +2957,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                           .insert(records)
                           .select();
 
-                      insertedRecords =
-                          List<Map<String, dynamic>>.from(response);
+                      insertedRecords = List<Map<String, dynamic>>.from(
+                        response,
+                      );
                     } else {
                       final response =
                           await _supabase.from('financial_records').insert({
@@ -2713,8 +2976,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                         'created_at': DateTime.now().toIso8601String(),
                       }).select();
 
-                      insertedRecords =
-                          List<Map<String, dynamic>>.from(response);
+                      insertedRecords = List<Map<String, dynamic>>.from(
+                        response,
+                      );
                     }
 
                     final userIds = insertedRecords
@@ -2740,9 +3004,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                           },
                         );
                       } catch (e) {
-                        debugPrint(
-                          'Erro ao enviar notificacao financeira: $e',
-                        );
+                        debugPrint('Erro ao enviar notificacao financeira: $e');
                       }
                     }
 
@@ -2875,8 +3137,12 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Aprovado!'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Aprovado!'),
+            backgroundColor: Colors.green,
+          ),
+        );
         _loadRecords();
       }
     } catch (e) {
@@ -2904,8 +3170,12 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Rejeitado!'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Rejeitado!'),
+            backgroundColor: Colors.red,
+          ),
+        );
         _loadRecords();
       }
     } catch (e) {
@@ -3025,11 +3295,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 48,
-                  color: Colors.red,
-                ),
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
                 const SizedBox(height: 16),
                 const Text(
                   'Não foi possível carregar o comprovante',
@@ -3107,13 +3373,14 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
   }
 
   ({String label, Color color, IconData icon}) _getAthletePaymentScore(
-      String athleteId) {
+    String athleteId,
+  ) {
     final records = _getAthleteFinancialHistoryRecords(athleteId);
     if (records.isEmpty) {
       return (
         label: 'Sem histórico',
         color: Colors.grey,
-        icon: Icons.remove_circle_outline
+        icon: Icons.remove_circle_outline,
       );
     }
 
@@ -3133,7 +3400,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       return (
         label: 'Inadimplente',
         color: Colors.red,
-        icon: Icons.error_rounded
+        icon: Icons.error_rounded,
       );
     }
 
@@ -3142,14 +3409,14 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       return (
         label: 'Oscilando',
         color: Colors.orange,
-        icon: Icons.warning_amber_rounded
+        icon: Icons.warning_amber_rounded,
       );
     }
 
     return (
       label: 'Bom pagador',
       color: Colors.green,
-      icon: Icons.verified_rounded
+      icon: Icons.verified_rounded,
     );
   }
 
@@ -3184,9 +3451,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
   }
 
   String _getMonthShortName(int month) {
-    final label = DateFormat.MMM('pt_BR')
-        .format(DateTime(_selectedYear, month))
-        .replaceAll('.', '');
+    final label = DateFormat.MMM(
+      'pt_BR',
+    ).format(DateTime(_selectedYear, month)).replaceAll('.', '');
     return label.isEmpty
         ? month.toString().padLeft(2, '0')
         : '${label[0].toUpperCase()}${label.substring(1)}';
@@ -3283,15 +3550,19 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       final dueDate = DateTime(record.year, record.month, record.day);
       return dueDate.isBefore(todayDate);
     }).toList();
-    final overdueValue =
-        overdueRecords.fold<double>(0, (sum, record) => sum + record.value);
+    final overdueValue = overdueRecords.fold<double>(
+      0,
+      (sum, record) => sum + record.value,
+    );
     final pendingRecords = records.where((record) {
       if (record.status != 'pending') return false;
       final dueDate = DateTime(record.year, record.month, record.day);
       return !dueDate.isBefore(todayDate);
     }).toList();
-    final pendingValue =
-        pendingRecords.fold<double>(0, (sum, record) => sum + record.value);
+    final pendingValue = pendingRecords.fold<double>(
+      0,
+      (sum, record) => sum + record.value,
+    );
 
     Widget summaryCard({
       required String label,
@@ -3478,17 +3749,22 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                     shape: BoxShape.circle,
                                     color: color.withOpacity(0.12),
                                     border: Border.all(
-                                        color: color.withOpacity(0.35)),
+                                      color: color.withOpacity(0.35),
+                                    ),
                                   ),
-                                  child: Icon(item['icon'] as IconData,
-                                      color: color, size: 16),
+                                  child: Icon(
+                                    item['icon'] as IconData,
+                                    color: color,
+                                    size: 16,
+                                  ),
                                 ),
                                 if (!isLast)
                                   Expanded(
                                     child: Container(
                                       width: 2,
                                       margin: const EdgeInsets.symmetric(
-                                          vertical: 3),
+                                        vertical: 3,
+                                      ),
                                       color: color.withOpacity(0.18),
                                     ),
                                   ),
@@ -3503,8 +3779,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(14),
-                                border:
-                                    Border.all(color: color.withOpacity(0.16)),
+                                border: Border.all(
+                                  color: color.withOpacity(0.16),
+                                ),
                                 boxShadow: [
                                   BoxShadow(
                                     color: Colors.black.withOpacity(0.04),
@@ -3542,7 +3819,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                   ),
                                   Text(
                                     _formatCurrencyCompact(
-                                        item['value'] as double),
+                                      item['value'] as double,
+                                    ),
                                     style: const TextStyle(
                                       fontSize: 12,
                                       color: Color(0xFF2C3E5A),
@@ -3691,8 +3969,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
   }
 
   double _getDashboardOverdueValue() {
-    return _getDashboardOverdueRecords()
-        .fold<double>(0, (sum, record) => sum + record.value);
+    return _getDashboardOverdueRecords().fold<double>(
+      0,
+      (sum, record) => sum + record.value,
+    );
   }
 
   Map<String, List<FinancialRecord>> _getDashboardOverdueRecordsByAthlete() {
@@ -3723,8 +4003,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
   }
 
   double _getDashboardPendingReceiptsValue() {
-    return _getDashboardPendingReceiptRecords()
-        .fold<double>(0, (sum, record) => sum + record.value);
+    return _getDashboardPendingReceiptRecords().fold<double>(
+      0,
+      (sum, record) => sum + record.value,
+    );
   }
 
   Map<int, double> _getMonthlyRevenueValues() {
@@ -3832,9 +4114,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
           final month = index + 1;
           final value = monthlyValues[month] ?? 0;
           final heightFactor = maxValue == 0 ? 0.05 : (value / maxValue);
-          final monthLabel = DateFormat.MMM('pt_BR')
-              .format(DateTime(_selectedYear, month))
-              .replaceAll('.', '');
+          final monthLabel = DateFormat.MMM(
+            'pt_BR',
+          ).format(DateTime(_selectedYear, month)).replaceAll('.', '');
 
           return Expanded(
             child: Padding(
@@ -3883,8 +4165,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
 
   Widget _buildRevenueByType() {
     final typeValues = _getRevenueByTypeValues();
-    final total =
-        typeValues.values.fold<double>(0, (sum, value) => sum + value);
+    final total = typeValues.values.fold<double>(
+      0,
+      (sum, value) => sum + value,
+    );
 
     return Column(
       children: typeValues.entries.map((entry) {
@@ -3948,8 +4232,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
     final pendingRecords = _dashboardRecords
         .where((record) => record.status == 'pending')
         .toList();
-    final pendingValue =
-        pendingRecords.fold<double>(0, (sum, record) => sum + record.value);
+    final pendingValue = pendingRecords.fold<double>(
+      0,
+      (sum, record) => sum + record.value,
+    );
     final pendingReceiptRecords = _getDashboardPendingReceiptRecords();
     final pendingReceiptValue = _getDashboardPendingReceiptsValue();
 
@@ -4200,8 +4486,11 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                   color: Colors.blue.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.attach_file_rounded,
-                    color: Colors.blue, size: 18),
+                child: const Icon(
+                  Icons.attach_file_rounded,
+                  color: Colors.blue,
+                  size: 18,
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -4251,8 +4540,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
               borderRadius: BorderRadius.circular(12),
               child: Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 9,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(12),
@@ -4265,9 +4556,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                       backgroundColor: Colors.blue.withOpacity(0.1),
                       child: Text(
                         _getAthleteName(record.athleteId).trim().isNotEmpty
-                            ? _getAthleteName(record.athleteId)
-                                .trim()[0]
-                                .toUpperCase()
+                            ? _getAthleteName(
+                                record.athleteId,
+                              ).trim()[0].toUpperCase()
                             : 'A',
                         style: const TextStyle(
                           fontSize: 12,
@@ -4334,10 +4625,14 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
     final groupedRecords = _getDashboardOverdueRecordsByAthlete();
     final overdueEntries = groupedRecords.entries.toList()
       ..sort((a, b) {
-        final valueA =
-            a.value.fold<double>(0, (sum, record) => sum + record.value);
-        final valueB =
-            b.value.fold<double>(0, (sum, record) => sum + record.value);
+        final valueA = a.value.fold<double>(
+          0,
+          (sum, record) => sum + record.value,
+        );
+        final valueB = b.value.fold<double>(
+          0,
+          (sum, record) => sum + record.value,
+        );
         return valueB.compareTo(valueA);
       });
     final overdueValue = _getDashboardOverdueValue();
@@ -4399,8 +4694,11 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                   color: Colors.red.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.warning_rounded,
-                    color: Colors.red, size: 18),
+                child: const Icon(
+                  Icons.warning_rounded,
+                  color: Colors.red,
+                  size: 18,
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -4435,8 +4733,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                     },
                     child: const Text(
                       'Ver todos',
-                      style:
-                          TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                   TextButton.icon(
@@ -4444,8 +4744,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                     icon: const Icon(Icons.chat_rounded, size: 14),
                     label: const Text(
                       'Cobrar',
-                      style:
-                          TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ],
@@ -4455,8 +4757,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
           const SizedBox(height: 10),
           ...visibleEntries.map((entry) {
             final records = entry.value;
-            final total =
-                records.fold<double>(0, (sum, record) => sum + record.value);
+            final total = records.fold<double>(
+              0,
+              (sum, record) => sum + record.value,
+            );
             final oldestRecord = records.reduce((a, b) {
               final dateA = DateTime(a.year, a.month, a.day);
               final dateB = DateTime(b.year, b.month, b.day);
@@ -4470,8 +4774,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
               borderRadius: BorderRadius.circular(12),
               child: Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 9,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(12),
@@ -4535,8 +4841,11 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                           constraints: const BoxConstraints(),
                           padding: EdgeInsets.zero,
                           visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.chat_rounded,
-                              size: 18, color: Color(0xFF25D366)),
+                          icon: const Icon(
+                            Icons.chat_rounded,
+                            size: 18,
+                            color: Color(0xFF25D366),
+                          ),
                           onPressed: () =>
                               _sendRecordChargeWhatsApp(oldestRecord),
                         ),
@@ -4603,8 +4912,11 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
         children: [
           const Row(
             children: [
-              Icon(Icons.filter_alt_rounded,
-                  size: 16, color: Color(0xFF2C3E5A)),
+              Icon(
+                Icons.filter_alt_rounded,
+                size: 16,
+                color: Color(0xFF2C3E5A),
+              ),
               SizedBox(width: 6),
               Text(
                 'Filtro inteligente',
@@ -4692,8 +5004,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
     final insights = <String>[];
 
     final typeValues = _getRevenueByTypeValues();
-    final totalApprovedValue =
-        typeValues.values.fold<double>(0, (sum, value) => sum + value);
+    final totalApprovedValue = typeValues.values.fold<double>(
+      0,
+      (sum, value) => sum + value,
+    );
     final typeEntries = typeValues.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     if (typeEntries.isNotEmpty &&
@@ -4702,19 +5016,22 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       final percent =
           ((typeEntries.first.value / totalApprovedValue) * 100).round();
       insights.add(
-          '${_getTypeLabel(typeEntries.first.key)} representa $percent% da receita recebida (${_formatCurrencyCompact(typeEntries.first.value)}).');
+        '${_getTypeLabel(typeEntries.first.key)} representa $percent% da receita recebida (${_formatCurrencyCompact(typeEntries.first.value)}).',
+      );
     }
 
     final monthlyValues = _getMonthlyRevenueValues();
     final monthEntries = monthlyValues.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     if (monthEntries.isNotEmpty && monthEntries.first.value > 0) {
-      final monthName = DateFormat.MMMM('pt_BR')
-          .format(DateTime(_selectedYear, monthEntries.first.key));
+      final monthName = DateFormat.MMMM(
+        'pt_BR',
+      ).format(DateTime(_selectedYear, monthEntries.first.key));
       final formattedMonth =
           '${monthName[0].toUpperCase()}${monthName.substring(1)}';
       insights.add(
-          '$formattedMonth foi o melhor mês do ano (${_formatCurrencyCompact(monthEntries.first.value)}).');
+        '$formattedMonth foi o melhor mês do ano (${_formatCurrencyCompact(monthEntries.first.value)}).',
+      );
     }
 
     final currentMonthValue = monthlyValues[_selectedMonth] ?? 0;
@@ -4727,41 +5044,55 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
               .round();
       final direction = variation >= 0 ? 'subiu' : 'caiu';
       insights.add(
-          'Este mês $direction ${variation.abs()}% vs mês anterior (${_formatCurrencyCompact(currentMonthValue)} vs ${_formatCurrencyCompact(previousMonthValue)}).');
+        'Este mês $direction ${variation.abs()}% vs mês anterior (${_formatCurrencyCompact(currentMonthValue)} vs ${_formatCurrencyCompact(previousMonthValue)}).',
+      );
     }
 
     if (overdue.isNotEmpty) {
-      final totalOverdue =
-          overdue.fold<double>(0, (sum, record) => sum + record.value);
+      final totalOverdue = overdue.fold<double>(
+        0,
+        (sum, record) => sum + record.value,
+      );
       final grouped = _getDashboardOverdueRecordsByAthlete().entries.toList()
         ..sort((a, b) {
-          final valueA =
-              a.value.fold<double>(0, (sum, record) => sum + record.value);
-          final valueB =
-              b.value.fold<double>(0, (sum, record) => sum + record.value);
+          final valueA = a.value.fold<double>(
+            0,
+            (sum, record) => sum + record.value,
+          );
+          final valueB = b.value.fold<double>(
+            0,
+            (sum, record) => sum + record.value,
+          );
           return valueB.compareTo(valueA);
         });
       if (grouped.isNotEmpty) {
-        final topAthleteValue = grouped.first.value
-            .fold<double>(0, (sum, record) => sum + record.value);
+        final topAthleteValue = grouped.first.value.fold<double>(
+          0,
+          (sum, record) => sum + record.value,
+        );
         final topAthleteName = _getAthleteName(grouped.first.key);
         insights.add(
-            '$topAthleteName é o atleta com mais atraso (${_formatCurrencyCompact(topAthleteValue)}).');
+          '$topAthleteName é o atleta com mais atraso (${_formatCurrencyCompact(topAthleteValue)}).',
+        );
       }
       final topThree = grouped.take(3).fold<double>(0, (sum, entry) {
         return sum +
-            entry.value
-                .fold<double>(0, (innerSum, record) => innerSum + record.value);
+            entry.value.fold<double>(
+              0,
+              (innerSum, record) => innerSum + record.value,
+            );
       });
       final percent =
           totalOverdue == 0 ? 0 : ((topThree / totalOverdue) * 100).round();
       insights.add(
-          'Top 3 atletas representam $percent% do atraso (${_formatCurrencyCompact(topThree)}).');
+        'Top 3 atletas representam $percent% do atraso (${_formatCurrencyCompact(topThree)}).',
+      );
     }
 
     if (approved.isEmpty && overdue.isEmpty) {
       insights.add(
-          'Ainda não há dados suficientes para gerar insights no filtro atual.');
+        'Ainda não há dados suficientes para gerar insights no filtro atual.',
+      );
     }
 
     return Container(
@@ -4782,8 +5113,11 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
         children: [
           const Row(
             children: [
-              Icon(Icons.psychology_alt_rounded,
-                  color: Colors.deepPurple, size: 20),
+              Icon(
+                Icons.psychology_alt_rounded,
+                color: Colors.deepPurple,
+                size: 20,
+              ),
               SizedBox(width: 8),
               Text(
                 'Insights inteligentes',
@@ -4796,27 +5130,32 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
             ],
           ),
           const SizedBox(height: 8),
-          ...insights.map((text) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.auto_awesome_rounded,
-                        size: 13, color: Colors.deepPurple),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        text,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Color(0xFF4527A0),
-                          fontWeight: FontWeight.w700,
-                        ),
+          ...insights.map(
+            (text) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.auto_awesome_rounded,
+                    size: 13,
+                    color: Colors.deepPurple,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      text,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF4527A0),
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ],
-                ),
-              )),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -4848,6 +5187,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _buildFinancialAccessControlCard(),
           _buildDashboardAlertsCard(),
           Row(
             children: [
@@ -5089,7 +5429,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       if (r.status != 'pending') return false;
       final dueDate = DateTime(r.year, r.month, r.day);
       final today = DateTime.now();
-      return !dueDate.isBefore(DateTime(today.year, today.month, today.day));
+      return !dueDate.isBefore(
+        DateTime(today.year, today.month, today.day),
+      );
     }).fold<double>(0, (sum, r) => sum + r.value);
     final overdueValue = _records.where((r) {
       if (r.status != 'pending') return false;
@@ -5105,10 +5447,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
         appBar: AppBar(
           title: Text(
             _showDashboardPage ? 'Dashboard Financeiro' : 'Financeiro - Admin',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 20,
-            ),
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 20),
           ),
           backgroundColor: const Color(0xFF2C3E5A),
           foregroundColor: Colors.white,
@@ -5134,7 +5473,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                 onPressed: () => _openFinancialRecords(status: _selectedStatus),
               ),
             IconButton(
-                icon: const Icon(Icons.refresh), onPressed: _loadRecords),
+              icon: const Icon(Icons.refresh),
+              onPressed: _loadRecords,
+            ),
           ],
         ),
         floatingActionButton: _showDashboardPage
@@ -5145,7 +5486,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                 label: const Text(
                   'Cadastrar',
                   style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w600),
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 backgroundColor: const Color(0xFF2C3E5A),
               ),
@@ -5300,11 +5643,13 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                         const SizedBox(height: 4),
                                         Container(
                                           padding: const EdgeInsets.symmetric(
-                                              horizontal: 8),
+                                            horizontal: 8,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: const Color(0xFFF6F8FB),
-                                            borderRadius:
-                                                BorderRadius.circular(10),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
                                             border: Border.all(
                                               color: const Color(0xFFE1E6ED),
                                             ),
@@ -5318,24 +5663,30 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                               color: Color(0xFF757575),
                                               size: 16,
                                             ),
-                                            items: List.generate(
-                                                    12, (i) => i + 1)
-                                                .map((m) => DropdownMenuItem(
-                                                      value: m,
-                                                      child: Text(
-                                                        DateFormat.MMMM('pt_BR')
-                                                            .format(DateTime(
-                                                                2024, m)),
-                                                        style: const TextStyle(
-                                                          fontSize: 12,
-                                                          color:
-                                                              Color(0xFF424242),
-                                                          fontWeight:
-                                                              FontWeight.w500,
+                                            items:
+                                                List.generate(12, (i) => i + 1)
+                                                    .map(
+                                                      (m) => DropdownMenuItem(
+                                                        value: m,
+                                                        child: Text(
+                                                          DateFormat.MMMM(
+                                                            'pt_BR',
+                                                          ).format(
+                                                            DateTime(2024, m),
+                                                          ),
+                                                          style:
+                                                              const TextStyle(
+                                                            fontSize: 12,
+                                                            color: Color(
+                                                              0xFF424242,
+                                                            ),
+                                                            fontWeight:
+                                                                FontWeight.w500,
+                                                          ),
                                                         ),
                                                       ),
-                                                    ))
-                                                .toList(),
+                                                    )
+                                                    .toList(),
                                             onChanged: (v) => setState(() {
                                               _selectedMonth = v!;
                                               _saveFinancialFilters();
@@ -5363,11 +5714,13 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                         const SizedBox(height: 4),
                                         Container(
                                           padding: const EdgeInsets.symmetric(
-                                              horizontal: 8),
+                                            horizontal: 8,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: const Color(0xFFF6F8FB),
-                                            borderRadius:
-                                                BorderRadius.circular(10),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
                                             border: Border.all(
                                               color: const Color(0xFFE1E6ED),
                                             ),
@@ -5388,19 +5741,22 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                               2029,
                                               2030
                                             ]
-                                                .map((y) => DropdownMenuItem(
-                                                      value: y,
-                                                      child: Text(
-                                                        y.toString(),
-                                                        style: const TextStyle(
-                                                          fontSize: 12,
-                                                          color:
-                                                              Color(0xFF424242),
-                                                          fontWeight:
-                                                              FontWeight.w500,
+                                                .map(
+                                                  (y) => DropdownMenuItem(
+                                                    value: y,
+                                                    child: Text(
+                                                      y.toString(),
+                                                      style: const TextStyle(
+                                                        fontSize: 12,
+                                                        color: Color(
+                                                          0xFF424242,
                                                         ),
+                                                        fontWeight:
+                                                            FontWeight.w500,
                                                       ),
-                                                    ))
+                                                    ),
+                                                  ),
+                                                )
                                                 .toList(),
                                             onChanged: (v) => setState(() {
                                               _selectedYear = v!;
@@ -5429,7 +5785,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                   const SizedBox(height: 4),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 8),
+                                      horizontal: 8,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFF6F8FB),
                                       borderRadius: BorderRadius.circular(10),
@@ -5527,7 +5884,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                   const SizedBox(height: 4),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 8),
+                                      horizontal: 8,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFF6F8FB),
                                       borderRadius: BorderRadius.circular(10),
@@ -5619,7 +5977,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                       gradient: LinearGradient(
                                         colors: [
                                           Colors.white,
-                                          const Color(0xFFFAFAFA)
+                                          const Color(0xFFFAFAFA),
                                         ],
                                         begin: Alignment.topLeft,
                                         end: Alignment.bottomRight,
@@ -5683,7 +6041,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                                             style:
                                                                 const TextStyle(
                                                               color: Color(
-                                                                  0xFF757575),
+                                                                0xFF757575,
+                                                              ),
                                                               fontSize: 11,
                                                             ),
                                                             maxLines: 1,
@@ -5695,8 +6054,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                                         const SizedBox(
                                                             width: 6),
                                                         _buildAthleteScoreChip(
-                                                            record.athleteId,
-                                                            compact: true),
+                                                          record.athleteId,
+                                                          compact: true,
+                                                        ),
                                                       ],
                                                     ),
                                                     Text(
@@ -5705,7 +6065,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                                         color: isOverdue
                                                             ? Colors.red
                                                             : const Color(
-                                                                0xFF757575),
+                                                                0xFF757575,
+                                                              ),
                                                         fontSize: 10,
                                                         fontWeight: isOverdue
                                                             ? FontWeight.w600
@@ -5742,7 +6103,9 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                                             .withOpacity(0.1),
                                                         borderRadius:
                                                             BorderRadius
-                                                                .circular(20),
+                                                                .circular(
+                                                          20,
+                                                        ),
                                                         border: Border.all(
                                                           color: Colors.blue
                                                               .withOpacity(
@@ -5837,9 +6200,15 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
     }).toList();
   }
 
-  Widget _buildCompactCard(String label, int value, IconData icon,
-      Color baseColor, double amount, bool isSelected,
-      {bool large = false}) {
+  Widget _buildCompactCard(
+    String label,
+    int value,
+    IconData icon,
+    Color baseColor,
+    double amount,
+    bool isSelected, {
+    bool large = false,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
       decoration: BoxDecoration(
@@ -5928,7 +6297,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
               : LinearGradient(
                   colors: [
                     baseColor.withOpacity(0.05),
-                    baseColor.withOpacity(0.1)
+                    baseColor.withOpacity(0.1),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -5952,11 +6321,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              color: isSelected ? Colors.white : baseColor,
-              size: 18,
-            ),
+            Icon(icon, color: isSelected ? Colors.white : baseColor, size: 18),
             const SizedBox(height: 2),
             Text(
               label,
@@ -6135,8 +6500,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.edit_outlined,
-                          color: Color(0xFF2C3E5A)),
+                      icon: const Icon(
+                        Icons.edit_outlined,
+                        color: Color(0xFF2C3E5A),
+                      ),
                       tooltip: 'Editar débito',
                       onPressed: () {
                         Navigator.pop(context);
@@ -6424,8 +6791,11 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(Icons.check,
-                                      color: Colors.white, size: 20),
+                                  const Icon(
+                                    Icons.check,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
                                   const SizedBox(width: 8),
                                   const Text(
                                     'Aprovar',
@@ -6474,8 +6844,11 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(Icons.close,
-                                      color: Colors.white, size: 20),
+                                  const Icon(
+                                    Icons.close,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
                                   const SizedBox(width: 8),
                                   const Text(
                                     'Rejeitar',
@@ -6588,8 +6961,11 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(Icons.person,
-                                    color: Colors.white, size: 20),
+                                const Icon(
+                                  Icons.person,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
                                 const SizedBox(width: 8),
                                 const Text(
                                   'Enviar Mensagem',
@@ -6633,8 +7009,11 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(Icons.close,
-                                    color: Colors.white, size: 20),
+                                const Icon(
+                                  Icons.close,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
                                 const SizedBox(width: 8),
                                 const Text(
                                   'Fechar',
@@ -6719,8 +7098,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
         children: [
           SizedBox(
             width: 100,
-            child: Text('$label:',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
           Expanded(child: Text(value)),
         ],
@@ -6760,6 +7141,371 @@ class CurrencyInputFormatter extends TextInputFormatter {
     return TextEditingValue(
       text: result,
       selection: TextSelection.collapsed(offset: result.length),
+    );
+  }
+}
+
+class _OverdueAthleteBlockSheet extends StatefulWidget {
+  const _OverdueAthleteBlockSheet({
+    required this.service,
+    required this.enforcementEnabled,
+  });
+
+  final FinancialAccessService service;
+  final bool enforcementEnabled;
+
+  @override
+  State<_OverdueAthleteBlockSheet> createState() =>
+      _OverdueAthleteBlockSheetState();
+}
+
+class _OverdueAthleteBlockSheetState extends State<_OverdueAthleteBlockSheet> {
+  final TextEditingController _searchController = TextEditingController();
+  List<OverdueAthleteBlockCandidate> _athletes = const [];
+  final Set<String> _savingAthleteIds = <String>{};
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final athletes = await widget.service.getOverdueAthleteBlockCandidates();
+      if (!mounted) return;
+      setState(() {
+        _athletes = athletes;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Não foi possível carregar os inadimplentes.';
+      });
+    }
+  }
+
+  Future<void> _toggle(
+    OverdueAthleteBlockCandidate athlete,
+    bool blocked,
+  ) async {
+    if (athlete.isAdmin || _savingAthleteIds.contains(athlete.athleteId)) {
+      return;
+    }
+    setState(() => _savingAthleteIds.add(athlete.athleteId));
+    try {
+      await widget.service.setAthleteTrainingBlocked(
+        athleteId: athlete.athleteId,
+        blocked: blocked,
+      );
+      if (!mounted) return;
+      final index = _athletes.indexWhere(
+        (item) => item.athleteId == athlete.athleteId,
+      );
+      if (index >= 0) {
+        final updated = List<OverdueAthleteBlockCandidate>.from(_athletes);
+        updated[index] = updated[index].copyWith(isBlocked: blocked);
+        setState(() => _athletes = updated);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            blocked
+                ? '${athlete.fullName} foi bloqueado para treinos.'
+                : 'Acesso de ${athlete.fullName} liberado.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Não foi possível alterar ${athlete.fullName}.'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _savingAthleteIds.remove(athlete.athleteId));
+      }
+    }
+  }
+
+  Widget _avatar(OverdueAthleteBlockCandidate athlete) {
+    final initial = athlete.fullName.isEmpty
+        ? 'A'
+        : athlete.fullName.characters.first.toUpperCase();
+    final fallback = Container(
+      width: 46,
+      height: 46,
+      alignment: Alignment.center,
+      color: const Color(0xFFE8EDF4),
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Color(0xFF123463),
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+    final url = athlete.avatarUrl;
+    if (url == null) return ClipOval(child: fallback);
+    return ClipOval(
+      child: CachedNetworkImage(
+        imageUrl: url,
+        width: 46,
+        height: 46,
+        fit: BoxFit.cover,
+        memCacheWidth: 160,
+        maxWidthDiskCache: 320,
+        placeholder: (_, __) => fallback,
+        errorWidget: (_, __, ___) => fallback,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _searchController.text.trim().toLowerCase();
+    final visible = query.isEmpty
+        ? _athletes
+        : _athletes
+            .where(
+              (athlete) => athlete.fullName.toLowerCase().contains(query),
+            )
+            .toList(growable: false);
+    final blockedCount = _athletes.where((athlete) => athlete.isBlocked).length;
+    final currency = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+
+    return FractionallySizedBox(
+      heightFactor: 0.9,
+      child: Material(
+        color: const Color(0xFFF4F7FB),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 12, 10),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE2BB5B).withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.lock_person_rounded,
+                      color: Color(0xFF123463),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Bloqueio de treinos',
+                          style: TextStyle(
+                            color: Color(0xFF123463),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          '$blockedCount bloqueado(s) de ${_athletes.length} inadimplente(s)',
+                          style: const TextStyle(
+                            color: Color(0xFF62748A),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            if (!widget.enforcementEnabled)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3CD),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2BB5B)),
+                ),
+                child: const Text(
+                  'A regra geral está desativada. As escolhas serão salvas, mas o bloqueio só terá efeito quando ela for ativada.',
+                  style: TextStyle(
+                    color: Color(0xFF6D5513),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: TextField(
+                controller: _searchController,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'Buscar atleta...',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.cloud_off_rounded, size: 42),
+                                const SizedBox(height: 10),
+                                Text(_error!, textAlign: TextAlign.center),
+                                const SizedBox(height: 12),
+                                FilledButton.icon(
+                                  onPressed: _load,
+                                  icon: const Icon(Icons.refresh_rounded),
+                                  label: const Text('Tentar novamente'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : visible.isEmpty
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Text(
+                                  'Nenhum atleta inadimplente encontrado.',
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            )
+                          : RefreshIndicator(
+                              onRefresh: _load,
+                              child: ListView.separated(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                                itemCount: visible.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 8),
+                                itemBuilder: (context, index) {
+                                  final athlete = visible[index];
+                                  final saving = _savingAthleteIds.contains(
+                                    athlete.athleteId,
+                                  );
+                                  return Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: athlete.isBlocked
+                                          ? const Color(0xFFFFECEC)
+                                          : Colors.white,
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: athlete.isBlocked
+                                            ? const Color(0xFFE99A9A)
+                                            : const Color(0xFFE1E7EF),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        _avatar(athlete),
+                                        const SizedBox(width: 11),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                athlete.fullName,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Color(0xFF123463),
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                athlete.isAdmin
+                                                    ? 'Administrador — acesso protegido'
+                                                    : '${athlete.overdueCount} vencida(s) • ${currency.format(athlete.overdueAmount)}',
+                                                style: TextStyle(
+                                                  color: athlete.isAdmin
+                                                      ? const Color(0xFF8B6A10)
+                                                      : const Color(0xFF6A7687),
+                                                  fontSize: 12,
+                                                  fontWeight: athlete.isAdmin
+                                                      ? FontWeight.w700
+                                                      : FontWeight.w500,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (saving)
+                                          const SizedBox(
+                                            width: 42,
+                                            height: 42,
+                                            child: Padding(
+                                              padding: EdgeInsets.all(10),
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            ),
+                                          )
+                                        else
+                                          Switch.adaptive(
+                                            value: athlete.isBlocked,
+                                            onChanged: athlete.isAdmin
+                                                ? null
+                                                : (value) =>
+                                                    _toggle(athlete, value),
+                                            activeThumbColor:
+                                                const Color(0xFFD32F2F),
+                                          ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -94,8 +94,10 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
     return DateTime(date.year, date.month, date.day);
   }
 
-  DateTime _parseBirthDate(dynamic value) {
-    return DateTime.parse(value.toString());
+  DateTime? _parseBirthDate(dynamic value) {
+    final rawValue = value?.toString().trim();
+    if (rawValue == null || rawValue.isEmpty) return null;
+    return DateTime.tryParse(rawValue);
   }
 
   int calculateAge(DateTime birthDate) {
@@ -149,6 +151,7 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
     for (final originalUser in users) {
       final user = Map<String, dynamic>.from(originalUser);
       final birth = _parseBirthDate(user['birth_date']);
+      if (birth == null) continue;
 
       user['age'] = calculateAge(birth);
       user['days'] = daysUntilNextBirthday(birth);
@@ -170,8 +173,13 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
       });
     }
 
+    final currentMonth = DateTime.now().month;
     final sortedEntries = grouped.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
+      ..sort((a, b) {
+        final aOffset = (a.key - currentMonth + 12) % 12;
+        final bOffset = (b.key - currentMonth + 12) % 12;
+        return aOffset.compareTo(bOffset);
+      });
 
     return {for (final entry in sortedEntries) entry.key: entry.value};
   }
@@ -242,22 +250,48 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
     return Colors.grey[700]!;
   }
 
-  Widget _buildAvatar(String? avatarUrl, String fullName) {
-    final hasAvatar = avatarUrl != null && avatarUrl.trim().isNotEmpty;
+  String? _resolveAvatarUrl(String? rawValue) {
+    final value = rawValue?.trim();
+    if (value == null || value.isEmpty) return null;
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    return supabase.storage.from('avatars').getPublicUrl(value);
+  }
 
-    return CircleAvatar(
-      radius: 26,
-      backgroundColor: olympusGold.withOpacity(0.18),
-      backgroundImage: hasAvatar ? CachedNetworkImageProvider(avatarUrl) : null,
-      child: !hasAvatar
-          ? Text(
-              fullName.isNotEmpty ? fullName[0].toUpperCase() : '?',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: olympusBlue,
-              ),
-            )
-          : null,
+  Widget _buildAvatar(String? rawAvatarUrl, String fullName) {
+    final avatarUrl = _resolveAvatarUrl(rawAvatarUrl);
+    final fallback = Container(
+      color: olympusGold.withOpacity(0.18),
+      alignment: Alignment.center,
+      child: Text(
+        fullName.isNotEmpty ? fullName[0].toUpperCase() : '?',
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          color: olympusBlue,
+        ),
+      ),
+    );
+
+    return Container(
+      width: 52,
+      height: 52,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: olympusGold.withOpacity(0.55), width: 1.4),
+      ),
+      child: avatarUrl == null
+          ? fallback
+          : CachedNetworkImage(
+              imageUrl: avatarUrl,
+              fit: BoxFit.cover,
+              memCacheWidth: 240,
+              memCacheHeight: 240,
+              fadeInDuration: const Duration(milliseconds: 120),
+              placeholder: (_, __) => fallback,
+              errorWidget: (_, __, ___) => fallback,
+            ),
     );
   }
 
@@ -357,23 +391,72 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
   }
 
   Widget _buildMonthSection(int month, List<Map<String, dynamic>> monthUsers) {
+    final isCurrentMonth = month == DateTime.now().month;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: isCurrentMonth
+                ? olympusGold.withOpacity(0.20)
+                : Colors.white.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isCurrentMonth
+                  ? olympusGold.withOpacity(0.78)
+                  : Colors.white.withOpacity(0.18),
+              width: isCurrentMonth ? 1.5 : 1,
+            ),
+          ),
           child: Row(
             children: [
-              const Icon(Icons.cake_outlined, color: Colors.white, size: 20),
+              Icon(
+                isCurrentMonth
+                    ? Icons.celebration_rounded
+                    : Icons.cake_outlined,
+                color: isCurrentMonth ? olympusGold : Colors.white,
+                size: 22,
+              ),
               const SizedBox(width: 8),
-              Text(
-                getMonthName(month),
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
+              Expanded(
+                child: Text(
+                  getMonthName(month),
+                  style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
+                    color: isCurrentMonth ? olympusGold : Colors.white,
+                  ),
                 ),
               ),
+              if (isCurrentMonth)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: olympusGold,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'Mês atual',
+                    style: TextStyle(
+                      color: olympusBlue,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                )
+              else
+                Text(
+                  '${monthUsers.length}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white70,
+                  ),
+                ),
             ],
           ),
         ),

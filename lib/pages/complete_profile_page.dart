@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -199,11 +200,15 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
       final formattedCep = '${cep.substring(0, 5)}-${cep.substring(5)}';
 
       final response = await http
-          .get(Uri.parse('https://us1.locationiq.com/v1/search.php'
+          .get(
+            Uri.parse(
+              'https://us1.locationiq.com/v1/search.php'
               '?key=$_locationIQToken'
               '&postalcode=$formattedCep'
               '&format=json'
-              '&addressdetails=1'))
+              '&addressdetails=1',
+            ),
+          )
           .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
@@ -214,15 +219,18 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
 
           if (mounted) {
             setState(() {
-              _streetController.text = address['road'] ??
+              _streetController.text =
+                  address['road'] ??
                   address['pedestrian'] ??
                   address['footway'] ??
                   '';
-              _neighborhoodController.text = address['suburb'] ??
+              _neighborhoodController.text =
+                  address['suburb'] ??
                   address['neighbourhood'] ??
                   address['quarter'] ??
                   '';
-              _cityController.text = address['city'] ??
+              _cityController.text =
+                  address['city'] ??
                   address['town'] ??
                   address['village'] ??
                   address['municipality'] ??
@@ -292,8 +300,13 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
       final Uint8List? fileBytes = await _selectedImage!.readAsBytes();
       if (fileBytes == null) return null;
 
-      await supabase.storage.from('avatars').uploadBinary(fileName, fileBytes,
-          fileOptions: const FileOptions(upsert: true));
+      await supabase.storage
+          .from('avatars')
+          .uploadBinary(
+            fileName,
+            fileBytes,
+            fileOptions: const FileOptions(upsert: true),
+          );
 
       final publicUrl = supabase.storage.from('avatars').getPublicUrl(fileName);
       return publicUrl;
@@ -478,9 +491,7 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.orange, width: 3),
                     ),
-                    child: ClipOval(
-                      child: _getAvatarImage(),
-                    ),
+                    child: ClipOval(child: _getAvatarImage()),
                   ),
                 ),
               ),
@@ -574,8 +585,9 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value:
-                          _selectedGender.isNotEmpty ? _selectedGender : null,
+                      value: _selectedGender.isNotEmpty
+                          ? _selectedGender
+                          : null,
                       decoration: const InputDecoration(
                         labelText: 'Gênero *',
                         border: OutlineInputBorder(),
@@ -583,9 +595,13 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                       ),
                       items: const [
                         DropdownMenuItem(
-                            value: 'Masculino', child: Text('Masculino')),
+                          value: 'Masculino',
+                          child: Text('Masculino'),
+                        ),
                         DropdownMenuItem(
-                            value: 'Feminino', child: Text('Feminino')),
+                          value: 'Feminino',
+                          child: Text('Feminino'),
+                        ),
                       ],
                       onChanged: (value) {
                         setState(() {
@@ -624,18 +640,21 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
               // Posição na Quadra (apenas para atletas)
               if (_selectedGender.isNotEmpty)
                 DropdownButtonFormField<String>(
-                  value:
-                      _selectedPosition.isNotEmpty ? _selectedPosition : null,
+                  value: _selectedPosition.isNotEmpty
+                      ? _selectedPosition
+                      : null,
                   decoration: const InputDecoration(
                     labelText: 'Posição na Quadra',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.sports_volleyball),
                   ),
                   items: _positions[_selectedGender]!
-                      .map((pos) => DropdownMenuItem(
-                            value: pos['value'],
-                            child: Text(pos['label']!),
-                          ))
+                      .map(
+                        (pos) => DropdownMenuItem(
+                          value: pos['value'],
+                          child: Text(pos['label']!),
+                        ),
+                      )
                       .toList(),
                   onChanged: (value) =>
                       setState(() => _selectedPosition = value ?? ''),
@@ -643,8 +662,10 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
               const SizedBox(height: 24),
 
               // Endereço
-              const Text('Endereço',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const Text(
+                'Endereço',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 8),
 
               TextFormField(
@@ -657,7 +678,8 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2))
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : null,
                 ),
                 keyboardType: TextInputType.number,
@@ -803,10 +825,13 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
       );
     }
     if (_existingAvatarUrl.isNotEmpty) {
-      return Image.network(
-        _existingAvatarUrl,
+      return CachedNetworkImage(
+        imageUrl: _existingAvatarUrl,
         fit: BoxFit.cover,
-        errorBuilder: (c, o, s) =>
+        memCacheWidth: 320,
+        maxWidthDiskCache: 640,
+        fadeInDuration: const Duration(milliseconds: 120),
+        errorWidget: (c, o, s) =>
             const Icon(Icons.person, size: 60, color: Colors.grey),
       );
     }

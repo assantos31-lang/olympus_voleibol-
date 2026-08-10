@@ -926,28 +926,30 @@ class _AddEventPageState extends State<AddEventPage> {
             .inFilter('user_id', userIdsToDelete.toList());
       }
 
-      if (selectedRoles.isNotEmpty) {
-        final convocations = selectedRoles.entries
-            .map((entry) => {
-                  'event_id': eventId,
-                  'user_id': entry.key,
-                  'event_role': entry.value,
-                  'status':
-                      existingUserIds.contains(entry.key) ? null : 'pending',
-                })
-            .toList();
-
-        for (final convocation in convocations) {
-          final status = convocation.remove('status');
-          final data = {
-            ...convocation,
-            if (status != null) 'status': status,
-          };
-          await supabase.from('convocations').upsert(
-                data,
-                onConflict: 'event_id,user_id',
-              );
+      // Registros que já existem não devem ser reenviados. O upsert de toda a
+      // lista provocava conflito com a chave única de convocations ao marcar
+      // mais de um treinador e também fazia atualizações desnecessárias.
+      if (userIdsWithRoleChange.isNotEmpty) {
+        for (final userId in userIdsWithRoleChange) {
+          await supabase
+              .from('convocations')
+              .update({'event_role': selectedRoles[userId]})
+              .eq('event_id', eventId)
+              .eq('user_id', userId);
         }
+      }
+
+      if (userIdsToAdd.isNotEmpty) {
+        final newConvocations = userIdsToAdd
+            .map((userId) => {
+                  'event_id': eventId,
+                  'user_id': userId,
+                  'event_role': selectedRoles[userId],
+                  'status': 'pending',
+                })
+            .toList(growable: false);
+
+        await supabase.from('convocations').insert(newConvocations);
       }
 
 // ==========================================================

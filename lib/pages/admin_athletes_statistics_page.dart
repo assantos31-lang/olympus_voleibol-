@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -39,7 +40,9 @@ class _StatsResponsive {
   }
 
   static int metricsCrossAxisCount(
-      BuildContext context, double availableWidth) {
+    BuildContext context,
+    double availableWidth,
+  ) {
     final width = availableWidth.isFinite
         ? availableWidth
         : _StatsResponsive.width(context);
@@ -50,7 +53,9 @@ class _StatsResponsive {
   }
 
   static double metricsAspectRatio(
-      BuildContext context, double availableWidth) {
+    BuildContext context,
+    double availableWidth,
+  ) {
     final width = availableWidth.isFinite
         ? availableWidth
         : _StatsResponsive.width(context);
@@ -83,10 +88,7 @@ class AthleteStatisticsPage extends StatefulWidget {
 
   static const String heroTag = 'athlete-statistics-hero';
 
-  static Route<void> route({
-    String? athleteId,
-    bool adminView = false,
-  }) {
+  static Route<void> route({String? athleteId, bool adminView = false}) {
     return PageRouteBuilder<void>(
       transitionDuration: const Duration(milliseconds: 420),
       reverseTransitionDuration: const Duration(milliseconds: 300),
@@ -110,10 +112,7 @@ class AthleteStatisticsPage extends StatefulWidget {
 
         return FadeTransition(
           opacity: curvedAnimation,
-          child: SlideTransition(
-            position: offsetAnimation,
-            child: child,
-          ),
+          child: SlideTransition(position: offsetAnimation, child: child),
         );
       },
     );
@@ -201,8 +200,11 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     DateTime? start;
     switch (_period) {
       case 'semana':
-        start = DateTime(now.year, now.month, now.day)
-            .subtract(const Duration(days: 7));
+        start = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).subtract(const Duration(days: 7));
         break;
       case 'mes':
         start = DateTime(now.year, now.month, 1);
@@ -368,10 +370,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }) {
     return InkWell(
       borderRadius: BorderRadius.circular(999),
-      onTap: () => _showItemExplanation(
-        title: title,
-        explanation: explanation,
-      ),
+      onTap: () => _showItemExplanation(title: title, explanation: explanation),
       child: Container(
         width: 20,
         height: 20,
@@ -519,12 +518,12 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
   String _evaluationSearchText(Map<String, dynamic> row) {
     return [
-      row['tipo'],
-      row['slot'],
-      row['motivo'],
-      row['fundamento'],
-      row['observacao'],
-    ]
+          row['tipo'],
+          row['slot'],
+          row['motivo'],
+          row['fundamento'],
+          row['observacao'],
+        ]
         .map(_normalizeEvaluationText)
         .where((value) => value.isNotEmpty)
         .join(' ');
@@ -625,29 +624,37 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   Future<List<Map<String, dynamic>>> _loadMessages(String userId) async {
     final sources = <List<Map<String, dynamic>>>[];
 
-    sources.add(await _safeSelect(
-      'app_messages',
-      'id, recipient_id, user_id, title, body, message, message_type, type, created_at',
-      recipientId: userId,
-    ));
+    sources.add(
+      await _safeSelect(
+        'app_messages',
+        'id, recipient_id, user_id, title, body, message, message_type, type, created_at',
+        recipientId: userId,
+      ),
+    );
 
-    sources.add(await _safeSelect(
-      'app_messages',
-      'id, recipient_id, user_id, title, body, message, message_type, type, created_at',
-      userId: userId,
-    ));
+    sources.add(
+      await _safeSelect(
+        'app_messages',
+        'id, recipient_id, user_id, title, body, message, message_type, type, created_at',
+        userId: userId,
+      ),
+    );
 
-    sources.add(await _safeSelect(
-      'user_messages',
-      'id, recipient_id, user_id, subject, title, content, body, created_at',
-      recipientId: userId,
-    ));
+    sources.add(
+      await _safeSelect(
+        'user_messages',
+        'id, recipient_id, user_id, subject, title, content, body, created_at',
+        recipientId: userId,
+      ),
+    );
 
-    sources.add(await _safeSelect(
-      'user_messages',
-      'id, recipient_id, user_id, subject, title, content, body, created_at',
-      userId: userId,
-    ));
+    sources.add(
+      await _safeSelect(
+        'user_messages',
+        'id, recipient_id, user_id, subject, title, content, body, created_at',
+        userId: userId,
+      ),
+    );
 
     final map = <String, Map<String, dynamic>>{};
 
@@ -839,8 +846,9 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         throw Exception('Usuário não autenticado.');
       }
 
-      final athleteId =
-          widget.adminView ? (widget.athleteId ?? '').trim() : user.id;
+      final athleteId = widget.adminView
+          ? (widget.athleteId ?? '').trim()
+          : user.id;
 
       if (athleteId.isEmpty) {
         throw Exception('Atleta não identificado.');
@@ -859,14 +867,14 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         'id, event_id, coach_id, athlete_id, tipo, slot, motivo, fundamento, observacao, created_at, score',
       );
 
-      final evaluations = evaluationsRows.where((row) {
-        return (row['athlete_id'] ?? '').toString() == athleteId;
-      }).toList()
-        ..sort((a, b) {
-          final ad = _parseDate(a['created_at']) ?? DateTime(1900);
-          final bd = _parseDate(b['created_at']) ?? DateTime(1900);
-          return bd.compareTo(ad);
-        });
+      final evaluations =
+          evaluationsRows.where((row) {
+            return (row['athlete_id'] ?? '').toString() == athleteId;
+          }).toList()..sort((a, b) {
+            final ad = _parseDate(a['created_at']) ?? DateTime(1900);
+            final bd = _parseDate(b['created_at']) ?? DateTime(1900);
+            return bd.compareTo(ad);
+          });
 
       final checkins = await _safeSelect(
         'checkins',
@@ -1362,11 +1370,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }
 
   Map<String, int> get _trainingMinutesByCategory {
-    final map = <String, int>{
-      'Fundamentos': 0,
-      'Tático': 0,
-      'Físico': 0,
-    };
+    final map = <String, int>{'Fundamentos': 0, 'Tático': 0, 'Físico': 0};
 
     for (final row in _checkedInTrainingPlanBlocksHistory) {
       final category = (row['category'] ?? '').toString().trim().isEmpty
@@ -1472,7 +1476,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         items.add('Ainda não há avaliações cadastradas para este atleta.');
       } else {
         items.add(
-            'Há ${_evaluations.length} avaliação(ns) cadastrada(s), mas nenhuma entrou no período ${_periodLabel()}. Verifique a data created_at da avaliação.');
+          'Há ${_evaluations.length} avaliação(ns) cadastrada(s), mas nenhuma entrou no período ${_periodLabel()}. Verifique a data created_at da avaliação.',
+        );
       }
     } else {
       if (_destaques >= 3) {
@@ -1481,14 +1486,16 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
       if (_atencoes >= 3) {
         items.add(
-            'Você tem $_atencoes ponto(s) de atenção. Priorize os fundamentos recorrentes.');
+          'Você tem $_atencoes ponto(s) de atenção. Priorize os fundamentos recorrentes.',
+        );
       }
 
       if (_score > 0) {
         items.add('Seu saldo de evolução está positivo no período.');
       } else if (_score < 0) {
         items.add(
-            'Seu saldo está negativo. Foque nos pontos de atenção indicados pelo técnico.');
+          'Seu saldo está negativo. Foque nos pontos de atenção indicados pelo técnico.',
+        );
       }
 
       final attention = _attentionByFundament.entries.toList()
@@ -1496,7 +1503,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
       if (attention.isNotEmpty) {
         items.add(
-            '${attention.first.key} é o principal fundamento para evoluir agora.');
+          '${attention.first.key} é o principal fundamento para evoluir agora.',
+        );
       }
 
       final positive = _positiveByFundament.entries.toList()
@@ -1517,7 +1525,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
     if (_periodMessages.isNotEmpty) {
       items.add(
-          'Você recebeu ${_periodMessages.length} mensagem(ns) do técnico neste período.');
+        'Você recebeu ${_periodMessages.length} mensagem(ns) do técnico neste período.',
+      );
     }
 
     return items.take(5).toList();
@@ -1586,7 +1595,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }) {
     return Container(
       width: double.infinity,
-      margin: margin ??
+      margin:
+          margin ??
           EdgeInsets.fromLTRB(
             _StatsResponsive.isDesktop(context)
                 ? 48
@@ -1659,11 +1669,14 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                       sigmaX: dynamicBlur,
                       sigmaY: dynamicBlur,
                     ),
-                    child: Image.network(
-                      avatarUrl,
+                    child: CachedNetworkImage(
+                      imageUrl: avatarUrl,
                       fit: BoxFit.cover,
                       alignment: alignment,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      memCacheWidth: 1080,
+                      maxWidthDiskCache: 1080,
+                      fadeInDuration: const Duration(milliseconds: 120),
+                      errorWidget: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),
                 ),
@@ -1710,12 +1723,13 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }
 
   Widget _header() {
-    final fullName = (_profile?['full_name'] ??
-            (widget.adminView
-                ? 'Atleta'
-                : _supabase.auth.currentUser?.userMetadata?['full_name']) ??
-            'Atleta')
-        .toString();
+    final fullName =
+        (_profile?['full_name'] ??
+                (widget.adminView
+                    ? 'Atleta'
+                    : _supabase.auth.currentUser?.userMetadata?['full_name']) ??
+                'Atleta')
+            .toString();
     final avatarUrl = (_profile?['avatar_url'] ?? '').toString();
 
     return Container(
@@ -1752,23 +1766,24 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             children: [
               Hero(
                 tag: AthleteStatisticsPage.heroTag,
-                flightShuttleBuilder: (
-                  flightContext,
-                  animation,
-                  flightDirection,
-                  fromHeroContext,
-                  toHeroContext,
-                ) {
-                  return ScaleTransition(
-                    scale: Tween<double>(begin: 0.96, end: 1.0).animate(
-                      CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOutCubic,
-                      ),
-                    ),
-                    child: toHeroContext.widget,
-                  );
-                },
+                flightShuttleBuilder:
+                    (
+                      flightContext,
+                      animation,
+                      flightDirection,
+                      fromHeroContext,
+                      toHeroContext,
+                    ) {
+                      return ScaleTransition(
+                        scale: Tween<double>(begin: 0.96, end: 1.0).animate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOutCubic,
+                          ),
+                        ),
+                        child: toHeroContext.widget,
+                      );
+                    },
                 child: CircleAvatar(
                   radius: 31,
                   backgroundColor: olympusGold,
@@ -1928,9 +1943,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         decoration: BoxDecoration(
           color: color.withOpacity(0.13),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: color.withOpacity(0.34),
-          ),
+          border: Border.all(color: color.withOpacity(0.34)),
         ),
         child: Column(
           children: [
@@ -1997,10 +2010,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              border: Border.all(
-                color: olympusGold,
-                width: 1.2,
-              ),
+              border: Border.all(color: olympusGold, width: 1.2),
               boxShadow: [
                 BoxShadow(
                   color: olympusGold.withOpacity(0.20),
@@ -2058,10 +2068,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(18),
                             gradient: const LinearGradient(
-                              colors: [
-                                Color(0xFFF8E08E),
-                                Color(0xFFD4AF37),
-                              ],
+                              colors: [Color(0xFFF8E08E), Color(0xFFD4AF37)],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
@@ -2307,10 +2314,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(26),
               gradient: const LinearGradient(
-                colors: [
-                  Color(0xFFFDFEFF),
-                  Color(0xFFF5F9FE),
-                ],
+                colors: [Color(0xFFFDFEFF), Color(0xFFF5F9FE)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -2365,10 +2369,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(16),
                             gradient: const LinearGradient(
-                              colors: [
-                                Color(0xFFF8E08E),
-                                Color(0xFFD4AF37),
-                              ],
+                              colors: [Color(0xFFF8E08E), Color(0xFFD4AF37)],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
@@ -2543,9 +2544,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             height: MediaQuery.of(context).size.height * 0.86,
             decoration: const BoxDecoration(
               color: Color(0xFFF4F7FB),
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(28),
-              ),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
             ),
             child: Column(
               children: [
@@ -2651,14 +2650,17 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                           itemCount: rows.length,
                           itemBuilder: (context, index) {
                             final item = rows[index];
-                            final tipo =
-                                (item['tipo'] ?? 'Avaliação').toString();
-                            final fundamento =
-                                (item['fundamento'] ?? '').toString().trim();
-                            final motivo =
-                                (item['motivo'] ?? '').toString().trim();
-                            final observacao =
-                                (item['observacao'] ?? '').toString().trim();
+                            final tipo = (item['tipo'] ?? 'Avaliação')
+                                .toString();
+                            final fundamento = (item['fundamento'] ?? '')
+                                .toString()
+                                .trim();
+                            final motivo = (item['motivo'] ?? '')
+                                .toString()
+                                .trim();
+                            final observacao = (item['observacao'] ?? '')
+                                .toString()
+                                .trim();
                             final delta = _scoreDeltaForEvaluation(item);
                             final deltaColor = _scoreDeltaColor(delta);
 
@@ -2822,7 +2824,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: valueWidget ??
+                child:
+                    valueWidget ??
                     Text(
                       value,
                       style: TextStyle(
@@ -2863,10 +2866,10 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         'color': olympusPurple,
         'explanation':
             'Base atual: ${_formatPercentValue(_presenceRate)} de presença e ${_formatPercentValue(_absenceRate)} de faltas sobre $_trainingBaseCount treino(s) já consolidado(s).\n\n'
-                'Presenças: $_trainingPresenceCount • Faltas: $_trainingAcceptedAbsentCount • Pendentes: $_trainingPendingCount • Recusados: $_trainingRejectedCount.\n\n'
-                'Presença = check-ins realizados em treinos convocados.\n'
-                'Falta = treinos convocados sem check-in após 30 minutos.\n\n'
-                'Regra válida ${_periodRuleLabel()}.',
+            'Presenças: $_trainingPresenceCount • Faltas: $_trainingAcceptedAbsentCount • Pendentes: $_trainingPendingCount • Recusados: $_trainingRejectedCount.\n\n'
+            'Presença = check-ins realizados em treinos convocados.\n'
+            'Falta = treinos convocados sem check-in após 30 minutos.\n\n'
+            'Regra válida ${_periodRuleLabel()}.',
       },
       {
         'icon': Icons.star_rounded,
@@ -2895,10 +2898,14 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
-          final crossAxisCount =
-              _StatsResponsive.metricsCrossAxisCount(context, width);
-          final aspectRatio =
-              _StatsResponsive.metricsAspectRatio(context, width);
+          final crossAxisCount = _StatsResponsive.metricsCrossAxisCount(
+            context,
+            width,
+          );
+          final aspectRatio = _StatsResponsive.metricsAspectRatio(
+            context,
+            width,
+          );
 
           return GridView.builder(
             itemCount: metrics.length,
@@ -2953,10 +2960,10 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     final genderLabel = _athleteGender.isEmpty
         ? 'não informado'
         : _athleteGender == 'feminino'
-            ? 'Feminino'
-            : _athleteGender == 'masculino'
-                ? 'Masculino'
-                : _athleteGender;
+        ? 'Feminino'
+        : _athleteGender == 'masculino'
+        ? 'Masculino'
+        : _athleteGender;
 
     return _glassCard(
       padding: const EdgeInsets.all(14),
@@ -3017,8 +3024,10 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
   Widget _annualPresenceAbsenceChart() {
     final data = _annualPresenceAbsenceByMonth;
-    final totalPresences =
-        data.fold<int>(0, (sum, item) => sum + item.presences);
+    final totalPresences = data.fold<int>(
+      0,
+      (sum, item) => sum + item.presences,
+    );
     final totalAbsences = data.fold<int>(0, (sum, item) => sum + item.absences);
     final hasData = totalPresences > 0 || totalAbsences > 0;
 
@@ -3063,10 +3072,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              border: Border.all(
-                color: Colors.white24,
-                width: 1.2,
-              ),
+              border: Border.all(color: Colors.white24, width: 1.2),
               boxShadow: [
                 BoxShadow(
                   color: olympusLightBlue.withOpacity(0.26),
@@ -3264,8 +3270,10 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                                     if (chartWidth <= 0) return;
 
                                     final normalized =
-                                        ((localX - left) / chartWidth)
-                                            .clamp(0.0, 1.0);
+                                        ((localX - left) / chartWidth).clamp(
+                                          0.0,
+                                          1.0,
+                                        );
                                     final month = (normalized * 11).round() + 1;
 
                                     setState(() {
@@ -3278,8 +3286,9 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                                       presenceColor: olympusSuccess,
                                       absenceColor: olympusDanger,
                                       gridColor: Colors.white.withOpacity(0.16),
-                                      labelColor:
-                                          Colors.white.withOpacity(0.74),
+                                      labelColor: Colors.white.withOpacity(
+                                        0.74,
+                                      ),
                                       selectedMonth: _selectedAnnualMonth,
                                       selectedColor: olympusGold,
                                     ),
@@ -3309,10 +3318,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                           color: olympusSuccess,
                         ),
                         const SizedBox(width: 14),
-                        _chartLegendDot(
-                          label: 'Faltas',
-                          color: olympusDanger,
-                        ),
+                        _chartLegendDot(label: 'Faltas', color: olympusDanger),
                       ],
                     ),
                   ],
@@ -3337,9 +3343,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           color: color.withOpacity(0.13),
-          border: Border.all(
-            color: color.withOpacity(0.34),
-          ),
+          border: Border.all(color: color.withOpacity(0.34)),
         ),
         child: Row(
           children: [
@@ -3371,10 +3375,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     );
   }
 
-  Widget _chartLegendDot({
-    required String label,
-    required Color color,
-  }) {
+  Widget _chartLegendDot({required String label, required Color color}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -3385,10 +3386,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             color: color,
             shape: BoxShape.circle,
             boxShadow: [
-              BoxShadow(
-                color: color.withOpacity(0.55),
-                blurRadius: 8,
-              ),
+              BoxShadow(color: color.withOpacity(0.55), blurRadius: 8),
             ],
           ),
         ),
@@ -3413,7 +3411,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         Row(
           children: [
             Expanded(
-                child: _sectionTitle('Evolução', Icons.show_chart_rounded)),
+              child: _sectionTitle('Evolução', Icons.show_chart_rounded),
+            ),
             _infoButton(
               title: 'Evolução',
               explanation:
@@ -3526,7 +3525,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         Row(
           children: [
             Expanded(
-                child: _sectionTitle('Fundamentos', Icons.sports_volleyball)),
+              child: _sectionTitle('Fundamentos', Icons.sports_volleyball),
+            ),
             _infoButton(
               title: 'Fundamentos',
               explanation:
@@ -3558,8 +3558,11 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         Row(
           children: [
             Expanded(
-                child: _sectionTitle(
-                    'Insights inteligentes', Icons.lightbulb_outline)),
+              child: _sectionTitle(
+                'Insights inteligentes',
+                Icons.lightbulb_outline,
+              ),
+            ),
             _infoButton(
               title: 'Insights inteligentes',
               explanation:
@@ -3609,8 +3612,11 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         Row(
           children: [
             Expanded(
-                child: _sectionTitle(
-                    'Mensagens do técnico', Icons.mark_chat_unread_outlined)),
+              child: _sectionTitle(
+                'Mensagens do técnico',
+                Icons.mark_chat_unread_outlined,
+              ),
+            ),
             _infoButton(
               title: 'Mensagens do técnico',
               explanation:
@@ -3622,10 +3628,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         if (messages.isEmpty)
           const Text(
             'Nenhuma mensagem recebida neste período.',
-            style: TextStyle(
-              color: olympusMuted,
-              fontWeight: FontWeight.w700,
-            ),
+            style: TextStyle(color: olympusMuted, fontWeight: FontWeight.w700),
           )
         else
           ...messages.map((message) {
@@ -3703,8 +3706,11 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         Row(
           children: [
             Expanded(
-                child: _sectionTitle(
-                    'Histórico de avaliações', Icons.history_rounded)),
+              child: _sectionTitle(
+                'Histórico de avaliações',
+                Icons.history_rounded,
+              ),
+            ),
             _infoButton(
               title: 'Histórico de avaliações',
               explanation:
@@ -3716,10 +3722,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         if (evaluations.isEmpty)
           const Text(
             'Nenhuma avaliação registrada neste período.',
-            style: TextStyle(
-              color: olympusMuted,
-              fontWeight: FontWeight.w700,
-            ),
+            style: TextStyle(color: olympusMuted, fontWeight: FontWeight.w700),
           )
         else
           ...evaluations.map((evaluation) {
@@ -3818,9 +3821,11 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     return Scaffold(
       backgroundColor: olympusBg,
       appBar: AppBar(
-        title: Text(widget.adminView
-            ? 'Estatísticas do Atleta'
-            : 'Estatísticas do Atleta'),
+        title: Text(
+          widget.adminView
+              ? 'Estatísticas do Atleta'
+              : 'Estatísticas do Atleta',
+        ),
         backgroundColor: olympusBlue,
         foregroundColor: Colors.white,
         leading: IconButton(
@@ -3899,10 +3904,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 }
 
 class _BlinkingMetricValue extends StatefulWidget {
-  const _BlinkingMetricValue({
-    required this.text,
-    required this.color,
-  });
+  const _BlinkingMetricValue({required this.text, required this.color});
 
   final String text;
   final Color color;
@@ -3924,9 +3926,10 @@ class _BlinkingMetricValueState extends State<_BlinkingMetricValue>
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
 
-    _opacity = Tween<double>(begin: 0.45, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _opacity = Tween<double>(
+      begin: 0.45,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -4058,8 +4061,9 @@ class _TrainingPlanPiePainter extends CustomPainter {
 
     for (final category in categories) {
       final value = data[category] ?? 0;
-      final percent =
-          totalMinutes <= 0 ? 0 : (value / totalMinutes * 100).round();
+      final percent = totalMinutes <= 0
+          ? 0
+          : (value / totalMinutes * 100).round();
       final color = colors[category] ?? titleColor;
 
       canvas.drawCircle(
@@ -4159,12 +4163,7 @@ class _AnnualPresenceAbsencePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty || size.width <= 0 || size.height <= 0) return;
 
-    final padding = EdgeInsets.fromLTRB(
-      size.width < 360 ? 30 : 34,
-      18,
-      12,
-      34,
-    );
+    final padding = EdgeInsets.fromLTRB(size.width < 360 ? 30 : 34, 18, 12, 34);
 
     final chartWidth = size.width - padding.left - padding.right;
     final chartHeight = size.height - padding.top - padding.bottom;
@@ -4269,10 +4268,7 @@ class _AnnualPresenceAbsencePainter extends CustomPainter {
         ),
       );
       textPainter.layout();
-      textPainter.paint(
-        canvas,
-        Offset(x - textPainter.width / 2, topY - 13),
-      );
+      textPainter.paint(canvas, Offset(x - textPainter.width / 2, topY - 13));
     }
 
     for (int i = 0; i < data.length; i++) {

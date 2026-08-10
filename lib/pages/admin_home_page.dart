@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -29,6 +30,7 @@ class _AdminHomePageState extends State<AdminHomePage>
   final ChatService _chatService = ChatService();
   Map<String, bool> _adminPermissions = {};
 
+  List<Map<String, dynamic>> allBirthdays = [];
   List<Map<String, dynamic>> monthBirthdays = [];
   bool isLoadingBirthdays = true;
   bool _showAllMonthBirthdays = false;
@@ -326,13 +328,13 @@ class _AdminHomePageState extends State<AdminHomePage>
 
       final response = await supabase
           .from('profiles')
-          .select('full_name, birth_date, court_position')
+          .select('full_name, birth_date, avatar_url, court_position')
           .eq('is_active', true)
           .not('birth_date', 'is', null);
 
       final allUsers = List<Map<String, dynamic>>.from(response);
 
-      final filtered = allUsers.where((user) {
+      final parsedBirthdays = allUsers.where((user) {
         final rawBirthDate = user['birth_date'];
         if (rawBirthDate == null || rawBirthDate.toString().trim().isEmpty) {
           return false;
@@ -341,23 +343,37 @@ class _AdminHomePageState extends State<AdminHomePage>
         final birthDate = DateTime.tryParse(rawBirthDate.toString());
         if (birthDate == null) return false;
 
-        return birthDate.month == now.month;
+        return true;
       }).map((user) {
         final birthDate = DateTime.parse(user['birth_date'].toString());
         return {
           ...user,
           'birth': birthDate,
+          'parsed_birth_date': birthDate,
         };
       }).toList();
 
-      filtered.sort((a, b) {
+      parsedBirthdays.sort((a, b) {
         final aBirth = a['birth'] as DateTime;
         final bBirth = b['birth'] as DateTime;
-        return aBirth.day.compareTo(bBirth.day);
+        final aMonthOffset = (aBirth.month - now.month + 12) % 12;
+        final bMonthOffset = (bBirth.month - now.month + 12) % 12;
+        final monthComparison = aMonthOffset.compareTo(bMonthOffset);
+        if (monthComparison != 0) return monthComparison;
+        final dayComparison = aBirth.day.compareTo(bBirth.day);
+        if (dayComparison != 0) return dayComparison;
+        return (a['full_name'] ?? '')
+            .toString()
+            .compareTo((b['full_name'] ?? '').toString());
       });
+
+      final filtered = parsedBirthdays
+          .where((user) => (user['birth'] as DateTime).month == now.month)
+          .toList();
 
       if (mounted) {
         setState(() {
+          allBirthdays = parsedBirthdays;
           monthBirthdays = filtered;
           isLoadingBirthdays = false;
         });
@@ -383,6 +399,82 @@ class _AdminHomePageState extends State<AdminHomePage>
       return 'Sem posição';
     }
     return value.toString();
+  }
+
+  String? _resolveBirthdayAvatarUrl(dynamic rawValue) {
+    final value = rawValue?.toString().trim();
+    if (value == null || value.isEmpty) return null;
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    return supabase.storage.from('avatars').getPublicUrl(value);
+  }
+
+  Widget _buildBirthdayAvatar(
+    Map<String, dynamic> birthday, {
+    double size = 42,
+    bool highlighted = false,
+  }) {
+    final name = (birthday['full_name'] ?? 'Sem nome').toString().trim();
+    final avatarUrl = _resolveBirthdayAvatarUrl(birthday['avatar_url']);
+    final fallback = Container(
+      color: highlighted
+          ? const Color(0xFFFFE8A6)
+          : const Color(0xFF102D4F).withOpacity(0.08),
+      alignment: Alignment.center,
+      child: Text(
+        name.isEmpty ? '?' : name[0].toUpperCase(),
+        style: const TextStyle(
+          color: Color(0xFF102D4F),
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+
+    return Container(
+      width: size,
+      height: size,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: highlighted
+              ? const Color(0xFFD4AF37)
+              : const Color(0xFF102D4F).withOpacity(0.16),
+          width: highlighted ? 1.6 : 1,
+        ),
+      ),
+      child: avatarUrl == null
+          ? fallback
+          : CachedNetworkImage(
+              imageUrl: avatarUrl,
+              fit: BoxFit.cover,
+              memCacheWidth: 240,
+              memCacheHeight: 240,
+              fadeInDuration: const Duration(milliseconds: 120),
+              placeholder: (_, __) => fallback,
+              errorWidget: (_, __, ___) => fallback,
+            ),
+    );
+  }
+
+  String _monthLabel(int month) {
+    const months = [
+      '',
+      'Janeiro',
+      'Fevereiro',
+      'Março',
+      'Abril',
+      'Maio',
+      'Junho',
+      'Julho',
+      'Agosto',
+      'Setembro',
+      'Outubro',
+      'Novembro',
+      'Dezembro',
+    ];
+    return months[month];
   }
 
   String _currentMonthLabel() {
@@ -888,10 +980,10 @@ class _AdminHomePageState extends State<AdminHomePage>
                 padding: const EdgeInsets.only(top: 7),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.celebration_outlined,
-                      color: Color(0xFFE4C050),
-                      size: 17,
+                    _buildBirthdayAvatar(
+                      birthday,
+                      size: 30,
+                      highlighted: true,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -1213,7 +1305,9 @@ class _AdminHomePageState extends State<AdminHomePage>
     );
   }
 
-  void _showCurrentMonthBirthdays() {
+  // Mantido apenas como referência visual da versão anterior.
+  // ignore: unused_element
+  void _showCurrentMonthBirthdaysLegacy() {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1348,6 +1442,283 @@ class _AdminHomePageState extends State<AdminHomePage>
                             ),
                           );
                         },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBirthdaySheetCard(
+    Map<String, dynamic> birthday, {
+    required bool highlighted,
+  }) {
+    final date = birthday['parsed_birth_date'] as DateTime?;
+    final name = (birthday['full_name'] ?? 'Sem nome').toString();
+    final position = _formatPosition(birthday['court_position']);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: highlighted ? const Color(0xFFFFF8DF) : Colors.white,
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(
+          color: highlighted
+              ? const Color(0xFFD4AF37).withOpacity(0.58)
+              : const Color(0xFFE3EAF2),
+          width: highlighted ? 1.4 : 1,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D102D4F),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          _buildBirthdayAvatar(
+            birthday,
+            size: 48,
+            highlighted: highlighted,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF102D4F),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  position,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.black54, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          if (date != null) ...[
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: highlighted
+                    ? const Color(0xFFD4AF37)
+                    : const Color(0xFF102D4F).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _formatBirthDate(date),
+                style: TextStyle(
+                  color: highlighted ? Colors.white : const Color(0xFF102D4F),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBirthdaySheetMonthSection(
+    int month,
+    List<Map<String, dynamic>> birthdays,
+  ) {
+    final highlighted = month == DateTime.now().month;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 9),
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+            decoration: BoxDecoration(
+              color: highlighted
+                  ? const Color(0xFF102D4F)
+                  : const Color(0xFFEAF0F6),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: highlighted
+                    ? const Color(0xFFD4AF37)
+                    : const Color(0xFFD9E3ED),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  highlighted ? Icons.celebration_rounded : Icons.cake_outlined,
+                  color: highlighted
+                      ? const Color(0xFFD4AF37)
+                      : const Color(0xFF102D4F),
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _monthLabel(month),
+                    style: TextStyle(
+                      color:
+                          highlighted ? Colors.white : const Color(0xFF102D4F),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                if (highlighted)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD4AF37),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      'Mês atual',
+                      style: TextStyle(
+                        color: Color(0xFF102D4F),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  )
+                else
+                  Text(
+                    '${birthdays.length}',
+                    style: const TextStyle(
+                      color: Color(0xFF58708A),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          ...birthdays.map(
+            (birthday) => _buildBirthdaySheetCard(
+              birthday,
+              highlighted: highlighted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCurrentMonthBirthdays() {
+    final grouped = <int, List<Map<String, dynamic>>>{};
+    for (final birthday in allBirthdays) {
+      final date = birthday['parsed_birth_date'] as DateTime?;
+      if (date == null) continue;
+      grouped.putIfAbsent(date.month, () => []).add(birthday);
+    }
+    final currentMonth = DateTime.now().month;
+    final orderedMonths = grouped.keys.toList()
+      ..sort((a, b) {
+        final aOffset = (a - currentMonth + 12) % 12;
+        final bOffset = (b - currentMonth + 12) % 12;
+        return aOffset.compareTo(bOffset);
+      });
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        initialChildSize: 0.78,
+        minChildSize: 0.48,
+        maxChildSize: 0.94,
+        expand: false,
+        builder: (context, controller) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF6F9FC),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 10, 10),
+                child: Row(
+                  children: [
+                    const CircleAvatar(
+                      backgroundColor: Color(0xFFFFE8A6),
+                      child: Icon(Icons.cake_rounded, color: Color(0xFF8A6500)),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Aniversariantes',
+                            style: TextStyle(
+                              color: Color(0xFF102D4F),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            '${allBirthdays.length} pessoa${allBirthdays.length == 1 ? '' : 's'} • ${_currentMonthLabel()} em destaque',
+                            style: const TextStyle(
+                              color: Colors.black54,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: allBirthdays.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'Nenhum aniversariante com data cadastrada.',
+                        ),
+                      )
+                    : ListView(
+                        controller: controller,
+                        padding: const EdgeInsets.all(16),
+                        children: orderedMonths
+                            .map(
+                              (month) => _buildBirthdaySheetMonthSection(
+                                month,
+                                grouped[month]!,
+                              ),
+                            )
+                            .toList(),
                       ),
               ),
             ],

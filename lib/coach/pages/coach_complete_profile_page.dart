@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_masked_text2/flutter_masked_text2.dart';
@@ -11,10 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CoachCompleteProfilePage extends StatefulWidget {
-  const CoachCompleteProfilePage({
-    super.key,
-    this.isEditing = false,
-  });
+  const CoachCompleteProfilePage({super.key, this.isEditing = false});
 
   final bool isEditing;
 
@@ -34,15 +32,19 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
   static const Color olympusDark = Color(0xFF0B1420);
 
   final TextEditingController _nameController = TextEditingController();
-  final MaskedTextController _cpfController =
-      MaskedTextController(mask: '000.000.000-00');
-  final MaskedTextController _phoneController =
-      MaskedTextController(mask: '(00) 00000-0000');
+  final MaskedTextController _cpfController = MaskedTextController(
+    mask: '000.000.000-00',
+  );
+  final MaskedTextController _phoneController = MaskedTextController(
+    mask: '(00) 00000-0000',
+  );
   final TextEditingController _rgController = TextEditingController();
-  final MaskedTextController _birthDateController =
-      MaskedTextController(mask: '00/00/0000');
-  final MaskedTextController _cepController =
-      MaskedTextController(mask: '00000-000');
+  final MaskedTextController _birthDateController = MaskedTextController(
+    mask: '00/00/0000',
+  );
+  final MaskedTextController _cepController = MaskedTextController(
+    mask: '00000-000',
+  );
   final TextEditingController _streetController = TextEditingController();
   final TextEditingController _numberController = TextEditingController();
   final TextEditingController _complementController = TextEditingController();
@@ -191,8 +193,9 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
           .maybeSingle();
 
       final metadataName = user.userMetadata?['full_name']?.toString().trim();
-      final fullName =
-          (profile?['full_name'] ?? metadataName ?? '').toString().trim();
+      final fullName = (profile?['full_name'] ?? metadataName ?? '')
+          .toString()
+          .trim();
       final cpf = (profile?['cpf'] ?? '').toString();
       final phone = (profile?['phone'] ?? '').toString();
       final rg = (profile?['rg'] ?? '').toString();
@@ -206,17 +209,23 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
       _rgController.text = rg;
       _birthDateController.text = _formatBirthDate(birthDate);
       _cepController.text = _formatCep(cep);
-      _streetController.text =
-          (profile?['address_street'] ?? '').toString().trim();
-      _numberController.text =
-          (profile?['address_number'] ?? '').toString().trim();
-      _complementController.text =
-          (profile?['address_complement'] ?? '').toString().trim();
-      _neighborhoodController.text =
-          (profile?['address_neighborhood'] ?? '').toString().trim();
+      _streetController.text = (profile?['address_street'] ?? '')
+          .toString()
+          .trim();
+      _numberController.text = (profile?['address_number'] ?? '')
+          .toString()
+          .trim();
+      _complementController.text = (profile?['address_complement'] ?? '')
+          .toString()
+          .trim();
+      _neighborhoodController.text = (profile?['address_neighborhood'] ?? '')
+          .toString()
+          .trim();
       _cityController.text = (profile?['address_city'] ?? '').toString().trim();
-      _stateController.text =
-          (profile?['address_state'] ?? '').toString().trim().toUpperCase();
+      _stateController.text = (profile?['address_state'] ?? '')
+          .toString()
+          .trim()
+          .toUpperCase();
       _avatarUrl = avatarUrl;
 
       if (!mounted) return;
@@ -319,7 +328,8 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
     if (picked == null) return;
 
     setState(() {
-      _birthDateController.text = '${picked.day.toString().padLeft(2, '0')}/'
+      _birthDateController.text =
+          '${picked.day.toString().padLeft(2, '0')}/'
           '${picked.month.toString().padLeft(2, '0')}/'
           '${picked.year.toString().padLeft(4, '0')}';
     });
@@ -361,23 +371,23 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
 
     try {
       final rawExt = _selectedImage!.name.split('.').last.toLowerCase();
-      final ext =
-          ['jpg', 'jpeg', 'png', 'webp'].contains(rawExt) ? rawExt : 'jpg';
+      final ext = ['jpg', 'jpeg', 'png', 'webp'].contains(rawExt)
+          ? rawExt
+          : 'jpg';
       final contentType = ext == 'png'
           ? 'image/png'
           : ext == 'webp'
-              ? 'image/webp'
-              : 'image/jpeg';
+          ? 'image/webp'
+          : 'image/jpeg';
       final path =
           'coaches/$userId/avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
 
-      await supabase.storage.from('avatars').uploadBinary(
+      await supabase.storage
+          .from('avatars')
+          .uploadBinary(
             path,
             _selectedImageBytes!,
-            fileOptions: FileOptions(
-              contentType: contentType,
-              upsert: true,
-            ),
+            fileOptions: FileOptions(contentType: contentType, upsert: true),
           );
 
       return supabase.storage.from('avatars').getPublicUrl(path);
@@ -524,10 +534,13 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
     if (_selectedImageBytes != null) {
       child = Image.memory(_selectedImageBytes!, fit: BoxFit.cover);
     } else if (_avatarUrl.trim().isNotEmpty) {
-      child = Image.network(
-        _avatarUrl.trim(),
+      child = CachedNetworkImage(
+        imageUrl: _avatarUrl.trim(),
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _buildInitials(initials, isCompact),
+        memCacheWidth: 320,
+        maxWidthDiskCache: 640,
+        fadeInDuration: const Duration(milliseconds: 120),
+        errorWidget: (_, __, ___) => _buildInitials(initials, isCompact),
       );
     } else {
       child = _buildInitials(initials, isCompact);
@@ -542,10 +555,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: const LinearGradient(
-              colors: [
-                Color(0xFFF0D771),
-                Color(0xFFB48A23),
-              ],
+              colors: [Color(0xFFF0D771), Color(0xFFB48A23)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -559,10 +569,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
           ),
           padding: const EdgeInsets.all(3),
           child: ClipOval(
-            child: Container(
-              color: const Color(0xFF113457),
-              child: child,
-            ),
+            child: Container(color: const Color(0xFF113457), child: child),
           ),
         ),
         Positioned(
@@ -616,9 +623,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
           label: Text(
             _hasPhoto ? 'Alterar foto' : 'Selecionar foto obrigatória',
           ),
-          style: TextButton.styleFrom(
-            foregroundColor: olympusGold,
-          ),
+          style: TextButton.styleFrom(foregroundColor: olympusGold),
         ),
         const SizedBox(height: 6),
         Text(
@@ -867,8 +872,8 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
                             onPressed: _saving
                                 ? null
                                 : () => _lookupCep(
-                                      _onlyNumbers(_cepController.text),
-                                    ),
+                                    _onlyNumbers(_cepController.text),
+                                  ),
                             icon: const Icon(
                               Icons.search_rounded,
                               color: olympusGold,
@@ -984,9 +989,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
                         enabled: !_saving,
                         style: const TextStyle(color: Colors.white),
                         textCapitalization: TextCapitalization.characters,
-                        inputFormatters: [
-                          LengthLimitingTextInputFormatter(2),
-                        ],
+                        inputFormatters: [LengthLimitingTextInputFormatter(2)],
                         decoration: _decoration(
                           label: 'UF *',
                           icon: Icons.flag_outlined,
@@ -1039,10 +1042,10 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
                       _saving
                           ? 'Salvando...'
                           : _uploadingImage
-                              ? 'Enviando foto...'
-                              : widget.isEditing
-                                  ? 'Salvar alterações'
-                                  : 'Concluir cadastro',
+                          ? 'Enviando foto...'
+                          : widget.isEditing
+                          ? 'Salvar alterações'
+                          : 'Concluir cadastro',
                       style: const TextStyle(
                         fontWeight: FontWeight.w900,
                         letterSpacing: 0.2,

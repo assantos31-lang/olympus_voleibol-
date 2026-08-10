@@ -5697,10 +5697,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ? Icons.done_all_rounded
           : Icons.done_rounded,
       size: 16,
-      color: !isGroup && hasBeenRead
+      color: hasBeenRead
           ? readBlue
           : hasBeenDelivered
-              ? _gold
+              ? const Color(0xFF6E7D92)
               : const Color(0xFF6E7D92),
     );
   }
@@ -5740,7 +5740,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _mentionSuggestions() {
     if (_room.type != 'group') return const [];
     final text = _controller.text;
-    final match = RegExp(r'(?:^|\s)@([^\s@]*)$').firstMatch(text);
+    final match = RegExp(r'(?:^|\s)@([^@\n]{0,60})$').firstMatch(text);
     if (match == null) return const [];
     final query = (match.group(1) ?? '').toLowerCase();
     return _participants
@@ -5758,7 +5758,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   void _insertMention(Map<String, dynamic> participant) {
     final text = _controller.text;
-    final match = RegExp(r'(?:^|\s)@([^\s@]*)$').firstMatch(text);
+    final match = RegExp(r'(?:^|\s)@([^@\n]{0,60})$').firstMatch(text);
     if (match == null) return;
     final name =
         (participant['display_name'] ?? participant['full_name'] ?? 'Usuário')
@@ -5949,6 +5949,30 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           color: _gold,
                         ),
                       ),
+                      if (_room.type == 'group')
+                        IconButton(
+                          tooltip: 'Marcar integrante',
+                          onPressed: isBusy
+                              ? null
+                              : () {
+                                  final current = _controller.text;
+                                  final needsSpace = current.isNotEmpty &&
+                                      !RegExp(r'\s$').hasMatch(current);
+                                  final next =
+                                      '$current${needsSpace ? ' ' : ''}@';
+                                  _controller.value = TextEditingValue(
+                                    text: next,
+                                    selection: TextSelection.collapsed(
+                                      offset: next.length,
+                                    ),
+                                  );
+                                  _messageFocusNode.requestFocus();
+                                },
+                          icon: const Icon(
+                            Icons.alternate_email_rounded,
+                            color: _gold,
+                          ),
+                        ),
                       Expanded(
                         child: Container(
                           decoration: BoxDecoration(

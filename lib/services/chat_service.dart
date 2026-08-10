@@ -1246,6 +1246,7 @@ class ChatService {
     Timer? messageSyncTimer;
     var closed = false;
     var loading = false;
+    var receiptsLoading = false;
     var reloadQueued = false;
     var firstLoad = true;
     List<ChatMessage> lastEmittedMessages = const <ChatMessage>[];
@@ -1253,6 +1254,65 @@ class ChatService {
     void addMessages(List<ChatMessage> messages) {
       lastEmittedMessages = messages;
       if (!closed && !controller.isClosed) controller.add(messages);
+    }
+
+    Future<void> refreshReceipts() async {
+      if (closed || controller.isClosed || receiptsLoading) return;
+      final userId = currentUserId;
+      if (userId == null || lastEmittedMessages.isEmpty) return;
+
+      final sentMessageIds = lastEmittedMessages
+          .where((message) => message.senderId == userId)
+          .map((message) => message.id)
+          .where((id) => id.isNotEmpty && !id.startsWith('local_'))
+          .toSet();
+      if (sentMessageIds.isEmpty) return;
+
+      receiptsLoading = true;
+      try {
+        final rows = await supabase.rpc(
+          'get_chat_message_receipt_counts_v1',
+          params: {'p_room_id': roomId},
+        ).timeout(const Duration(seconds: 6));
+
+        final countsByMessage = <String, Map<String, int>>{};
+        for (final rawRow in rows as List) {
+          final row = Map<String, dynamic>.from(rawRow as Map);
+          final messageId = (row['message_id'] ?? '').toString();
+          if (!sentMessageIds.contains(messageId)) continue;
+          countsByMessage[messageId] = {
+            'recipient_count': (row['recipient_count'] as num?)?.toInt() ?? 0,
+            'delivered_count': (row['delivered_count'] as num?)?.toInt() ?? 0,
+            'read_count': (row['read_count'] as num?)?.toInt() ?? 0,
+          };
+        }
+
+        var changed = false;
+        final updated = lastEmittedMessages.map((message) {
+          final counts = countsByMessage[message.id];
+          if (counts == null) return message;
+          final recipientCount = counts['recipient_count'] ?? 0;
+          final deliveredCount = counts['delivered_count'] ?? 0;
+          final readCount = counts['read_count'] ?? 0;
+          if (message.recipientCount == recipientCount &&
+              message.deliveredCount == deliveredCount &&
+              message.readCount == readCount) {
+            return message;
+          }
+          changed = true;
+          return message.copyWith(
+            recipientCount: recipientCount,
+            deliveredCount: deliveredCount,
+            readCount: readCount,
+          );
+        }).toList(growable: false);
+
+        if (changed && !closed && !controller.isClosed) addMessages(updated);
+      } catch (_) {
+        // O proximo evento Realtime ou sincronismo periodico tenta novamente.
+      } finally {
+        receiptsLoading = false;
+      }
     }
 
     Future<void> emit() async {
@@ -1360,18 +1420,18 @@ class ChatService {
             event: PostgresChangeEvent.all,
             schema: 'public',
             table: 'chat_message_reads',
-            callback: (_) => scheduleReload(),
+            callback: (_) => unawaited(refreshReceipts()),
           )
           .onPostgresChanges(
             event: PostgresChangeEvent.all,
             schema: 'public',
             table: 'chat_message_deliveries',
-            callback: (_) => scheduleReload(),
+            callback: (_) => unawaited(refreshReceipts()),
           )
           .subscribe();
       receiptsTimer = Timer.periodic(
-        const Duration(seconds: 6),
-        (_) => scheduleReload(),
+        const Duration(seconds: 3),
+        (_) => unawaited(refreshReceipts()),
       );
       messageSyncTimer = Timer.periodic(
         const Duration(seconds: 2),

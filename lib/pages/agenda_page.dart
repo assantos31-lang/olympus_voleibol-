@@ -157,15 +157,7 @@ class _AgendaPageState extends State<AgendaPage> {
       }
 
       // Busca o perfil do usuário
-      final profileResponse = await _supabase
-          .from('profiles')
-          .select('user_type')
-          .eq('id', user.id)
-          .single();
-
-      final userType = profileResponse['user_type'] ?? 'member';
-      final hasAdminRole =
-          userType == 'admin' || await _roleService.hasRole(user.id, 'admin');
+      final hasAdminRole = await _roleService.isCurrentUserAdmin();
 
       // Admins SEMPRE têm acesso
       if (hasAdminRole) {

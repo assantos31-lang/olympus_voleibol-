@@ -35,6 +35,7 @@ import 'services/active_chat_service.dart';
 import 'services/badge_service.dart';
 import 'services/chat_service.dart';
 import 'services/push_token_service.dart';
+import 'widgets/financial_access_gate.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -94,7 +95,14 @@ String? _chatRoomIdFromPush(Map<String, dynamic> rawData) {
       .toString()
       .trim()
       .toLowerCase();
-  if (type != 'message' && type != 'chat_message') return null;
+  final screen =
+      (data['screen'] ?? data['route'] ?? '').toString().trim().toLowerCase();
+  final isChatPush = type == 'message' ||
+      type == 'chat_message' ||
+      type == 'chat' ||
+      screen == 'chat' ||
+      screen == '/chat-rooms';
+  if (!isChatPush) return null;
   final roomId = (data['roomId'] ??
           data['room_id'] ??
           data['threadId'] ??
@@ -615,6 +623,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       navigatorKey: navigatorKey,
       title: 'Olympus Voleibol',
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => FinancialAccessGate(
+        child: child ?? const SizedBox.shrink(),
+      ),
       locale: const Locale('pt', 'BR'),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
