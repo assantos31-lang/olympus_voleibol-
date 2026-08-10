@@ -20,6 +20,8 @@ class PushTokenService {
 
   StreamSubscription<String>? _tokenRefreshSub;
   StreamSubscription<AuthState>? _authStateSub;
+  Future<void>? _syncInFlight;
+  Timer? _retryTimer;
   bool _initialized = false;
 
   static const String _installationIdKey = 'push_installation_id';
@@ -59,9 +61,12 @@ class PushTokenService {
   Future<void> _configureForegroundPresentation() async {
     if (Platform.isIOS) {
       await _messaging.setForegroundNotificationPresentationOptions(
-        alert: true,
+        // O app cria uma única notificação local em main.dart. Manter o alerta
+        // automático ativo no iOS duplicava notificações em primeiro plano e
+        // impedia ocultar o conteúdo quando a conversa já estava aberta.
+        alert: false,
         badge: true,
-        sound: true,
+        sound: false,
       );
       _debugLog('[PushTokenService] iOS foreground OK');
     }
@@ -106,6 +111,7 @@ class PushTokenService {
 
           if (apns == null || apns.isEmpty) {
             _debugLog('[PushTokenService] refresh ignorado sem APNS');
+            _scheduleRetry();
             return;
           }
         }
@@ -193,7 +199,20 @@ class PushTokenService {
     return token;
   }
 
-  Future<void> syncCurrentUserTokenIfPossible() async {
+  Future<void> syncCurrentUserTokenIfPossible() {
+    final running = _syncInFlight;
+    if (running != null) return running;
+
+    final operation = _syncCurrentUserToken();
+    _syncInFlight = operation;
+    return operation.whenComplete(() {
+      if (identical(_syncInFlight, operation)) {
+        _syncInFlight = null;
+      }
+    });
+  }
+
+  Future<void> _syncCurrentUserToken() async {
     final user = _supabase.auth.currentUser;
 
     _debugLog('[PushTokenService] USER: ${user?.id}');
@@ -229,6 +248,7 @@ class PushTokenService {
 
       if (apns == null || apns.isEmpty) {
         _debugLog('[PushTokenService] APNS nao disponivel, abortando sync');
+        _scheduleRetry();
         return;
       }
     }
@@ -241,6 +261,7 @@ class PushTokenService {
 
     if (token == null || token.isEmpty) {
       _debugLog('[PushTokenService] token null');
+      _scheduleRetry();
       return;
     }
 
@@ -284,6 +305,8 @@ class PushTokenService {
       '[PushTokenService] payload preparado | plataforma=${payload['platform']} | versao=${payload['app_version']}',
     );
 
+    var tokenSaved = false;
+
     try {
       await _supabase.rpc(
         'register_user_push_token',
@@ -297,6 +320,7 @@ class PushTokenService {
       );
 
       _debugLog('[PushTokenService] salvo via RPC');
+      tokenSaved = true;
     } catch (rpcError, rpcStack) {
       _debugLog(
           '[PushTokenService] erro RPC register_user_push_token: $rpcError');
@@ -308,13 +332,32 @@ class PushTokenService {
             .upsert(payload, onConflict: 'installation_id');
 
         _debugLog('[PushTokenService] salvo via fallback upsert');
+        tokenSaved = true;
       } catch (e, st) {
         _debugLog('[PushTokenService] erro fallback upsert: $e');
         _debugStack(stackTrace: st);
       }
     }
 
+    if (!tokenSaved) {
+      _scheduleRetry();
+      return;
+    }
+
+    _retryTimer?.cancel();
+    _retryTimer = null;
+
     await _syncProfilePushToken(user.id, token);
+  }
+
+  void _scheduleRetry({Duration delay = const Duration(seconds: 30)}) {
+    if (_retryTimer?.isActive == true) return;
+
+    _retryTimer = Timer(delay, () {
+      _retryTimer = null;
+      unawaited(syncCurrentUserTokenIfPossible());
+    });
+    _debugLog('[PushTokenService] nova tentativa agendada');
   }
 
   Future<void> _syncProfilePushToken(String userId, String token) async {
@@ -455,6 +498,8 @@ class PushTokenService {
   }
 
   Future<void> dispose() async {
+    _retryTimer?.cancel();
+    _retryTimer = null;
     await _tokenRefreshSub?.cancel();
     await _authStateSub?.cancel();
     _tokenRefreshSub = null;

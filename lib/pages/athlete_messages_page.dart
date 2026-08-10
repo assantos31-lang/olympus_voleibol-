@@ -1138,7 +1138,8 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
         return;
       }
 
-      final preview = body.trim().isEmpty ? 'Nova mensagem' : body.trim();
+      // O texto deve ser lido somente após a abertura da conversa.
+      const preview = 'Nova mensagem';
 
       for (final token in tokens) {
         await supabase.functions.invoke(

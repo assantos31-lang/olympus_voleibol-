@@ -12,6 +12,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'firebase_options.dart';
 import 'pages/admin_home_page.dart';
@@ -48,6 +49,41 @@ bool _handledInitialMessage = false;
 Map<String, dynamic>? _pendingNotificationData;
 String? _lastChatNotificationRoomId;
 DateTime? _lastChatNotificationNavigationAt;
+bool _notificationSettingsWarningShown = false;
+
+Future<void> _warnIfIosNotificationsAreDisabled(BuildContext context) async {
+  if (kIsWeb || !Platform.isIOS || _notificationSettingsWarningShown) return;
+
+  final settings =
+      await FirebaseMessaging.instance.getNotificationSettings();
+  if (settings.authorizationStatus != AuthorizationStatus.denied) return;
+  if (!context.mounted) return;
+
+  _notificationSettingsWarningShown = true;
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Ative as notificações'),
+      content: const Text(
+        'As notificações do Olympus estão desativadas neste iPhone. '
+        'Ative-as nos Ajustes para receber mensagens e avisos.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('Agora não'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            Navigator.pop(dialogContext);
+            await launchUrl(Uri.parse('app-settings:'));
+          },
+          child: const Text('Abrir Ajustes'),
+        ),
+      ],
+    ),
+  );
+}
 
 int _stableNotificationId(String value) {
   var hash = 0;
@@ -331,6 +367,12 @@ Future<void> _setupPushNotifications() async {
           (type == 'message' || type == 'chat_message') &&
               roomId != null &&
               roomId.isNotEmpty;
+      final isPrivateMessageNotification = isChatNotification ||
+          type == 'platform_message' ||
+          type == 'app_message';
+      final visibleNotificationBody = isPrivateMessageNotification
+          ? 'Nova mensagem'
+          : notification.body;
       final payloadNotificationId = int.tryParse(
         (data['notification_id'] ??
                 data['notificationId'] ??
@@ -357,7 +399,7 @@ Future<void> _setupPushNotifications() async {
       await flutterLocalNotificationsPlugin.show(
         notificationId,
         notification.title,
-        notification.body,
+        visibleNotificationBody,
         NotificationDetails(
           android: AndroidNotificationDetails(
             'messages_channel',
@@ -872,6 +914,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
               PushTokenService.instance.syncCurrentUserTokenIfPossible();
               BadgeService.updateBadge();
               ChatService().markMyPendingMessagesDelivered();
+              _warnIfIosNotificationsAreDisabled(context);
               _flushPendingNotification();
             });
           }

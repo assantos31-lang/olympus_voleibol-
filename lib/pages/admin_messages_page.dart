@@ -1927,7 +1927,7 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
         body: {
           'recipientUserIds': recipientUserIds,
           'title': isUrgent ? 'URGENTE: $title' : title,
-          'body': body,
+          'body': 'Nova mensagem',
           'type': 'platform_message',
           'threadId': threadId,
         },
@@ -3031,7 +3031,7 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
           body: {
             'recipientUserIds': recipientUserIds,
             'title': widget.subject,
-            'body': body,
+            'body': 'Nova mensagem',
             'type': 'platform_message',
             'threadId': widget.threadId,
           },

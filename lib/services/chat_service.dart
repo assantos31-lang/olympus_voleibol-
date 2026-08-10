@@ -3090,8 +3090,10 @@ class ChatService {
 
       if (tokens.isEmpty) return;
 
-      final preview =
-          content.length > 90 ? '${content.substring(0, 90)}...' : content;
+      // Privacidade: o conteúdo real fica disponível somente dentro do chat.
+      // O parâmetro continua sendo recebido para preservar a API interna usada
+      // pelos diferentes tipos de mensagem (texto, áudio, imagem e vídeo).
+      const preview = 'Nova mensagem';
       final collapseId = 'chat_$roomId';
       final notificationId = _stableNotificationId(collapseId);
 

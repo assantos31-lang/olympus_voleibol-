@@ -83,8 +83,8 @@ class MessagingService {
         return;
       }
 
-      final preview =
-          content.trim().isNotEmpty ? content.trim() : 'Nova mensagem';
+      // Não expõe o conteúdo da conversa na tela bloqueada.
+      const preview = 'Nova mensagem';
 
       for (final token in tokens) {
         await _supabase.functions.invoke(

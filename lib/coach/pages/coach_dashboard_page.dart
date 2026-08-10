@@ -1072,14 +1072,23 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         .toUpperCase();
   }
 
+  String? _resolvedCoachAvatarUrl() {
+    final value = _coachAvatarUrl.trim();
+    if (value.isEmpty) return null;
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    return supabase.storage.from('avatars').getPublicUrl(value);
+  }
+
   Widget _buildCoachAvatar() {
-    final hasPhoto = _coachAvatarUrl.trim().isNotEmpty;
+    final avatarUrl = _resolvedCoachAvatarUrl();
 
     return Container(
-      width: 92,
-      height: 92,
+      width: 88,
+      height: 88,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
+        shape: BoxShape.circle,
         gradient: const LinearGradient(
           colors: [
             Color(0xFFF0D771),
@@ -1102,17 +1111,18 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         ],
       ),
       padding: const EdgeInsets.all(3),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(23),
+      child: ClipOval(
         child: Container(
           color: const Color(0xFF113457),
-          child: hasPhoto
+          child: avatarUrl != null
               ? CachedNetworkImage(
-                  imageUrl: _coachAvatarUrl,
+                  imageUrl: avatarUrl,
                   fit: BoxFit.cover,
+                  alignment: Alignment.topCenter,
                   memCacheWidth: 240,
                   memCacheHeight: 240,
                   fadeInDuration: const Duration(milliseconds: 120),
+                  placeholder: (_, __) => _buildCoachInitialsFallback(),
                   errorWidget: (_, __, ___) => _buildCoachInitialsFallback(),
                 )
               : _buildCoachInitialsFallback(),
@@ -2605,7 +2615,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
   }
 
   Widget _buildCoachInfoCard() {
-    final hasBackgroundPhoto = _coachAvatarUrl.trim().isNotEmpty;
+    final backgroundPhotoUrl = _resolvedCoachAvatarUrl();
+    final hasBackgroundPhoto = backgroundPhotoUrl != null;
 
     return Container(
       margin: const EdgeInsets.all(16),
@@ -2646,7 +2657,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                 child: Opacity(
                   opacity: 0.20,
                   child: CachedNetworkImage(
-                    imageUrl: _coachAvatarUrl.trim(),
+                    imageUrl: backgroundPhotoUrl!,
                     fit: BoxFit.cover,
                     alignment: const Alignment(0, -0.86),
                     memCacheWidth: 900,
