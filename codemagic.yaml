@@ -1,38 +1,130 @@
+definitions:
+  release_trigger: &release_trigger
+    events:
+      - tag
+    tag_patterns:
+      - pattern: "production-*"
+        include: true
+    cancel_previous_builds: false
+
 workflows:
-  ios-release:
-    name: iOS Release (Com Push)
-    max_build_duration: 60
-    instance_type: mac_mini_m1
+  ios-production:
+    name: iOS - App Store Production
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    triggering: *release_trigger
+    integrations:
+      app_store_connect: Codemagic Admin
     environment:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.andre.olympusvoleibol
       vars:
+        APP_APPLE_ID: "6761791178"
         BUNDLE_ID: "com.andre.olympusvoleibol"
+      flutter: stable
+      xcode: 26.4
+      cocoapods: default
     scripts:
-      - name: Setup Flutter
+      - name: Definir versão de produção
         script: |
-          flutter pub get
-      
-      - name: Build iOS IPA
+          set -e
+          RELEASE_VERSION="${CM_TAG#production-}"
+          if ! echo "$RELEASE_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "A tag deve seguir o formato production-X.Y.Z."
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$CM_ENV"
+
+      - name: Instalar dependências
+        script: flutter pub get
+
+      - name: Validar código
         script: |
-          flutter build ipa --release --build-name=2.0.3 --build-number=16
+          flutter analyze --no-fatal-infos --no-fatal-warnings
+          flutter test
+
+      - name: Configurar assinatura iOS
+        script: xcode-project use-profiles
+
+      - name: Calcular número do build iOS
+        script: |
+          set -e
+          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-build-number "$APP_APPLE_ID" --all-versions)
+          IOS_BUILD_NUMBER=$((LATEST_BUILD_NUMBER + 1))
+          echo "IOS_BUILD_NUMBER=$IOS_BUILD_NUMBER" >> "$CM_ENV"
+
+      - name: Gerar IPA de produção
+        script: |
+          flutter build ipa --release \
+            --build-name="$RELEASE_VERSION" \
+            --build-number="$IOS_BUILD_NUMBER" \
+            --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
+      - build/ios/archive/Runner.xcarchive/dSYMs/*.dSYM
       - /tmp/xcodebuild_logs/*.log
-    
-    # O SEGREDO ESTÁ AQUI
-    ios:
-      capabilities:
-        - push_notifications: true
-        - background_modes:
-            - remote_notifications
-    
     publishing:
       app_store_connect:
-        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
-        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
-        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
-        submit_to_testflight: true
-        beta_groups:
-          - Testadores Internos
+        auth: integration
+        submit_to_app_store: true
+        cancel_previous_submissions: true
+        release_type: AFTER_APPROVAL
+        phased_release: false
+
+  android-production:
+    name: Android - Google Play Production
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    triggering: *release_trigger
+    environment:
+      groups:
+        - google_play_credentials
+      android_signing:
+        - olympus_upload_key
+      vars:
+        PACKAGE_NAME: "com.olympusvolei"
+      flutter: stable
+      java: 17
+    scripts:
+      - name: Definir versão de produção
+        script: |
+          set -e
+          RELEASE_VERSION="${CM_TAG#production-}"
+          if ! echo "$RELEASE_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "A tag deve seguir o formato production-X.Y.Z."
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$CM_ENV"
+
+      - name: Configurar Flutter e dependências
+        script: |
+          echo "flutter.sdk=$HOME/programs/flutter" > "$CM_BUILD_DIR/android/local.properties"
+          flutter pub get
+
+      - name: Validar código
+        script: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings
+          flutter test
+
+      - name: Calcular número do build Android
+        script: |
+          set -e
+          LATEST_BUILD_NUMBER=$(google-play get-latest-build-number --package-name "$PACKAGE_NAME")
+          ANDROID_BUILD_NUMBER=$((LATEST_BUILD_NUMBER + 1))
+          echo "ANDROID_BUILD_NUMBER=$ANDROID_BUILD_NUMBER" >> "$CM_ENV"
+
+      - name: Gerar Android App Bundle de produção
+        script: |
+          flutter build appbundle --release \
+            --build-name="$RELEASE_VERSION" \
+            --build-number="$ANDROID_BUILD_NUMBER"
+    artifacts:
+      - build/app/outputs/bundle/release/*.aab
+      - build/app/outputs/mapping/release/mapping.txt
+      - flutter_drive.log
+    publishing:
+      google_play:
+        credentials: $GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS
+        track: production
+        submit_as_draft: false

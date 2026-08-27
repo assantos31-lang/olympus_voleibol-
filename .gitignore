@@ -41,3 +41,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Credenciais locais de assinatura. Em CI, ficam criptografadas no Codemagic.
+/android/key.properties
+*.jks
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
