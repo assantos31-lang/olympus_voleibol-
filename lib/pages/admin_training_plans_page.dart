@@ -248,12 +248,23 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
         throw Exception('Usuário não autenticado.');
       }
 
-      final blocksResponse = await _supabase
-          .from('training_plan_blocks')
-          .select(
-            'id, event_id, coach_id, category, type, start_time, end_time, observation, position, updated_at',
-          )
-          .order('position', ascending: true);
+      dynamic blocksResponse;
+      try {
+        blocksResponse = await _supabase
+            .from('training_plan_blocks')
+            .select(
+              'id, event_id, coach_id, category, type, start_time, end_time, observation, position, physical_effort_percent, physical_minutes, updated_at',
+            )
+            .order('position', ascending: true);
+      } on PostgrestException catch (error) {
+        if (error.code != '42703') rethrow;
+        blocksResponse = await _supabase
+            .from('training_plan_blocks')
+            .select(
+              'id, event_id, coach_id, category, type, start_time, end_time, observation, position, updated_at',
+            )
+            .order('position', ascending: true);
+      }
 
       final notesResponse = await _supabase
           .from('training_plan_notes')
@@ -563,6 +574,17 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
   ) {
     final data = _timeByField(plans, 'category');
 
+    for (final plan in plans) {
+      final blocks = List<Map<String, dynamic>>.from(plan['blocks'] as List);
+      for (final block in blocks) {
+        final category = _asString(block['category']);
+        if (category == 'Físico') continue;
+        final physical =
+            int.tryParse(_asString(block['physical_minutes'])) ?? 0;
+        data['Físico'] = (data['Físico'] ?? 0) + physical;
+      }
+    }
+
     for (final category in _categoryGoals.keys) {
       data.putIfAbsent(category, () => 0);
     }
@@ -855,29 +877,63 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                           },
                         ),
                         const SizedBox(height: 12),
-                        _modernDropdown(
-                          label: 'Gênero',
-                          icon: Icons.groups_2_rounded,
-                          value: tempGender,
-                          items: const [
-                            DropdownMenuItem<String>(
-                              value: '',
-                              child: Text('Todos os gêneros'),
+                        const Text(
+                          'Gênero',
+                          style: TextStyle(
+                            color: olympusBlue,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        SizedBox(
+                          width: double.infinity,
+                          child: SegmentedButton<String>(
+                            segments: const [
+                              ButtonSegment<String>(
+                                value: '',
+                                label: Text('Todos'),
+                              ),
+                              ButtonSegment<String>(
+                                value: 'feminino',
+                                label: Text('Feminino'),
+                              ),
+                              ButtonSegment<String>(
+                                value: 'masculino',
+                                label: Text('Masculino'),
+                              ),
+                            ],
+                            selected: {tempGender},
+                            showSelectedIcon: false,
+                            onSelectionChanged: (values) {
+                              setModalState(() {
+                                tempGender = values.first;
+                              });
+                            },
+                            style: ButtonStyle(
+                              foregroundColor: WidgetStateProperty.resolveWith(
+                                (states) =>
+                                    states.contains(WidgetState.selected)
+                                        ? olympusBlue
+                                        : olympusMuted,
+                              ),
+                              backgroundColor: WidgetStateProperty.resolveWith(
+                                (states) =>
+                                    states.contains(WidgetState.selected)
+                                        ? olympusGold.withOpacity(0.22)
+                                        : Colors.white,
+                              ),
+                              side: const WidgetStatePropertyAll(
+                                BorderSide(color: olympusBorder),
+                              ),
+                              textStyle: const WidgetStatePropertyAll(
+                                TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ),
-                            DropdownMenuItem<String>(
-                              value: 'feminino',
-                              child: Text('Feminino'),
-                            ),
-                            DropdownMenuItem<String>(
-                              value: 'masculino',
-                              child: Text('Masculino'),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            setModalState(() {
-                              tempGender = value ?? '';
-                            });
-                          },
+                          ),
                         ),
                         const SizedBox(height: 18),
                         Row(
@@ -999,7 +1055,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
     final activeCount = _activeFiltersCount();
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [olympusBlue, olympusLightBlue],
@@ -1014,113 +1070,52 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (_isNarrow(context))
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Visão geral das programações',
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Visão geral dos treinos',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Use filtros para ajustar os gráficos.',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.74),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+              ),
+              ElevatedButton.icon(
+                onPressed: _openFiltersBottomSheet,
+                icon: const Icon(Icons.tune_rounded, size: 17),
+                label:
+                    Text(activeCount == 0 ? 'Filtros' : 'Filtros $activeCount'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: olympusGold,
+                  foregroundColor: olympusBlue,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 11,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
                   ),
                 ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _openFiltersBottomSheet,
-                    icon: const Icon(Icons.tune_rounded, size: 18),
-                    label: Text(
-                      activeCount == 0
-                          ? 'Filtrar dashboard'
-                          : 'Filtros ativos ($activeCount)',
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: olympusGold,
-                      foregroundColor: olympusBlue,
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            )
-          else
-            Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white.withOpacity(0.18)),
-                  ),
-                  child: const Icon(
-                    Icons.analytics_outlined,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Visão geral das programações',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Filtros leves, tela limpa e gráficos em destaque.',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.74),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: _openFiltersBottomSheet,
-                  icon: const Icon(Icons.tune_rounded, size: 18),
-                  label: Text(
-                    activeCount == 0 ? 'Filtros' : 'Filtros ($activeCount)',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: olympusGold,
-                    foregroundColor: olympusBlue,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 13,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                ),
-              ],
+              ),
+            ],
+          ),
+          if (activeCount > 0) ...[
+            const SizedBox(height: 8),
+            _buildActiveFilterChips(),
+          ] else ...[
+            const SizedBox(height: 3),
+            Text(
+              'Todos os períodos, técnicos e gêneros',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.72),
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          const SizedBox(height: 10),
-          _buildActiveFilterChips(),
+          ],
         ],
       ),
     );
@@ -1129,47 +1124,29 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
   Widget _buildActiveFilterChips() {
     final chips = <Widget>[];
 
-    chips.add(
-      _filterChip(
+    if (_selectedMonth.isNotEmpty) {
+      chips.add(_filterChip(
         icon: Icons.calendar_month_rounded,
         label: _selectedMonthLabel(),
-        onDeleted: _selectedMonth.isEmpty
-            ? null
-            : () {
-                setState(() {
-                  _selectedMonth = '';
-                });
-              },
-      ),
-    );
+        onDeleted: () => setState(() => _selectedMonth = ''),
+      ));
+    }
 
-    chips.add(
-      _filterChip(
+    if (_selectedCoachId.isNotEmpty) {
+      chips.add(_filterChip(
         icon: Icons.sports_rounded,
         label: _selectedCoachName(),
-        onDeleted: _selectedCoachId.isEmpty
-            ? null
-            : () {
-                setState(() {
-                  _selectedCoachId = '';
-                });
-              },
-      ),
-    );
+        onDeleted: () => setState(() => _selectedCoachId = ''),
+      ));
+    }
 
-    chips.add(
-      _filterChip(
+    if (_selectedGender.isNotEmpty) {
+      chips.add(_filterChip(
         icon: Icons.groups_2_rounded,
         label: _genderLabel(_selectedGender),
-        onDeleted: _selectedGender.isEmpty
-            ? null
-            : () {
-                setState(() {
-                  _selectedGender = '';
-                });
-              },
-      ),
-    );
+        onDeleted: () => setState(() => _selectedGender = ''),
+      ));
+    }
 
     if (_activeFiltersCount() > 0) {
       chips.add(
@@ -1589,12 +1566,6 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
       totalMinutes += (plan['total_minutes'] ?? 0) as int;
     }
 
-    String topFoundation = '—';
-    final byFoundation = _timeByField(plans, 'type');
-    if (byFoundation.isNotEmpty) {
-      topFoundation = byFoundation.entries.first.key;
-    }
-
     String topCoach = '—';
     final comparison = _coachComparisonByFoundation(plans);
     if (comparison.isNotEmpty) {
@@ -1607,57 +1578,46 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
       topCoach = ranked.first.key;
     }
 
-    final cards = [
-      _premiumMetricCard(
-        label: 'Treinos',
-        value: events.length.toString(),
-        icon: Icons.fitness_center_rounded,
-        color: olympusBlue,
-      ),
-      _premiumMetricCard(
-        label: 'Tempo',
-        value: _formatDuration(totalMinutes),
-        icon: Icons.timer_rounded,
-        color: olympusSuccess,
-      ),
-      _premiumMetricCard(
-        label: 'Blocos',
-        value: totalBlocks.toString(),
-        icon: Icons.dashboard_customize_rounded,
-        color: olympusGold,
-      ),
-      _premiumMetricCard(
-        label: 'Top técnico',
-        value: topCoach,
-        icon: Icons.emoji_events_rounded,
-        color: olympusPurple,
-        compactText: true,
-      ),
-      _premiumMetricCard(
-        label: 'Top fundamento',
-        value: topFoundation,
-        icon: Icons.sports_volleyball_rounded,
-        color: olympusWarning,
-        compactText: true,
-      ),
-    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 720 ? 4 : 2;
+        const gap = 10.0;
+        final cardWidth =
+            (constraints.maxWidth - ((columns - 1) * gap)) / columns;
+        final cards = [
+          _premiumMetricCard(
+            width: cardWidth,
+            label: 'Treinos',
+            value: events.length.toString(),
+            icon: Icons.fitness_center_rounded,
+            color: olympusBlue,
+          ),
+          _premiumMetricCard(
+            width: cardWidth,
+            label: 'Tempo planejado',
+            value: _formatDuration(totalMinutes),
+            icon: Icons.timer_rounded,
+            color: olympusSuccess,
+          ),
+          _premiumMetricCard(
+            width: cardWidth,
+            label: 'Blocos',
+            value: totalBlocks.toString(),
+            icon: Icons.dashboard_customize_rounded,
+            color: olympusGold,
+          ),
+          _premiumMetricCard(
+            width: cardWidth,
+            label: 'Técnico destaque',
+            value: topCoach,
+            icon: Icons.emoji_events_rounded,
+            color: olympusPurple,
+            compactText: true,
+          ),
+        ];
 
-    return Scrollbar(
-      controller: _quickSummaryScrollController,
-      thumbVisibility: true,
-      interactive: true,
-      child: SizedBox(
-        height: 124,
-        child: ListView.separated(
-          controller: _quickSummaryScrollController,
-          padding: const EdgeInsets.only(bottom: 12),
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          itemCount: cards.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 10),
-          itemBuilder: (context, index) => cards[index],
-        ),
-      ),
+        return Wrap(spacing: gap, runSpacing: gap, children: cards);
+      },
     );
   }
 
@@ -1667,9 +1627,11 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
     required IconData icon,
     required Color color,
     bool compactText = false,
+    double? width,
   }) {
     return Container(
-      width: compactText ? 164 : 126,
+      width: width ?? (compactText ? 164 : 126),
+      height: 108,
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -2477,7 +2439,12 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
       }
     }
 
-    final visibleInsights = insights.take(5).toList();
+    insights.sort((a, b) {
+      final aAlert = a['title'].toString().contains('fora da meta') ? 0 : 1;
+      final bAlert = b['title'].toString().contains('fora da meta') ? 0 : 1;
+      return aAlert.compareTo(bAlert);
+    });
+    final visibleInsights = insights.take(3).toList();
 
     return Container(
       width: double.infinity,
@@ -2487,8 +2454,8 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionTitle(
-            'Insights automáticos',
-            subtitle: 'Leitura rápida dos dados do filtro atual',
+            'Pontos de atenção',
+            subtitle: 'Somente o que pede acompanhamento agora',
             icon: Icons.auto_awesome_rounded,
           ),
           const SizedBox(height: 12),
@@ -3833,51 +3800,23 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
 
     return Scaffold(
       backgroundColor: olympusBg,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const AdminTrainingPlansListPage(),
-            ),
-          );
-          await _loadDashboard();
-        },
-        backgroundColor: olympusGold,
-        foregroundColor: olympusBlue,
-        icon: const Icon(Icons.list_alt_rounded),
-        label: const Text(
-          'Treinos',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-      ),
       appBar: AppBar(
-        title: const Text('Dashboard de treinos'),
+        title: const Text('Análise de treinamentos'),
         backgroundColor: olympusBlue,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
-            tooltip: 'Filtros',
-            onPressed: _openFiltersBottomSheet,
-            icon: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(Icons.tune_rounded),
-                if (_activeFiltersCount() > 0)
-                  Positioned(
-                    right: -2,
-                    top: -2,
-                    child: Container(
-                      width: 9,
-                      height: 9,
-                      decoration: const BoxDecoration(
-                        color: olympusGold,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            tooltip: 'Ver treinos',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AdminTrainingPlansListPage(),
+                ),
+              );
+              await _loadDashboard();
+            },
+            icon: const Icon(Icons.list_alt_rounded),
           ),
           IconButton(
             tooltip: 'Atualizar',

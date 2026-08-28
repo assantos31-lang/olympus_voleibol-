@@ -5,6 +5,7 @@ import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_masked_text2/flutter_masked_text2.dart';
 import 'package:http/http.dart' as http;
@@ -193,9 +194,8 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
           .maybeSingle();
 
       final metadataName = user.userMetadata?['full_name']?.toString().trim();
-      final fullName = (profile?['full_name'] ?? metadataName ?? '')
-          .toString()
-          .trim();
+      final fullName =
+          (profile?['full_name'] ?? metadataName ?? '').toString().trim();
       final cpf = (profile?['cpf'] ?? '').toString();
       final phone = (profile?['phone'] ?? '').toString();
       final rg = (profile?['rg'] ?? '').toString();
@@ -209,23 +209,17 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
       _rgController.text = rg;
       _birthDateController.text = _formatBirthDate(birthDate);
       _cepController.text = _formatCep(cep);
-      _streetController.text = (profile?['address_street'] ?? '')
-          .toString()
-          .trim();
-      _numberController.text = (profile?['address_number'] ?? '')
-          .toString()
-          .trim();
-      _complementController.text = (profile?['address_complement'] ?? '')
-          .toString()
-          .trim();
-      _neighborhoodController.text = (profile?['address_neighborhood'] ?? '')
-          .toString()
-          .trim();
+      _streetController.text =
+          (profile?['address_street'] ?? '').toString().trim();
+      _numberController.text =
+          (profile?['address_number'] ?? '').toString().trim();
+      _complementController.text =
+          (profile?['address_complement'] ?? '').toString().trim();
+      _neighborhoodController.text =
+          (profile?['address_neighborhood'] ?? '').toString().trim();
       _cityController.text = (profile?['address_city'] ?? '').toString().trim();
-      _stateController.text = (profile?['address_state'] ?? '')
-          .toString()
-          .trim()
-          .toUpperCase();
+      _stateController.text =
+          (profile?['address_state'] ?? '').toString().trim().toUpperCase();
       _avatarUrl = avatarUrl;
 
       if (!mounted) return;
@@ -328,8 +322,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
     if (picked == null) return;
 
     setState(() {
-      _birthDateController.text =
-          '${picked.day.toString().padLeft(2, '0')}/'
+      _birthDateController.text = '${picked.day.toString().padLeft(2, '0')}/'
           '${picked.month.toString().padLeft(2, '0')}/'
           '${picked.year.toString().padLeft(4, '0')}';
     });
@@ -371,20 +364,17 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
 
     try {
       final rawExt = _selectedImage!.name.split('.').last.toLowerCase();
-      final ext = ['jpg', 'jpeg', 'png', 'webp'].contains(rawExt)
-          ? rawExt
-          : 'jpg';
+      final ext =
+          ['jpg', 'jpeg', 'png', 'webp'].contains(rawExt) ? rawExt : 'jpg';
       final contentType = ext == 'png'
           ? 'image/png'
           : ext == 'webp'
-          ? 'image/webp'
-          : 'image/jpeg';
+              ? 'image/webp'
+              : 'image/jpeg';
       final path =
           'coaches/$userId/avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
 
-      await supabase.storage
-          .from('avatars')
-          .uploadBinary(
+      await supabase.storage.from('avatars').uploadBinary(
             path,
             _selectedImageBytes!,
             fileOptions: FileOptions(contentType: contentType, upsert: true),
@@ -499,8 +489,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.asset(
-          'assets/images/monte_olimpo_v2.png',
+        OlympusBrandBackgroundImage(
           fit: BoxFit.cover,
           alignment: Alignment.center,
           errorBuilder: (_, __, ___) {
@@ -532,7 +521,13 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
 
     Widget child;
     if (_selectedImageBytes != null) {
-      child = Image.memory(_selectedImageBytes!, fit: BoxFit.cover);
+      child = Image.memory(
+        _selectedImageBytes!,
+        fit: BoxFit.cover,
+        cacheWidth: 512,
+        cacheHeight: 512,
+        filterQuality: FilterQuality.medium,
+      );
     } else if (_avatarUrl.trim().isNotEmpty) {
       child = CachedNetworkImage(
         imageUrl: _avatarUrl.trim(),
@@ -872,8 +867,8 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
                             onPressed: _saving
                                 ? null
                                 : () => _lookupCep(
-                                    _onlyNumbers(_cepController.text),
-                                  ),
+                                      _onlyNumbers(_cepController.text),
+                                    ),
                             icon: const Icon(
                               Icons.search_rounded,
                               color: olympusGold,
@@ -1042,10 +1037,10 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
                       _saving
                           ? 'Salvando...'
                           : _uploadingImage
-                          ? 'Enviando foto...'
-                          : widget.isEditing
-                          ? 'Salvar alterações'
-                          : 'Concluir cadastro',
+                              ? 'Enviando foto...'
+                              : widget.isEditing
+                                  ? 'Salvar alterações'
+                                  : 'Concluir cadastro',
                       style: const TextStyle(
                         fontWeight: FontWeight.w900,
                         letterSpacing: 0.2,

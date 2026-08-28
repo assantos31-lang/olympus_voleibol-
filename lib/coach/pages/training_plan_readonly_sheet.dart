@@ -9,6 +9,7 @@ class TrainingPlanReadonlySheet {
   static Future<void> show(
     BuildContext context, {
     required Map<String, dynamic> event,
+    String? coachId,
     String emptyMessage = 'Nenhum planejamento vinculado a este treino.',
   }) async {
     final eventId = event['id']?.toString();
@@ -16,20 +17,28 @@ class TrainingPlanReadonlySheet {
 
     final supabase = Supabase.instance.client;
 
-    final blocksResponse = await supabase
+    var blocksQuery = supabase
         .from('training_plan_blocks')
         .select(
           'id, event_id, coach_id, category, type, start_time, end_time, observation, position, updated_at',
         )
-        .eq('event_id', eventId)
-        .order('position', ascending: true);
+        .eq('event_id', eventId);
+    if (coachId != null && coachId.isNotEmpty) {
+      blocksQuery = blocksQuery.eq('coach_id', coachId);
+    }
+    final blocksResponse =
+        await blocksQuery.order('position', ascending: true);
 
     dynamic notesResponse = const <dynamic>[];
     try {
-      notesResponse = await supabase
+      var notesQuery = supabase
           .from('training_plan_notes')
           .select('event_id, coach_id, notes, updated_at')
           .eq('event_id', eventId);
+      if (coachId != null && coachId.isNotEmpty) {
+        notesQuery = notesQuery.eq('coach_id', coachId);
+      }
+      notesResponse = await notesQuery;
     } catch (_) {
       notesResponse = const <dynamic>[];
     }

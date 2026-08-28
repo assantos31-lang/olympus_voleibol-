@@ -8,6 +8,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import 'organization_context_service.dart';
+
 class PushTokenService {
   PushTokenService._();
 
@@ -291,6 +293,7 @@ class PushTokenService {
     final payload = {
       'installation_id': installationId,
       'user_id': user.id,
+      'organization_id': OrganizationContextService.instance.currentId,
       'device_token': token,
       'platform': Platform.isIOS ? 'ios' : 'android',
       'permission_status': permissionStatus,
@@ -369,8 +372,7 @@ class PushTokenService {
 
       _debugLog('[PushTokenService] profiles.push_token atualizado');
     } catch (e, st) {
-      _debugLog(
-          '[PushTokenService] erro ao atualizar profiles.push_token: $e');
+      _debugLog('[PushTokenService] erro ao atualizar profiles.push_token: $e');
       _debugStack(stackTrace: st);
     }
   }
@@ -410,11 +412,10 @@ class PushTokenService {
     }
 
     try {
-      await _supabase.from('user_push_tokens').update({
-        'user_id': null,
-        'updated_at': now,
-        'last_seen_at': now,
-      }).eq('installation_id', installationId);
+      await _supabase
+          .from('user_push_tokens')
+          .delete()
+          .eq('installation_id', installationId);
 
       _debugLog('[PushTokenService] logout OK');
     } catch (e, st) {

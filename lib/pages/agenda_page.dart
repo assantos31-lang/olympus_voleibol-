@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import '../pages/add_event_page.dart';
 import '../services/permission_service.dart'; // ✅ NOVO
 import '../services/role_service.dart';
@@ -42,6 +45,9 @@ class _AgendaPageState extends State<AgendaPage> {
   // ✅ NOVO (cirúrgico): cache da view event_convocation_stats
   // {eventId: {'total_convocados': n, 'total_aceitos': n, 'total_pendentes': n, 'total_recusados': n}}
   Map<String, Map<String, int>> _convocationStats = {};
+  final Map<String, List<Map<String, dynamic>>> _convocadosDetailsCache = {};
+  final Map<String, DateTime> _convocadosDetailsCacheTime = {};
+  static const Duration _convocadosDetailsCacheTtl = Duration(seconds: 45);
   bool _loading = true;
   bool _loadingEvents = false;
   bool _openingAgendaPage = false;
@@ -257,8 +263,9 @@ class _AgendaPageState extends State<AgendaPage> {
       if (_eventos.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content:
-                Text('Não foi possível atualizar. Dados anteriores mantidos.'),
+            content: Text(
+              'Não foi possível atualizar. Dados anteriores mantidos.',
+            ),
           ),
         );
       }
@@ -267,7 +274,8 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
-  // ✅ NOVO (cirúrgico): busca a view uma vez e guarda em mapa
+  // Totais dos cards consideram somente atletas. Integrantes da comissão
+  // técnica continuam visíveis na lista, mas não alteram os indicadores.
   Future<void> _buscarConvocationStats() async {
     try {
       final ids =
@@ -281,20 +289,35 @@ class _AgendaPageState extends State<AgendaPage> {
         return;
       }
       final resp = await _supabase
-          .from('event_convocation_stats')
-          .select(
-              'event_id,total_convocados,total_aceitos,total_pendentes,total_recusados')
+          .from('convocations')
+          .select('event_id, status, event_role')
           .inFilter('event_id', ids);
-      final map = <String, Map<String, int>>{};
+      final map = <String, Map<String, int>>{
+        for (final id in ids)
+          id: {
+            'total_convocados': 0,
+            'total_aceitos': 0,
+            'total_pendentes': 0,
+            'total_recusados': 0,
+          },
+      };
       for (final row in resp) {
         final eventId = row['event_id']?.toString();
-        if (eventId == null) continue;
-        map[eventId] = {
-          'total_convocados': (row['total_convocados'] ?? 0) as int,
-          'total_aceitos': (row['total_aceitos'] ?? 0) as int,
-          'total_pendentes': (row['total_pendentes'] ?? 0) as int,
-          'total_recusados': (row['total_recusados'] ?? 0) as int,
-        };
+        if (eventId == null || !map.containsKey(eventId)) continue;
+        final role =
+            (row['event_role'] ?? 'athlete').toString().trim().toLowerCase();
+        if (role == 'coach') continue;
+        final status =
+            (row['status'] ?? 'pending').toString().trim().toLowerCase();
+        final data = map[eventId]!;
+        data['total_convocados'] = (data['total_convocados'] ?? 0) + 1;
+        if (status == 'accepted') {
+          data['total_aceitos'] = (data['total_aceitos'] ?? 0) + 1;
+        } else if (status == 'rejected') {
+          data['total_recusados'] = (data['total_recusados'] ?? 0) + 1;
+        } else {
+          data['total_pendentes'] = (data['total_pendentes'] ?? 0) + 1;
+        }
       }
       if (mounted) {
         setState(() {
@@ -311,26 +334,26 @@ class _AgendaPageState extends State<AgendaPage> {
   Future<void> _buscarQuantidadeConvocados() async {
     try {
       final quantidades = <String, Map<String, int>>{};
-      for (var evento in _eventos) {
-        final eventId = evento['id']?.toString();
-        if (eventId == null) continue;
-        // ✅ Busca convocations + tenta join do profiles(user_type)
-        final convocationsResponse = await _supabase
+      final eventIds = _eventos
+          .map((evento) => (evento['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      for (final eventId in eventIds) {
+        quantidades[eventId] = {'athletes': 0, 'technicians': 0};
+      }
+      if (eventIds.isNotEmpty) {
+        final response = await _supabase
             .from('convocations')
-            .select('user_id, event_role')
-            .eq('event_id', eventId);
-        // ✅ Total sempre correto (independe de profiles)
-        int atletas = 0;
-        int tecnicos = 0;
-        for (var convocation in convocationsResponse) {
-          final eventRole = (convocation['event_role'] ?? 'athlete').toString();
-          if (eventRole == 'coach') {
-            tecnicos++;
-          } else {
-            atletas++;
-          }
+            .select('event_id, event_role')
+            .inFilter('event_id', eventIds);
+        for (final row in List<Map<String, dynamic>>.from(response as List)) {
+          final eventId = (row['event_id'] ?? '').toString();
+          if (!quantidades.containsKey(eventId)) continue;
+          final role = (row['event_role'] ?? 'athlete').toString();
+          final key = role == 'coach' ? 'technicians' : 'athletes';
+          quantidades[eventId]![key] = (quantidades[eventId]![key] ?? 0) + 1;
         }
-        quantidades[eventId] = {'athletes': atletas, 'technicians': tecnicos};
       }
       if (mounted) {
         setState(() {
@@ -346,22 +369,55 @@ class _AgendaPageState extends State<AgendaPage> {
   Future<void> _buscarCheckinInfo() async {
     try {
       final checkinData = <String, Map<String, int>>{};
-      for (var evento in _eventos) {
-        final eventId = evento['id']?.toString();
-        if (eventId == null) continue;
-        final allowCheckin = evento['allow_checkin'] ?? false;
-        if (!allowCheckin) continue;
-        // ✅ Busca na tabela checkins quem realmente fez check-in
-        final checkinsResponse = await _supabase
+      final eventIds = _eventos
+          .where((evento) => evento['allow_checkin'] == true)
+          .map((evento) => (evento['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      final acceptedAthletesByEvent = <String, Set<String>>{};
+      final checkedInByEvent = <String, int>{};
+      if (eventIds.isNotEmpty) {
+        final convocations = await _supabase
+            .from('convocations')
+            .select('event_id, user_id, status, event_role')
+            .inFilter('event_id', eventIds);
+        for (final row
+            in List<Map<String, dynamic>>.from(convocations as List)) {
+          final role =
+              (row['event_role'] ?? 'athlete').toString().trim().toLowerCase();
+          final status = (row['status'] ?? '').toString().trim().toLowerCase();
+          final eventId = (row['event_id'] ?? '').toString();
+          final userId = (row['user_id'] ?? '').toString();
+          if (role == 'coach' || status != 'accepted' || userId.isEmpty) {
+            continue;
+          }
+          acceptedAthletesByEvent.putIfAbsent(eventId, () => <String>{}).add(
+                userId,
+              );
+        }
+        final response = await _supabase
             .from('checkins')
-            .select('user_id')
-            .eq('event_id', eventId);
-        final checkedIn = checkinsResponse.length;
-        // Total de convocados que aceitaram (para calcular pendentes)
-        final stats = _convocationStats[eventId];
-        final totalAceitos = stats?['total_aceitos'] ?? 0;
+            .select('event_id, user_id')
+            .inFilter('event_id', eventIds);
+        for (final row in List<Map<String, dynamic>>.from(response as List)) {
+          final eventId = (row['event_id'] ?? '').toString();
+          final userId = (row['user_id'] ?? '').toString();
+          if (!(acceptedAthletesByEvent[eventId] ?? const <String>{})
+              .contains(userId)) {
+            continue;
+          }
+          checkedInByEvent[eventId] = (checkedInByEvent[eventId] ?? 0) + 1;
+        }
+      }
+      for (final eventId in eventIds) {
+        final checkedIn = checkedInByEvent[eventId] ?? 0;
+        final totalAceitos = acceptedAthletesByEvent[eventId]?.length ?? 0;
         final pending = totalAceitos - checkedIn;
-        checkinData[eventId] = {'checked_in': checkedIn, 'pending': pending};
+        checkinData[eventId] = {
+          'checked_in': checkedIn,
+          'pending': pending < 0 ? 0 : pending,
+        };
       }
       if (mounted) {
         setState(() {
@@ -417,9 +473,7 @@ class _AgendaPageState extends State<AgendaPage> {
     if (dataHora == null) return false;
 
     // Mantém o evento em FUTURO durante a janela de check-in
-    final limiteCheckin = dataHora.add(
-      const Duration(minutes: 40),
-    );
+    final limiteCheckin = dataHora.add(const Duration(minutes: 40));
 
     return DateTime.now().isAfter(limiteCheckin);
   }
@@ -467,9 +521,11 @@ class _AgendaPageState extends State<AgendaPage> {
 
     if (_filtroSelecionado != 'Todos') {
       eventosFiltrados = eventosFiltrados
-          .where((evento) =>
-              (evento['event_type'] ?? '').toLowerCase() ==
-              _filtroSelecionado.toLowerCase())
+          .where(
+            (evento) =>
+                (evento['event_type'] ?? '').toLowerCase() ==
+                _filtroSelecionado.toLowerCase(),
+          )
           .toList();
     }
     if (_filtroMes.isNotEmpty) {
@@ -484,11 +540,13 @@ class _AgendaPageState extends State<AgendaPage> {
     }
     if (_filtroGenero != 'Todos') {
       eventosFiltrados = eventosFiltrados
-          .where((evento) =>
-              (evento['gender'] ?? evento['category'] ?? '')
-                  .toString()
-                  .toLowerCase() ==
-              _filtroGenero.toLowerCase())
+          .where(
+            (evento) =>
+                (evento['gender'] ?? evento['category'] ?? '')
+                    .toString()
+                    .toLowerCase() ==
+                _filtroGenero.toLowerCase(),
+          )
           .toList();
     }
     eventosFiltrados.sort((a, b) {
@@ -523,7 +581,10 @@ class _AgendaPageState extends State<AgendaPage> {
       final parts = dataStr.split('/');
       if (parts.length == 3) {
         final date = DateTime(
-            int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
+          int.parse(parts[2]),
+          int.parse(parts[1]),
+          int.parse(parts[0]),
+        );
         return DateFormat('dd/MM/yyyy (EEEE)', 'pt_BR').format(date);
       }
       return dataStr;
@@ -773,7 +834,8 @@ class _AgendaPageState extends State<AgendaPage> {
           return StatefulBuilder(
             builder: (context, setModalState) {
               final selectedBlocks = List<Map<String, dynamic>>.from(
-                  blocksByCoach[selectedCoachId] ?? []);
+                blocksByCoach[selectedCoachId] ?? [],
+              );
               final selectedNote = notesByCoach[selectedCoachId];
               final selectedProfile = profilesById[selectedCoachId];
               final coachName =
@@ -969,8 +1031,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                     .toString();
                                 final categoria =
                                     (bloco['category'] ?? 'Bloco').toString();
-                                final inicio =
-                                    normalizeTime(bloco['start_time']);
+                                final inicio = normalizeTime(
+                                  bloco['start_time'],
+                                );
                                 final fim = normalizeTime(bloco['end_time']);
                                 final observacao =
                                     (bloco['observation'] ?? '').toString();
@@ -981,8 +1044,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                   decoration: BoxDecoration(
                                     color: Colors.grey[50],
                                     borderRadius: BorderRadius.circular(12),
-                                    border:
-                                        Border.all(color: Colors.grey[200]!),
+                                    border: Border.all(
+                                      color: Colors.grey[200]!,
+                                    ),
                                   ),
                                   child: Column(
                                     crossAxisAlignment:
@@ -995,8 +1059,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                             height: 28,
                                             alignment: Alignment.center,
                                             decoration: BoxDecoration(
-                                              color:
-                                                  olympusGold.withOpacity(0.16),
+                                              color: olympusGold.withOpacity(
+                                                0.16,
+                                              ),
                                               borderRadius:
                                                   BorderRadius.circular(8),
                                             ),
@@ -1102,9 +1167,7 @@ class _AgendaPageState extends State<AgendaPage> {
     try {
       final result = await Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (context) => AddEventPage(evento: evento),
-        ),
+        MaterialPageRoute(builder: (context) => AddEventPage(evento: evento)),
       );
       if (result == true) {
         await _refreshEventos();
@@ -1121,7 +1184,8 @@ class _AgendaPageState extends State<AgendaPage> {
       builder: (context) => AlertDialog(
         title: const Text('Excluir evento'),
         content: const Text(
-            'Tem certeza que deseja excluir este evento? Esta ação não pode ser desfeita.'),
+          'Tem certeza que deseja excluir este evento? Esta ação não pode ser desfeita.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -1167,7 +1231,320 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
-  // ✅ NOVO: Exportar respostas de carona para Excel (CSV com delimitador ; e BOM)
+  Future<void> _exportarCaronasPdf(Map<String, dynamic> evento) async {
+    final eventId = (evento['id'] ?? '').toString();
+    if (eventId.isEmpty) return;
+
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Preparando PDF das caronas...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      final results = await Future.wait<dynamic>([
+        _supabase
+            .from('convocations')
+            .select('user_id, status, justification, event_role')
+            .eq('event_id', eventId),
+        _supabase
+            .from('event_rides')
+            .select('user_id, ride_type, needs_ride, has_car, available_seats')
+            .eq('event_id', eventId),
+      ]);
+
+      final convocations = List<Map<String, dynamic>>.from(results[0] as List);
+      final rides = List<Map<String, dynamic>>.from(results[1] as List);
+      final userIds = convocations
+          .map((row) => (row['user_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      final profileRows = userIds.isEmpty
+          ? <dynamic>[]
+          : await _supabase
+              .from('profiles')
+              .select('id, full_name, birth_date, rg, user_type')
+              .inFilter('id', userIds);
+      final profilesById = <String, Map<String, dynamic>>{
+        for (final profile in List<Map<String, dynamic>>.from(
+          profileRows as List,
+        ))
+          (profile['id'] ?? '').toString(): profile,
+      };
+      final ridesByUser = <String, Map<String, Map<String, dynamic>>>{};
+      for (final ride in rides) {
+        final userId = (ride['user_id'] ?? '').toString();
+        final rideType =
+            (ride['ride_type'] ?? '').toString().trim().toLowerCase();
+        if (userId.isEmpty || (rideType != 'ida' && rideType != 'volta')) {
+          continue;
+        }
+        ridesByUser.putIfAbsent(userId, () => {})[rideType] = ride;
+      }
+
+      int seats(Map<String, dynamic>? ride) {
+        if (ride == null || ride['has_car'] != true) return 0;
+        final raw = ride['available_seats'];
+        return raw is int ? raw : int.tryParse('$raw') ?? 0;
+      }
+
+      String rideText(Map<String, dynamic>? ride) {
+        if (ride == null) return 'Não respondeu';
+        if (ride['needs_ride'] == true) return 'Precisa de carona';
+        final available = seats(ride);
+        if (ride['has_car'] == true && available > 0) {
+          return 'Oferece $available vaga${available == 1 ? '' : 's'}';
+        }
+        if (ride['has_car'] == true) return 'Carro sem vagas';
+        return 'Não precisa de carona';
+      }
+
+      String participantType(Map<String, dynamic> convocation) {
+        final role = (convocation['event_role'] ?? '').toString().toLowerCase();
+        if (role == 'coach') return 'Treinador';
+        return 'Atleta';
+      }
+
+      final accepted = convocations.where((row) {
+        return (row['status'] ?? '').toString().toLowerCase() == 'accepted';
+      }).toList()
+        ..sort((a, b) {
+          final aName = (profilesById[(a['user_id'] ?? '').toString()]
+                      ?['full_name'] ??
+                  '')
+              .toString();
+          final bName = (profilesById[(b['user_id'] ?? '').toString()]
+                      ?['full_name'] ??
+                  '')
+              .toString();
+          return aName.toLowerCase().compareTo(bName.toLowerCase());
+        });
+      final pending = convocations.where((row) {
+        return (row['status'] ?? 'pending').toString().toLowerCase() ==
+            'pending';
+      }).toList();
+      final rejected = convocations.where((row) {
+        return (row['status'] ?? '').toString().toLowerCase() == 'rejected';
+      }).toList();
+
+      var needRideOut = 0;
+      var needRideBack = 0;
+      var seatsOut = 0;
+      var seatsBack = 0;
+      for (final convocation in accepted) {
+        final userId = (convocation['user_id'] ?? '').toString();
+        final userRides = ridesByUser[userId] ?? const {};
+        final out = userRides['ida'];
+        final back = userRides['volta'];
+        if (out?['needs_ride'] == true) needRideOut++;
+        if (back?['needs_ride'] == true) needRideBack++;
+        seatsOut += seats(out);
+        seatsBack += seats(back);
+      }
+
+      final eventName = (evento['event_name'] ?? 'Evento').toString();
+      final eventDate = (evento['event_date'] ?? '-').toString();
+      final eventTime = (evento['event_time'] ?? '-').toString();
+      final championship =
+          (evento['championship_name'] ?? '').toString().trim();
+      final street = (evento['street'] ?? '').toString().trim();
+      final number = (evento['street_number'] ?? '').toString().trim();
+      final city = (evento['city'] ?? '').toString().trim();
+      final state = (evento['state'] ?? '').toString().trim();
+      final address = street.isEmpty
+          ? '-'
+          : '$street${number.isEmpty ? '' : ', $number'}'
+              '${city.isEmpty ? '' : ' - $city'}'
+              '${state.isEmpty ? '' : '/$state'}';
+
+      final document = pw.Document();
+      document.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4.landscape,
+          margin: const pw.EdgeInsets.all(28),
+          header: (_) => pw.Container(
+            padding: const pw.EdgeInsets.only(bottom: 8),
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(
+                bottom: pw.BorderSide(color: PdfColors.blueGrey200),
+              ),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  'Olympus • Logística de caronas',
+                  style: pw.TextStyle(
+                    color: PdfColors.blueGrey900,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.Text(
+                  'Gerado em ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+              ],
+            ),
+          ),
+          footer: (context) => pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Página ${context.pageNumber} de ${context.pagesCount}',
+              style: const pw.TextStyle(fontSize: 8),
+            ),
+          ),
+          build: (_) => [
+            pw.SizedBox(height: 12),
+            pw.Text(
+              eventName,
+              style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+            ),
+            if (championship.isNotEmpty) pw.Text(championship),
+            pw.SizedBox(height: 5),
+            pw.Text('Data: $eventDate • Horário: $eventTime'),
+            pw.Text('Endereço: $address'),
+            pw.SizedBox(height: 16),
+            pw.Row(
+              children: [
+                _pdfRideMetric('Aceitaram', accepted.length, PdfColors.green),
+                pw.SizedBox(width: 8),
+                _pdfRideMetric('Precisam • ida', needRideOut, PdfColors.orange),
+                pw.SizedBox(width: 8),
+                _pdfRideMetric('Vagas • ida', seatsOut, PdfColors.blueGrey),
+                pw.SizedBox(width: 8),
+                _pdfRideMetric(
+                  'Precisam • volta',
+                  needRideBack,
+                  PdfColors.orange,
+                ),
+                pw.SizedBox(width: 8),
+                _pdfRideMetric('Vagas • volta', seatsBack, PdfColors.blueGrey),
+              ],
+            ),
+            pw.SizedBox(height: 18),
+            pw.Text(
+              'Participantes e caronas',
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 7),
+            if (accepted.isEmpty)
+              pw.Text('Nenhum participante aceitou o evento.')
+            else
+              pw.Table.fromTextArray(
+                headers: const ['Participante', 'Tipo', 'Ida', 'Volta'],
+                data: accepted.map((convocation) {
+                  final userId = (convocation['user_id'] ?? '').toString();
+                  final profile = profilesById[userId] ?? const {};
+                  final userRides = ridesByUser[userId] ?? const {};
+                  return [
+                    (profile['full_name'] ?? 'Sem nome').toString(),
+                    participantType(convocation),
+                    rideText(userRides['ida']),
+                    rideText(userRides['volta']),
+                  ];
+                }).toList(),
+                headerDecoration: const pw.BoxDecoration(
+                  color: PdfColors.blueGrey900,
+                ),
+                headerStyle: pw.TextStyle(
+                  color: PdfColors.white,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+                cellStyle: const pw.TextStyle(fontSize: 9),
+                cellPadding: const pw.EdgeInsets.all(6),
+              ),
+            pw.SizedBox(height: 18),
+            if (pending.isNotEmpty) ...[
+              pw.Text(
+                'Pendentes (${pending.length})',
+                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              ),
+              pw.Text(
+                pending
+                    .map(
+                      (row) => (profilesById[(row['user_id'] ?? '').toString()]
+                                  ?['full_name'] ??
+                              'Sem nome')
+                          .toString(),
+                    )
+                    .join(' • '),
+              ),
+              pw.SizedBox(height: 10),
+            ],
+            if (rejected.isNotEmpty) ...[
+              pw.Text(
+                'Recusaram (${rejected.length})',
+                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 5),
+              ...rejected.map((row) {
+                final profile =
+                    profilesById[(row['user_id'] ?? '').toString()] ?? const {};
+                final reason = (row['justification'] ?? '').toString().trim();
+                return pw.Padding(
+                  padding: const pw.EdgeInsets.only(bottom: 3),
+                  child: pw.Text(
+                    '• ${profile['full_name'] ?? 'Sem nome'}${reason.isEmpty ? '' : ' — $reason'}',
+                  ),
+                );
+              }),
+            ],
+          ],
+        ),
+      );
+
+      final safeName = eventName
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+      await Printing.sharePdf(
+        bytes: await document.save(),
+        filename: 'caronas_${safeName.isEmpty ? eventId : safeName}.pdf',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Não foi possível gerar o PDF: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  pw.Widget _pdfRideMetric(String label, int value, PdfColor color) {
+    return pw.Expanded(
+      child: pw.Container(
+        padding: const pw.EdgeInsets.all(10),
+        decoration: pw.BoxDecoration(
+          color: PdfColors.grey100,
+          border: pw.Border.all(color: color, width: 1),
+          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              '$value',
+              style: pw.TextStyle(
+                color: color,
+                fontSize: 17,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.Text(label, style: const pw.TextStyle(fontSize: 8)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Mantido para compatibilidade com instalações anteriores.
+  // ignore: unused_element
   Future<void> _exportarConvocados(Map<String, dynamic> evento) async {
     final eventId = evento['id']?.toString();
     if (eventId == null) return;
@@ -1243,16 +1620,8 @@ class _AgendaPageState extends State<AgendaPage> {
         'ACEITARAM',
         '',
       ];
-      final pendentesLines = <String>[
-        '',
-        'PENDENTES',
-        '',
-      ];
-      final recusadosLines = <String>[
-        '',
-        'RECUSARAM',
-        '',
-      ];
+      final pendentesLines = <String>['', 'PENDENTES', ''];
+      final recusadosLines = <String>['', 'RECUSARAM', ''];
       for (final convocation in convocationsResponse) {
         final userId = convocation['user_id']?.toString();
         if (userId == null || userId.isEmpty) continue;
@@ -1286,8 +1655,9 @@ class _AgendaPageState extends State<AgendaPage> {
                   (voltaRide?['needs_ride'] == true)
               ? 'Sim'
               : 'Não';
-          final dataNascimento =
-              _formatBirthDate(profileResponse['birth_date']);
+          final dataNascimento = _formatBirthDate(
+            profileResponse['birth_date'],
+          );
           final rg = (profileResponse['rg'] ?? '-').toString();
           final ida = _buildRideText(idaRide);
           final volta = _buildRideText(voltaRide);
@@ -1339,28 +1709,61 @@ class _AgendaPageState extends State<AgendaPage> {
     final eventId = evento['id']?.toString();
     if (eventId == null) return;
     try {
-      final convocationsResponse = await _supabase
-          .from('convocations')
-          .select('user_id, status, justification')
-          .eq('event_id', eventId);
-      List<Map<String, dynamic>> participantes = [];
-      for (var convocation in convocationsResponse) {
-        final userId = convocation['user_id'];
-        if (userId != null) {
-          final profileResponse = await _supabase
-              .from('profiles')
-              .select('full_name, user_type')
-              .eq('id', userId)
-              .single();
-          if (profileResponse != null) {
-            participantes.add({
-              'nome': profileResponse['full_name'] ?? 'Sem nome',
-              'tipo': profileResponse['user_type'] ?? 'unknown',
-              'status': convocation['status'] ?? 'pending',
-              'justification': convocation['justification'],
-            });
-          }
-        }
+      final cachedAt = _convocadosDetailsCacheTime[eventId];
+      final hasFreshCache = cachedAt != null &&
+          DateTime.now().difference(cachedAt) < _convocadosDetailsCacheTtl;
+      List<Map<String, dynamic>> participantes;
+
+      if (hasFreshCache && _convocadosDetailsCache.containsKey(eventId)) {
+        participantes = _convocadosDetailsCache[eventId]!
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+      } else {
+        final convocationsResponse = await _supabase
+            .from('convocations')
+            .select('user_id, status, justification, event_role')
+            .eq('event_id', eventId);
+        final convocations = List<Map<String, dynamic>>.from(
+          convocationsResponse as List,
+        );
+        final userIds = convocations
+            .map((row) => (row['user_id'] ?? '').toString())
+            .where((id) => id.isNotEmpty)
+            .toSet()
+            .toList();
+        final profileRows = userIds.isEmpty
+            ? <dynamic>[]
+            : await _supabase
+                .from('profiles')
+                .select('id, full_name, user_type, avatar_url')
+                .inFilter('id', userIds);
+        final profilesById = <String, Map<String, dynamic>>{
+          for (final profile in List<Map<String, dynamic>>.from(
+            profileRows as List,
+          ))
+            (profile['id'] ?? '').toString(): profile,
+        };
+
+        participantes = convocations.map((convocation) {
+          final userId = (convocation['user_id'] ?? '').toString();
+          final profile = profilesById[userId] ?? const <String, dynamic>{};
+          return <String, dynamic>{
+            'user_id': userId,
+            'nome': profile['full_name'] ?? 'Sem nome',
+            'tipo': profile['user_type'] ?? 'unknown',
+            'avatar_url': profile['avatar_url'],
+            'status': convocation['status'] ?? 'pending',
+            'justification': convocation['justification'],
+            'event_role': convocation['event_role'] ?? 'athlete',
+          };
+        }).toList()
+          ..sort(
+            (a, b) => (a['nome'] ?? '').toString().toLowerCase().compareTo(
+                  (b['nome'] ?? '').toString().toLowerCase(),
+                ),
+          );
+        _convocadosDetailsCache[eventId] = participantes;
+        _convocadosDetailsCacheTime[eventId] = DateTime.now();
       }
       if (mounted) {
         showDialog(
@@ -1380,11 +1783,7 @@ class _AgendaPageState extends State<AgendaPage> {
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        Icons.people_outline,
-                        color: olympusGold,
-                        size: 28,
-                      ),
+                      Icon(Icons.people_outline, color: olympusGold, size: 28),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -1399,7 +1798,7 @@ class _AgendaPageState extends State<AgendaPage> {
                               ),
                             ),
                             Text(
-                              '${participantes.where((p) => p['status'] == 'accepted').length} aceitaram de ${participantes.length}',
+                              '${participantes.where((p) => p['event_role'] != 'coach' && p['status'] == 'accepted').length} aceitaram de ${participantes.where((p) => p['event_role'] != 'coach').length} atletas',
                               style: TextStyle(
                                 fontSize: 14,
                                 color: Colors.grey[600],
@@ -1438,30 +1837,40 @@ class _AgendaPageState extends State<AgendaPage> {
                               final isRecusou = status == 'rejected';
                               final isAtleta =
                                   participante['tipo'] == 'athlete';
-                              final labelStatus = isAceitou
-                                  ? 'Aceitou'
-                                  : (isRecusou ? 'Recusou' : 'Pendente');
-                              final colorStatus = isAceitou
-                                  ? Colors.green[700]
-                                  : (isRecusou
-                                      ? Colors.red[700]
-                                      : Colors.grey[600]);
+                              final isCoach =
+                                  participante['event_role'] == 'coach';
+                              final labelStatus = isCoach
+                                  ? 'Treinador'
+                                  : isAceitou
+                                      ? 'Aceitou'
+                                      : (isRecusou ? 'Recusou' : 'Pendente');
+                              final colorStatus = isCoach
+                                  ? olympusBlue
+                                  : isAceitou
+                                      ? Colors.green[700]
+                                      : (isRecusou
+                                          ? Colors.red[700]
+                                          : Colors.grey[600]);
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 8),
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: isAceitou
-                                      ? Colors.green[50]
-                                      : (isRecusou
-                                          ? Colors.red[50]
-                                          : Colors.grey[100]),
+                                  color: isCoach
+                                      ? olympusGold.withOpacity(0.14)
+                                      : isAceitou
+                                          ? Colors.green[50]
+                                          : (isRecusou
+                                              ? Colors.red[50]
+                                              : Colors.grey[100]),
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                    color: isAceitou
-                                        ? Colors.green[300]!
-                                        : (isRecusou
-                                            ? Colors.red[300]!
-                                            : Colors.grey[300]!),
+                                    color: isCoach
+                                        ? olympusGold
+                                        : isAceitou
+                                            ? Colors.green[300]!
+                                            : (isRecusou
+                                                ? Colors.red[300]!
+                                                : Colors.grey[300]!),
                                   ),
                                 ),
                                 child: Column(
@@ -1470,11 +1879,13 @@ class _AgendaPageState extends State<AgendaPage> {
                                     Row(
                                       children: [
                                         Icon(
-                                          isAceitou
-                                              ? Icons.check_circle
-                                              : (isRecusou
-                                                  ? Icons.cancel
-                                                  : Icons.hourglass_empty),
+                                          isCoach
+                                              ? Icons.sports_rounded
+                                              : isAceitou
+                                                  ? Icons.check_circle
+                                                  : (isRecusou
+                                                      ? Icons.cancel
+                                                      : Icons.hourglass_empty),
                                           color: colorStatus,
                                         ),
                                         const SizedBox(width: 12),
@@ -1491,7 +1902,11 @@ class _AgendaPageState extends State<AgendaPage> {
                                                 ),
                                               ),
                                               Text(
-                                                isAtleta ? 'Atleta' : 'Técnico',
+                                                isCoach
+                                                    ? 'Treinador • sem check-in'
+                                                    : (isAtleta
+                                                        ? 'Atleta'
+                                                        : 'Comissão técnica'),
                                                 style: TextStyle(
                                                   fontSize: 12,
                                                   color: Colors.grey[600],
@@ -1510,7 +1925,8 @@ class _AgendaPageState extends State<AgendaPage> {
                                         ),
                                       ],
                                     ),
-                                    if (isRecusou &&
+                                    if (!isCoach &&
+                                        isRecusou &&
                                         (participante['justification'] ?? '')
                                             .toString()
                                             .trim()
@@ -1575,7 +1991,7 @@ class _AgendaPageState extends State<AgendaPage> {
       // ✅ 1. Buscar TODOS os convocados que aceitaram
       final convocationsResponse = await _supabase
           .from('convocations')
-          .select('user_id, status, justification')
+          .select('user_id, status, justification, event_role')
           .eq('event_id', eventId);
       // ✅ 2. Buscar quem REALMENTE fez check-in (tabela checkins)
       final checkinsResponse = await _supabase
@@ -1594,6 +2010,11 @@ class _AgendaPageState extends State<AgendaPage> {
       List<Map<String, dynamic>> quemNaoFezCheckin = [];
       // ✅ 4. Separar quem fez e quem não fez check-in
       for (var convocation in convocationsResponse) {
+        final role = (convocation['event_role'] ?? 'athlete')
+            .toString()
+            .trim()
+            .toLowerCase();
+        if (role == 'coach') continue;
         final userId = convocation['user_id']?.toString();
         final status = convocation['status'] ?? 'pending';
         // Só considera quem ACEITOU a convocação
@@ -1704,9 +2125,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                 decoration: BoxDecoration(
                                   color: Colors.green[50],
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: Colors.green[300]!,
-                                  ),
+                                  border: Border.all(color: Colors.green[300]!),
                                 ),
                                 child: Row(
                                   children: [
@@ -1989,22 +2408,15 @@ class _AgendaPageState extends State<AgendaPage> {
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(
-                    color: olympusBlue.withOpacity(0.12),
-                  ),
+                  borderSide: BorderSide(color: olympusBlue.withOpacity(0.12)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(
-                    color: olympusGold,
-                    width: 2,
-                  ),
+                  borderSide: const BorderSide(color: olympusGold, width: 2),
                 ),
                 disabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(
-                    color: Colors.grey.withOpacity(0.20),
-                  ),
+                  borderSide: BorderSide(color: Colors.grey.withOpacity(0.20)),
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -2023,9 +2435,7 @@ class _AgendaPageState extends State<AgendaPage> {
                 decoration: BoxDecoration(
                   color: Colors.grey[50],
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: olympusBlue.withOpacity(0.12),
-                  ),
+                  border: Border.all(color: olympusBlue.withOpacity(0.12)),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.035),
@@ -2075,9 +2485,7 @@ class _AgendaPageState extends State<AgendaPage> {
                   constraints: BoxConstraints(
                     maxHeight: MediaQuery.of(context).size.height * 0.86,
                   ),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                  ),
+                  decoration: const BoxDecoration(color: Colors.white),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -2086,10 +2494,7 @@ class _AgendaPageState extends State<AgendaPage> {
                         padding: const EdgeInsets.fromLTRB(20, 20, 12, 18),
                         decoration: const BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [
-                              olympusBlue,
-                              olympusLightBlue,
-                            ],
+                            colors: [olympusBlue, olympusLightBlue],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
@@ -2186,8 +2591,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                           Icon(
                                             statusIcon(participanteStatus),
                                             size: 18,
-                                            color:
-                                                statusColor(participanteStatus),
+                                            color: statusColor(
+                                              participanteStatus,
+                                            ),
                                           ),
                                           const SizedBox(width: 8),
                                           Expanded(
@@ -2249,8 +2655,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                     Container(
                                       padding: const EdgeInsets.all(8),
                                       decoration: BoxDecoration(
-                                        color: currentStatusColor
-                                            .withOpacity(0.12),
+                                        color: currentStatusColor.withOpacity(
+                                          0.12,
+                                        ),
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Icon(
@@ -2440,9 +2847,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                 ),
                                 child: const Text(
                                   'Cancelar',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                                  style: TextStyle(fontWeight: FontWeight.w700),
                                 ),
                               ),
                             ),
@@ -2503,8 +2908,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                           if (mounted) {
                                             Navigator.pop(dialogContext);
                                             await _buscarEventos();
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
                                               SnackBar(
                                                 content: Text(
                                                   '✅ Status alterado para ${statusLabel(selectedStatus)}!',
@@ -2518,8 +2924,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                             saving = false;
                                           });
                                           if (mounted) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
                                               SnackBar(
                                                 content: Text(
                                                   '❌ Erro ao alterar status de aceite: $e',
@@ -2592,8 +2999,9 @@ class _AgendaPageState extends State<AgendaPage> {
     if (!_isAdmin) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content:
-              Text('Apenas administradores podem fazer check-in atrasado.'),
+          content: Text(
+            'Apenas administradores podem fazer check-in atrasado.',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -2606,7 +3014,7 @@ class _AgendaPageState extends State<AgendaPage> {
     try {
       final convocationsResponse = await _supabase
           .from('convocations')
-          .select('user_id, status')
+          .select('user_id, status, event_role')
           .eq('event_id', eventId)
           .eq('status', 'accepted');
 
@@ -2623,6 +3031,11 @@ class _AgendaPageState extends State<AgendaPage> {
       final participantesSemCheckin = <Map<String, dynamic>>[];
 
       for (final convocation in convocationsResponse) {
+        final role = (convocation['event_role'] ?? 'athlete')
+            .toString()
+            .trim()
+            .toLowerCase();
+        if (role == 'coach') continue;
         final userId = convocation['user_id']?.toString();
         if (userId == null || userId.isEmpty) continue;
         if (userIdsComCheckin.contains(userId)) continue;
@@ -2648,7 +3061,8 @@ class _AgendaPageState extends State<AgendaPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Todos os participantes que aceitaram já fizeram check-in.'),
+              'Todos os participantes que aceitaram já fizeram check-in.',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
@@ -2682,10 +3096,7 @@ class _AgendaPageState extends State<AgendaPage> {
             dayOverlayColor: MaterialStateProperty.all(
               olympusGold.withOpacity(0.10),
             ),
-            todayBorder: BorderSide(
-              color: olympusGold,
-              width: 1.5,
-            ),
+            todayBorder: BorderSide(color: olympusGold, width: 1.5),
             todayForegroundColor: MaterialStateProperty.all(olympusBlue),
             dayForegroundColor: MaterialStateProperty.resolveWith((states) {
               if (states.contains(MaterialState.selected)) return Colors.white;
@@ -2918,8 +3329,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                       Icons.keyboard_arrow_down_rounded,
                                       color: olympusGold,
                                     ),
-                                    items: participantesSemCheckin
-                                        .map((participante) {
+                                    items: participantesSemCheckin.map((
+                                      participante,
+                                    ) {
                                       final tipo =
                                           participante['tipo'] == 'athlete'
                                               ? 'Atleta'
@@ -2968,8 +3380,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                           child: Text(
                                             '$tipoSelecionado aceitou a convocação e está disponível para check-in manual.',
                                             style: TextStyle(
-                                              color:
-                                                  olympusBlue.withOpacity(0.82),
+                                              color: olympusBlue.withOpacity(
+                                                0.82,
+                                              ),
                                               fontSize: 12,
                                               fontWeight: FontWeight.w600,
                                             ),
@@ -2998,11 +3411,15 @@ class _AgendaPageState extends State<AgendaPage> {
                                               lastDate: DateTime.now().add(
                                                 const Duration(days: 365),
                                               ),
-                                              locale: const Locale('pt', 'BR'),
+                                              locale: const Locale(
+                                                'pt',
+                                                'BR',
+                                              ),
                                               builder: (context, child) {
                                                 return Theme(
                                                   data: olympusPickerTheme(
-                                                      context),
+                                                    context,
+                                                  ),
                                                   child: child!,
                                                 );
                                               },
@@ -3052,8 +3469,10 @@ class _AgendaPageState extends State<AgendaPage> {
                                           ),
                                           const SizedBox(height: 8),
                                           Text(
-                                            DateFormat('dd/MM/yyyy', 'pt_BR')
-                                                .format(selectedDate),
+                                            DateFormat(
+                                              'dd/MM/yyyy',
+                                              'pt_BR',
+                                            ).format(selectedDate),
                                             style: const TextStyle(
                                               color: olympusBlue,
                                               fontWeight: FontWeight.w800,
@@ -3079,7 +3498,8 @@ class _AgendaPageState extends State<AgendaPage> {
                                               builder: (context, child) {
                                                 return Theme(
                                                   data: olympusPickerTheme(
-                                                      context),
+                                                    context,
+                                                  ),
                                                   child: child!,
                                                 );
                                               },
@@ -3199,8 +3619,9 @@ class _AgendaPageState extends State<AgendaPage> {
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.grey[700],
                                 side: BorderSide(color: Colors.grey[300]!),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 14),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(14),
                                 ),
@@ -3223,28 +3644,29 @@ class _AgendaPageState extends State<AgendaPage> {
                                       });
 
                                       try {
-                                        await _supabase.from('checkins').upsert(
-                                          {
-                                            'event_id': eventId,
-                                            'user_id': selectedUserId,
-                                            // IMPORTANTE: a tela de Estatísticas só considera presença
-                                            // quando check_in_status tem um valor reconhecido como realizado.
-                                            'check_in_status': 'realizado',
-                                            // Horário histórico escolhido pelo admin.
-                                            'created_at': selectedDateTime
-                                                .toIso8601String(),
-                                          },
-                                          onConflict: 'event_id,user_id',
-                                        );
+                                        await _supabase
+                                            .from('checkins')
+                                            .upsert({
+                                          'event_id': eventId,
+                                          'user_id': selectedUserId,
+                                          // IMPORTANTE: a tela de Estatísticas só considera presença
+                                          // quando check_in_status tem um valor reconhecido como realizado.
+                                          'check_in_status': 'realizado',
+                                          // Horário histórico escolhido pelo admin.
+                                          'created_at': selectedDateTime
+                                              .toIso8601String(),
+                                        }, onConflict: 'event_id,user_id');
 
                                         if (mounted) {
                                           Navigator.pop(dialogContext);
                                           await _buscarCheckinInfo();
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
                                             const SnackBar(
                                               content: Text(
-                                                  '✅ Check-in atrasado registrado com sucesso!'),
+                                                '✅ Check-in atrasado registrado com sucesso!',
+                                              ),
                                               backgroundColor: Colors.green,
                                             ),
                                           );
@@ -3254,11 +3676,13 @@ class _AgendaPageState extends State<AgendaPage> {
                                           saving = false;
                                         });
                                         if (mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
                                             SnackBar(
                                               content: Text(
-                                                  '❌ Erro ao registrar check-in: $e'),
+                                                '❌ Erro ao registrar check-in: $e',
+                                              ),
                                               backgroundColor: Colors.red,
                                             ),
                                           );
@@ -3270,8 +3694,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                 foregroundColor: olympusBlue,
                                 disabledBackgroundColor: Colors.grey[300],
                                 disabledForegroundColor: Colors.grey[600],
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 14),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
                                 elevation: 4,
                                 shadowColor: olympusGold.withOpacity(0.35),
                                 shape: RoundedRectangleBorder(
@@ -3330,9 +3755,13 @@ class _AgendaPageState extends State<AgendaPage> {
       setsNeededToWin = 3;
     }
     final olympusControllers = List<TextEditingController>.generate(
-        totalSets, (i) => TextEditingController());
+      totalSets,
+      (i) => TextEditingController(),
+    );
     final opponentControllers = List<TextEditingController>.generate(
-        totalSets, (i) => TextEditingController());
+      totalSets,
+      (i) => TextEditingController(),
+    );
     final existingScore = evento['score'] as Map<String, dynamic>?;
     if (existingScore != null) {
       final olympusSets = existingScore['olympus'] as List<dynamic>? ?? [];
@@ -3473,8 +3902,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: olympusBlue.withOpacity(0.1),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                         child: Text(
                                           'Olympus',
@@ -3507,8 +3937,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: Colors.grey[200],
-                                          borderRadius:
-                                              BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                         child: Text(
                                           'Adversário',
@@ -3548,32 +3979,38 @@ class _AgendaPageState extends State<AgendaPage> {
                                         ),
                                         decoration: InputDecoration(
                                           border: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                             borderSide: BorderSide(
-                                              color:
-                                                  olympusBlue.withOpacity(0.3),
+                                              color: olympusBlue.withOpacity(
+                                                0.3,
+                                              ),
                                             ),
                                           ),
                                           enabledBorder: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                             borderSide: BorderSide(
-                                              color:
-                                                  olympusBlue.withOpacity(0.3),
+                                              color: olympusBlue.withOpacity(
+                                                0.3,
+                                              ),
                                             ),
                                           ),
                                           focusedBorder: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                             borderSide: const BorderSide(
                                               color: olympusGold,
                                               width: 2,
                                             ),
                                           ),
                                           filled: true,
-                                          fillColor:
-                                              olympusBlue.withOpacity(0.05),
+                                          fillColor: olympusBlue.withOpacity(
+                                            0.05,
+                                          ),
                                           contentPadding:
                                               const EdgeInsets.symmetric(
                                             vertical: 12,
@@ -3606,22 +4043,25 @@ class _AgendaPageState extends State<AgendaPage> {
                                         ),
                                         decoration: InputDecoration(
                                           border: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                             borderSide: BorderSide(
                                               color: Colors.grey[300]!,
                                             ),
                                           ),
                                           enabledBorder: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                             borderSide: BorderSide(
                                               color: Colors.grey[300]!,
                                             ),
                                           ),
                                           focusedBorder: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                             borderSide: const BorderSide(
                                               color: olympusGold,
                                               width: 2,
@@ -3694,14 +4134,18 @@ class _AgendaPageState extends State<AgendaPage> {
                         child: ElevatedButton(
                           onPressed: () async {
                             final olympusSets = olympusControllers
-                                .map((c) => c.text.isNotEmpty
-                                    ? int.tryParse(c.text) ?? 0
-                                    : null)
+                                .map(
+                                  (c) => c.text.isNotEmpty
+                                      ? int.tryParse(c.text) ?? 0
+                                      : null,
+                                )
                                 .toList();
                             final opponentSets = opponentControllers
-                                .map((c) => c.text.isNotEmpty
-                                    ? int.tryParse(c.text) ?? 0
-                                    : null)
+                                .map(
+                                  (c) => c.text.isNotEmpty
+                                      ? int.tryParse(c.text) ?? 0
+                                      : null,
+                                )
                                 .toList();
                             int setsFilled = 0;
                             for (int i = 0; i < totalSets; i++) {
@@ -3745,8 +4189,10 @@ class _AgendaPageState extends State<AgendaPage> {
                               if (!allSetsFilled) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Preencha todos os sets! '
-                                        'Melhor de $totalSets: vence quem ganhar $setsNeededToWin sets primeiro.'),
+                                    content: Text(
+                                      'Preencha todos os sets! '
+                                      'Melhor de $totalSets: vence quem ganhar $setsNeededToWin sets primeiro.',
+                                    ),
                                     backgroundColor: Colors.red,
                                   ),
                                 );
@@ -3800,7 +4246,8 @@ class _AgendaPageState extends State<AgendaPage> {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(
-                                        'Placar inserido! Vitória: $winner ($olympusWins x $opponentWins)'),
+                                      'Placar inserido! Vitória: $winner ($olympusWins x $opponentWins)',
+                                    ),
                                     backgroundColor: winner == 'Olympus'
                                         ? Colors.green
                                         : Colors.orange,
@@ -3867,8 +4314,10 @@ class _AgendaPageState extends State<AgendaPage> {
       if (parts.length == 2) {
         final mes = int.parse(parts[0]);
         final ano = parts[1];
-        final mesNome =
-            DateFormat('MMMM', 'pt_BR').format(DateTime(int.parse(ano), mes));
+        final mesNome = DateFormat(
+          'MMMM',
+          'pt_BR',
+        ).format(DateTime(int.parse(ano), mes));
         return '${mesNome[0].toUpperCase()}${mesNome.substring(1)} $ano';
       }
       return mesAno;
@@ -3891,9 +4340,7 @@ class _AgendaPageState extends State<AgendaPage> {
   Widget build(BuildContext context) {
     // ✅ NOVO: Verifica permissão antes de mostrar a tela
     if (_checkingPermission) {
-      return Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (!_hasPermission) {
@@ -3907,11 +4354,7 @@ class _AgendaPageState extends State<AgendaPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.lock_outline,
-                size: 80,
-                color: Colors.grey[400],
-              ),
+              Icon(Icons.lock_outline, size: 80, color: Colors.grey[400]),
               const SizedBox(height: 24),
               Text(
                 'Acesso Restrito',
@@ -3924,10 +4367,7 @@ class _AgendaPageState extends State<AgendaPage> {
               const SizedBox(height: 12),
               Text(
                 'Você não tem permissão para acessar a agenda.',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
@@ -3955,10 +4395,7 @@ class _AgendaPageState extends State<AgendaPage> {
       appBar: AppBar(
         title: const Text(
           'Minha Agenda',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         backgroundColor: olympusBlue,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -3978,10 +4415,7 @@ class _AgendaPageState extends State<AgendaPage> {
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  olympusBlue,
-                  olympusLightBlue,
-                ],
+                colors: [olympusBlue, olympusLightBlue],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
               ),
@@ -3995,10 +4429,7 @@ class _AgendaPageState extends State<AgendaPage> {
                 // Filtro de Mês e Gênero
                 Row(
                   children: [
-                    SizedBox(
-                      width: 104,
-                      child: _buildEventosPassadosButton(),
-                    ),
+                    SizedBox(width: 104, child: _buildEventosPassadosButton()),
                     const SizedBox(width: 12),
                     Expanded(
                       child: _buildModernDropdown(
@@ -4039,11 +4470,17 @@ class _AgendaPageState extends State<AgendaPage> {
                         hint: 'Gênero',
                         items: const [
                           DropdownMenuItem(
-                              value: 'Todos', child: Text('Todos')),
+                            value: 'Todos',
+                            child: Text('Todos'),
+                          ),
                           DropdownMenuItem(
-                              value: 'masculino', child: Text('Masculino')),
+                            value: 'masculino',
+                            child: Text('Masculino'),
+                          ),
                           DropdownMenuItem(
-                              value: 'feminino', child: Text('Feminino')),
+                            value: 'feminino',
+                            child: Text('Feminino'),
+                          ),
                         ],
                         onChanged: (valor) {
                           setState(() {
@@ -4091,11 +4528,16 @@ class _AgendaPageState extends State<AgendaPage> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.error_outline,
-                                size: 48, color: Colors.red[300]),
+                            Icon(
+                              Icons.error_outline,
+                              size: 48,
+                              color: Colors.red[300],
+                            ),
                             const SizedBox(height: 16),
-                            Text(_error!,
-                                style: const TextStyle(color: Colors.red)),
+                            Text(
+                              _error!,
+                              style: const TextStyle(color: Colors.red),
+                            ),
                             const SizedBox(height: 16),
                             ElevatedButton(
                               onPressed: _buscarEventos,
@@ -4109,8 +4551,11 @@ class _AgendaPageState extends State<AgendaPage> {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.event_busy,
-                                    size: 64, color: Colors.grey[400]),
+                                Icon(
+                                  Icons.event_busy,
+                                  size: 64,
+                                  color: Colors.grey[400],
+                                ),
                                 const SizedBox(height: 16),
                                 Text(
                                   _mostrarEventosPassados
@@ -4141,9 +4586,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                 if (index == _eventosVisiveisCount) {
                                   return Padding(
                                     padding: const EdgeInsets.only(
-                                      top: 4,
-                                      bottom: 20,
-                                    ),
+                                        top: 4, bottom: 20),
                                     child: OutlinedButton.icon(
                                       onPressed: () {
                                         setState(() {
@@ -4179,7 +4622,8 @@ class _AgendaPageState extends State<AgendaPage> {
                                 final allowCheckin =
                                     evento['allow_checkin'] ?? false;
                                 final corTipo = _getCorTipoEvento(
-                                    evento['event_type'] ?? '');
+                                  evento['event_type'] ?? '',
+                                );
                                 final eventType = evento['event_type'] ?? '';
                                 final normalizedEventType =
                                     eventType.toString().toLowerCase().trim();
@@ -4260,7 +4704,9 @@ class _AgendaPageState extends State<AgendaPage> {
                                                       ? Colors.blue[100]
                                                       : Colors.purple[100],
                                                   borderRadius:
-                                                      BorderRadius.circular(12),
+                                                      BorderRadius.circular(
+                                                    12,
+                                                  ),
                                                 ),
                                                 child: Text(
                                                   genero[0].toUpperCase() +
@@ -4285,7 +4731,8 @@ class _AgendaPageState extends State<AgendaPage> {
                                                 _canUseAgendaAction(
                                                     'view_called_up') ||
                                                 _canUseAgendaAction(
-                                                    'export_game_data') ||
+                                                  'export_game_data',
+                                                ) ||
                                                 _canUseAgendaAction(
                                                     'delete_event') ||
                                                 _isAdmin)
@@ -4297,23 +4744,27 @@ class _AgendaPageState extends State<AgendaPage> {
                                                 onSelected: (value) {
                                                   if (value == 'editar' &&
                                                       _canUseAgendaAction(
-                                                          'edit_event')) {
+                                                        'edit_event',
+                                                      )) {
                                                     _editarEvento(evento);
                                                   } else if (value ==
                                                           'placar' &&
                                                       _canUseAgendaAction(
-                                                          'insert_score')) {
+                                                        'insert_score',
+                                                      )) {
                                                     _inserirPlacar(evento);
                                                   } else if (value ==
                                                           'checkin' &&
                                                       _canUseAgendaAction(
-                                                          'view_called_up')) {
+                                                        'view_called_up',
+                                                      )) {
                                                     _mostrarCheckinDetalhes(
                                                         evento);
                                                   } else if (value ==
                                                           'status_checkin' &&
                                                       _canUseAgendaAction(
-                                                          'view_called_up')) {
+                                                        'view_called_up',
+                                                      )) {
                                                     _mostrarStatusCheckin(
                                                         evento);
                                                   } else if (value ==
@@ -4329,12 +4780,14 @@ class _AgendaPageState extends State<AgendaPage> {
                                                   } else if (value ==
                                                           'exportar' &&
                                                       _canUseAgendaAction(
-                                                          'export_game_data')) {
-                                                    _exportarConvocados(evento);
+                                                        'export_game_data',
+                                                      )) {
+                                                    _exportarCaronasPdf(evento);
                                                   } else if (value ==
                                                           'excluir' &&
                                                       _canUseAgendaAction(
-                                                          'delete_event')) {
+                                                        'delete_event',
+                                                      )) {
                                                     _excluirEvento(evento);
                                                   }
                                                 },
@@ -4342,165 +4795,199 @@ class _AgendaPageState extends State<AgendaPage> {
                                                   final items =
                                                       <PopupMenuItem<String>>[];
                                                   if (_canUseAgendaAction(
-                                                      'edit_event')) {
+                                                    'edit_event',
+                                                  )) {
                                                     items.add(
-                                                        const PopupMenuItem(
-                                                      value: 'editar',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons.edit,
-                                                            size: 18,
-                                                            color: Colors.blue,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text('Editar evento'),
-                                                        ],
+                                                      const PopupMenuItem(
+                                                        value: 'editar',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons.edit,
+                                                              size: 18,
+                                                              color:
+                                                                  Colors.blue,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Text(
+                                                                'Editar evento'),
+                                                          ],
+                                                        ),
                                                       ),
-                                                    ));
+                                                    );
                                                   }
                                                   if ((eventType ==
                                                               'amistoso' ||
                                                           eventType ==
                                                               'campeonato') &&
                                                       _canUseAgendaAction(
-                                                          'insert_score')) {
-                                                    items.add(PopupMenuItem(
-                                                      value: 'placar',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons.score,
-                                                            size: 18,
-                                                            color: olympusGold,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text(hasPlacar
-                                                              ? 'Editar placar'
-                                                              : 'Inserir placar'),
-                                                        ],
+                                                        'insert_score',
+                                                      )) {
+                                                    items.add(
+                                                      PopupMenuItem(
+                                                        value: 'placar',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons.score,
+                                                              size: 18,
+                                                              color:
+                                                                  olympusGold,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Text(
+                                                              hasPlacar
+                                                                  ? 'Editar placar'
+                                                                  : 'Inserir placar',
+                                                            ),
+                                                          ],
+                                                        ),
                                                       ),
-                                                    ));
+                                                    );
                                                   }
                                                   if (showVerConvocados &&
                                                       _canUseAgendaAction(
-                                                          'view_called_up')) {
-                                                    items.add(PopupMenuItem(
-                                                      value: 'checkin',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons
-                                                                .people_outline,
-                                                            size: 18,
-                                                            color: Colors.green,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text(
-                                                              'Ver convocados'),
-                                                        ],
+                                                        'view_called_up',
+                                                      )) {
+                                                    items.add(
+                                                      PopupMenuItem(
+                                                        value: 'checkin',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .people_outline,
+                                                              size: 18,
+                                                              color:
+                                                                  Colors.green,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Text(
+                                                                'Ver convocados'),
+                                                          ],
+                                                        ),
                                                       ),
-                                                    ));
+                                                    );
                                                   }
                                                   if (allowCheckin &&
                                                       _canUseAgendaAction(
-                                                          'view_called_up')) {
-                                                    items.add(PopupMenuItem(
-                                                      value: 'status_checkin',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons
-                                                                .check_circle_outline,
-                                                            size: 18,
-                                                            color: olympusGold,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text(
-                                                              'Ver status check-in'),
-                                                        ],
+                                                        'view_called_up',
+                                                      )) {
+                                                    items.add(
+                                                      PopupMenuItem(
+                                                        value: 'status_checkin',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .check_circle_outline,
+                                                              size: 18,
+                                                              color:
+                                                                  olympusGold,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Text(
+                                                                'Ver status check-in'),
+                                                          ],
+                                                        ),
                                                       ),
-                                                    ));
+                                                    );
                                                   }
                                                   // ✅ ADMIN: sempre mostra Check-in atrasado no menu,
                                                   // mesmo se allow_checkin estiver false ou o prazo já passou.
                                                   if (_isAdmin) {
-                                                    items.add(PopupMenuItem(
-                                                      value: 'late_checkin',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons
-                                                                .more_time_outlined,
-                                                            size: 18,
-                                                            color: olympusBlue,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text(
-                                                              'Check-in atrasado'),
-                                                        ],
+                                                    items.add(
+                                                      PopupMenuItem(
+                                                        value: 'late_checkin',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .more_time_outlined,
+                                                              size: 18,
+                                                              color:
+                                                                  olympusBlue,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Text(
+                                                                'Check-in atrasado'),
+                                                          ],
+                                                        ),
                                                       ),
-                                                    ));
+                                                    );
                                                   }
                                                   if (_isAdmin) {
-                                                    items.add(PopupMenuItem(
-                                                      value:
-                                                          'change_acceptance_status',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons
-                                                                .manage_accounts_outlined,
-                                                            size: 18,
-                                                            color: olympusBlue,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text(
-                                                              'Alterar aceite'),
-                                                        ],
+                                                    items.add(
+                                                      PopupMenuItem(
+                                                        value:
+                                                            'change_acceptance_status',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .manage_accounts_outlined,
+                                                              size: 18,
+                                                              color:
+                                                                  olympusBlue,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Text(
+                                                                'Alterar aceite'),
+                                                          ],
+                                                        ),
                                                       ),
-                                                    ));
+                                                    );
                                                   }
                                                   if (_canUseAgendaAction(
-                                                      'export_game_data')) {
-                                                    items.add(PopupMenuItem(
-                                                      value: 'exportar',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons.file_download,
-                                                            size: 18,
-                                                            color: Colors.green,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text(
-                                                              '📋 Exportar dados do jogo'),
-                                                        ],
+                                                    'export_game_data',
+                                                  )) {
+                                                    items.add(
+                                                      PopupMenuItem(
+                                                        value: 'exportar',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .file_download,
+                                                              size: 18,
+                                                              color:
+                                                                  Colors.green,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Text(
+                                                              'Exportar caronas em PDF',
+                                                            ),
+                                                          ],
+                                                        ),
                                                       ),
-                                                    ));
+                                                    );
                                                   }
                                                   if (_canUseAgendaAction(
-                                                      'delete_event')) {
-                                                    items.add(PopupMenuItem(
-                                                      value: 'excluir',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons
-                                                                .delete_outline,
-                                                            size: 18,
-                                                            color: Colors.red,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Text(
-                                                            'Excluir evento',
-                                                            style: TextStyle(
+                                                    'delete_event',
+                                                  )) {
+                                                    items.add(
+                                                      PopupMenuItem(
+                                                        value: 'excluir',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .delete_outline,
+                                                              size: 18,
+                                                              color: Colors.red,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Text(
+                                                              'Excluir evento',
+                                                              style: TextStyle(
                                                                 color:
-                                                                    Colors.red),
-                                                          ),
-                                                        ],
+                                                                    Colors.red,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
                                                       ),
-                                                    ));
+                                                    );
                                                   }
                                                   return items;
                                                 },
@@ -4569,8 +5056,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                             const SizedBox(width: 8),
                                             Text(
                                               _formatarHora(
-                                                evento['event_time'],
-                                              ),
+                                                  evento['event_time']),
                                               style: TextStyle(
                                                   color: Colors.grey[700]),
                                             ),
@@ -4598,7 +5084,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                             ),
                                             const SizedBox(width: 8),
                                             Text(
-                                              '$totalConvocados convocad${totalConvocados == 1 ? 'o' : 'os'} (${quantidades['athletes']} atletas, ${quantidades['technicians']} técn${quantidades['technicians'] == 1 ? 'ico' : 'icos'})',
+                                              '$totalConvocados atleta${totalConvocados == 1 ? '' : 's'} convocado${totalConvocados == 1 ? '' : 's'}',
                                               style: const TextStyle(
                                                 color: olympusBlue,
                                                 fontWeight: FontWeight.w600,
@@ -4607,6 +5093,28 @@ class _AgendaPageState extends State<AgendaPage> {
                                             ),
                                           ],
                                         ),
+                                        if ((quantidades['technicians'] ?? 0) >
+                                            0) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.sports_rounded,
+                                                size: 16,
+                                                color: olympusGold,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                '${quantidades['technicians']} treinador${quantidades['technicians'] == 1 ? '' : 'es'} vinculado${quantidades['technicians'] == 1 ? '' : 's'} • sem check-in',
+                                                style: const TextStyle(
+                                                  color: olympusGold,
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                         // ✅ NOVO: Status das convocações (aceitos, pendentes, recusados)
                                         if (stats != null) ...[
                                           const SizedBox(height: 4),
@@ -4691,7 +5199,8 @@ class _AgendaPageState extends State<AgendaPage> {
                                                   _mostrarPlanejamentoTreino(
                                                       evento),
                                               icon: const Icon(
-                                                  Icons.menu_book_outlined),
+                                                Icons.menu_book_outlined,
+                                              ),
                                               label: const Text(
                                                   'Ver planejamento'),
                                               style: OutlinedButton.styleFrom(
@@ -4810,8 +5319,10 @@ class _AgendaPageState extends State<AgendaPage> {
                 final olympusWonSet = olympusScore > opponentScore;
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: olympusWonSet
                         ? olympusBlue.withOpacity(0.1)
@@ -4934,8 +5445,11 @@ class _AgendaPageState extends State<AgendaPage> {
           children: [
             if (selecionado) Icon(Icons.check, size: 14, color: corBase),
             if (selecionado) const SizedBox(width: 2),
-            Icon(icone,
-                size: 14, color: selecionado ? corBase : Colors.grey[600]),
+            Icon(
+              icone,
+              size: 14,
+              color: selecionado ? corBase : Colors.grey[600],
+            ),
             const SizedBox(width: 4),
             Flexible(
               child: Text(
@@ -5013,11 +5527,7 @@ class _AgendaPageState extends State<AgendaPage> {
                     ),
                     if (evento['gender'] != null &&
                         evento['gender'].toString().isNotEmpty)
-                      _buildDetailRow(
-                        Icons.people,
-                        'Gênero',
-                        evento['gender'],
-                      ),
+                      _buildDetailRow(Icons.people, 'Gênero', evento['gender']),
                     if (evento['set_format'] != null &&
                         evento['set_format'].toString().isNotEmpty)
                       _buildDetailRow(
@@ -5031,12 +5541,14 @@ class _AgendaPageState extends State<AgendaPage> {
                     ],
                     if (evento['street'] != null) ...[
                       const Divider(),
-                      const Text('Localização',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: olympusBlue,
-                          )),
+                      const Text(
+                        'Localização',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: olympusBlue,
+                        ),
+                      ),
                       const SizedBox(height: 8),
                       EventAddressLink(
                         event: evento,
@@ -5050,9 +5562,15 @@ class _AgendaPageState extends State<AgendaPage> {
                         maxLines: 3,
                       ),
                       _buildDetailRow(
-                          Icons.map, 'Bairro', evento['neighborhood'] ?? ''),
-                      _buildDetailRow(Icons.home, 'Cidade',
-                          '${evento['city']}, ${evento['state']}'),
+                        Icons.map,
+                        'Bairro',
+                        evento['neighborhood'] ?? '',
+                      ),
+                      _buildDetailRow(
+                        Icons.home,
+                        'Cidade',
+                        '${evento['city']}, ${evento['state']}',
+                      ),
                       _buildDetailRow(Icons.pin, 'CEP', evento['cep'] ?? ''),
                     ],
                     const SizedBox(height: 24),
@@ -5094,10 +5612,7 @@ class _AgendaPageState extends State<AgendaPage> {
               children: [
                 Text(
                   label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[500],
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                 ),
                 Text(
                   value,
@@ -5155,10 +5670,7 @@ class _AgendaPageState extends State<AgendaPage> {
             if (!_mostrarEventosPassados) ...[
               const SizedBox(width: 5),
               Container(
-                constraints: const BoxConstraints(
-                  minWidth: 20,
-                  minHeight: 20,
-                ),
+                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                 padding: const EdgeInsets.symmetric(horizontal: 5),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
@@ -5209,11 +5721,7 @@ class _AgendaPageState extends State<AgendaPage> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Row(
               children: [
-                Icon(
-                  icon,
-                  size: 16,
-                  color: olympusGold,
-                ),
+                Icon(icon, size: 16, color: olympusGold),
                 const SizedBox(width: 6),
                 Text(
                   hint,
@@ -5232,10 +5740,7 @@ class _AgendaPageState extends State<AgendaPage> {
             child: DropdownButtonHideUnderline(
               child: DropdownButton<dynamic>(
                 value: value,
-                hint: Text(
-                  hint,
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
+                hint: Text(hint, style: TextStyle(color: Colors.grey[600])),
                 isExpanded: true,
                 items: items,
                 onChanged: onChanged,
@@ -5286,11 +5791,7 @@ class _AgendaPageState extends State<AgendaPage> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(
               children: [
-                Icon(
-                  icon,
-                  size: 16,
-                  color: olympusGold,
-                ),
+                Icon(icon, size: 16, color: olympusGold),
                 const SizedBox(width: 6),
                 Text(
                   label,

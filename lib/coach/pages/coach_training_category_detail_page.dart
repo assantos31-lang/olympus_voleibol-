@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 
 class CoachTrainingCategoryDetailPage extends StatelessWidget {
   const CoachTrainingCategoryDetailPage({
@@ -135,8 +136,7 @@ class CoachTrainingCategoryDetailPage extends StatelessWidget {
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => Container(color: olympusBlue),
           ),

@@ -17,14 +17,9 @@ class AuthService {
         return {'success': false, 'error': 'Usuário não encontrado'};
       }
 
-      await PushTokenService.instance.syncAfterLogin();
-
-      final profile = await getUserProfile(response.user!.id);
-
       return {
         'success': true,
         'user': response.user,
-        'profile': profile,
       };
     } on AuthException catch (e) {
       return {'success': false, 'error': e.message};
@@ -61,7 +56,9 @@ class AuthService {
     }
   }
 
-  Future<Map<String, dynamic>> deleteMyAccount() async {
+  Future<Map<String, dynamic>> deleteMyAccount({
+    required String confirmationEmail,
+  }) async {
     try {
       final user = supabase.auth.currentUser;
       if (user == null) {
@@ -83,9 +80,13 @@ class AuthService {
       }
 
       final response = await supabase.functions.invoke(
-        'delete-account',
+        'delete-user-account',
         headers: {
           'Authorization': 'Bearer ${session.accessToken}',
+        },
+        body: {
+          'user_id': user.id,
+          'confirmation_email': confirmationEmail.trim(),
         },
       );
 
@@ -96,7 +97,11 @@ class AuthService {
         };
       }
 
-      await supabase.auth.signOut();
+      try {
+        await supabase.auth.signOut(scope: SignOutScope.local);
+      } catch (_) {
+        // A conta já foi removida no servidor; a sessão local expira em seguida.
+      }
 
       return {'success': true};
     } on AuthException catch (e) {

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/chat_service.dart';
@@ -160,11 +161,10 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                           itemBuilder: (context, index) {
                             final user = users[index];
                             final userId = (user['id'] ?? '').toString();
-                            final fullName =
-                                (user['display_name'] ??
-                                        user['full_name'] ??
-                                        'Sem nome')
-                                    .toString();
+                            final fullName = (user['display_name'] ??
+                                    user['full_name'] ??
+                                    'Sem nome')
+                                .toString();
                             final photoUrl = _resolveAvatarUrl(
                               (user['avatar_url'] ?? '').toString(),
                             );
@@ -245,10 +245,10 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                                       TextOverflow.ellipsis,
                                                   style: TextStyle(
                                                     fontSize: 13,
-                                                    color: Colors.black
-                                                        .withValues(
-                                                          alpha: 0.55,
-                                                        ),
+                                                    color:
+                                                        Colors.black.withValues(
+                                                      alpha: 0.55,
+                                                    ),
                                                     fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
@@ -268,9 +268,8 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed: isSaving
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(),
+                  onPressed:
+                      isSaving ? null : () => Navigator.of(dialogContext).pop(),
                   child: const Text(
                     'Cancelar',
                     style: TextStyle(color: Colors.white70),
@@ -408,9 +407,8 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       GestureDetector(
-                        onTap: isSaving
-                            ? null
-                            : () => pickImage(setDialogState),
+                        onTap:
+                            isSaving ? null : () => pickImage(setDialogState),
                         child: Container(
                           width: 84,
                           height: 84,
@@ -479,11 +477,10 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                             itemBuilder: (context, index) {
                               final user = users[index];
                               final userId = (user['id'] ?? '').toString();
-                              final fullName =
-                                  (user['display_name'] ??
-                                          user['full_name'] ??
-                                          'Sem nome')
-                                      .toString();
+                              final fullName = (user['display_name'] ??
+                                      user['full_name'] ??
+                                      'Sem nome')
+                                  .toString();
                               const phone = '';
                               const userTypeLabel = '';
 
@@ -593,9 +590,8 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed: isSaving
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(),
+                  onPressed:
+                      isSaving ? null : () => Navigator.of(dialogContext).pop(),
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
@@ -710,9 +706,8 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     String? photoUrl,
     double size = 50,
   }) {
-    final initial = fullName.trim().isNotEmpty
-        ? fullName.trim()[0].toUpperCase()
-        : 'U';
+    final initial =
+        fullName.trim().isNotEmpty ? fullName.trim()[0].toUpperCase() : 'U';
 
     return Container(
       width: size,
@@ -1386,9 +1381,8 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
       0,
       (total, item) => total + item.unreadCount,
     );
-    final pinnedTotal = rooms
-        .where((item) => _pinnedRoomIds.contains(item.room.id))
-        .length;
+    final pinnedTotal =
+        rooms.where((item) => _pinnedRoomIds.contains(item.room.id)).length;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(4, 4, 4, 12),
@@ -1643,8 +1637,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
             Positioned.fill(
               child: Opacity(
                 opacity: 0.24,
-                child: Image.asset(
-                  'assets/images/monte_olimpo_v2.png',
+                child: const OlympusBrandBackgroundImage(
                   fit: BoxFit.cover,
                 ),
               ),

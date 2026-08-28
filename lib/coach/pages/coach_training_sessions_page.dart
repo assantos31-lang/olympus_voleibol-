@@ -3,15 +3,18 @@ import 'dart:convert';
 import 'dart:math' show asin, cos, sin, sqrt;
 
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/permission_service.dart';
+import '../../services/technical_staff_service.dart';
 import '../../widgets/event_address_link.dart';
 import 'coach_championship_scout_page.dart' as championship_scout;
 import 'coach_quick_athlete_evaluation_page.dart';
 import 'coach_training_plan_detail_page.dart';
+import 'coach_training_planning_dashboard_page.dart';
 import 'training_plan_readonly_sheet.dart';
 
 export 'coach_quick_athlete_evaluation_page.dart';
@@ -20,11 +23,15 @@ export 'coach_training_plan_detail_page.dart';
 class CoachTrainingSessionsPage extends StatefulWidget {
   final String initialTipoEvento;
   final bool lockTipoEvento;
+  final String? pageTitle;
+  final bool agendaMode;
 
   const CoachTrainingSessionsPage({
     super.key,
     this.initialTipoEvento = 'treino',
     this.lockTipoEvento = false,
+    this.pageTitle,
+    this.agendaMode = false,
   });
 
   @override
@@ -54,6 +61,10 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
   String? _error;
   bool _showAllPendingPlans = false;
   bool _mostrarTodosPlanejamentos = false;
+  bool _showPastEvents = false;
+  TechnicalStaffAssignment? _technicalAssignment;
+  Set<String> _visibleCoachIds = const {};
+  Map<String, String> _visibleCoachNames = const {};
   RealtimeChannel? _planningRealtimeChannel;
   List<Map<String, dynamic>> _treinos = [];
   List<Map<String, dynamic>> _treinosFiltrados = [];
@@ -81,8 +92,47 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
       _filtroTipoEvento = 'treino';
     }
     _setMesAtual();
-    _buscarTreinosDoTecnico();
+    _initializeTechnicalScope();
     _setupPlanningRealtime();
+  }
+
+  Future<void> _initializeTechnicalScope() async {
+    try {
+      final service = TechnicalStaffService(client: _supabase);
+      _technicalAssignment = await service.loadCurrentAssignment();
+      if (!widget.agendaMode && _technicalAssignment?.isCoordinator == true) {
+        _mostrarTodosPlanejamentos = true;
+      }
+      final currentUserId = _supabase.auth.currentUser?.id;
+      if (currentUserId != null) {
+        _visibleCoachIds = {currentUserId};
+        if (_technicalAssignment?.isCoordinator == true) {
+          final values = await Future.wait([
+            service.loadAssignments(),
+            service.loadAvailableProfiles(),
+          ]);
+          final assignments = values[0] as List<TechnicalStaffAssignment>;
+          final profiles = values[1] as List<Map<String, dynamic>>;
+          _visibleCoachIds = {
+            currentUserId,
+            ...assignments
+                .where((item) => item.supervisorUserId == currentUserId)
+                .map((item) => item.userId),
+          };
+          _visibleCoachNames = {
+            for (final profile in profiles)
+              if (_visibleCoachIds.contains((profile['id'] ?? '').toString()))
+                (profile['id'] ?? '').toString():
+                    (profile['full_name'] ?? profile['email'] ?? 'Treinador')
+                        .toString()
+                        .trim(),
+          };
+        }
+      }
+    } catch (_) {
+      // Mantém o escopo pessoal para cadastros técnicos antigos.
+    }
+    await _buscarTreinosDoTecnico();
   }
 
   void _setupPlanningRealtime() {
@@ -304,31 +354,30 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
     List<String> eventIds,
   ) async {
     if (eventIds.isEmpty) return {};
-    final counts = <String, Map<String, int>>{};
-    await Future.wait(eventIds.map((eventId) async {
-      final response = await _supabase.rpc(
-        'get_agenda_event_convocados',
-        params: {'p_event_id': eventId},
-      );
-      final participants = (response as List<dynamic>)
-          .map((item) => Map<String, dynamic>.from(item as Map))
-          .where((participant) {
-        final userType =
-            (participant['user_type'] ?? '').toString().trim().toLowerCase();
-        return userType == 'athlete' || userType == 'atleta';
-      });
-
-      final eventCounts = {
+    final counts = <String, Map<String, int>>{
+      for (final eventId in eventIds)
+        eventId: {
         'accepted': 0,
         'rejected': 0,
         'pending': 0,
-      };
-      for (final participant in participants) {
-        final status = _normalizarStatusConvocacao(participant['status']);
-        eventCounts[status] = (eventCounts[status] ?? 0) + 1;
-      }
-      counts[eventId] = eventCounts;
-    }));
+        },
+    };
+    final response = await _supabase
+        .from('convocations')
+        .select('event_id, status, event_role')
+        .inFilter('event_id', eventIds);
+    for (final row in List<Map<String, dynamic>>.from(response as List)) {
+      final role = (row['event_role'] ?? 'athlete')
+          .toString()
+          .trim()
+          .toLowerCase();
+      if (role == 'coach') continue;
+      final eventId = (row['event_id'] ?? '').toString();
+      final eventCounts = counts[eventId];
+      if (eventCounts == null) continue;
+      final status = _normalizarStatusConvocacao(row['status']);
+      eventCounts[status] = (eventCounts[status] ?? 0) + 1;
+    }
     return counts;
   }
 
@@ -358,6 +407,24 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
         .map((row) => (row['event_id'] ?? '').toString())
         .where((id) => id.isNotEmpty)
         .toSet();
+  }
+
+  Future<Map<String, Set<String>>> _buscarAutoresPlanejamento(
+    List<String> eventIds,
+  ) async {
+    if (eventIds.isEmpty) return {};
+    final rows = await _supabase
+        .from('training_plan_blocks')
+        .select('event_id, coach_id')
+        .inFilter('event_id', eventIds);
+    final result = <String, Set<String>>{};
+    for (final row in List<Map<String, dynamic>>.from(rows as List)) {
+      final eventId = (row['event_id'] ?? '').toString();
+      final coachId = (row['coach_id'] ?? '').toString();
+      if (eventId.isEmpty || coachId.isEmpty) continue;
+      result.putIfAbsent(eventId, () => <String>{}).add(coachId);
+    }
+    return result;
   }
 
   Future<void> _sincronizarCheckInStatus(String eventId, String userId) async {
@@ -421,9 +488,14 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
       final plannedEventIds = <String>{};
       if (_mostrarTodosPlanejamentos) {
         try {
-          final plannedRows = await _supabase
+          var plannedQuery = _supabase
               .from('training_plan_blocks')
-              .select('event_id')
+              .select('event_id, coach_id');
+          if (_visibleCoachIds.isNotEmpty) {
+            plannedQuery =
+                plannedQuery.inFilter('coach_id', _visibleCoachIds.toList());
+          }
+          final plannedRows = await plannedQuery
               .timeout(const Duration(seconds: 15));
 
           for (final row in List<Map<String, dynamic>>.from(plannedRows)) {
@@ -436,9 +508,30 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
         }
       }
 
+      final coordinatorEventIds = <String>{};
+      final assignment = _technicalAssignment;
+      if (_mostrarTodosPlanejamentos && assignment?.isCoordinator == true) {
+        try {
+          final visibleConvocations = await _supabase
+              .from('convocations')
+              .select('event_id')
+              .eq('event_role', 'coach')
+              .inFilter('user_id', _visibleCoachIds.toList())
+              .timeout(const Duration(seconds: 15));
+          for (final row
+              in List<Map<String, dynamic>>.from(visibleConvocations)) {
+            final eventId = (row['event_id'] ?? '').toString();
+            if (eventId.isNotEmpty) coordinatorEventIds.add(eventId);
+          }
+        } catch (_) {
+          // A política do Supabase continua sendo a fonte final de acesso.
+        }
+      }
+
       final eventIds = <String>{
         ...ownEventIds,
         if (_mostrarTodosPlanejamentos) ...plannedEventIds,
+        if (_mostrarTodosPlanejamentos) ...coordinatorEventIds,
       }.toList();
 
       final ownConvocationByEventId = <String, Map<String, dynamic>>{};
@@ -454,22 +547,29 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
 
       if (eventIds.isNotEmpty) {
         try {
-          final planCoachRows = await _supabase
-              .from('training_plan_blocks')
-              .select('event_id, coach_id')
+          final assignedCoachRows = await _supabase
+              .from('convocations')
+              .select('event_id, user_id')
+              .eq('event_role', 'coach')
               .inFilter('event_id', eventIds)
               .timeout(const Duration(seconds: 15));
 
-          for (final row in List<Map<String, dynamic>>.from(planCoachRows)) {
+          for (final row
+              in List<Map<String, dynamic>>.from(assignedCoachRows)) {
             final eventId = (row['event_id'] ?? '').toString();
-            final coachId = (row['coach_id'] ?? '').toString();
+            final coachId = (row['user_id'] ?? '').toString();
             if (eventId.isEmpty || coachId.isEmpty) continue;
+            if (_mostrarTodosPlanejamentos &&
+                assignment?.isCoordinator == true &&
+                !_visibleCoachIds.contains(coachId)) {
+              continue;
+            }
             coachIdsByEventId
                 .putIfAbsent(eventId, () => <String>{})
                 .add(coachId);
           }
         } catch (_) {
-          // Se a tabela de planejamentos não puder ser lida agora, mantém
+          // Se as convocações não puderem ser lidas agora, mantém
           // pelo menos o treinador logado nos próprios treinos.
         }
       }
@@ -527,7 +627,9 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
         final ownConvocation = ownConvocationByEventId[eventId];
         final isOwnCoachEvent = ownConvocation != null;
 
-        if (_mostrarTodosPlanejamentos && !isOwnCoachEvent) {
+        if (_mostrarTodosPlanejamentos &&
+            !isOwnCoachEvent &&
+            assignment?.isCoordinator != true) {
           final normalizedType = _normalizarTipoEvento(eventType);
           if (normalizedType != 'treino' ||
               !plannedEventIds.contains(eventId)) {
@@ -537,7 +639,8 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
 
         event['normalized_event_type'] = _normalizarTipoEvento(eventType);
         event['is_own_coach_event'] = isOwnCoachEvent;
-        event['view_only_planning'] = !isOwnCoachEvent;
+        event['view_only_planning'] =
+            !isOwnCoachEvent && assignment?.isCoordinator != true;
         final eventCoachIds =
             coachIdsByEventId[eventId]?.where((id) => id.isNotEmpty).toList() ??
                 <String>[];
@@ -585,15 +688,43 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
       final extraData = await Future.wait([
         _buscarContagensComFallback(loadedEventIds),
         _buscarEventosComPlanejamento(loadedEventIds),
+        _buscarAutoresPlanejamento(loadedEventIds),
       ]);
       final athleteCounts = extraData[0] as Map<String, Map<String, int>>;
       final eventsWithPlanning = extraData[1] as Set<String>;
+      final planAuthorsByEvent = extraData[2] as Map<String, Set<String>>;
 
       for (final treino in treinos) {
         final id = treino['id'].toString();
         treino['athlete_status_counts'] =
             athleteCounts[id] ?? {'accepted': 0, 'rejected': 0, 'pending': 0};
         treino['has_planning'] = eventsWithPlanning.contains(id);
+        treino['plan_author_ids'] =
+            (planAuthorsByEvent[id] ?? const <String>{}).toList();
+      }
+
+      if (loadedEventIds.isNotEmpty) {
+        try {
+          final workflowRows = await _supabase
+              .from('training_planning_workflows')
+              .select('event_id, status, assigned_coach_id')
+              .inFilter('event_id', loadedEventIds);
+          final workflowByEvent = <String, Map<String, dynamic>>{
+            for (final row in List<Map<String, dynamic>>.from(workflowRows))
+              (row['event_id'] ?? '').toString(): row,
+          };
+          for (final treino in treinos) {
+            final workflow = workflowByEvent[(treino['id'] ?? '').toString()];
+            treino['planning_status'] = workflow?['status'] ?? 'pending';
+            treino['assigned_planning_coach_id'] =
+                workflow?['assigned_coach_id'];
+          }
+        } catch (_) {
+          for (final treino in treinos) {
+            treino['planning_status'] =
+                treino['has_planning'] == true ? 'published' : 'pending';
+          }
+        }
       }
 
       treinos.sort(
@@ -817,6 +948,16 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
   void _aplicarFiltros() {
     var lista = _getEventosDoTipoSelecionado();
 
+    if (widget.agendaMode) {
+      final now = DateTime.now();
+      lista = lista.where((treino) {
+        final eventDate = _parseEventDateTime(treino);
+        return _showPastEvents
+            ? eventDate.isBefore(now)
+            : !eventDate.isBefore(now);
+      }).toList();
+    }
+
     if (_filtroStatus != 'todos') {
       lista = lista.where((treino) {
         final status = (treino['convocation_status'] ?? 'pending')
@@ -836,16 +977,23 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
       }).toList();
     }
 
-    lista.sort(
-      (a, b) => _parseEventDateTime(a).compareTo(_parseEventDateTime(b)),
-    );
+    lista.sort((a, b) {
+      final comparison =
+          _parseEventDateTime(a).compareTo(_parseEventDateTime(b));
+      return widget.agendaMode && _showPastEvents ? -comparison : comparison;
+    });
 
     _treinosFiltrados = lista;
     _atualizarResumoStatus();
   }
 
   List<MapEntry<String, String>> _getTreinadoresDisponiveis() {
-    final coaches = <String, String>{};
+    final coaches = <String, String>{
+      if (_technicalAssignment?.isCoordinator == true)
+        for (final entry in _visibleCoachNames.entries)
+          if (entry.key != (_supabase.auth.currentUser?.id ?? ''))
+            entry.key: entry.value.isEmpty ? 'Treinador' : entry.value,
+    };
 
     for (final treino in _getEventosDoTipoSelecionado()) {
       final options = ((treino['coach_options'] as List?) ?? const []);
@@ -2347,6 +2495,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
   }
 
   Widget _buildFiltersAndSummary() {
+    if (widget.agendaMode) return _buildAgendaFilters();
     return LayoutBuilder(
       builder: (context, constraints) {
         final mobile = constraints.maxWidth < 600;
@@ -2487,6 +2636,74 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
     );
   }
 
+  Widget _buildAgendaFilters() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [olympusBlue, olympusLightBlue],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(16),
+          bottomRight: Radius.circular(16),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildModernDropdown(
+              icon: Icons.calendar_month_rounded,
+              value: _filtroMes.isEmpty ? null : _filtroMes,
+              hint: 'Mês',
+              items: _getMesesDisponiveis()
+                  .map(
+                    (mes) => DropdownMenuItem(
+                      value: mes,
+                      child: Text(_formatarNomeMes(mes)),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) _selecionarMes(value.toString());
+              },
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            height: 58,
+            child: FilterChip(
+              selected: _showPastEvents,
+              showCheckmark: false,
+              avatar: Icon(
+                Icons.history_rounded,
+                color: _showPastEvents ? olympusBlue : Colors.white,
+              ),
+              label: const Text('Passados'),
+              selectedColor: olympusGold,
+              backgroundColor: olympusBlue,
+              side: BorderSide(
+                color: _showPastEvents ? olympusGold : Colors.white38,
+              ),
+              labelStyle: TextStyle(
+                color: _showPastEvents ? olympusBlue : Colors.white,
+                fontWeight: FontWeight.w900,
+              ),
+              onSelected: (selected) {
+                setState(() {
+                  _showPastEvents = selected;
+                  _filtroStatus = 'todos';
+                  _aplicarFiltros();
+                });
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPlanningScopeSelector() {
     Widget chip({
       required bool selected,
@@ -2531,7 +2748,9 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
           ),
           chip(
             selected: _mostrarTodosPlanejamentos,
-            label: 'Todos planejados',
+            label: _technicalAssignment?.isCoordinator == true
+                ? 'Minha equipe'
+                : 'Todos planejados',
             icon: Icons.visibility_rounded,
             onTap: () => _alternarFontePlanejamentos(true),
           ),
@@ -2550,7 +2769,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
       items: [
         const DropdownMenuItem(
           value: 'todos',
-          child: Text('Todos os treinadores'),
+          child: Text('Treinadores da minha equipe'),
         ),
         ...coaches.map(
           (coach) => DropdownMenuItem(
@@ -2569,11 +2788,23 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
   }
 
   Future<void> _abrirDetalheTreino(Map<String, dynamic> treino) async {
-    final viewOnly = treino['view_only_planning'] == true;
+    final currentUserId = _supabase.auth.currentUser?.id ?? '';
+    final assignedPlannerId =
+        (treino['assigned_planning_coach_id'] ?? '').toString();
+    final authorIds = ((treino['plan_author_ids'] as List?) ?? const [])
+        .map((id) => id.toString())
+        .where((id) => id.isNotEmpty)
+        .toList();
+    final effectivePlannerId = assignedPlannerId.isNotEmpty
+        ? assignedPlannerId
+        : (authorIds.isNotEmpty ? authorIds.first : '');
+    final viewOnly = treino['view_only_planning'] == true ||
+        (effectivePlannerId.isNotEmpty && effectivePlannerId != currentUserId);
     if (viewOnly) {
       await TrainingPlanReadonlySheet.show(
         context,
         event: treino,
+        coachId: effectivePlannerId.isEmpty ? null : effectivePlannerId,
         emptyMessage: 'Este treino ainda não tem planejamento publicado.',
       );
       return;
@@ -2587,6 +2818,121 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
     );
     if (mounted) {
       await _buscarTreinosDoTecnico();
+    }
+  }
+
+  Future<void> _liberarPlanejamentoParaTecnico(
+    Map<String, dynamic> treino,
+  ) async {
+    final assignment = _technicalAssignment;
+    if (assignment?.isCoordinator != true) return;
+    try {
+      final service = TechnicalStaffService(client: _supabase);
+      final values = await Future.wait([
+        service.loadAssignments(),
+        service.loadAvailableProfiles(),
+      ]);
+      final assignments = values[0] as List<TechnicalStaffAssignment>;
+      final profiles = values[1] as List<Map<String, dynamic>>;
+      final names = <String, String>{
+        for (final profile in profiles)
+          (profile['id'] ?? '').toString():
+              (profile['full_name'] ?? profile['email'] ?? 'Técnico')
+                  .toString(),
+      };
+      final eligible = assignments
+          .where((item) => item.isActive && item.userId != assignment!.userId)
+          .toList();
+      if (!mounted) return;
+      if (eligible.isEmpty) {
+        _showError('Não há outro técnico ativo disponível para este treino.');
+        return;
+      }
+      final selected = await showDialog<TechnicalStaffAssignment>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Liberar planejamento'),
+          content: SizedBox(
+            width: 420,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: eligible.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, index) {
+                final item = eligible[index];
+                return ListTile(
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.sports_rounded),
+                  ),
+                  title: Text(names[item.userId] ?? 'Técnico'),
+                  subtitle: Text(TechnicalStaffRole.label(item.technicalRole)),
+                  onTap: () => Navigator.pop(dialogContext, item),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        ),
+      );
+      if (selected == null) return;
+      await _supabase.rpc('enable_training_planning_v1', params: {
+        'p_event_id': (treino['id'] ?? '').toString(),
+        'p_coach_id': selected.userId,
+      });
+      try {
+        await _supabase.functions.invoke(
+          'send-push-notification',
+          body: {
+            'userId': selected.userId,
+            'title': 'Planejamento de treino liberado',
+            'body':
+                'O planejamento de ${(treino['event_name'] ?? 'um treino').toString()} está disponível para preenchimento.',
+            'type': 'training_planning',
+            'eventId': (treino['id'] ?? '').toString(),
+          },
+        );
+      } catch (_) {}
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Planejamento liberado para ${names[selected.userId] ?? 'o técnico'}.',
+          ),
+          backgroundColor: olympusSuccess,
+        ),
+      );
+      await _buscarTreinosDoTecnico();
+    } catch (error) {
+      _showError('Não foi possível liberar o planejamento: $error');
+    }
+  }
+
+  Future<void> _publicarPlanejamento(Map<String, dynamic> treino) async {
+    try {
+      await _supabase.rpc('publish_training_planning_v1', params: {
+        'p_event_id': (treino['id'] ?? '').toString(),
+      });
+      try {
+        await _supabase.functions.invoke(
+          'send-event-notification',
+          body: {'eventId': (treino['id'] ?? '').toString()},
+        );
+      } catch (_) {}
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Treino disponibilizado para a equipe.'),
+          backgroundColor: olympusSuccess,
+        ),
+      );
+      await _buscarTreinosDoTecnico();
+    } catch (error) {
+      _showError('Não foi possível disponibilizar o treino: $error');
     }
   }
 
@@ -3063,30 +3409,32 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                   ),
                 ),
               ],
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  _buildAthleteCountBadge(
-                    label: 'Aceitaram',
-                    count: athleteCounts['accepted'] ?? 0,
-                    color: olympusSuccess,
-                  ),
-                  const SizedBox(width: 7),
-                  _buildAthleteCountBadge(
-                    label: 'Pendentes',
-                    count: athleteCounts['pending'] ?? 0,
-                    color: olympusWarning,
-                  ),
-                  const SizedBox(width: 7),
-                  _buildAthleteCountBadge(
-                    label: 'Recusaram',
-                    count: athleteCounts['rejected'] ?? 0,
-                    color: olympusDanger,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (!viewOnlyPlanning)
+              if (!widget.agendaMode) ...[
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    _buildAthleteCountBadge(
+                      label: 'Aceitaram',
+                      count: athleteCounts['accepted'] ?? 0,
+                      color: olympusSuccess,
+                    ),
+                    const SizedBox(width: 7),
+                    _buildAthleteCountBadge(
+                      label: 'Pendentes',
+                      count: athleteCounts['pending'] ?? 0,
+                      color: olympusWarning,
+                    ),
+                    const SizedBox(width: 7),
+                    _buildAthleteCountBadge(
+                      label: 'Recusaram',
+                      count: athleteCounts['rejected'] ?? 0,
+                      color: olympusDanger,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+              ],
+              if (!viewOnlyPlanning && !widget.agendaMode)
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -3117,19 +3465,23 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: () => _abrirDetalheTreino(treino),
+                    onPressed: widget.agendaMode && !hasPlanning
+                        ? null
+                        : () => _abrirDetalheTreino(treino),
                     icon: Icon(
                       viewOnlyPlanning || hasPlanning
                           ? Icons.menu_book_outlined
                           : Icons.add_task_rounded,
                     ),
-                    label: Text(
-                      viewOnlyPlanning
-                          ? 'Ver planejamento'
-                          : hasPlanning
-                              ? 'Abrir planejamento'
-                              : 'Criar planejamento',
-                    ),
+                    label: Text(widget.agendaMode
+                        ? hasPlanning
+                            ? 'Ver planejamento'
+                            : 'Planejamento pendente'
+                        : viewOnlyPlanning
+                            ? 'Ver planejamento'
+                            : hasPlanning
+                                ? 'Abrir planejamento'
+                                : 'Criar planejamento'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: viewOnlyPlanning
                           ? olympusBlue
@@ -3143,6 +3495,41 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                     ),
                   ),
                 ),
+                if (!widget.agendaMode &&
+                    _technicalAssignment?.isCoordinator == true &&
+                    !hasPlanning) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _liberarPlanejamentoParaTecnico(treino),
+                      icon: const Icon(Icons.person_add_alt_1_rounded),
+                      label: const Text('Liberar planejamento para técnico'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: olympusBlue,
+                        side: const BorderSide(color: olympusGold),
+                      ),
+                    ),
+                  ),
+                ],
+                if (!widget.agendaMode &&
+                    _technicalAssignment?.isCoordinator == true &&
+                    hasPlanning &&
+                    treino['planning_status'] != 'published') ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => _publicarPlanejamento(treino),
+                      icon: const Icon(Icons.publish_rounded),
+                      label: const Text('Disponibilizar treino pronto'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: olympusGold,
+                        foregroundColor: olympusBlue,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ],
           ),
@@ -3155,8 +3542,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.asset(
-          'assets/images/monte_olimpo_v2.png',
+        OlympusBrandBackgroundImage(
           fit: BoxFit.cover,
           alignment: Alignment.center,
           errorBuilder: (_, __, ___) => Container(color: olympusBlue),
@@ -3172,13 +3558,25 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
       backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: Text(
-          widget.lockTipoEvento
-              ? 'Avaliar ${_labelTipoEvento(_filtroTipoEvento)}'
-              : 'Eventos e avaliações',
+          widget.pageTitle ??
+              (widget.lockTipoEvento
+                  ? 'Avaliar ${_labelTipoEvento(_filtroTipoEvento)}'
+                  : 'Eventos e avaliações'),
         ),
         backgroundColor: olympusBlue,
         foregroundColor: Colors.white,
         actions: [
+          if (_technicalAssignment?.isCoordinator == true)
+            IconButton(
+              tooltip: 'Painel de planejamento',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const CoachTrainingPlanningDashboardPage(),
+                ),
+              ),
+              icon: const Icon(Icons.dashboard_customize_rounded),
+            ),
           IconButton(
             onPressed: _buscarTreinosDoTecnico,
             icon: const Icon(Icons.refresh),

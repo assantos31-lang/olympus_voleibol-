@@ -8,13 +8,20 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
 import '../services/chat_service.dart';
 import '../services/permission_service.dart';
+import '../services/platform_admin_service.dart';
+import '../theme/olympus_theme.dart';
 import 'agenda_page.dart';
+import 'admin_branding_page.dart';
 import 'admin_birthdays_page.dart';
+import 'admin_checkin_ranking_page.dart';
 import 'admin_competitions_page.dart';
 import 'admin_financial_page.dart';
 import 'admin_messages_page.dart';
+import 'admin_notifications_page.dart';
 import 'admin_training_plans_page.dart' show AdminTrainingPlansPage;
+import 'admin_technical_staff_page.dart';
 import 'chat_rooms_page.dart';
+import 'platform_master_page.dart';
 
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
@@ -29,6 +36,7 @@ class _AdminHomePageState extends State<AdminHomePage>
   final PermissionService _permissionService = PermissionService();
   final ChatService _chatService = ChatService();
   Map<String, bool> _adminPermissions = {};
+  bool _isPlatformAdmin = false;
 
   List<Map<String, dynamic>> allBirthdays = [];
   List<Map<String, dynamic>> monthBirthdays = [];
@@ -48,12 +56,70 @@ class _AdminHomePageState extends State<AdminHomePage>
   int chatUnreadCount = 0;
   bool _refreshingRealtimeBadges = false;
 
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+
+  Color _brandPanel([double opacity = 0.88]) =>
+      (Color.lerp(_branding.primaryColor, Colors.black, 0.26) ??
+              _branding.primaryColor)
+          .withOpacity(opacity);
+
+  Widget _buildBrandLogo({
+    required double width,
+    required double height,
+    required double fallbackIconSize,
+  }) {
+    final branding = _branding;
+    final fallback = Image.asset(
+      'assets/images/olympus_logo.png',
+      width: width,
+      height: height,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => Icon(
+        Icons.admin_panel_settings_rounded,
+        size: fallbackIconSize,
+        color: branding.secondaryColor,
+      ),
+    );
+    if (branding.logoUrl.isEmpty) return fallback;
+    return CachedNetworkImage(
+      imageUrl: branding.logoUrl,
+      width: width,
+      height: height,
+      fit: BoxFit.contain,
+      placeholder: (_, __) => SizedBox(
+        width: width,
+        height: height,
+        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      ),
+      errorWidget: (_, __, ___) => fallback,
+    );
+  }
+
+  Widget _buildBrandBackground() {
+    final branding = _branding;
+    if (branding.backgroundImageUrl.isNotEmpty) {
+      return CachedNetworkImage(
+        imageUrl: branding.backgroundImageUrl,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        errorWidget: (_, __, ___) => const SizedBox.shrink(),
+      );
+    }
+    return Image.asset(
+      branding.backgroundAsset,
+      fit: BoxFit.cover,
+      alignment: Alignment.center,
+      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _refreshRealtimeBadges();
     _loadAdminPermissions();
+    _loadPlatformAdminAccess();
     _setupRealtimeListeners();
     _listenChatUnreadCount();
   }
@@ -76,6 +142,13 @@ class _AdminHomePageState extends State<AdminHomePage>
     if (userId == null) return;
     final permissions = await _permissionService.getUserPermissions(userId);
     if (mounted) setState(() => _adminPermissions = permissions);
+  }
+
+  Future<void> _loadPlatformAdminAccess() async {
+    final allowed = await PlatformAdminService.instance.isPlatformAdmin();
+    if (mounted && allowed != _isPlatformAdmin) {
+      setState(() => _isPlatformAdmin = allowed);
+    }
   }
 
   bool _canOpen(String permission) => _adminPermissions[permission] ?? true;
@@ -205,7 +278,9 @@ class _AdminHomePageState extends State<AdminHomePage>
           callback: (_) => _fetchPendingFinancialReceiptsCount(),
         )
         .subscribe((status, [error]) {
-      debugPrint('Realtime financial_records status: $status error: $error');
+      debugPrint(
+        'Realtime financial_records status: $status error: $error',
+      );
       if (status == RealtimeSubscribeStatus.subscribed) {
         _fetchPendingFinancialReceiptsCount();
       }
@@ -224,7 +299,9 @@ class _AdminHomePageState extends State<AdminHomePage>
           callback: (_) => _fetchMonthBirthdays(),
         )
         .subscribe((status, [error]) {
-      debugPrint('Realtime profiles/birthdays status: $status error: $error');
+      debugPrint(
+        'Realtime profiles/birthdays status: $status error: $error',
+      );
       if (status == RealtimeSubscribeStatus.subscribed) {
         _fetchMonthBirthdays();
       }
@@ -245,7 +322,8 @@ class _AdminHomePageState extends State<AdminHomePage>
         )
         .subscribe((status, [error]) {
       debugPrint(
-          'Realtime app_message_participants status: $status error: $error');
+        'Realtime app_message_participants status: $status error: $error',
+      );
       if (status == RealtimeSubscribeStatus.subscribed) {
         _fetchUnreadMessagesCount();
       }
@@ -362,9 +440,9 @@ class _AdminHomePageState extends State<AdminHomePage>
         if (monthComparison != 0) return monthComparison;
         final dayComparison = aBirth.day.compareTo(bBirth.day);
         if (dayComparison != 0) return dayComparison;
-        return (a['full_name'] ?? '')
-            .toString()
-            .compareTo((b['full_name'] ?? '').toString());
+        return (a['full_name'] ?? '').toString().compareTo(
+              (b['full_name'] ?? '').toString(),
+            );
       });
 
       final filtered = parsedBirthdays
@@ -510,10 +588,7 @@ class _AdminHomePageState extends State<AdminHomePage>
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.16),
-          width: 1.2,
-        ),
+        border: Border.all(color: Colors.white.withOpacity(0.16), width: 1.2),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -545,9 +620,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: goldenColor.withOpacity(0.14),
-                      border: Border.all(
-                        color: goldenColor.withOpacity(0.35),
-                      ),
+                      border: Border.all(color: goldenColor.withOpacity(0.35)),
                     ),
                     child: const Icon(
                       Icons.cake_outlined,
@@ -638,8 +711,9 @@ class _AdminHomePageState extends State<AdminHomePage>
                         final birthDate = user['birth'] as DateTime;
                         final fullName =
                             (user['full_name'] ?? 'Sem nome').toString();
-                        final position =
-                            _formatPosition(user['court_position']);
+                        final position = _formatPosition(
+                          user['court_position'],
+                        );
                         final isToday = birthDate.day == today.day &&
                             birthDate.month == today.month;
 
@@ -708,8 +782,9 @@ class _AdminHomePageState extends State<AdminHomePage>
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
-                                              color: Colors.white
-                                                  .withOpacity(0.92),
+                                              color: Colors.white.withOpacity(
+                                                0.92,
+                                              ),
                                               fontSize: 14,
                                               fontWeight: isToday
                                                   ? FontWeight.w800
@@ -728,11 +803,13 @@ class _AdminHomePageState extends State<AdminHomePage>
                                             decoration: BoxDecoration(
                                               borderRadius:
                                                   BorderRadius.circular(999),
-                                              color:
-                                                  goldenColor.withOpacity(0.22),
+                                              color: goldenColor.withOpacity(
+                                                0.22,
+                                              ),
                                               border: Border.all(
-                                                color: goldenColor
-                                                    .withOpacity(0.55),
+                                                color: goldenColor.withOpacity(
+                                                  0.55,
+                                                ),
                                               ),
                                             ),
                                             child: const Text(
@@ -845,6 +922,13 @@ class _AdminHomePageState extends State<AdminHomePage>
   bool get _useCompactAdminGrid => true;
 
   Widget _buildCompactAdminHero() {
+    final branding = _branding;
+    final primary = branding.primaryColor;
+    final secondary = branding.secondaryColor;
+    final onPrimary =
+        ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
+            ? Colors.white
+            : const Color(0xFF102845);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -852,11 +936,15 @@ class _AdminHomePageState extends State<AdminHomePage>
         borderRadius: BorderRadius.circular(22),
         gradient: LinearGradient(
           colors: [
-            const Color(0xFF123D68).withOpacity(0.92),
-            const Color(0xFF0D2948).withOpacity(0.88),
+            (Color.lerp(primary, Colors.white, 0.08) ?? primary).withOpacity(
+              0.92,
+            ),
+            (Color.lerp(primary, Colors.black, 0.32) ?? primary).withOpacity(
+              0.88,
+            ),
           ],
         ),
-        border: Border.all(color: const Color(0xFFE4C050).withOpacity(0.32)),
+        border: Border.all(color: secondary.withOpacity(0.32)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x33000000),
@@ -873,35 +961,31 @@ class _AdminHomePageState extends State<AdminHomePage>
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFF071A30),
-              border: Border.all(color: const Color(0xFFE4C050), width: 1.4),
+              color: Color.lerp(primary, Colors.black, 0.48),
+              border: Border.all(color: secondary, width: 1.4),
             ),
-            child: Image.asset(
-              'assets/images/olympus_logo.png',
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => const Icon(
-                Icons.admin_panel_settings_rounded,
-                color: Color(0xFFE4C050),
-              ),
-            ),
+            child: _buildBrandLogo(width: 56, height: 56, fallbackIconSize: 30),
           ),
           const SizedBox(width: 14),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Olá, Admin!',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: onPrimary,
                     fontSize: 21,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
-                  'Seu centro de controle Olympus',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                  'Seu centro de controle ${branding.teamName}',
+                  style: TextStyle(
+                    color: onPrimary.withOpacity(0.72),
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -911,7 +995,7 @@ class _AdminHomePageState extends State<AdminHomePage>
             onPressed: _refreshRealtimeBadges,
             style: IconButton.styleFrom(
               backgroundColor: Colors.white.withOpacity(0.09),
-              foregroundColor: const Color(0xFFE4C050),
+              foregroundColor: secondary,
             ),
             icon: const Icon(Icons.refresh_rounded),
           ),
@@ -926,7 +1010,7 @@ class _AdminHomePageState extends State<AdminHomePage>
       width: double.infinity,
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: const Color(0xFF102D4F).withOpacity(0.84),
+        color: _brandPanel(0.84),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white.withOpacity(0.14)),
       ),
@@ -980,11 +1064,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                 padding: const EdgeInsets.only(top: 7),
                 child: Row(
                   children: [
-                    _buildBirthdayAvatar(
-                      birthday,
-                      size: 30,
-                      highlighted: true,
-                    ),
+                    _buildBirthdayAvatar(birthday, size: 30, highlighted: true),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -1049,6 +1129,18 @@ class _AdminHomePageState extends State<AdminHomePage>
         onTap: () => Navigator.pushNamed(context, '/profiles'),
       ),
       (
+        permission: 'admin_users',
+        label: 'Identidade',
+        subtitle: 'Cores, marca e fundos',
+        icon: Icons.palette_rounded,
+        color: const Color(0xFFFFC857),
+        badge: 0,
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminBrandingPage()),
+            ),
+      ),
+      (
         permission: 'admin_training_plans',
         label: 'Treinos',
         subtitle: 'Planejamentos',
@@ -1057,7 +1149,9 @@ class _AdminHomePageState extends State<AdminHomePage>
         badge: 0,
         onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const AdminTrainingPlansPage()),
+              MaterialPageRoute(
+                builder: (_) => const AdminTrainingPlansPage(),
+              ),
             ),
       ),
       (
@@ -1093,6 +1187,20 @@ class _AdminHomePageState extends State<AdminHomePage>
         onTap: () => Navigator.pushNamed(context, '/admin-athletes-statistics'),
       ),
       (
+        permission: 'admin_statistics',
+        label: 'Ranking',
+        subtitle: 'Check-ins por período',
+        icon: Icons.leaderboard_rounded,
+        color: const Color(0xFFE4C050),
+        badge: 0,
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const AdminCheckinRankingPage(),
+              ),
+            ),
+      ),
+      (
         permission: 'admin_financial',
         label: 'Financeiro',
         subtitle: 'Cobranças e comprovantes',
@@ -1102,7 +1210,9 @@ class _AdminHomePageState extends State<AdminHomePage>
         onTap: () async {
           await Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const AdminFinancialPage()),
+            MaterialPageRoute(
+              builder: (_) => const AdminFinancialPage(),
+            ),
           );
           _fetchPendingFinancialReceiptsCount();
         },
@@ -1117,7 +1227,9 @@ class _AdminHomePageState extends State<AdminHomePage>
         onTap: () async {
           await Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const AdminMessagesPage()),
+            MaterialPageRoute(
+              builder: (_) => const AdminMessagesPage(),
+            ),
           );
           _fetchUnreadMessagesCount();
         },
@@ -1190,12 +1302,8 @@ class _AdminHomePageState extends State<AdminHomePage>
   }
 
   Widget _buildClubStatusStrip() {
-    final metrics = <({
-      String value,
-      String label,
-      Color color,
-      VoidCallback onTap,
-    })>[
+    final metrics =
+        <({String value, String label, Color color, VoidCallback onTap})>[
       if (_canOpen('admin_financial'))
         (
           value: '$_financialBadgeCount',
@@ -1238,7 +1346,7 @@ class _AdminHomePageState extends State<AdminHomePage>
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        color: const Color(0xFF081D33).withOpacity(0.86),
+        color: _brandPanel(0.86),
         border: Border.all(color: Colors.white.withOpacity(0.12)),
       ),
       child: Row(
@@ -1391,14 +1499,16 @@ class _AdminHomePageState extends State<AdminHomePage>
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(16),
-                              border:
-                                  Border.all(color: const Color(0xFFE3EAF2)),
+                              border: Border.all(
+                                color: const Color(0xFFE3EAF2),
+                              ),
                             ),
                             child: Row(
                               children: [
                                 CircleAvatar(
-                                  backgroundColor:
-                                      const Color(0xFF102D4F).withOpacity(0.08),
+                                  backgroundColor: const Color(
+                                    0xFF102D4F,
+                                  ).withOpacity(0.08),
                                   child: const Icon(
                                     Icons.celebration_rounded,
                                     color: Color(0xFFD4AF37),
@@ -1481,11 +1591,7 @@ class _AdminHomePageState extends State<AdminHomePage>
       ),
       child: Row(
         children: [
-          _buildBirthdayAvatar(
-            birthday,
-            size: 48,
-            highlighted: highlighted,
-          ),
+          _buildBirthdayAvatar(birthday, size: 48, highlighted: highlighted),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1585,8 +1691,10 @@ class _AdminHomePageState extends State<AdminHomePage>
                 ),
                 if (highlighted)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFFD4AF37),
                       borderRadius: BorderRadius.circular(999),
@@ -1612,10 +1720,8 @@ class _AdminHomePageState extends State<AdminHomePage>
             ),
           ),
           ...birthdays.map(
-            (birthday) => _buildBirthdaySheetCard(
-              birthday,
-              highlighted: highlighted,
-            ),
+            (birthday) =>
+                _buildBirthdaySheetCard(birthday, highlighted: highlighted),
           ),
         ],
       ),
@@ -1754,7 +1860,9 @@ class _AdminHomePageState extends State<AdminHomePage>
         onTap: () async {
           await Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const AdminFinancialPage()),
+            MaterialPageRoute(
+              builder: (_) => const AdminFinancialPage(),
+            ),
           );
           _fetchPendingFinancialReceiptsCount();
         },
@@ -1768,7 +1876,9 @@ class _AdminHomePageState extends State<AdminHomePage>
         onTap: () async {
           await Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const AdminMessagesPage()),
+            MaterialPageRoute(
+              builder: (_) => const AdminMessagesPage(),
+            ),
           );
           _fetchUnreadMessagesCount();
         },
@@ -1855,10 +1965,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                   color: color.withOpacity(0.16),
                   border: Border.all(color: color.withOpacity(0.50)),
                   boxShadow: [
-                    BoxShadow(
-                      color: color.withOpacity(0.15),
-                      blurRadius: 12,
-                    ),
+                    BoxShadow(color: color.withOpacity(0.15), blurRadius: 12),
                   ],
                 ),
                 child: Icon(icon, color: color, size: 25),
@@ -1939,18 +2046,12 @@ class _AdminHomePageState extends State<AdminHomePage>
                     SizedBox(height: 3),
                     Text(
                       'Eventos, convocações e presenças',
-                      style: TextStyle(
-                        color: Color(0xCC0C2743),
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: Color(0xCC0C2743), fontSize: 12),
                     ),
                   ],
                 ),
               ),
-              const Icon(
-                Icons.arrow_forward_rounded,
-                color: Color(0xFF0C2743),
-              ),
+              const Icon(Icons.arrow_forward_rounded, color: Color(0xFF0C2743)),
             ],
           ),
         ),
@@ -1968,6 +2069,43 @@ class _AdminHomePageState extends State<AdminHomePage>
       VoidCallback onTap,
     })>[
       (
+        permission: 'admin_agenda',
+        label: 'Notificações',
+        subtitle: 'Respostas às convocações e preferências de avisos',
+        icon: Icons.notifications_active_rounded,
+        color: const Color(0xFFFF8FA3),
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const AdminNotificationsPage(),
+              ),
+            ),
+      ),
+      (
+        permission: 'admin_users',
+        label: 'Equipe técnica',
+        subtitle: 'Coordenadores, treinadores, assistentes e estagiários',
+        icon: Icons.account_tree_rounded,
+        color: const Color(0xFFFFD166),
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const AdminTechnicalStaffPage(),
+              ),
+            ),
+      ),
+      (
+        permission: 'admin_users',
+        label: 'Identidade visual',
+        subtitle: 'Cores, logotipo e imagens de fundo',
+        icon: Icons.palette_rounded,
+        color: const Color(0xFFFFC857),
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminBrandingPage()),
+            ),
+      ),
+      (
         permission: 'admin_training_plans',
         label: 'Planejamentos de treino',
         subtitle: 'Programações criadas pelos treinadores',
@@ -1975,7 +2113,9 @@ class _AdminHomePageState extends State<AdminHomePage>
         color: const Color(0xFF73E2A7),
         onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const AdminTrainingPlansPage()),
+              MaterialPageRoute(
+                builder: (_) => const AdminTrainingPlansPage(),
+              ),
             ),
       ),
       (
@@ -2007,23 +2147,36 @@ class _AdminHomePageState extends State<AdminHomePage>
         color: const Color(0xFFB29BFF),
         onTap: () => Navigator.pushNamed(context, '/admin-athletes-statistics'),
       ),
+      (
+        permission: 'admin_statistics',
+        label: 'Ranking de check-ins',
+        subtitle: 'Posições, presenças e exportação',
+        icon: Icons.leaderboard_rounded,
+        color: const Color(0xFFE4C050),
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const AdminCheckinRankingPage(),
+              ),
+            ),
+      ),
     ].where((module) => _canOpen(module.permission)).toList();
 
     if (modules.isEmpty) return const SizedBox.shrink();
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF102D4F).withOpacity(0.88),
+        color: _brandPanel(),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: Colors.white.withOpacity(0.13)),
       ),
       child: Column(
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(16, 15, 16, 8),
             child: Row(
               children: [
                 Text(
-                  'Gestão esportiva',
+                  'Gestão e configurações',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 15,
@@ -2032,9 +2185,9 @@ class _AdminHomePageState extends State<AdminHomePage>
                 ),
                 Spacer(),
                 Text(
-                  'OLYMPUS',
+                  _branding.teamName.toUpperCase(),
                   style: TextStyle(
-                    color: Color(0xFFE4C050),
+                    color: _branding.secondaryColor,
                     fontSize: 10,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 1.2,
@@ -2081,10 +2234,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                     module.subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white54,
-                      fontSize: 11,
-                    ),
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
                   ),
                   trailing: const Icon(
                     Icons.chevron_right_rounded,
@@ -2121,8 +2271,12 @@ class _AdminHomePageState extends State<AdminHomePage>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                const Color(0xFF163B60).withOpacity(0.94),
-                const Color(0xFF0C2743).withOpacity(0.90),
+                (Color.lerp(_branding.primaryColor, Colors.white, 0.10) ??
+                        _branding.primaryColor)
+                    .withOpacity(0.94),
+                (Color.lerp(_branding.primaryColor, Colors.black, 0.30) ??
+                        _branding.primaryColor)
+                    .withOpacity(0.90),
               ],
             ),
             border: Border.all(color: color.withOpacity(0.30)),
@@ -2202,47 +2356,56 @@ class _AdminHomePageState extends State<AdminHomePage>
 
   @override
   Widget build(BuildContext context) {
-    const goldenColor = Color(0xFFE4C050);
-    const cyanColor = Color(0xFF8FE8FF);
+    final branding = _branding;
+    final primary = branding.primaryColor;
+    final goldenColor = branding.secondaryColor;
+    final cyanColor =
+        Color.lerp(goldenColor, Colors.white, 0.54) ?? goldenColor;
 
     return Scaffold(
+      floatingActionButton: _isPlatformAdmin
+          ? FloatingActionButton.extended(
+              heroTag: 'platform_admin_master',
+              tooltip: 'Gerenciar clubes e funcionalidades',
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const PlatformMasterPage(),
+                  ),
+                );
+                _loadAdminPermissions();
+              },
+              icon: const Icon(Icons.admin_panel_settings_rounded),
+              label: const Text('Admin Master'),
+            )
+          : null,
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF0C2340),
-              Color(0xFF123A63),
-              Color(0xFF071A30),
+              Color.lerp(primary, Colors.black, 0.30) ?? primary,
+              primary,
+              Color.lerp(primary, Colors.black, 0.58) ?? primary,
             ],
           ),
         ),
         child: Stack(
           children: [
             Positioned.fill(
-              child: Opacity(
-                opacity: 0.68,
-                child: Image.asset(
-                  'assets/images/monte_olimpo_v2.png',
-                  fit: BoxFit.cover,
-                  alignment: Alignment.center,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const SizedBox.shrink();
-                  },
-                ),
-              ),
+              child: Opacity(opacity: 0.68, child: _buildBrandBackground()),
             ),
             Positioned.fill(
               child: Container(
-                color: const Color(0xFF06192D).withOpacity(0.46),
+                color: (Color.lerp(primary, Colors.black, 0.62) ?? primary)
+                    .withOpacity(0.46),
               ),
             ),
             Positioned.fill(
               child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _FuturisticBackgroundPainter(),
-                ),
+                child: CustomPaint(painter: _FuturisticBackgroundPainter()),
               ),
             ),
             SafeArea(
@@ -2318,7 +2481,11 @@ class _AdminHomePageState extends State<AdminHomePage>
                                     width: double.infinity,
                                     margin: const EdgeInsets.only(top: 54),
                                     padding: const EdgeInsets.fromLTRB(
-                                        20, 72, 20, 22),
+                                      20,
+                                      72,
+                                      20,
+                                      22,
+                                    ),
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(18),
                                       border: Border.all(
@@ -2356,19 +2523,21 @@ class _AdminHomePageState extends State<AdminHomePage>
                                               style: TextStyle(
                                                 fontSize: 23,
                                                 fontWeight: FontWeight.w500,
-                                                color: Colors.white
-                                                    .withOpacity(0.92),
+                                                color: Colors.white.withOpacity(
+                                                  0.92,
+                                                ),
                                                 height: 1.15,
                                               ),
                                             ),
                                             const SizedBox(height: 10),
                                             Text(
-                                              'Gerencie o sistema Olympus Voleibol',
+                                              'Gerencie o sistema ${branding.teamName}',
                                               textAlign: TextAlign.center,
                                               style: TextStyle(
                                                 fontSize: 14,
-                                                color: Colors.white
-                                                    .withOpacity(0.68),
+                                                color: Colors.white.withOpacity(
+                                                  0.68,
+                                                ),
                                                 fontWeight: FontWeight.w400,
                                               ),
                                             ),
@@ -2386,10 +2555,12 @@ class _AdminHomePageState extends State<AdminHomePage>
                                         begin: Alignment.topLeft,
                                         end: Alignment.bottomRight,
                                         colors: [
-                                          const Color(0xFF42556F)
-                                              .withOpacity(0.95),
-                                          const Color(0xFF31445D)
-                                              .withOpacity(0.88),
+                                          const Color(
+                                            0xFF42556F,
+                                          ).withOpacity(0.95),
+                                          const Color(
+                                            0xFF31445D,
+                                          ).withOpacity(0.88),
                                         ],
                                       ),
                                       border: Border.all(
@@ -2408,20 +2579,10 @@ class _AdminHomePageState extends State<AdminHomePage>
                                       child: ClipOval(
                                         child: Padding(
                                           padding: const EdgeInsets.all(4),
-                                          child: Image.asset(
-                                            'assets/images/olympus_logo.png',
+                                          child: _buildBrandLogo(
                                             width: 108,
                                             height: 108,
-                                            fit: BoxFit.contain,
-                                            errorBuilder:
-                                                (context, error, stackTrace) {
-                                              return const Icon(
-                                                Icons
-                                                    .admin_panel_settings_rounded,
-                                                size: 54,
-                                                color: Color(0xFFE4C050),
-                                              );
-                                            },
+                                            fallbackIconSize: 54,
                                           ),
                                         ),
                                       ),
@@ -2588,6 +2749,38 @@ class _AdminHomePageState extends State<AdminHomePage>
                                 },
                               ),
                               const SizedBox(height: 18),
+                              _buildFuturisticButton(
+                                context: context,
+                                label: 'Equipe Técnica',
+                                icon: Icons.account_tree_rounded,
+                                accentColor: const Color(0xFFFFD166),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const AdminTechnicalStaffPage(),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 18),
+                              _buildFuturisticButton(
+                                context: context,
+                                label: 'Identidade visual',
+                                icon: Icons.palette_rounded,
+                                accentColor: const Color(0xFFFFC857),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const AdminBrandingPage(),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 18),
                             ],
                             if (!_useCompactAdminGrid &&
                                 _canOpen('admin_messages')) ...[
@@ -2741,8 +2934,9 @@ class _AdminHomePageState extends State<AdminHomePage>
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color:
-                              accentColor.withOpacity(isPrimary ? 0.20 : 0.10),
+                          color: accentColor.withOpacity(
+                            isPrimary ? 0.20 : 0.10,
+                          ),
                           blurRadius: 18,
                           spreadRadius: 1,
                         ),
@@ -2757,8 +2951,9 @@ class _AdminHomePageState extends State<AdminHomePage>
                             height: 42,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: accentColor
-                                  .withOpacity(isPrimary ? 0.16 : 0.10),
+                              color: accentColor.withOpacity(
+                                isPrimary ? 0.16 : 0.10,
+                              ),
                               border: Border.all(
                                 color: accentColor.withOpacity(0.30),
                               ),
@@ -2831,8 +3026,10 @@ class _AdminHomePageState extends State<AdminHomePage>
               child: Tooltip(
                 message: badgeTooltip ?? '$badgeCount pendência(s)',
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: badgeColor,
                     borderRadius: BorderRadius.circular(999),
@@ -2849,11 +3046,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        badgeIcon,
-                        color: Colors.white,
-                        size: 12,
-                      ),
+                      Icon(badgeIcon, color: Colors.white, size: 12),
                       const SizedBox(width: 4),
                       Text(
                         badgeCount > 99 ? '99+' : badgeCount.toString(),

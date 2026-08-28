@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 Future<void> sendEvaluationMessageToAthlete({
@@ -476,8 +477,7 @@ class _CoachCompleteMonthlyEvaluationPageState
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: const OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
           ),
         ),

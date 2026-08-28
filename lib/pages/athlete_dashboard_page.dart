@@ -14,6 +14,8 @@ import 'dart:ui';
 import '../services/auth_service.dart';
 import '../services/chat_service.dart';
 import '../services/permission_service.dart';
+import '../services/organization_storage_service.dart';
+import '../theme/olympus_theme.dart';
 import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
 import 'athlete_messages_page.dart';
@@ -101,15 +103,22 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const String _eventsEmbedFk = 'convocations_event_id_fkey';
 
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get _brandPrimary => _branding.primaryColor;
+  Color get _brandSecondary => _branding.secondaryColor;
+  Color get _brandLight =>
+      Color.lerp(_brandPrimary, Colors.white, 0.18) ?? _brandPrimary;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
 
     if (!_isBackgroundReady) {
-      precacheImage(
-        const AssetImage('assets/images/monte_olimpo_v2.png'),
-        context,
-      ).whenComplete(() {
+      final ImageProvider<Object> backgroundProvider =
+          _branding.backgroundImageUrl.isNotEmpty
+              ? NetworkImage(_branding.backgroundImageUrl)
+              : AssetImage(_branding.backgroundAsset);
+      precacheImage(backgroundProvider, context).whenComplete(() {
         if (mounted) {
           setState(() {
             _isBackgroundReady = true;
@@ -200,8 +209,10 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     if (user == null) return;
 
     try {
-      final hasAccess =
-          await _permissionService.hasAccess(user.id, 'birthdays');
+      final hasAccess = await _permissionService.hasAccess(
+        user.id,
+        'birthdays',
+      );
       if (!mounted) return;
       setState(() {
         _canAccessBirthdays = hasAccess;
@@ -237,9 +248,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   void _navigateToBirthdays() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const AdminBirthdaysPage(),
-      ),
+      MaterialPageRoute(builder: (context) => const AdminBirthdaysPage()),
     );
   }
 
@@ -390,10 +399,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFFF0D771),
-                          Color(0xFFB48A23),
-                        ],
+                        colors: [Color(0xFFF0D771), Color(0xFFB48A23)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
@@ -441,9 +447,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(999),
                       color: olympusGold.withOpacity(0.16),
-                      border: Border.all(
-                        color: olympusGold.withOpacity(0.50),
-                      ),
+                      border: Border.all(color: olympusGold.withOpacity(0.50)),
                     ),
                     child: Text(
                       currentLevel.toUpperCase(),
@@ -493,10 +497,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
     try {
       await supabase.auth.updateUser(
         UserAttributes(
-          data: {
-            ...metadata,
-            'last_seen_performance_level_rank': currentRank,
-          },
+          data: {...metadata, 'last_seen_performance_level_rank': currentRank},
         ),
       );
     } catch (e) {
@@ -612,7 +613,9 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
           },
         )
         .subscribe((status, [error]) {
-      debugPrint('Realtime financial_records status: $status error: $error');
+      debugPrint(
+        'Realtime financial_records status: $status error: $error',
+      );
     });
 
     _checkinsRealtimeChannel ??= supabase
@@ -757,8 +760,9 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
 
       int count = 0;
       for (final row in List<Map<String, dynamic>>.from(response)) {
-        final createdAt =
-            DateTime.tryParse((row['created_at'] ?? '').toString())?.toLocal();
+        final createdAt = DateTime.tryParse(
+          (row['created_at'] ?? '').toString(),
+        )?.toLocal();
         if (createdAt != null && createdAt.isAfter(referenceDate)) {
           count++;
         }
@@ -863,8 +867,10 @@ event_time
         if (mounted) {
           setState(() {
             _overdueByMonth = overdueByMonth;
-            _overdueFinancialCount =
-                overdueByMonth.values.fold(0, (a, b) => a + b);
+            _overdueFinancialCount = overdueByMonth.values.fold(
+              0,
+              (a, b) => a + b,
+            );
           });
         }
       }
@@ -898,8 +904,9 @@ event_time
         final status = (row['status'] ?? '').toString();
         if (status == 'approved') continue;
 
-        final createdAt =
-            DateTime.tryParse((row['created_at'] ?? '').toString())?.toLocal();
+        final createdAt = DateTime.tryParse(
+          (row['created_at'] ?? '').toString(),
+        )?.toLocal();
 
         if (createdAt != null && createdAt.isAfter(referenceDate)) {
           count++;
@@ -991,8 +998,9 @@ event_time
           !eventDateTime.isBefore(now);
     }).toList()
       ..sort(
-        (a, b) => (a['event_datetime'] as DateTime)
-            .compareTo(b['event_datetime'] as DateTime),
+        (a, b) => (a['event_datetime'] as DateTime).compareTo(
+          b['event_datetime'] as DateTime,
+        ),
       );
 
     if (upcomingTrainings.isEmpty) return null;
@@ -1113,7 +1121,9 @@ event_time
   }
 
   Widget _buildRankingAthleteTile(
-      Map<String, dynamic> athlete, String? userId) {
+    Map<String, dynamic> athlete,
+    String? userId,
+  ) {
     final isMe = (athlete['id'] ?? '').toString() == userId;
     final position = ((athlete['ranking_position'] ?? 0) as num).toInt();
     final avatarUrl = (athlete['avatar_url'] ?? '').toString().trim();
@@ -1310,11 +1320,7 @@ event_time
               width: 1.4,
             ),
             gradient: const LinearGradient(
-              colors: [
-                Color(0xFF0D223B),
-                Color(0xFF123861),
-                Color(0xFF235E94),
-              ],
+              colors: [Color(0xFF0D223B), Color(0xFF123861), Color(0xFF235E94)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -1344,10 +1350,7 @@ event_time
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: const LinearGradient(
-                          colors: [
-                            Color(0xFFF0D771),
-                            Color(0xFFB48A23),
-                          ],
+                          colors: [Color(0xFFF0D771), Color(0xFFB48A23)],
                         ),
                         boxShadow: [
                           BoxShadow(
@@ -1387,9 +1390,7 @@ event_time
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(18),
                     color: Colors.white.withOpacity(0.08),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.10),
-                    ),
+                    border: Border.all(color: Colors.white.withOpacity(0.10)),
                   ),
                   child: Column(
                     children: [
@@ -1441,11 +1442,7 @@ event_time
                       '$streak',
                       const Color(0xFFEF8B17),
                     ),
-                    _buildHistoryTag(
-                      'Nível',
-                      level,
-                      const Color(0xFF4FA3FF),
-                    ),
+                    _buildHistoryTag('Nível', level, const Color(0xFF4FA3FF)),
                     _buildHistoryTag(
                       'Ranking',
                       rankingPosition,
@@ -1458,9 +1455,7 @@ event_time
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () => Navigator.pop(context),
-                    style: TextButton.styleFrom(
-                      foregroundColor: olympusGold,
-                    ),
+                    style: TextButton.styleFrom(foregroundColor: olympusGold),
                     child: const Text(
                       'Fechar',
                       style: TextStyle(fontWeight: FontWeight.w800),
@@ -1631,9 +1626,7 @@ event_time
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 color: olympusBlue.withOpacity(0.04),
-                border: Border.all(
-                  color: olympusBlue.withOpacity(0.08),
-                ),
+                border: Border.all(color: olympusBlue.withOpacity(0.08)),
               ),
               child: Column(
                 children: [
@@ -1730,8 +1723,9 @@ event_time
                                   ),
                                   child: const Text(
                                     'Retrospectiva',
-                                    style:
-                                        TextStyle(fontWeight: FontWeight.w800),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -1794,20 +1788,14 @@ event_time
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
         color: olympusBlue.withOpacity(0.04),
-        border: Border.all(
-          color: olympusBlue.withOpacity(0.08),
-        ),
+        border: Border.all(color: olympusBlue.withOpacity(0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.rule_rounded,
-                color: olympusBlue,
-                size: 18,
-              ),
+              const Icon(Icons.rule_rounded, color: olympusBlue, size: 18),
               const SizedBox(width: 8),
               Text(
                 'Regras do ranking',
@@ -2007,9 +1995,7 @@ event_time
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   color: olympusBlue.withOpacity(0.04),
-                  border: Border.all(
-                    color: olympusBlue.withOpacity(0.08),
-                  ),
+                  border: Border.all(color: olympusBlue.withOpacity(0.08)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2075,9 +2061,7 @@ event_time
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         color: color.withOpacity(0.10),
-        border: Border.all(
-          color: color.withOpacity(0.22),
-        ),
+        border: Border.all(color: color.withOpacity(0.22)),
       ),
       child: RichText(
         text: TextSpan(
@@ -2148,8 +2132,9 @@ event_type
       }
 
       weekEvents.sort(
-        (a, b) => (a['event_datetime'] as DateTime)
-            .compareTo(b['event_datetime'] as DateTime),
+        (a, b) => (a['event_datetime'] as DateTime).compareTo(
+          b['event_datetime'] as DateTime,
+        ),
       );
 
       if (mounted) {
@@ -2274,16 +2259,18 @@ event_time
       int confirmedPresence = 0;
 
       trainingEvents.sort(
-        (a, b) => (a['event_datetime'] as DateTime)
-            .compareTo(b['event_datetime'] as DateTime),
+        (a, b) => (a['event_datetime'] as DateTime).compareTo(
+          b['event_datetime'] as DateTime,
+        ),
       );
 
       final countedTrainingEvents = trainingEvents.where((event) {
         final eventId = (event['id'] ?? '').toString();
         final eventDate = event['event_datetime'] as DateTime;
         final hasValidCheckin = eventHasValidCheckin[eventId] ?? false;
-        final checkinExpired =
-            now.isAfter(eventDate.add(const Duration(minutes: 30)));
+        final checkinExpired = now.isAfter(
+          eventDate.add(const Duration(minutes: 30)),
+        );
 
         // Ignora treinos futuros/abertos no percentual. Se já houver check-in
         // válido, conta como realizado mesmo antes do prazo fechar.
@@ -2316,16 +2303,18 @@ event_time
           totalTrainings > 0 ? (monthlyPresence / totalTrainings) * 100 : 0.0;
 
       annualTrainingEvents.sort(
-        (a, b) => (a['event_datetime'] as DateTime)
-            .compareTo(b['event_datetime'] as DateTime),
+        (a, b) => (a['event_datetime'] as DateTime).compareTo(
+          b['event_datetime'] as DateTime,
+        ),
       );
 
       final countedAnnualTrainingEvents = annualTrainingEvents.where((event) {
         final eventId = (event['id'] ?? '').toString();
         final eventDate = event['event_datetime'] as DateTime;
         final hasValidCheckin = eventHasValidCheckin[eventId] ?? false;
-        final checkinExpired =
-            now.isAfter(eventDate.add(const Duration(minutes: 30)));
+        final checkinExpired = now.isAfter(
+          eventDate.add(const Duration(minutes: 30)),
+        );
 
         return hasValidCheckin || checkinExpired;
       }).toList();
@@ -2352,8 +2341,9 @@ event_time
       int currentStreak = 0;
       final completedTrainings = countedTrainingEvents.toList()
         ..sort(
-          (a, b) => (b['event_datetime'] as DateTime)
-              .compareTo(a['event_datetime'] as DateTime),
+          (a, b) => (b['event_datetime'] as DateTime).compareTo(
+            a['event_datetime'] as DateTime,
+          ),
         );
 
       for (final event in completedTrainings) {
@@ -2409,9 +2399,7 @@ event_time
     }
   }
 
-  bool _isPendingConvocationStillActionable(
-    Map<String, dynamic> eventMap,
-  ) {
+  bool _isPendingConvocationStillActionable(Map<String, dynamic> eventMap) {
     final eventDateTime = _parseEventDateTime(
       (eventMap['event_date'] ?? '').toString(),
       (eventMap['event_time'] ?? '').toString(),
@@ -2510,11 +2498,7 @@ event_time
               width: 1.4,
             ),
             gradient: const LinearGradient(
-              colors: [
-                Color(0xFF102845),
-                Color(0xFF173A61),
-                Color(0xFF204E7B),
-              ],
+              colors: [Color(0xFF102845), Color(0xFF173A61), Color(0xFF204E7B)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -2572,10 +2556,7 @@ event_time
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               gradient: const LinearGradient(
-                                colors: [
-                                  Color(0xFFF0D771),
-                                  Color(0xFFB48A23),
-                                ],
+                                colors: [Color(0xFFF0D771), Color(0xFFB48A23)],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
@@ -2746,11 +2727,7 @@ event_time
   Future<void> _redirectToLogin() async {
     await supabase.auth.signOut();
     if (mounted) {
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        '/login',
-        (route) => false,
-      );
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
     }
   }
 
@@ -2766,9 +2743,7 @@ event_time
   void _navigateToAgenda() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const AthleteAgendaPage(),
-      ),
+      MaterialPageRoute(builder: (context) => const AthleteAgendaPage()),
     ).then((_) {
       _loadPendingCount();
       _loadWeekEvents();
@@ -2794,9 +2769,7 @@ event_time
 
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const AthleteFinancialPage(),
-      ),
+      MaterialPageRoute(builder: (context) => const AthleteFinancialPage()),
     ).then((_) {
       _loadOverdueFinancialCount();
       _loadNewFinancialCount();
@@ -2806,18 +2779,14 @@ event_time
   void _navigateToMessages() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const AthleteMessagesPage(),
-      ),
+      MaterialPageRoute(builder: (context) => const AthleteMessagesPage()),
     ).then((_) => _loadMessageUnreadCount());
   }
 
   void _navigateToStatistics() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const AthleteStatisticsPage(),
-      ),
+      MaterialPageRoute(builder: (context) => const AthleteStatisticsPage()),
     );
   }
 
@@ -2834,9 +2803,7 @@ event_time
     if (!_canAccessChat) return;
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const ChatRoomsPage(),
-      ),
+      MaterialPageRoute(builder: (context) => const ChatRoomsPage()),
     ).then((_) => _loadChatUnreadCount());
   }
 
@@ -2850,18 +2817,14 @@ event_time
 
     supabase.auth.updateUser(
       UserAttributes(
-        data: {
-          'last_competitions_viewed_at': viewedAt.toIso8601String(),
-        },
+        data: {'last_competitions_viewed_at': viewedAt.toIso8601String()},
       ),
     );
 
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const AdminCompetitionsPage(
-          canEdit: false,
-        ),
+        builder: (context) => const AdminCompetitionsPage(canEdit: false),
       ),
     ).then((_) => _loadCompetitionNewCount());
   }
@@ -2962,15 +2925,9 @@ event_time
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: olympusGold.withOpacity(0.65),
-          width: 1.4,
-        ),
+        border: Border.all(color: olympusGold.withOpacity(0.65), width: 1.4),
         gradient: const LinearGradient(
-          colors: [
-            Color(0xFFF7EAB0),
-            Color(0xFFE6D27A),
-          ],
+          colors: [Color(0xFFF7EAB0), Color(0xFFE6D27A)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -2993,9 +2950,7 @@ event_time
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: Colors.white.withOpacity(0.35),
-                  border: Border.all(
-                    color: olympusGold.withOpacity(0.45),
-                  ),
+                  border: Border.all(color: olympusGold.withOpacity(0.45)),
                 ),
                 child: const Icon(
                   Icons.cake_rounded,
@@ -3033,9 +2988,7 @@ event_time
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
                 color: Colors.white.withOpacity(0.38),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.5),
-                ),
+                border: Border.all(color: Colors.white.withOpacity(0.5)),
               ),
               child: Row(
                 children: [
@@ -3118,10 +3071,7 @@ event_time
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.20),
-          width: 1.2,
-        ),
+        border: Border.all(color: Colors.white.withOpacity(0.20), width: 1.2),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.25),
@@ -3135,11 +3085,7 @@ event_time
           ),
         ],
         gradient: const LinearGradient(
-          colors: [
-            Color(0xFF0D223B),
-            Color(0xFF123861),
-            Color(0xFF235E94),
-          ],
+          colors: [Color(0xFF0D223B), Color(0xFF123861), Color(0xFF235E94)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -3202,10 +3148,7 @@ event_time
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               gradient: const LinearGradient(
-                                colors: [
-                                  Color(0xFFF0D771),
-                                  Color(0xFFB48A23),
-                                ],
+                                colors: [Color(0xFFF0D771), Color(0xFFB48A23)],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
@@ -3243,10 +3186,12 @@ event_time
                                           ),
                                           placeholder: (_, __) =>
                                               _buildAvatarPlaceholder(
-                                                  firstName),
+                                            firstName,
+                                          ),
                                           errorWidget: (c, o, s) =>
                                               _buildAvatarPlaceholder(
-                                                  firstName),
+                                            firstName,
+                                          ),
                                         )
                                       : _buildAvatarPlaceholder(firstName),
                                 ),
@@ -3300,8 +3245,9 @@ event_time
                                             _monthlyTrainingTotal
                                         : 0,
                                     minHeight: 6,
-                                    backgroundColor:
-                                        Colors.white.withOpacity(0.15),
+                                    backgroundColor: Colors.white.withOpacity(
+                                      0.15,
+                                    ),
                                     valueColor:
                                         const AlwaysStoppedAnimation<Color>(
                                       olympusGold,
@@ -3465,10 +3411,7 @@ event_time
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
         color: Colors.white.withOpacity(0.05),
-        border: Border.all(
-          color: Colors.amber,
-          width: 1.5,
-        ),
+        border: Border.all(color: Colors.amber, width: 1.5),
       ),
       child: Row(
         children: [
@@ -3508,10 +3451,7 @@ event_time
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        border: Border.all(
-          color: olympusGold.withOpacity(0.55),
-          width: 1.2,
-        ),
+        border: Border.all(color: olympusGold.withOpacity(0.55), width: 1.2),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.18),
@@ -3536,9 +3476,7 @@ event_time
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.05),
-                  ),
+                  border: Border.all(color: Colors.white.withOpacity(0.05)),
                 ),
               ),
               FractionallySizedBox(
@@ -3651,8 +3589,9 @@ event_time
                   helper: 'Mês atual',
                   value: '${_monthlyPresencePercent.toStringAsFixed(0)}%',
                   valueColor: _getPresencePercentColor(_monthlyPresencePercent),
-                  accentColor:
-                      _getPresencePercentColor(_monthlyPresencePercent),
+                  accentColor: _getPresencePercentColor(
+                    _monthlyPresencePercent,
+                  ),
                   chartType: _MiniChartType.line,
                   blinkValue: true,
                 ),
@@ -3701,9 +3640,7 @@ event_time
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(11),
         color: const Color(0xFF061A31).withOpacity(0.72),
-        border: Border.all(
-          color: const Color(0xFF4FA3FF).withOpacity(0.34),
-        ),
+        border: Border.all(color: const Color(0xFF4FA3FF).withOpacity(0.34)),
       ),
       child: Row(
         children: [
@@ -4017,11 +3954,7 @@ event_time
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.calendar_month,
-                color: olympusGold,
-                size: 18,
-              ),
+              const Icon(Icons.calendar_month, color: olympusGold, size: 18),
               const SizedBox(width: 8),
               const Text(
                 'Eventos da semana',
@@ -4316,8 +4249,9 @@ event_time
                               height: iconBoxSize,
                               decoration: BoxDecoration(
                                 color: Colors.white.withOpacity(0.10),
-                                borderRadius:
-                                    BorderRadius.circular(isCompact ? 14 : 16),
+                                borderRadius: BorderRadius.circular(
+                                  isCompact ? 14 : 16,
+                                ),
                                 border: Border.all(
                                   color: Colors.white.withOpacity(0.16),
                                 ),
@@ -4434,9 +4368,7 @@ event_time
     required bool isCompact,
   }) {
     return Container(
-      constraints: BoxConstraints(
-        minWidth: isCompact ? 24 : 26,
-      ),
+      constraints: BoxConstraints(minWidth: isCompact ? 24 : 26),
       padding: EdgeInsets.symmetric(
         horizontal: isCompact ? 7 : 9,
         vertical: isCompact ? 4 : 5,
@@ -4542,10 +4474,7 @@ event_time
         decoration: BoxDecoration(
           color: Colors.red.shade700,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Colors.red.shade900,
-            width: 1.1,
-          ),
+          border: Border.all(color: Colors.red.shade900, width: 1.1),
           boxShadow: [
             BoxShadow(
               color: Colors.red.withOpacity(0.24),
@@ -4605,18 +4534,12 @@ event_time
         margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              Colors.red.shade50,
-              Colors.red.shade100,
-            ],
+            colors: [Colors.red.shade50, Colors.red.shade100],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: Colors.red.shade300,
-            width: 2,
-          ),
+          border: Border.all(color: Colors.red.shade300, width: 2),
           boxShadow: [
             BoxShadow(
               color: Colors.red.withOpacity(0.3),
@@ -4693,22 +4616,10 @@ event_time
     return Stack(
       children: [
         Positioned.fill(
-          child: Opacity(
-            opacity: 0.72,
-            child: Image.asset(
-              'assets/images/monte_olimpo_v2.png',
-              fit: BoxFit.cover,
-              alignment: Alignment.center,
-              errorBuilder: (context, error, stackTrace) {
-                return Container(color: const Color(0xFF102845));
-              },
-            ),
-          ),
+          child: Opacity(opacity: 0.72, child: _buildBrandBackgroundImage()),
         ),
         Positioned.fill(
-          child: Container(
-            color: Colors.black.withOpacity(0.10),
-          ),
+          child: Container(color: Colors.black.withOpacity(0.10)),
         ),
         Positioned.fill(
           child: Container(
@@ -4717,8 +4628,8 @@ event_time
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  olympusBlue.withOpacity(0.48),
-                  olympusLightBlue.withOpacity(0.20),
+                  _brandPrimary.withOpacity(0.48),
+                  _brandLight.withOpacity(0.20),
                   Colors.black.withOpacity(0.60),
                 ],
               ),
@@ -4732,7 +4643,7 @@ event_time
                 center: const Alignment(0, -0.62),
                 radius: 1.18,
                 colors: [
-                  olympusGold.withOpacity(0.11),
+                  _brandSecondary.withOpacity(0.11),
                   Colors.transparent,
                   Colors.transparent,
                 ],
@@ -4741,6 +4652,24 @@ event_time
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildBrandBackgroundImage() {
+    final branding = _branding;
+    if (branding.backgroundImageUrl.isNotEmpty) {
+      return Image.network(
+        branding.backgroundImageUrl,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        errorBuilder: (_, __, ___) => ColoredBox(color: _brandPrimary),
+      );
+    }
+    return Image.asset(
+      branding.backgroundAsset,
+      fit: BoxFit.cover,
+      alignment: Alignment.center,
+      errorBuilder: (_, __, ___) => ColoredBox(color: _brandPrimary),
     );
   }
 
@@ -4947,10 +4876,7 @@ event_time
                   color: color.withOpacity(0.16),
                   border: Border.all(color: color.withOpacity(0.52)),
                   boxShadow: [
-                    BoxShadow(
-                      color: color.withOpacity(0.14),
-                      blurRadius: 12,
-                    ),
+                    BoxShadow(color: color.withOpacity(0.14), blurRadius: 12),
                   ],
                 ),
                 child: Icon(icon, color: color, size: 25),
@@ -5027,18 +4953,12 @@ event_time
                     SizedBox(height: 3),
                     Text(
                       'Compartilhe sua experiência no treino',
-                      style: TextStyle(
-                        color: Color(0xCC0A3340),
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: Color(0xCC0A3340), fontSize: 12),
                     ),
                   ],
                 ),
               ),
-              const Icon(
-                Icons.arrow_forward_rounded,
-                color: Color(0xFF0A3340),
-              ),
+              const Icon(Icons.arrow_forward_rounded, color: Color(0xFF0A3340)),
             ],
           ),
         ),
@@ -5249,17 +5169,18 @@ event_time
 
   @override
   Widget build(BuildContext context) {
+    final onPrimary = Theme.of(context).colorScheme.onPrimary;
     return Scaffold(
-      backgroundColor: const Color(0xFF102845),
+      backgroundColor: _brandPrimary,
       appBar: _isLoading
           ? null
           : AppBar(
               title: const Text('Área do Atleta'),
-              backgroundColor: olympusBlue,
-              foregroundColor: Colors.white,
+              backgroundColor: _brandPrimary,
+              foregroundColor: onPrimary,
               actions: [
                 IconButton(
-                  icon: const Icon(Icons.person, color: Colors.white),
+                  icon: Icon(Icons.person, color: onPrimary),
                   tooltip: 'Perfil',
                   onPressed: _navigateToProfilePage,
                 ),
@@ -5273,9 +5194,7 @@ event_time
       body: Stack(
         children: [
           Positioned.fill(
-            child: RepaintBoundary(
-              child: _buildPremiumDashboardBackground(),
-            ),
+            child: RepaintBoundary(child: _buildPremiumDashboardBackground()),
           ),
           if (_isLoading)
             _buildDashboardLoadingState()
@@ -5309,17 +5228,10 @@ class _DashboardBadgeData {
   final int count;
   final Color color;
 
-  const _DashboardBadgeData({
-    required this.count,
-    required this.color,
-  });
+  const _DashboardBadgeData({required this.count, required this.color});
 }
 
-enum _MiniChartType {
-  line,
-  barsRed,
-  grid,
-}
+enum _MiniChartType { line, barsRed, grid }
 
 class _MiniLinePainter extends CustomPainter {
   final Color color;
@@ -5536,26 +5448,65 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
   }
 
   Future<void> _confirmDeleteAccount() async {
+    final email =
+        Supabase.instance.client.auth.currentUser?.email?.trim() ?? '';
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Não foi possível identificar o e-mail da conta.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    final controller = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Excluir conta'),
-        content: const Text(
-          'Essa ação é permanente e apagará sua conta e seus dados vinculados. Deseja continuar?',
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Excluir conta permanentemente'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Esta ação apagará sua conta de acesso, perfil, arquivos e dados vinculados. Não poderá ser desfeita.',
+              ),
+              const SizedBox(height: 16),
+              Text('Digite seu e-mail para confirmar:\n$email'),
+              const SizedBox(height: 8),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.emailAddress,
+                autocorrect: false,
+                decoration: const InputDecoration(
+                  labelText: 'E-mail de confirmação',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setDialogState(() {}),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed:
+                  controller.text.trim().toLowerCase() == email.toLowerCase()
+                      ? () => Navigator.pop(dialogContext, true)
+                      : null,
+              child: const Text('Excluir definitivamente'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Excluir conta'),
-          ),
-        ],
       ),
     );
 
+    final confirmationEmail = controller.text.trim();
+    controller.dispose();
     if (confirmed != true) return;
 
     if (!mounted) return;
@@ -5568,15 +5519,15 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
           children: [
             CircularProgressIndicator(),
             SizedBox(width: 16),
-            Expanded(
-              child: Text('Excluindo conta...'),
-            ),
+            Expanded(child: Text('Excluindo conta...')),
           ],
         ),
       ),
     );
 
-    final result = await _authService.deleteMyAccount();
+    final result = await _authService.deleteMyAccount(
+      confirmationEmail: confirmationEmail,
+    );
 
     if (!mounted) return;
 
@@ -5589,11 +5540,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
           backgroundColor: olympusBlue,
         ),
       );
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        '/login',
-        (route) => false,
-      );
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -5684,8 +5631,9 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                                 ),
                                 child: CircleAvatar(
                                   radius: 54,
-                                  backgroundColor:
-                                      Colors.white.withOpacity(0.15),
+                                  backgroundColor: Colors.white.withOpacity(
+                                    0.15,
+                                  ),
                                   backgroundImage:
                                       profile['avatar_url'] != null &&
                                               profile['avatar_url']
@@ -5769,8 +5717,9 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                                   backgroundColor: olympusGold,
                                   foregroundColor: olympusBlue,
                                   elevation: 0,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(16),
                                   ),
@@ -5787,12 +5736,14 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                                 icon: const Icon(Icons.lock_rounded),
                                 label: const Text('Alterar Senha'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor:
-                                      Colors.white.withOpacity(0.92),
+                                  backgroundColor: Colors.white.withOpacity(
+                                    0.92,
+                                  ),
                                   foregroundColor: olympusBlue,
                                   elevation: 0,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(16),
                                   ),
@@ -5812,8 +5763,9 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                             icon: const Icon(Icons.delete_forever_rounded),
                             label: const Text('Excluir conta'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                                  const Color(0xFFEF4444).withOpacity(0.94),
+                              backgroundColor: const Color(
+                                0xFFEF4444,
+                              ).withOpacity(0.94),
                               foregroundColor: Colors.white,
                               elevation: 0,
                               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -5831,21 +5783,40 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                           children: [
                             _buildSectionTitle('Dados Pessoais'),
                             _buildInfoTile(
-                                Icons.person, 'Nome', profile['full_name']),
-                            _buildInfoTile(Icons.email, 'E-mail',
-                                profile['email'] ?? 'Não informado'),
-                            _buildInfoTile(Icons.phone, 'Telefone',
-                                _formatPhone(profile['phone'])),
-                            _buildInfoTile(Icons.credit_card, 'CPF',
-                                _formatCpf(profile['cpf'])),
-                            _buildInfoTile(Icons.badge, 'RG',
-                                profile['rg'] ?? 'Não informado'),
+                              Icons.person,
+                              'Nome',
+                              profile['full_name'],
+                            ),
                             _buildInfoTile(
-                                Icons.calendar_today,
-                                'Data de Nascimento',
-                                _formatDate(profile['birth_date'])),
+                              Icons.email,
+                              'E-mail',
+                              profile['email'] ?? 'Não informado',
+                            ),
                             _buildInfoTile(
-                                Icons.transgender, 'Gênero', profile['gender']),
+                              Icons.phone,
+                              'Telefone',
+                              _formatPhone(profile['phone']),
+                            ),
+                            _buildInfoTile(
+                              Icons.credit_card,
+                              'CPF',
+                              _formatCpf(profile['cpf']),
+                            ),
+                            _buildInfoTile(
+                              Icons.badge,
+                              'RG',
+                              profile['rg'] ?? 'Não informado',
+                            ),
+                            _buildInfoTile(
+                              Icons.calendar_today,
+                              'Data de Nascimento',
+                              _formatDate(profile['birth_date']),
+                            ),
+                            _buildInfoTile(
+                              Icons.transgender,
+                              'Gênero',
+                              profile['gender'],
+                            ),
                             if (profile['court_position'] != null &&
                                 profile['court_position'].toString().isNotEmpty)
                               _buildInfoTile(
@@ -5859,22 +5830,43 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                         _buildProfileGlassCard(
                           children: [
                             _buildSectionTitle('Endereço'),
-                            _buildInfoTile(Icons.location_on, 'CEP',
-                                _formatCep(profile['zip_code'])),
                             _buildInfoTile(
-                                Icons.home, 'Rua', profile['street']),
+                              Icons.location_on,
+                              'CEP',
+                              _formatCep(profile['zip_code']),
+                            ),
                             _buildInfoTile(
-                                Icons.pin, 'Número', profile['street_number']),
+                              Icons.home,
+                              'Rua',
+                              profile['street'],
+                            ),
+                            _buildInfoTile(
+                              Icons.pin,
+                              'Número',
+                              profile['street_number'],
+                            ),
                             if (profile['complement'] != null &&
                                 profile['complement'].toString().isNotEmpty)
-                              _buildInfoTile(Icons.apartment, 'Complemento',
-                                  profile['complement']),
-                            _buildInfoTile(Icons.location_city, 'Bairro',
-                                profile['neighborhood']),
+                              _buildInfoTile(
+                                Icons.apartment,
+                                'Complemento',
+                                profile['complement'],
+                              ),
                             _buildInfoTile(
-                                Icons.location_city, 'Cidade', profile['city']),
+                              Icons.location_city,
+                              'Bairro',
+                              profile['neighborhood'],
+                            ),
                             _buildInfoTile(
-                                Icons.public, 'Estado', profile['state']),
+                              Icons.location_city,
+                              'Cidade',
+                              profile['city'],
+                            ),
+                            _buildInfoTile(
+                              Icons.public,
+                              'Estado',
+                              profile['state'],
+                            ),
                           ],
                         ),
                       ],
@@ -5918,17 +5910,8 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.asset(
-          'assets/images/monte_olimpo_v2.png',
-          fit: BoxFit.cover,
-          alignment: Alignment.center,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(color: olympusBlue);
-          },
-        ),
-        Container(
-          color: const Color(0xFF07182B).withOpacity(0.68),
-        ),
+        const OlympusBrandBackgroundImage(),
+        Container(color: const Color(0xFF07182B).withOpacity(0.68)),
         DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -6107,33 +6090,50 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   @override
   void initState() {
     super.initState();
-    _fullNameController =
-        TextEditingController(text: widget.profile['full_name'] ?? '');
+    _fullNameController = TextEditingController(
+      text: widget.profile['full_name'] ?? '',
+    );
     _phoneController = MaskedTextController(
-        mask: '(00) 00000-0000', text: widget.profile['phone'] ?? '');
-    _birthDateController =
-        TextEditingController(text: widget.profile['birth_date'] ?? '');
+      mask: '(00) 00000-0000',
+      text: widget.profile['phone'] ?? '',
+    );
+    _birthDateController = TextEditingController(
+      text: widget.profile['birth_date'] ?? '',
+    );
     _rgController = MaskedTextController(
-        mask: '00.000.000-0', text: widget.profile['rg'] ?? '');
+      mask: '00.000.000-0',
+      text: widget.profile['rg'] ?? '',
+    );
     _cpfController = MaskedTextController(
-        mask: '000.000.000-00', text: widget.profile['cpf'] ?? '');
-    _genderController =
-        TextEditingController(text: widget.profile['gender'] ?? '');
-    _positionController =
-        TextEditingController(text: widget.profile['court_position'] ?? '');
+      mask: '000.000.000-00',
+      text: widget.profile['cpf'] ?? '',
+    );
+    _genderController = TextEditingController(
+      text: widget.profile['gender'] ?? '',
+    );
+    _positionController = TextEditingController(
+      text: widget.profile['court_position'] ?? '',
+    );
     _zipCodeController = MaskedTextController(
-        mask: '00000-000', text: widget.profile['zip_code'] ?? '');
-    _streetController =
-        TextEditingController(text: widget.profile['street'] ?? '');
-    _streetNumberController =
-        TextEditingController(text: widget.profile['street_number'] ?? '');
-    _complementController =
-        TextEditingController(text: widget.profile['complement'] ?? '');
-    _neighborhoodController =
-        TextEditingController(text: widget.profile['neighborhood'] ?? '');
+      mask: '00000-000',
+      text: widget.profile['zip_code'] ?? '',
+    );
+    _streetController = TextEditingController(
+      text: widget.profile['street'] ?? '',
+    );
+    _streetNumberController = TextEditingController(
+      text: widget.profile['street_number'] ?? '',
+    );
+    _complementController = TextEditingController(
+      text: widget.profile['complement'] ?? '',
+    );
+    _neighborhoodController = TextEditingController(
+      text: widget.profile['neighborhood'] ?? '',
+    );
     _cityController = TextEditingController(text: widget.profile['city'] ?? '');
-    _stateController =
-        TextEditingController(text: widget.profile['state'] ?? '');
+    _stateController = TextEditingController(
+      text: widget.profile['state'] ?? '',
+    );
     _selectedGender = widget.profile['gender'] ?? '';
     _zipCodeController.addListener(_onZipCodeChanged);
   }
@@ -6148,8 +6148,9 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   Future<void> _fetchAddressByCep(String cep) async {
     setState(() => _isFetchingCep = true);
     try {
-      final response =
-          await http.get(Uri.parse('https://viacep.com.br/ws/$cep/json/'));
+      final response = await http.get(
+        Uri.parse('https://viacep.com.br/ws/$cep/json/'),
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['erro'] == null && mounted) {
@@ -6210,12 +6211,16 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
     setState(() => _isUploading = true);
     try {
       final user = supabase.auth.currentUser;
-      final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${user?.id}.jpg';
+      final fileName = OrganizationStorageService.scopedPath(
+        '${DateTime.now().millisecondsSinceEpoch}_${user?.id}.jpg',
+      );
       final Uint8List? fileBytes = await _selectedImage!.readAsBytes();
       if (fileBytes == null) return null;
-      await supabase.storage.from('avatars').uploadBinary(fileName, fileBytes,
-          fileOptions: const FileOptions(upsert: true));
+      await supabase.storage.from('avatars').uploadBinary(
+            fileName,
+            fileBytes,
+            fileOptions: const FileOptions(upsert: true),
+          );
       final publicUrl = supabase.storage.from('avatars').getPublicUrl(fileName);
       return publicUrl;
     } catch (e) {
@@ -6364,12 +6369,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.asset(
-          'assets/images/monte_olimpo_v2.png',
-          fit: BoxFit.cover,
-          alignment: Alignment.center,
-          errorBuilder: (_, __, ___) => Container(color: olympusBlue),
-        ),
+        const OlympusBrandBackgroundImage(),
         Container(color: const Color(0xFF07182B).withOpacity(0.64)),
         DecoratedBox(
           decoration: BoxDecoration(
@@ -6527,8 +6527,9 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
-                          border:
-                              Border.all(color: olympusGold.withOpacity(0.24)),
+                          border: Border.all(
+                            color: olympusGold.withOpacity(0.24),
+                          ),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withOpacity(0.22),
@@ -6732,8 +6733,9 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                                     child: TextFormField(
                                       controller: _streetNumberController,
                                       enabled: !_isLoading && !_isUploading,
-                                      style:
-                                          const TextStyle(color: Colors.white),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
                                       decoration: _athleteEditDecoration(
                                         label: 'Número *',
                                         icon: Icons.numbers_rounded,
@@ -6750,8 +6752,9 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                                     child: TextFormField(
                                       controller: _complementController,
                                       enabled: !_isLoading && !_isUploading,
-                                      style:
-                                          const TextStyle(color: Colors.white),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
                                       textCapitalization:
                                           TextCapitalization.words,
                                       decoration: _athleteEditDecoration(
@@ -6785,8 +6788,9 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                                     child: TextFormField(
                                       controller: _cityController,
                                       enabled: !_isLoading && !_isUploading,
-                                      style:
-                                          const TextStyle(color: Colors.white),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
                                       textCapitalization:
                                           TextCapitalization.words,
                                       decoration: _athleteEditDecoration(
@@ -6804,8 +6808,9 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                                     child: TextFormField(
                                       controller: _stateController,
                                       enabled: !_isLoading && !_isUploading,
-                                      style:
-                                          const TextStyle(color: Colors.white),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
                                       textCapitalization:
                                           TextCapitalization.characters,
                                       decoration: _athleteEditDecoration(
@@ -6881,7 +6886,13 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
         future: _selectedImage!.readAsBytes(),
         builder: (context, snapshot) {
           if (snapshot.hasData && snapshot.data != null) {
-            return Image.memory(snapshot.data!, fit: BoxFit.cover);
+            return Image.memory(
+              snapshot.data!,
+              fit: BoxFit.cover,
+              cacheWidth: 512,
+              cacheHeight: 512,
+              filterQuality: FilterQuality.medium,
+            );
           }
           return const Icon(Icons.person, size: 60, color: Colors.grey);
         },

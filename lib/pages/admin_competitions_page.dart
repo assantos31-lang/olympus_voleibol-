@@ -1,12 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
+
+import '../services/organization_storage_service.dart';
 
 class AdminCompetitionsPage extends StatefulWidget {
   final bool canEdit;
@@ -340,7 +343,9 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
   }
 
   String _composeResultLabel(
-      String displayLabel, Map<String, String> metadata) {
+    String displayLabel,
+    Map<String, String> metadata,
+  ) {
     final filtered = Map<String, String>.from(metadata)
       ..removeWhere((key, value) => value.trim().isEmpty);
     if (filtered.isEmpty) return displayLabel.trim();
@@ -856,7 +861,9 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
         RegExp(r'[^a-zA-Z0-9]'),
         '_',
       );
-      final fileName = 'friendlies/${cleanName}_$timestamp.jpg';
+      final fileName = OrganizationStorageService.scopedPath(
+        'friendlies/${cleanName}_$timestamp.jpg',
+      );
 
       if (kIsWeb) {
         final bytes = await image.readAsBytes();
@@ -940,8 +947,7 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             alignment: Alignment.center,
             errorBuilder: (context, error, stackTrace) {
@@ -1050,7 +1056,9 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
         RegExp(r'[^a-zA-Z0-9]'),
         '_',
       );
-      final fileName = 'championships/${cleanName}_$timestamp.jpg';
+      final fileName = OrganizationStorageService.scopedPath(
+        'championships/${cleanName}_$timestamp.jpg',
+      );
 
       if (kIsWeb) {
         final bytes = await image.readAsBytes();
@@ -1156,10 +1164,7 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
                               child: DecoratedBox(
                                 decoration: BoxDecoration(
                                   gradient: const LinearGradient(
-                                    colors: [
-                                      Color(0xFFFFE28A),
-                                      olympusGold,
-                                    ],
+                                    colors: [Color(0xFFFFE28A), olympusGold],
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
                                   ),
@@ -1176,8 +1181,9 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
                                 child: Material(
                                   color: Colors.transparent,
                                   child: InkWell(
-                                    borderRadius:
-                                        BorderRadius.circular(buttonRadius),
+                                    borderRadius: BorderRadius.circular(
+                                      buttonRadius,
+                                    ),
                                     onTap: _openHallOfAchievements,
                                     child: Padding(
                                       padding: EdgeInsets.symmetric(
@@ -1228,8 +1234,10 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
                                                   overflow:
                                                       TextOverflow.ellipsis,
                                                   style: TextStyle(
-                                                    color: olympusBlue
-                                                        .withOpacity(0.78),
+                                                    color:
+                                                        olympusBlue.withOpacity(
+                                                      0.78,
+                                                    ),
                                                     fontWeight: FontWeight.w700,
                                                     fontSize: subtitleFontSize,
                                                     height: 1.0,
@@ -1368,9 +1376,7 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
                 final cards = yearGroup.groups
                     .map(
                       (genderGroup) => Padding(
-                        padding: EdgeInsets.only(
-                          bottom: isMobile ? 12 : 14,
-                        ),
+                        padding: EdgeInsets.only(bottom: isMobile ? 12 : 14),
                         child: _FriendlyCategoryCard(
                           title: 'Amistoso ${genderGroup.title}',
                           itemCount: genderGroup.items.length,
@@ -1799,8 +1805,7 @@ class HallOfAchievementsPage extends StatelessWidget {
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             alignment: Alignment.center,
             errorBuilder: (context, error, stackTrace) {
@@ -1948,7 +1953,8 @@ class HallOfAchievementsPage extends StatelessWidget {
                                         image: achievement.imageUrl != null &&
                                                 achievement.imageUrl!.isNotEmpty
                                             ? DecorationImage(
-                                                image: CachedNetworkImageProvider(
+                                                image:
+                                                    CachedNetworkImageProvider(
                                                   achievement.imageUrl!,
                                                 ),
                                                 fit: BoxFit.cover,
@@ -2081,8 +2087,7 @@ class TournamentPhotosGalleryPage extends StatelessWidget {
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             alignment: Alignment.center,
             errorBuilder: (context, error, stackTrace) {
@@ -2917,8 +2922,10 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                 if (widget.onTapPoints != null)
                   TextButton.icon(
                     onPressed: widget.onTapPoints,
-                    icon:
-                        const Icon(Icons.stacked_line_chart_rounded, size: 18),
+                    icon: const Icon(
+                      Icons.stacked_line_chart_rounded,
+                      size: 18,
+                    ),
                     label: const Text('Pontos'),
                     style: TextButton.styleFrom(
                       foregroundColor: _AdminCompetitionsPageState.olympusGold,
@@ -3285,8 +3292,7 @@ class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             alignment: Alignment.center,
             errorBuilder: (context, error, stackTrace) {
@@ -3392,7 +3398,9 @@ class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
   }
 
   String _composeResultLabel(
-      String displayLabel, Map<String, String> metadata) {
+    String displayLabel,
+    Map<String, String> metadata,
+  ) {
     final filtered = Map<String, String>.from(metadata)
       ..removeWhere((key, value) => value.trim().isEmpty);
     if (filtered.isEmpty) return displayLabel.trim();
@@ -3667,7 +3675,9 @@ class _FeaturedMatchPageState extends State<FeaturedMatchPage> {
       }
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final fileName = 'featured/${widget.eventId}_$timestamp.jpg';
+      final fileName = OrganizationStorageService.scopedPath(
+        'featured/${widget.eventId}_$timestamp.jpg',
+      );
 
       if (kIsWeb) {
         final bytes = await image.readAsBytes();
@@ -4024,7 +4034,9 @@ class _EventPhotosPageState extends State<EventPhotosPage> {
       }
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final fileName = 'events/${widget.eventId}/$timestamp.jpg';
+      final fileName = OrganizationStorageService.scopedPath(
+        'events/${widget.eventId}/$timestamp.jpg',
+      );
 
       if (kIsWeb) {
         final bytes = await image.readAsBytes();
@@ -4419,7 +4431,9 @@ class _AdminCompetitionResultPageState
   }
 
   String _composeResultLabel(
-      String displayLabel, Map<String, String> metadata) {
+    String displayLabel,
+    Map<String, String> metadata,
+  ) {
     final filtered = Map<String, String>.from(metadata)
       ..removeWhere((key, value) => value.trim().isEmpty);
     if (filtered.isEmpty) return displayLabel.trim();
@@ -4473,15 +4487,18 @@ class _AdminCompetitionResultPageState
       }
 
       finalResult = _buildFinalResultLabel(finalResult, _achievementType);
-      final existingMeta =
-          _parseResultMetadata(widget.event.result?.finalLabel ?? '');
+      final existingMeta = _parseResultMetadata(
+        widget.event.result?.finalLabel ?? '',
+      );
 
       final resultResponse = await _supabase
           .from('event_results')
           .upsert({
             'event_id': widget.event.id,
-            'final_result_label':
-                _composeResultLabel(finalResult, existingMeta),
+            'final_result_label': _composeResultLabel(
+              finalResult,
+              existingMeta,
+            ),
             'olympus_sets_won': olympusWins,
             'opponent_sets_won': opponentWins,
           }, onConflict: 'event_id')

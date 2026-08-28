@@ -28,6 +28,16 @@ class RoleService {
 
   String labelFor(String role) => roleLabels[role] ?? role;
 
+  String _normalizeRole(dynamic value) {
+    final role = (value ?? '').toString().trim().toLowerCase();
+    if (const {'treinador', 'tecnico', 'técnico'}.contains(role)) {
+      return 'coach';
+    }
+    if (role == 'atleta') return 'athlete';
+    if (role == 'administrador') return 'admin';
+    return role;
+  }
+
   // ─── Leitura ───────────────────────────────────────────────────────────────
 
   /// Retorna todos os papéis ativos de um usuário.
@@ -63,20 +73,37 @@ class RoleService {
   }
 
   Future<List<String>> _fetchUserRoles(String userId) async {
-    try {
-      final response = await _supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', userId)
-          .eq('is_active', true);
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final response = await _supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', userId)
+            .eq('is_active', true);
 
-      return List<Map<String, dynamic>>.from(response)
-          .map((row) => row['role'].toString())
-          .toList();
-    } catch (e) {
-      // Fallback: lê user_type da tabela profiles (compatibilidade)
-      return await _fallbackFromProfile(userId);
+        final roles = List<Map<String, dynamic>>.from(response)
+            .map((row) => row['role'].toString())
+            .where(validRoles.contains)
+            .toSet()
+            .toList();
+        final profileRoles = await _fallbackFromProfile(userId);
+        for (final role in profileRoles) {
+          if (validRoles.contains(role) && !roles.contains(role)) {
+            roles.add(role);
+          }
+        }
+        if (roles.isNotEmpty) return roles;
+      } catch (_) {
+        // Uma reinicialização do banco pode falhar a primeira leitura.
+      }
+
+      if (attempt == 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
     }
+
+    // Compatibilidade para contas antigas que possuem apenas user_type.
+    return _fallbackFromProfile(userId);
   }
 
   /// Retorna todos os papéis (ativos e inativos) de um usuário.
@@ -221,8 +248,7 @@ class RoleService {
     } catch (e) {
       // user_roles pode estar protegida por RLS. Nesse caso, preserva a
       // compatibilidade com o papel primario salvo em profiles.
-      return (await getPrimaryRole(userId)).toLowerCase() ==
-          role.toLowerCase();
+      return (await getPrimaryRole(userId)).toLowerCase() == role.toLowerCase();
     }
   }
 
@@ -290,7 +316,7 @@ class RoleService {
           .eq('id', userId)
           .maybeSingle();
 
-      final type = (response?['user_type'] ?? 'member').toString();
+      final type = _normalizeRole(response?['user_type'] ?? 'member');
       return [type];
     } catch (_) {
       return ['member'];

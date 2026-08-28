@@ -1,8 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
-import '../services/push_token_service.dart';
+import '../theme/olympus_theme.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -12,9 +11,27 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  OlympusBranding get _branding {
+    final teamBranding = OlympusBrandingController.instance;
+    if (teamBranding.hasRememberedOrganization) {
+      return teamBranding.branding;
+    }
+    return PublicAppBrandingController.instance.branding;
+  }
+
+  Color get olympusBlue => _branding.primaryColor;
+  Color get olympusGold => _branding.secondaryColor;
+  Color get olympusLightBlue => Color.lerp(olympusBlue, Colors.white, 0.18)!;
+  String get _brandTitle {
+    final parts = _branding.teamName.trim().split(RegExp(r'\s+'));
+    return (parts.isEmpty ? 'OLYMPUS' : parts.first).toUpperCase();
+  }
+
+  String get _brandSubtitle {
+    final parts = _branding.teamName.trim().split(RegExp(r'\s+'));
+    return (parts.length > 1 ? parts.skip(1).join(' ') : 'CLUBE').toUpperCase();
+  }
+
   static const Color futuristicDark = Color(0xFF0B1420);
   static const Color futuristicCard = Color(0xFF122235);
 
@@ -55,30 +72,16 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       curve: Curves.easeOutCubic,
     );
 
-    _logoScaleAnimation = Tween<double>(
-      begin: 0.92,
-      end: 1,
-    ).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeOutBack,
-      ),
+    _logoScaleAnimation = Tween<double>(begin: 0.92, end: 1).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack),
     );
 
-    _logoPulseAnimation = Tween<double>(
-      begin: 1.0,
-      end: 1.03,
-    ).animate(
-      CurvedAnimation(
-        parent: _pulseController,
-        curve: Curves.easeInOut,
-      ),
+    _logoPulseAnimation = Tween<double>(begin: 1.0, end: 1.03).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    _contentSlideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.045),
-      end: Offset.zero,
-    ).animate(
+    _contentSlideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.045), end: Offset.zero).animate(
       CurvedAnimation(
         parent: _animationController,
         curve: Curves.easeOutCubic,
@@ -114,26 +117,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 curve: Curves.easeOutCubic,
                 offset:
                     _isAnyFieldFocused ? const Offset(0, -0.012) : Offset.zero,
-                child: Image.asset(
-                  'assets/images/monte_olimpo_v2.png',
-                  fit: BoxFit.cover,
-                  alignment: Alignment.center,
-                  errorBuilder: (context, error, stackTrace) {
-                    debugPrint('Erro ao carregar monte_olimpo_v2.png: $error');
-                    return Container(
-                      color: Colors.red,
-                      alignment: Alignment.center,
-                      child: const Text(
-                        'ERRO AO CARREGAR monte_olimpo_v2.png',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    );
-                  },
-                ),
+                child: _buildBrandBackgroundImage(),
               ),
             ),
           ),
@@ -150,8 +134,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   colors: [
                     olympusBlue.withOpacity(_isAnyFieldFocused ? 0.66 : 0.58),
                     olympusBlue.withOpacity(_isAnyFieldFocused ? 0.42 : 0.34),
-                    futuristicDark
-                        .withOpacity(_isAnyFieldFocused ? 0.82 : 0.72),
+                    futuristicDark.withOpacity(
+                      _isAnyFieldFocused ? 0.82 : 0.72,
+                    ),
                   ],
                 ),
               ),
@@ -168,11 +153,13 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   center: const Alignment(0, -0.25),
                   radius: 1.15,
                   colors: [
-                    olympusLightBlue
-                        .withOpacity(_isAnyFieldFocused ? 0.18 : 0.12),
+                    olympusLightBlue.withOpacity(
+                      _isAnyFieldFocused ? 0.18 : 0.12,
+                    ),
                     Colors.transparent,
-                    futuristicDark
-                        .withOpacity(_isAnyFieldFocused ? 0.22 : 0.16),
+                    futuristicDark.withOpacity(
+                      _isAnyFieldFocused ? 0.22 : 0.16,
+                    ),
                   ],
                 ),
               ),
@@ -181,12 +168,56 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         ),
         Positioned.fill(
           child: IgnorePointer(
-            child: CustomPaint(
-              painter: _FuturisticBackgroundPainter(),
-            ),
+            child: CustomPaint(painter: _FuturisticBackgroundPainter()),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildBrandBackgroundImage() {
+    Widget fallback() => Image.asset(
+          _branding.backgroundAsset,
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          errorBuilder: (_, __, ___) => ColoredBox(color: olympusBlue),
+        );
+    if (!_branding.useBackgroundImage) {
+      return ColoredBox(color: olympusBlue);
+    }
+    if (_branding.backgroundImageUrl.isNotEmpty) {
+      return Image.network(
+        _branding.backgroundImageUrl,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        errorBuilder: (_, __, ___) => fallback(),
+      );
+    }
+    return fallback();
+  }
+
+  Widget _buildBrandLogo(double size) {
+    Widget fallback() => Image.asset(
+          'assets/images/olympus_logo.png',
+          fit: BoxFit.cover,
+          width: size,
+          height: size,
+          errorBuilder: (_, __, ___) => ColoredBox(
+            color: futuristicCard,
+            child: Icon(
+              Icons.sports_volleyball,
+              size: size * 0.52,
+              color: olympusGold,
+            ),
+          ),
+        );
+    if (_branding.logoUrl.isEmpty) return fallback();
+    return Image.network(
+      _branding.logoUrl,
+      fit: BoxFit.cover,
+      width: size,
+      height: size,
+      errorBuilder: (_, __, ___) => fallback(),
     );
   }
 
@@ -261,17 +292,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     if (!mounted) return;
 
     if (result['success'] == true) {
-      try {
-        await PushTokenService.instance.syncAfterLogin();
-      } catch (e) {
-        debugPrint('ERRO AO SINCRONIZAR PUSH: $e');
-      }
-
-      if (!mounted) return;
-
       Navigator.pushNamedAndRemoveUntil(
         context,
-        '/dashboard',
+        '/',
         (route) => false,
       );
     } else {
@@ -308,7 +331,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(18),
-        borderSide: const BorderSide(color: olympusGold, width: 1.8),
+        borderSide: BorderSide(color: olympusGold, width: 1.8),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(18),
@@ -416,8 +439,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                               Container(
                                 margin: EdgeInsets.only(top: headerTopMargin),
                                 child: _buildGlassCard(
-                                  borderRadius:
-                                      BorderRadius.circular(cardRadius),
+                                  borderRadius: BorderRadius.circular(
+                                    cardRadius,
+                                  ),
                                   blurSigma: 20,
                                   padding: EdgeInsets.fromLTRB(
                                     isVerySmall ? 16 : 24,
@@ -428,7 +452,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                   child: Column(
                                     children: [
                                       Text(
-                                        'OLYMPUS',
+                                        _brandTitle,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           fontSize: headerTitleFont,
                                           fontWeight: FontWeight.w800,
@@ -441,7 +467,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                       ),
                                       SizedBox(height: isVerySmall ? 6 : 8),
                                       Text(
-                                        'VOLEIBOL',
+                                        _brandSubtitle,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           fontSize: headerSubtitleFont,
                                           fontWeight: FontWeight.w800,
@@ -499,26 +527,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                     child: Padding(
                                       padding: const EdgeInsets.all(4),
                                       child: ClipOval(
-                                        child: Image.asset(
-                                          'assets/images/olympus_logo.png',
-                                          fit: BoxFit.cover,
-                                          width: logoSize,
-                                          height: logoSize,
-                                          errorBuilder:
-                                              (context, error, stackTrace) {
-                                            debugPrint(
-                                                'Erro ao carregar logo: $error');
-                                            return Container(
-                                              color: futuristicCard,
-                                              alignment: Alignment.center,
-                                              child: Icon(
-                                                Icons.sports_volleyball,
-                                                size: logoSize * 0.52,
-                                                color: olympusGold,
-                                              ),
-                                            );
-                                          },
-                                        ),
+                                        child: _buildBrandLogo(logoSize),
                                       ),
                                     ),
                                   ),
@@ -598,8 +607,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                         borderRadius: BorderRadius.circular(18),
                                         boxShadow: [
                                           BoxShadow(
-                                            color:
-                                                olympusGold.withOpacity(0.24),
+                                            color: olympusGold.withOpacity(
+                                              0.24,
+                                            ),
                                             blurRadius: 18,
                                             offset: const Offset(0, 6),
                                           ),
@@ -613,12 +623,13 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                           foregroundColor: olympusBlue,
                                           elevation: 0,
                                           shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(18),
+                                            borderRadius: BorderRadius.circular(
+                                              18,
+                                            ),
                                           ),
                                         ),
                                         child: _isLoading
-                                            ? const SizedBox(
+                                            ? SizedBox(
                                                 width: 22,
                                                 height: 22,
                                                 child:
@@ -626,9 +637,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                                   strokeWidth: 2,
                                                   valueColor:
                                                       AlwaysStoppedAnimation<
-                                                          Color>(
-                                                    olympusBlue,
-                                                  ),
+                                                          Color>(olympusBlue),
                                                 ),
                                               )
                                             : Row(
@@ -681,7 +690,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'Olympus Voleibol © 2026',
+                                  '${_branding.teamName} © ${DateTime.now().year}',
                                   style: TextStyle(
                                     color: Colors.white.withOpacity(0.78),
                                     fontSize: isVerySmall ? 10 : 12,
@@ -701,22 +710,19 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           ),
           if (_isLoading)
             Positioned.fill(
-              child: Container(
-                decoration: const BoxDecoration(
-                  image: DecorationImage(
-                    image: AssetImage('assets/images/monte_olimpo_v2.png'),
-                    fit: BoxFit.cover,
-                    alignment: Alignment.center,
-                  ),
-                ),
-                child: Container(
-                  color: Colors.black.withOpacity(0.65),
-                  child: const Center(
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(olympusGold),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _buildBrandBackgroundImage(),
+                  Container(
+                    color: Colors.black.withOpacity(0.65),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(olympusGold),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
         ],

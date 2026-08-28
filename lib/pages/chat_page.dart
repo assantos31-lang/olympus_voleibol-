@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -6355,8 +6356,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           Positioned.fill(
             child: Opacity(
               opacity: 0.24,
-              child: Image.asset(
-                'assets/images/monte_olimpo_v2.png',
+              child: const OlympusBrandBackgroundImage(
                 fit: BoxFit.cover,
               ),
             ),

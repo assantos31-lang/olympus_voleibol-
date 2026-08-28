@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'agenda_page.dart';
 import 'admin_financial_page.dart';
 
 class AdminNotificationsPage extends StatefulWidget {
@@ -171,10 +172,13 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
 
     if (!mounted) return;
 
+    final isEventResponse =
+        notification['notification_type'] == 'event_response';
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const AdminFinancialPage(),
+        builder: (context) =>
+            isEventResponse ? const AgendaPage() : const AdminFinancialPage(),
       ),
     );
   }
@@ -252,7 +256,7 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Quando um atleta anexar comprovante, ele aparecerá aqui.',
+              'As respostas dos atletas e outros avisos aparecerão aqui.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withOpacity(0.68),
@@ -267,6 +271,8 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
 
   Widget _buildNotificationCard(Map<String, dynamic> notification) {
     final isRead = notification['is_read'] == true;
+    final isEventResponse =
+        notification['notification_type'] == 'event_response';
     final date = _createdAt(notification);
 
     return Container(
@@ -321,7 +327,9 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
                             ),
                           ),
                           child: Icon(
-                            Icons.attach_file_rounded,
+                            isEventResponse
+                                ? Icons.how_to_reg_rounded
+                                : Icons.attach_file_rounded,
                             color: isRead ? Colors.white70 : _goldColor,
                             size: 24,
                           ),
@@ -438,13 +446,15 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
                 child: CircularProgressIndicator(color: _goldColor),
               )
             : RefreshIndicator(
-                onRefresh: _loadNotifications,
+                onRefresh: () async {
+                  await _loadNotifications();
+                },
                 child: _notifications.isEmpty
                     ? ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
                         children: [
                           SizedBox(
-                            height: MediaQuery.of(context).size.height * 0.68,
+                            height: MediaQuery.of(context).size.height * 0.55,
                             child: _buildEmptyState(),
                           ),
                         ],

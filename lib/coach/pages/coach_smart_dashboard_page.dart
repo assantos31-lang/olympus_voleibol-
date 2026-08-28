@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CoachSmartDashboardPage extends StatefulWidget {
@@ -756,8 +757,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) {
               return Container(color: const Color(0xFF102845));

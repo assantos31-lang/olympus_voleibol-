@@ -3,8 +3,10 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../services/technical_staff_service.dart';
 import 'coach_training_category_detail_page.dart';
 import 'coach_training_sessions_page.dart';
 
@@ -38,6 +40,9 @@ class _CoachTrainingPlanningDashboardPageState
   Timer? _planningReloadDebounce;
 
   List<_TrainingSummaryItem> _allRows = [];
+  bool _isCoordinator = false;
+  int _scopeCoachCount = 1;
+  final Map<String, int> _additionalPhysicalMinutesByMonth = {};
   DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
 
   @override
@@ -58,12 +63,6 @@ class _CoachTrainingPlanningDashboardPageState
           schema: 'public',
           table: 'training_plan_blocks',
           callback: (payload) {
-            final changedCoachId =
-                (payload.newRecord['coach_id'] ?? payload.oldRecord['coach_id'])
-                    ?.toString();
-
-            if (changedCoachId != null && changedCoachId != user.id) return;
-
             _planningReloadDebounce?.cancel();
             _planningReloadDebounce = Timer(
               const Duration(milliseconds: 450),
@@ -92,16 +91,48 @@ class _CoachTrainingPlanningDashboardPageState
         throw Exception('Usuário não autenticado.');
       }
 
-      final response = await _supabase
+      final staffService = TechnicalStaffService(client: _supabase);
+      final assignment = await staffService.loadCurrentAssignment();
+      _isCoordinator = assignment?.isCoordinator == true;
+      final scopedCoachIds = <String>{user.id};
+      if (_isCoordinator) {
+        final assignments = await staffService.loadAssignments();
+        scopedCoachIds.addAll(
+          assignments
+              .where((item) => item.supervisorUserId == user.id)
+              .map((item) => item.userId),
+        );
+      }
+      _scopeCoachCount = scopedCoachIds.length;
+
+      final summaryResponse = await _supabase
           .from('monthly_training_plan_summary')
           .select(
             'coach_id, month, category, type, total_minutes, total_hours, total_blocks',
           )
-          .eq('coach_id', user.id)
+          .inFilter('coach_id', scopedCoachIds.toList())
           .order('month', ascending: false)
           .order('category', ascending: true);
+      dynamic physicalResponse = <dynamic>[];
+      try {
+        physicalResponse =
+            await _supabase.rpc('get_training_physical_summary_v1');
+      } catch (_) {
+        // Mantém o dashboard utilizável durante a atualização do banco.
+        physicalResponse = <dynamic>[];
+      }
 
-      final rows = List<Map<String, dynamic>>.from(response as List);
+      final rows = List<Map<String, dynamic>>.from(summaryResponse as List);
+      final physicalRows =
+          List<Map<String, dynamic>>.from(physicalResponse as List);
+      _additionalPhysicalMinutesByMonth.clear();
+      for (final row in physicalRows) {
+        final month = DateTime.tryParse((row['month'] ?? '').toString());
+        if (month == null) continue;
+        final key = '${month.year}-${month.month}';
+        _additionalPhysicalMinutesByMonth[key] =
+            int.tryParse((row['physical_minutes'] ?? '0').toString()) ?? 0;
+      }
 
       final parsedRows = rows.map(_TrainingSummaryItem.fromMap).toList();
 
@@ -169,7 +200,7 @@ class _CoachTrainingPlanningDashboardPageState
   }
 
   int get _totalMinutes {
-    return _selectedRows.fold<int>(0, (sum, item) => sum + item.totalMinutes);
+    return _minutesByCategory.values.fold<int>(0, (sum, value) => sum + value);
   }
 
   int get _totalBlocks {
@@ -186,6 +217,9 @@ class _CoachTrainingPlanningDashboardPageState
     for (final row in _selectedRows) {
       map[row.category] = (map[row.category] ?? 0) + row.totalMinutes;
     }
+    final monthKey = '${_selectedMonth.year}-${_selectedMonth.month}';
+    map['Físico'] = (map['Físico'] ?? 0) +
+        (_additionalPhysicalMinutesByMonth[monthKey] ?? 0);
 
     return map;
   }
@@ -360,8 +394,7 @@ class _CoachTrainingPlanningDashboardPageState
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) {
               return Container(color: const Color(0xFF102845));
@@ -470,10 +503,12 @@ class _CoachTrainingPlanningDashboardPageState
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Dashboard do Treinador',
-                      style: TextStyle(
+                      _isCoordinator
+                          ? 'Dashboard da Equipe Técnica'
+                          : 'Dashboard do Treinador',
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
@@ -490,7 +525,9 @@ class _CoachTrainingPlanningDashboardPageState
               ),
               const SizedBox(height: 10),
               Text(
-                'Planejamento mensal por Fundamentos, Tático e Físico',
+                _isCoordinator
+                    ? 'Planejamentos consolidados de $_scopeCoachCount profissionais'
+                    : 'Planejamento mensal por Fundamentos, Tático e Físico',
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.78),
                   fontSize: 13,
@@ -527,7 +564,7 @@ class _CoachTrainingPlanningDashboardPageState
               },
               showCheckmark: false,
               selectedColor: olympusGold,
-              backgroundColor: Colors.white.withOpacity(0.12),
+              backgroundColor: const Color(0xFF315A82),
               side: BorderSide(
                 color: selected ? olympusGold : Colors.white.withOpacity(0.20),
               ),
@@ -770,7 +807,11 @@ class _CoachTrainingPlanningDashboardPageState
     required List<_TrainingSummaryItem> rows,
   }) {
     final color = _categoryColor(category);
-    final total = rows.fold<int>(0, (sum, row) => sum + row.totalMinutes);
+    final directTotal = rows.fold<int>(0, (sum, row) => sum + row.totalMinutes);
+    final total = category == 'Físico'
+        ? (_minutesByCategory['Físico'] ?? directTotal)
+        : directTotal;
+    final indirectPhysicalMinutes = math.max(0, total - directTotal);
 
     return Material(
       color: Colors.transparent,
@@ -835,6 +876,25 @@ class _CoachTrainingPlanningDashboardPageState
                 ],
               ),
               const SizedBox(height: 12),
+              if (category == 'Físico' && indirectPhysicalMinutes > 0) ...[
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: olympusWarning.withOpacity(0.09),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '+ ${_formatMinutes(indirectPhysicalMinutes)} de esforço físico em blocos de Fundamentos e Tático',
+                    style: const TextStyle(
+                      color: olympusMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
               if (rows.isEmpty)
                 const Text(
                   'Sem blocos neste mês.',
@@ -1085,8 +1145,29 @@ class _CoachTrainingPlanningDashboardPageState
         builder: (_) => const CoachTrainingSessionsPage(
           initialTipoEvento: 'treino',
           lockTipoEvento: true,
+          pageTitle: 'Planejamento de treinos',
         ),
       ),
+    );
+  }
+
+  Widget _planningAccessMenu() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 4, 16, 10),
+          child: Text(
+            'Escolha onde deseja trabalhar',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        _trainingPlannerAccessCard(),
+      ],
     );
   }
 
@@ -1219,7 +1300,7 @@ class _CoachTrainingPlanningDashboardPageState
     return Scaffold(
       backgroundColor: olympusBg,
       appBar: AppBar(
-        title: const Text('Dashboard do Treinador'),
+        title: const Text('Planejamento'),
         backgroundColor: olympusBlue,
         foregroundColor: Colors.white,
         actions: [
@@ -1259,7 +1340,7 @@ class _CoachTrainingPlanningDashboardPageState
               child: ListView(
                 children: [
                   const SizedBox(height: 16),
-                  _trainingPlannerAccessCard(),
+                  _planningAccessMenu(),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.18),
                   _emptyState(),
                 ],
@@ -1272,7 +1353,7 @@ class _CoachTrainingPlanningDashboardPageState
                 padding: const EdgeInsets.only(bottom: 8),
                 children: [
                   _header(),
-                  _trainingPlannerAccessCard(),
+                  _planningAccessMenu(),
                   _overviewCard(),
                   _categoryCards(),
                   _rankingSection(),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/app_message_service.dart';
@@ -38,10 +39,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
 
   Future<void> _bootstrap() async {
     _restoreMessagesCache();
-    await Future.wait([
-      _loadSentThreads(),
-      _loadScheduledMessages(),
-    ]);
+    await Future.wait([_loadSentThreads(), _loadScheduledMessages()]);
   }
 
   String get _messagesCacheKey =>
@@ -191,10 +189,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
   }
 
   Future<void> _refreshAll() async {
-    await Future.wait([
-      _loadSentThreads(),
-      _loadScheduledMessages(),
-    ]);
+    await Future.wait([_loadSentThreads(), _loadScheduledMessages()]);
   }
 
   Future<void> _openThread(Map<String, dynamic> thread) async {
@@ -227,9 +222,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
     _openingMessagesPage = true;
     try {
       final created = await Navigator.of(context).push<bool>(
-        MaterialPageRoute(
-          builder: (_) => const AdminCreateMessagePage(),
-        ),
+        MaterialPageRoute(builder: (_) => const AdminCreateMessagePage()),
       );
 
       if (created == true) {
@@ -299,11 +292,12 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
   String _scheduleStatusLabel(Map<String, dynamic> schedule) {
     final isActive = schedule['is_active'] == true;
     final status = (schedule['status'] ?? '').toString().trim().toLowerCase();
-    final sentAt =
-        DateTime.tryParse((schedule['sent_at'] ?? '').toString())?.toLocal();
-    final nextRun =
-        DateTime.tryParse((schedule['next_run_at'] ?? '').toString())
-            ?.toLocal();
+    final sentAt = DateTime.tryParse(
+      (schedule['sent_at'] ?? '').toString(),
+    )?.toLocal();
+    final nextRun = DateTime.tryParse(
+      (schedule['next_run_at'] ?? '').toString(),
+    )?.toLocal();
 
     if (!isActive) return 'Inativo';
     if (status == 'error') return 'Erro';
@@ -535,8 +529,9 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
 
       if (!mounted) return;
       setState(() {
-        _scheduledMessages
-            .removeWhere((item) => item['id'].toString() == scheduleId);
+        _scheduledMessages.removeWhere(
+          (item) => item['id'].toString() == scheduleId,
+        );
       });
       _showSnack('Agendamento excluído com sucesso.');
     } catch (e) {
@@ -546,9 +541,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
 
   void _showSnack(String text) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
   String _formatDateTime(DateTime date) {
@@ -794,10 +787,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            panelColor,
-            Colors.white.withOpacity(0.08),
-          ],
+          colors: [panelColor, Colors.white.withOpacity(0.08)],
         ),
         boxShadow: [
           BoxShadow(
@@ -831,11 +821,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
                       ),
                     ],
                   ),
-                  child: Icon(
-                    iconData,
-                    color: accentColor,
-                    size: 22,
-                  ),
+                  child: Icon(iconData, color: accentColor, size: 22),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -878,9 +864,9 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
       ),
       child: Text(
         text,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.white,
-            ),
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: Colors.white),
       ),
     );
   }
@@ -1023,10 +1009,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            panelColor,
-            Colors.white.withOpacity(0.06),
-          ],
+          colors: [panelColor, Colors.white.withOpacity(0.06)],
         ),
         boxShadow: [
           BoxShadow(
@@ -1139,9 +1122,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
                           },
                     icon: const Icon(Icons.checklist),
                     label: const Text('Selecionar'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.white,
-                    ),
+                    style: TextButton.styleFrom(foregroundColor: Colors.white),
                   ),
                 IconButton(
                   tooltip: 'Atualizar histórico',
@@ -1261,8 +1242,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: Image.asset(
-              'assets/images/monte_olimpo_v2.png',
+            child: const OlympusBrandBackgroundImage(
               fit: BoxFit.cover,
             ),
           ),
@@ -1296,6 +1276,11 @@ class AdminCreateMessagePage extends StatefulWidget {
 
 class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
   final SupabaseClient supabase = Supabase.instance.client;
+
+  static const Color _olympusBlue = Color(0xFF0D2D59);
+  static const Color _olympusBlueLight = Color(0xFF1D568C);
+  static const Color _olympusGold = Color(0xFFE2B95F);
+  static const Color _olympusCream = Color(0xFFFFFBF3);
 
   final TextEditingController _subjectController = TextEditingController();
   final TextEditingController _messageController = TextEditingController();
@@ -1373,11 +1358,19 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
   @override
   void initState() {
     super.initState();
+    _subjectController.addListener(_onDraftChanged);
+    _messageController.addListener(_onDraftChanged);
     _bootstrap();
+  }
+
+  void _onDraftChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _subjectController.removeListener(_onDraftChanged);
+    _messageController.removeListener(_onDraftChanged);
     _subjectController.dispose();
     _messageController.dispose();
     _templateTitleController.dispose();
@@ -1388,10 +1381,7 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
 
   Future<void> _bootstrap() async {
     await _loadDeviceTimezone();
-    await Future.wait([
-      _loadUsers(),
-      _loadTemplates(),
-    ]);
+    await Future.wait([_loadUsers(), _loadTemplates()]);
   }
 
   Future<void> _loadDeviceTimezone() async {
@@ -1449,9 +1439,11 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
     }
 
     final profiles = values.toList()
-      ..sort((a, b) => _profileLabelFromValue(a)
-          .toLowerCase()
-          .compareTo(_profileLabelFromValue(b).toLowerCase()));
+      ..sort(
+        (a, b) => _profileLabelFromValue(
+          a,
+        ).toLowerCase().compareTo(_profileLabelFromValue(b).toLowerCase()),
+      );
     return profiles;
   }
 
@@ -1467,9 +1459,11 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
 
   List<String> get _courtPositions {
     final values = _allUsers
-        .where((e) =>
-            _normalizeProfileValue((e['user_type'] ?? '').toString()) ==
-            'athlete')
+        .where(
+          (e) =>
+              _normalizeProfileValue((e['user_type'] ?? '').toString()) ==
+              'athlete',
+        )
         .map((e) => (e['court_position'] ?? '').toString().trim())
         .where((e) => e.isNotEmpty)
         .toSet()
@@ -1555,10 +1549,12 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
       );
 
       permissions['admin_message_templates'] = _templates
-          .map((template) => {
-                'title': template['title'] ?? '',
-                'body': template['body'] ?? '',
-              })
+          .map(
+            (template) => {
+              'title': template['title'] ?? '',
+              'body': template['body'] ?? '',
+            },
+          )
           .toList();
 
       await supabase
@@ -1582,9 +1578,11 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
           _selectedCourtPosition != null &&
           _selectedCourtPosition!.isNotEmpty) {
         users = users
-            .where((u) =>
-                (u['court_position'] ?? '').toString().trim() ==
-                _selectedCourtPosition)
+            .where(
+              (u) =>
+                  (u['court_position'] ?? '').toString().trim() ==
+                  _selectedCourtPosition,
+            )
             .toList();
       }
     }
@@ -1621,8 +1619,9 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
 
     setState(() {
       if (exists) {
-        _selectedUsers
-            .removeWhere((u) => u['id'].toString() == user['id'].toString());
+        _selectedUsers.removeWhere(
+          (u) => u['id'].toString() == user['id'].toString(),
+        );
       } else {
         if (_sendMode == '1 usuário') {
           _selectedUsers
@@ -1756,8 +1755,10 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
                                   ..clear()
                                   ..addAll(
                                     visibleUsers
-                                        .map((user) =>
-                                            (user['id'] ?? '').toString())
+                                        .map(
+                                          (user) =>
+                                              (user['id'] ?? '').toString(),
+                                        )
                                         .where((id) => id.isNotEmpty),
                                   );
                               });
@@ -1785,8 +1786,9 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
                               itemBuilder: (context, index) {
                                 final user = visibleUsers[index];
                                 final userId = (user['id'] ?? '').toString();
-                                final selected =
-                                    tempSelectedIds.contains(userId);
+                                final selected = tempSelectedIds.contains(
+                                  userId,
+                                );
                                 final subtitle = _userSubtitle(user);
 
                                 return CheckboxListTile(
@@ -1988,11 +1990,13 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
         }
         recipients = _allUsers
             .where((u) => _matchesProfile(u['user_type'], _selectedProfile))
-            .where((u) =>
-                _selectedCourtPosition == null ||
-                _selectedCourtPosition!.isEmpty ||
-                (u['court_position'] ?? '').toString().trim() ==
-                    _selectedCourtPosition)
+            .where(
+              (u) =>
+                  _selectedCourtPosition == null ||
+                  _selectedCourtPosition!.isEmpty ||
+                  (u['court_position'] ?? '').toString().trim() ==
+                      _selectedCourtPosition,
+            )
             .toList();
         break;
       case '1 usuário':
@@ -2264,31 +2268,225 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
 
   void _showSnack(String text) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text)),
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  int get _recipientCount {
+    if (_sendMode == 'Por perfil') {
+      return _selectedProfile == null ? 0 : _filteredUsers.length;
+    }
+    return _selectedUsers.length;
+  }
+
+  String get _recipientSummary {
+    if (_sendMode == 'Por perfil') {
+      if (_selectedProfile == null) return 'Escolha o perfil dos destinatários';
+      return '${_profileLabelFromValue(_selectedProfile!)} • '
+          '$_recipientCount destinatário(s)';
+    }
+    if (_selectedUsers.isEmpty) return 'Nenhum destinatário selecionado';
+    if (_selectedUsers.length == 1) {
+      return (_selectedUsers.first['full_name'] ?? '1 destinatário').toString();
+    }
+    return '${_selectedUsers.length} destinatários selecionados';
+  }
+
+  double get _composerProgress {
+    var completed = 0;
+    if (_recipientCount > 0) completed++;
+    if (_subjectController.text.trim().isNotEmpty) completed++;
+    if (_messageController.text.trim().isNotEmpty) completed++;
+    if (!_scheduleSend || (_scheduledDate != null && _scheduledTime != null))
+      completed++;
+    return completed / 4;
+  }
+
+  bool get _composerReady => _composerProgress == 1;
+
+  Widget _buildComposerHero() {
+    final percent = (_composerProgress * 100).round();
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: const LinearGradient(
+          colors: [_olympusBlue, _olympusBlueLight],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: _olympusGold.withOpacity(0.62)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.22),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _olympusGold.withOpacity(0.18),
+                  border: Border.all(color: _olympusGold.withOpacity(0.7)),
+                ),
+                child: const Icon(Icons.campaign_rounded, color: _olympusGold),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Central de comunicação',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Configure, revise e envie em poucos passos.',
+                      style: TextStyle(color: Color(0xFFD9E8F7), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$percent%',
+                  style: const TextStyle(
+                    color: _olympusGold,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: _composerProgress,
+              minHeight: 7,
+              backgroundColor: Colors.white.withOpacity(0.16),
+              valueColor: const AlwaysStoppedAnimation<Color>(_olympusGold),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Icon(
+                Icons.people_alt_rounded,
+                size: 17,
+                color: _olympusGold,
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  _recipientSummary,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildSectionCard({
     required String title,
     String? subtitle,
+    required IconData icon,
+    required int step,
     required Widget child,
   }) {
-    return Card(
+    return Container(
+      decoration: BoxDecoration(
+        color: _olympusCream.withOpacity(0.97),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withOpacity(0.82)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF05182E).withOpacity(0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _olympusBlue.withOpacity(0.09),
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Icon(icon, color: _olympusBlue, size: 21),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'ETAPA $step',
+                        style: const TextStyle(
+                          color: _olympusGold,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: _olympusBlue,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
             if (subtitle != null && subtitle.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(subtitle),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                style: TextStyle(color: _olympusBlue.withOpacity(0.68)),
+              ),
             ],
-            const SizedBox(height: 12),
+            const SizedBox(height: 15),
             child,
           ],
         ),
@@ -2326,6 +2524,16 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
           label: Text(label),
           selected: isSelected,
           onSelected: (_) => onSelected(option),
+          selectedColor: _olympusBlue,
+          backgroundColor: Colors.white,
+          side: BorderSide(
+            color: isSelected ? _olympusGold : _olympusBlue.withOpacity(0.18),
+          ),
+          checkmarkColor: _olympusGold,
+          labelStyle: TextStyle(
+            color: isSelected ? Colors.white : _olympusBlue,
+            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+          ),
         );
       }).toList(),
     );
@@ -2398,353 +2606,512 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
         (_sendMode == 'Vários usuários');
 
     return Scaffold(
+      backgroundColor: _olympusBlue,
       appBar: AppBar(
-        title: const Text('Criar mensagem'),
+        backgroundColor: _olympusBlue,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Criar mensagem',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            Text(
+              'Comunicação Olympus',
+              style: TextStyle(
+                color: Color(0xFFD5E4F2),
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
-                _buildSectionCard(
-                  title: 'Destinatários',
-                  subtitle: 'Escolha como a mensagem será enviada.',
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Modo de envio',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 8),
-                      _buildModeButtons(),
-                      if (showProfile) ...[
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Perfil',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildProfileButtons(),
-                      ],
-                      if (showCourtPositionFilter) ...[
-                        const SizedBox(height: 16),
-                        DropdownButtonFormField<String>(
-                          value: _singleOrNullValue(
-                            _selectedCourtPosition,
-                            ['Todas', ..._courtPositions],
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Filtrar por posição',
-                            border: OutlineInputBorder(),
-                          ),
-                          items: [
-                            const DropdownMenuItem<String>(
-                              value: 'Todas',
-                              child: Text('Todas'),
-                            ),
-                            ..._courtPositions.map(
-                              (position) => DropdownMenuItem<String>(
-                                value: position,
-                                child: Text(position),
-                              ),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedCourtPosition =
-                                  value == 'Todas' ? null : value;
-                            });
-                            _applyFilter();
-                          },
-                        ),
-                      ],
-                      if (showGenderFilter) ...[
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Filtrar por gênero',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildGenderButtons(),
-                      ],
-                    ],
-                  ),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: OlympusBrandBackgroundImage(
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) =>
+                  const ColoredBox(color: _olympusBlue),
+            ),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    const Color(0xFF07182B).withOpacity(0.84),
+                    _olympusBlue.withOpacity(0.92),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                _buildSectionCard(
-                  title: 'Seleção de usuários',
-                  subtitle: canSelectUsers
-                      ? 'Abra o seletor para escolher usuários sem poluir a tela.'
-                      : 'A seleção manual só aparece nos modos 1 usuário e vários usuários.',
-                  child: canSelectUsers
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    _selectedUsers.isEmpty
-                                        ? 'Nenhum usuário selecionado'
-                                        : '${_selectedUsers.length} usuário(s) selecionado(s)',
+              ),
+            ),
+          ),
+          _loading
+              ? const Center(
+                  child: CircularProgressIndicator(color: _olympusGold),
+                )
+              : ListView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 110),
+                  children: [
+                    _buildComposerHero(),
+                    const SizedBox(height: 12),
+                    _buildSectionCard(
+                      title: 'Destinatários',
+                      subtitle: 'Escolha como a mensagem será enviada.',
+                      icon: Icons.groups_2_rounded,
+                      step: 1,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Modo de envio',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                          _buildModeButtons(),
+                          if (showProfile) ...[
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Perfil',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 8),
+                            _buildProfileButtons(),
+                          ],
+                          if (showCourtPositionFilter) ...[
+                            const SizedBox(height: 16),
+                            DropdownButtonFormField<String>(
+                              value: _singleOrNullValue(
+                                _selectedCourtPosition,
+                                ['Todas', ..._courtPositions],
+                              ),
+                              decoration: const InputDecoration(
+                                labelText: 'Filtrar por posição',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: [
+                                const DropdownMenuItem<String>(
+                                  value: 'Todas',
+                                  child: Text('Todas'),
+                                ),
+                                ..._courtPositions.map(
+                                  (position) => DropdownMenuItem<String>(
+                                    value: position,
+                                    child: Text(position),
                                   ),
                                 ),
-                                if (_selectedUsers.isNotEmpty)
-                                  TextButton(
-                                    onPressed: _clearSelection,
-                                    child: const Text('Limpar'),
-                                  ),
                               ],
-                            ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                if (_selectedUsers.isEmpty)
-                                  const Chip(
-                                    label: Text('Nenhum selecionado'),
-                                  )
-                                else
-                                  ..._selectedUsers.take(3).map(
-                                        (user) => InputChip(
-                                          label: Text(
-                                            (user['full_name'] ?? '')
-                                                .toString(),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          onDeleted: () {
-                                            setState(() {
-                                              _selectedUsers.removeWhere(
-                                                (item) =>
-                                                    (item['id'] ?? '')
-                                                        .toString() ==
-                                                    (user['id'] ?? '')
-                                                        .toString(),
-                                              );
-                                            });
-                                          },
-                                        ),
-                                      ),
-                                if (_selectedUsers.length > 3)
-                                  Chip(
-                                    label: Text(
-                                      '+${_selectedUsers.length - 3} selecionado(s)',
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            OutlinedButton.icon(
-                              onPressed: _openUserSelectionSheet,
-                              icon: const Icon(Icons.people_alt_outlined),
-                              label: Text(
-                                _sendMode == '1 usuário'
-                                    ? 'Escolher usuário'
-                                    : 'Escolher usuários',
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Disponíveis com os filtros atuais: ${_filteredUsers.length} • selecionados entre os filtrados: $_selectedFilteredCount',
-                              style: Theme.of(context).textTheme.bodySmall,
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedCourtPosition =
+                                      value == 'Todas' ? null : value;
+                                });
+                                _applyFilter();
+                              },
                             ),
                           ],
-                        )
-                      : const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Nenhuma seleção manual é necessária neste modo.',
+                          if (showGenderFilter) ...[
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Filtrar por gênero',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 8),
+                            _buildGenderButtons(),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (canSelectUsers) ...[
+                      _buildSectionCard(
+                        title: 'Seleção de usuários',
+                        icon: Icons.person_search_rounded,
+                        step: 2,
+                        subtitle: canSelectUsers
+                            ? 'Abra o seletor para escolher usuários sem poluir a tela.'
+                            : 'A seleção manual só aparece nos modos 1 usuário e vários usuários.',
+                        child: canSelectUsers
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          _selectedUsers.isEmpty
+                                              ? 'Nenhum usuário selecionado'
+                                              : '${_selectedUsers.length} usuário(s) selecionado(s)',
+                                        ),
+                                      ),
+                                      if (_selectedUsers.isNotEmpty)
+                                        TextButton(
+                                          onPressed: _clearSelection,
+                                          child: const Text('Limpar'),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      if (_selectedUsers.isEmpty)
+                                        const Chip(
+                                          label: Text('Nenhum selecionado'),
+                                        )
+                                      else
+                                        ..._selectedUsers.take(3).map(
+                                              (user) => InputChip(
+                                                label: Text(
+                                                  (user['full_name'] ?? '')
+                                                      .toString(),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                                onDeleted: () {
+                                                  setState(() {
+                                                    _selectedUsers.removeWhere(
+                                                      (item) =>
+                                                          (item['id'] ?? '')
+                                                              .toString() ==
+                                                          (user['id'] ?? '')
+                                                              .toString(),
+                                                    );
+                                                  });
+                                                },
+                                              ),
+                                            ),
+                                      if (_selectedUsers.length > 3)
+                                        Chip(
+                                          label: Text(
+                                            '+${_selectedUsers.length - 3} selecionado(s)',
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  OutlinedButton.icon(
+                                    onPressed: _openUserSelectionSheet,
+                                    icon: const Icon(Icons.people_alt_outlined),
+                                    label: Text(
+                                      _sendMode == '1 usuário'
+                                          ? 'Escolher usuário'
+                                          : 'Escolher usuários',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Disponíveis com os filtros atuais: ${_filteredUsers.length} • selecionados entre os filtrados: $_selectedFilteredCount',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              )
+                            : const Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Nenhuma seleção manual é necessária neste modo.',
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    _buildSectionCard(
+                      title: 'Usar mensagem padrão',
+                      icon: Icons.auto_awesome_rounded,
+                      step: canSelectUsers ? 3 : 2,
+                      subtitle:
+                          'Selecione um modelo salvo para preencher assunto e mensagem.',
+                      child: Column(
+                        children: [
+                          DropdownButtonFormField<String>(
+                            value: _singleOrNullTemplateKey(
+                              _selectedTemplateKey,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'Mensagem padrão',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: [
+                              const DropdownMenuItem<String>(
+                                value: '',
+                                child: Text('Selecionar'),
+                              ),
+                              ..._templates.map(
+                                (template) => DropdownMenuItem<String>(
+                                  value: _templateKey(template),
+                                  child: Text(template['title'] ?? ''),
+                                ),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              if (value == null || value.isEmpty) {
+                                setState(() => _selectedTemplateKey = null);
+                                return;
+                              }
+
+                              final template = _templates
+                                  .cast<Map<String, String>?>()
+                                  .firstWhere(
+                                    (item) =>
+                                        item != null &&
+                                        _templateKey(item) == value,
+                                    orElse: () => null,
+                                  );
+
+                              if (template != null) {
+                                _applyTemplate(template);
+                              }
+                            },
                           ),
-                        ),
-                ),
-                const SizedBox(height: 12),
-                _buildSectionCard(
-                  title: 'Usar mensagem padrão',
-                  subtitle:
-                      'Selecione um modelo salvo para preencher assunto e mensagem.',
-                  child: Column(
-                    children: [
-                      DropdownButtonFormField<String>(
-                        value: _singleOrNullTemplateKey(_selectedTemplateKey),
-                        decoration: const InputDecoration(
-                          labelText: 'Mensagem padrão',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          const DropdownMenuItem<String>(
-                            value: '',
-                            child: Text('Selecionar'),
-                          ),
-                          ..._templates.map(
-                            (template) => DropdownMenuItem<String>(
-                              value: _templateKey(template),
-                              child: Text(template['title'] ?? ''),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: OutlinedButton.icon(
+                              onPressed: _openCreateTemplateDialog,
+                              icon: const Icon(Icons.add_box_outlined),
+                              label: const Text('Criar modelo'),
                             ),
                           ),
                         ],
-                        onChanged: (value) {
-                          if (value == null || value.isEmpty) {
-                            setState(() => _selectedTemplateKey = null);
-                            return;
-                          }
-
-                          final template = _templates
-                              .cast<Map<String, String>?>()
-                              .firstWhere(
-                                (item) =>
-                                    item != null && _templateKey(item) == value,
-                                orElse: () => null,
-                              );
-
-                          if (template != null) {
-                            _applyTemplate(template);
-                          }
-                        },
                       ),
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: OutlinedButton.icon(
-                          onPressed: _openCreateTemplateDialog,
-                          icon: const Icon(Icons.add_box_outlined),
-                          label: const Text('Criar modelo'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _buildSectionCard(
-                  title: 'Conteúdo',
-                  child: Column(
-                    children: [
-                      DropdownButtonFormField<String>(
-                        value: _deliveryChannel,
-                        decoration: const InputDecoration(
-                          labelText: 'Canal de saída',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: _deliveryChannelLabels.entries
-                            .map((entry) => DropdownMenuItem<String>(
-                                  value: entry.key,
-                                  child: Text(entry.value),
-                                ))
-                            .toList(),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setState(() => _deliveryChannel = value);
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      SwitchListTile(
-                        title: const Text('Enviar como notificação urgente'),
-                        value: _isUrgent,
-                        contentPadding: EdgeInsets.zero,
-                        onChanged: (value) {
-                          setState(() => _isUrgent = value);
-                        },
-                      ),
-                      SwitchListTile(
-                        title: const Text('Programar envio'),
-                        subtitle: Text(
-                          'Usa o horário local do telefone ($_deviceTimezone).',
-                        ),
-                        value: _scheduleSend,
-                        contentPadding: EdgeInsets.zero,
-                        onChanged: (value) {
-                          setState(() {
-                            _scheduleSend = value;
-                            if (!_scheduleSend) {
-                              _scheduledDate = null;
-                              _scheduledTime = null;
-                            }
-                          });
-                        },
-                      ),
-                      if (_scheduleSend) ...[
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: _pickScheduledDate,
-                                icon: const Icon(Icons.calendar_today_outlined),
-                                label: Text(_formattedScheduledDate()),
-                              ),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildSectionCard(
+                      title: 'Conteúdo',
+                      icon: Icons.edit_note_rounded,
+                      step: canSelectUsers ? 4 : 3,
+                      child: Column(
+                        children: [
+                          DropdownButtonFormField<String>(
+                            value: _deliveryChannel,
+                            decoration: const InputDecoration(
+                              labelText: 'Canal de saída',
+                              border: OutlineInputBorder(),
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: _pickScheduledTime,
-                                icon: const Icon(Icons.access_time_outlined),
-                                label: Text(_formattedScheduledTime()),
-                              ),
+                            items: _deliveryChannelLabels.entries
+                                .map(
+                                  (entry) => DropdownMenuItem<String>(
+                                    value: entry.key,
+                                    child: Text(entry.value),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setState(() => _deliveryChannel = value);
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          SwitchListTile(
+                            title: const Text(
+                              'Enviar como notificação urgente',
                             ),
+                            activeThumbColor: _olympusGold,
+                            activeTrackColor: _olympusBlue,
+                            value: _isUrgent,
+                            contentPadding: EdgeInsets.zero,
+                            onChanged: (value) {
+                              setState(() => _isUrgent = value);
+                            },
+                          ),
+                          SwitchListTile(
+                            title: const Text('Programar envio'),
+                            activeThumbColor: _olympusGold,
+                            activeTrackColor: _olympusBlue,
+                            subtitle: Text(
+                              'Usa o horário local do telefone ($_deviceTimezone).',
+                            ),
+                            value: _scheduleSend,
+                            contentPadding: EdgeInsets.zero,
+                            onChanged: (value) {
+                              setState(() {
+                                _scheduleSend = value;
+                                if (!_scheduleSend) {
+                                  _scheduledDate = null;
+                                  _scheduledTime = null;
+                                }
+                              });
+                            },
+                          ),
+                          if (_scheduleSend) ...[
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _pickScheduledDate,
+                                    icon: const Icon(
+                                      Icons.calendar_today_outlined,
+                                    ),
+                                    label: Text(_formattedScheduledDate()),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _pickScheduledTime,
+                                    icon: const Icon(
+                                      Icons.access_time_outlined,
+                                    ),
+                                    label: Text(_formattedScheduledTime()),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
                           ],
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      TextField(
-                        controller: _subjectController,
-                        decoration: const InputDecoration(
-                          hintText: 'Assunto',
-                          border: OutlineInputBorder(),
-                        ),
+                          TextField(
+                            controller: _subjectController,
+                            textCapitalization: TextCapitalization.sentences,
+                            decoration: const InputDecoration(
+                              labelText: 'Assunto',
+                              hintText: 'Digite um título claro e objetivo',
+                              prefixIcon: Icon(Icons.title_rounded),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _messageController,
+                            minLines: 5,
+                            maxLines: 7,
+                            textCapitalization: TextCapitalization.sentences,
+                            decoration: InputDecoration(
+                              labelText: 'Mensagem',
+                              hintText: 'Escreva a mensagem que será enviada',
+                              alignLabelWithHint: true,
+                              helperText:
+                                  '${_messageController.text.length} caracteres',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          SwitchListTile(
+                            title: const Text('Permitir resposta'),
+                            activeThumbColor: _olympusGold,
+                            activeTrackColor: _olympusBlue,
+                            subtitle: const Text(
+                              'O destinatário poderá responder por uma conversa privada.',
+                            ),
+                            value: _allowReply,
+                            contentPadding: EdgeInsets.zero,
+                            onChanged: (value) {
+                              setState(() => _allowReply = value);
+                            },
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _messageController,
-                        minLines: 5,
-                        maxLines: 7,
-                        decoration: const InputDecoration(
-                          hintText: 'Mensagem',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      SwitchListTile(
-                        title: const Text('Permitir resposta'),
-                        subtitle: const Text(
-                          'No envio programado, o backend atualmente cria a thread com resposta permitida.',
-                        ),
-                        value: _allowReply,
-                        contentPadding: EdgeInsets.zero,
-                        onChanged: (value) {
-                          setState(() => _allowReply = value);
-                        },
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
                 ),
-                const SizedBox(height: 24),
-              ],
-            ),
+        ],
+      ),
       bottomNavigationBar: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          child: SizedBox(
-            height: 52,
-            child: FilledButton.icon(
-              onPressed: _sending
-                  ? null
-                  : (_scheduleSend ? _scheduleMessage : _sendMessage),
-              icon: _sending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(_scheduleSend ? Icons.schedule_send : Icons.send),
-              label: Text(
-                _sending
-                    ? (_scheduleSend ? 'Programando...' : 'Enviando...')
-                    : (_scheduleSend
-                        ? 'Programar mensagem'
-                        : 'Enviar mensagem'),
-              ),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          decoration: BoxDecoration(
+            color: _olympusBlue,
+            border: Border(
+              top: BorderSide(color: _olympusGold.withOpacity(0.45)),
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.26),
+                blurRadius: 16,
+                offset: const Offset(0, -5),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: _olympusGold.withOpacity(0.16),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _composerReady
+                      ? Icons.mark_email_read_rounded
+                      : Icons.edit_notifications_rounded,
+                  color: _olympusGold,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _composerReady ? 'Mensagem pronta' : 'Complete as etapas',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      _recipientCount == 0
+                          ? 'Selecione os destinatários'
+                          : '$_recipientCount destinatário(s)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFFCADBEA),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                height: 48,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _olympusGold,
+                    foregroundColor: _olympusBlue,
+                    disabledBackgroundColor: Colors.white.withOpacity(0.16),
+                    disabledForegroundColor: Colors.white54,
+                    padding: const EdgeInsets.symmetric(horizontal: 17),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  onPressed: _sending || !_composerReady
+                      ? null
+                      : (_scheduleSend ? _scheduleMessage : _sendMessage),
+                  icon: _sending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          _scheduleSend
+                              ? Icons.schedule_send_rounded
+                              : Icons.send_rounded,
+                        ),
+                  label: Text(
+                    _sending
+                        ? (_scheduleSend ? 'Programando...' : 'Enviando...')
+                        : (_scheduleSend ? 'Programar' : 'Enviar'),
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -2789,10 +3156,7 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
   }
 
   Future<void> _bootstrap() async {
-    await Future.wait([
-      _loadMessages(),
-      _loadParticipantsStatus(),
-    ]);
+    await Future.wait([_loadMessages(), _loadParticipantsStatus()]);
     _setupRealtime();
   }
 
@@ -2818,10 +3182,7 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
           value: widget.threadId,
         ),
         callback: (_) async {
-          await Future.wait([
-            _loadMessages(),
-            _loadParticipantsStatus(),
-          ]);
+          await Future.wait([_loadMessages(), _loadParticipantsStatus()]);
         },
       )
       ..subscribe();
@@ -2904,10 +3265,11 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
           'viewed_at': row['viewed_at'],
         };
       }).toList()
-        ..sort((a, b) => (a['full_name'] ?? '')
-            .toString()
-            .toLowerCase()
-            .compareTo((b['full_name'] ?? '').toString().toLowerCase()));
+        ..sort(
+          (a, b) => (a['full_name'] ?? '').toString().toLowerCase().compareTo(
+                (b['full_name'] ?? '').toString().toLowerCase(),
+              ),
+        );
 
       if (!mounted) return;
       setState(() {
@@ -2990,10 +3352,10 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
         'created_at': now,
       });
 
-      await supabase.from('app_message_threads').update({
-        'last_message_at': now,
-        'preview': _buildPreview(body),
-      }).eq('id', widget.threadId);
+      await supabase
+          .from('app_message_threads')
+          .update({'last_message_at': now, 'preview': _buildPreview(body)}).eq(
+              'id', widget.threadId);
 
       final participants = await supabase
           .from('app_message_participants')
@@ -3039,10 +3401,7 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
       }
 
       _replyController.clear();
-      await Future.wait([
-        _loadMessages(),
-        _loadParticipantsStatus(),
-      ]);
+      await Future.wait([_loadMessages(), _loadParticipantsStatus()]);
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -3117,9 +3476,7 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
 
   void _showSnack(String text) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
   Widget _buildStatusChip({
@@ -3142,10 +3499,7 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
           const SizedBox(width: 6),
           Text(
             '$label ($count)',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: color,
-            ),
+            style: TextStyle(fontWeight: FontWeight.w600, color: color),
           ),
         ],
       ),
@@ -3203,10 +3557,10 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
                     Expanded(
                       child: Text(
                         'Status de visualização',
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
                       ),
                     ),
                     if (_loadingParticipants)
@@ -3294,9 +3648,7 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.subject),
-      ),
+      appBar: AppBar(title: Text(widget.subject)),
       body: Column(
         children: [
           _buildParticipantsCard(),
@@ -3305,8 +3657,7 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
                 ? const Center(child: CircularProgressIndicator())
                 : _messages.isEmpty
                     ? const Center(
-                        child: Text('Nenhuma mensagem nesta conversa.'),
-                      )
+                        child: Text('Nenhuma mensagem nesta conversa.'))
                     : ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.all(12),
@@ -3391,9 +3742,9 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
                                         const SizedBox(height: 8),
                                         Text(
                                           createdAt,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
                                         ),
                                       ],
                                     ],
@@ -3432,8 +3783,9 @@ class _AdminMessageThreadPageState extends State<AdminMessageThreadPage> {
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Icon(Icons.send),
                       ),

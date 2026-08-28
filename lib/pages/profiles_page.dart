@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'dart:ui';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -13,7 +14,9 @@ import 'dart:math';
 import '../services/auth_service.dart';
 import '../services/permission_service.dart';
 import '../services/role_service.dart';
+import '../services/organization_context_service.dart';
 import '../widgets/role_manager_widget.dart';
+import 'admin_technical_staff_page.dart';
 
 class ProfilesPage extends StatefulWidget {
   const ProfilesPage({super.key});
@@ -194,15 +197,36 @@ class _ProfilesPageState extends State<ProfilesPage> {
     }
   }
 
-  Future<void> deleteProfile(String id) async {
+  Future<void> deleteProfile(Map<String, dynamic> profile) async {
+    final id = (profile['id'] ?? '').toString();
+    final email = (profile['email'] ?? '').toString().trim();
     try {
-      await supabase.from('profiles').delete().eq('id', id);
+      final session = supabase.auth.currentSession;
+      if (session == null) {
+        throw Exception('Sessão expirada. Entre novamente.');
+      }
+      final response = await supabase.functions.invoke(
+        'delete-user-account',
+        headers: {'Authorization': 'Bearer ${session.accessToken}'},
+        body: {
+          'user_id': id,
+          'confirmation_email': email,
+        },
+      );
+      if (response.status < 200 || response.status >= 300) {
+        final data = response.data;
+        final message = data is Map && data['error'] != null
+            ? data['error'].toString()
+            : 'Falha ao excluir a conta no Supabase.';
+        throw Exception(message);
+      }
+      RoleService.invalidateUser(id);
       await fetchProfiles();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('🗑️ Perfil removido!'),
-            backgroundColor: Colors.orange,
+            content: Text('Conta, e-mail e dados vinculados removidos.'),
+            backgroundColor: Colors.green,
           ),
         );
       }
@@ -243,10 +267,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
     final rawRoles = profile['active_roles'];
     final roles = rawRoles is List
         ? rawRoles
-              .map((role) => role.toString().trim())
-              .where((role) => role.isNotEmpty)
-              .toSet()
-              .toList()
+            .map((role) => role.toString().trim())
+            .where((role) => role.isNotEmpty)
+            .toSet()
+            .toList()
         : <String>[];
     final primaryRole = (profile['user_type'] ?? 'member').toString().trim();
     if (primaryRole.isNotEmpty && !roles.contains(primaryRole)) {
@@ -405,8 +429,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
     final orderedDays = selectedDays.toList()..sort();
     await supabase
         .from('profiles')
-        .update({'training_weekdays': orderedDays})
-        .eq('id', userId);
+        .update({'training_weekdays': orderedDays}).eq('id', userId);
     profile['training_weekdays'] = orderedDays;
     await fetchProfiles();
     if (!mounted) return;
@@ -418,31 +441,123 @@ class _ProfilesPageState extends State<ProfilesPage> {
     );
   }
 
-  void _confirmDelete(String id) {
-    showDialog(
+  Future<void> _confirmDelete(Map<String, dynamic> profile) async {
+    final id = (profile['id'] ?? '').toString();
+    final email = (profile['email'] ?? '').toString().trim();
+    final name = (profile['full_name'] ?? 'Usuário').toString();
+    if (id == supabase.auth.currentUser?.id) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Para excluir sua própria conta, use Meu Perfil.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este usuário não possui e-mail para confirmação.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final controller = TextEditingController();
+    var deleting = false;
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirmar exclusão'),
-        content: const Text('Tem certeza que deseja excluir este perfil?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.red),
+              SizedBox(width: 10),
+              Expanded(child: Text('Exclusão permanente')),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              deleteProfile(id);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: olympusBlue,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Esta ação removerá definitivamente a conta de acesso, o e-mail, o perfil, as permissões, os arquivos e os dados vinculados. Não poderá ser desfeita.',
+                ),
+                const SizedBox(height: 16),
+                Text('Digite o e-mail abaixo para confirmar:\n$email'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: controller,
+                  enabled: !deleting,
+                  keyboardType: TextInputType.emailAddress,
+                  autocorrect: false,
+                  decoration: const InputDecoration(
+                    labelText: 'E-mail de confirmação',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (_) => setDialogState(() {}),
+                ),
+              ],
             ),
-            child: const Text('Excluir'),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed:
+                  deleting ? null : () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton.icon(
+              onPressed: deleting ||
+                      controller.text.trim().toLowerCase() !=
+                          email.toLowerCase()
+                  ? null
+                  : () {
+                      setDialogState(() => deleting = true);
+                      Navigator.pop(dialogContext, true);
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.delete_forever_rounded),
+              label: const Text('Excluir definitivamente'),
+            ),
+          ],
+        ),
       ),
     );
+    controller.dispose();
+    if (confirmed != true || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('Excluindo conta e dados...')),
+          ],
+        ),
+      ),
+    );
+    await deleteProfile(profile);
+    if (mounted) Navigator.of(context, rootNavigator: true).pop();
   }
 
   String _normalizeCoachTeamGender(dynamic value) {
@@ -565,9 +680,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                 selectedColor: olympusGold,
                 backgroundColor: const Color(0xFFF4F7FB),
                 side: BorderSide(
-                  color: selected
-                      ? olympusGold
-                      : Colors.white.withOpacity(0.70),
+                  color:
+                      selected ? olympusGold : Colors.white.withOpacity(0.70),
                 ),
                 labelStyle: TextStyle(
                   color: selected ? olympusBlue : olympusBlue.withOpacity(0.88),
@@ -588,8 +702,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
     required String password,
   }) async {
     final message = email.trim().isEmpty
-        ? 'Olá, $userName!\n\nSua nova senha de acesso ao Olympus Voleibol é:\n$password\n\nApós entrar, recomendamos alterar sua senha.'
-        : 'Olá, $userName!\n\nE-mail: $email\nNova senha de acesso ao Olympus Voleibol: $password\n\nApós entrar, recomendamos alterar sua senha.';
+        ? 'Olá, $userName!\n\nSua senha temporária de acesso ao Olympus Voleibol é:\n$password\n\nNo primeiro acesso, o aplicativo solicitará obrigatoriamente uma nova senha.'
+        : 'Olá, $userName!\n\nE-mail: $email\nSenha temporária de acesso ao Olympus Voleibol: $password\n\nNo primeiro acesso, o aplicativo solicitará obrigatoriamente uma nova senha.';
 
     await Clipboard.setData(ClipboardData(text: message));
 
@@ -650,9 +764,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
   Future<void> _showResetPasswordDialog(Map<String, dynamic> profile) async {
     final userId = (profile['id'] ?? '').toString().trim();
     final userName = (profile['full_name'] ?? 'Usuário').toString().trim();
-    final email = (profile['email'] ?? profile['email_address'] ?? '')
-        .toString()
-        .trim();
+    final email =
+        (profile['email'] ?? profile['email_address'] ?? '').toString().trim();
 
     if (userId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -753,8 +866,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       isLoading
                           ? 'Resetando senha'
                           : isSaved
-                          ? 'Senha atualizada'
-                          : 'Erro ao atualizar senha',
+                              ? 'Senha atualizada'
+                              : 'Erro ao atualizar senha',
                     ),
                   ),
                 ],
@@ -861,8 +974,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                               onPressed: generatedPassword.isEmpty
                                   ? null
                                   : () => _copyAdminPasswordOnly(
-                                      generatedPassword,
-                                    ),
+                                        generatedPassword,
+                                      ),
                               icon: const Icon(Icons.copy),
                               label: const Text('Copiar senha'),
                             ),
@@ -873,10 +986,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                               onPressed: generatedPassword.isEmpty
                                   ? null
                                   : () => _copyAdminPasswordMessage(
-                                      userName: userName,
-                                      email: email,
-                                      password: generatedPassword,
-                                    ),
+                                        userName: userName,
+                                        email: email,
+                                        password: generatedPassword,
+                                      ),
                               icon: const Icon(Icons.message_outlined),
                               label: const Text('Copiar mensagem'),
                             ),
@@ -898,9 +1011,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed: isLoading
-                      ? null
-                      : () => Navigator.pop(dialogContext),
+                  onPressed:
+                      isLoading ? null : () => Navigator.pop(dialogContext),
                   child: const Text('Fechar'),
                 ),
                 if (!isLoading && errorMessage != null)
@@ -942,8 +1054,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
     final currentPermissions = await _permissionService.getUserPermissions(
       userId,
     );
-    final visibilityPermissions = await _permissionService
-        .getRankingEvaluationVisibility(userId);
+    final visibilityPermissions =
+        await _permissionService.getRankingEvaluationVisibility(userId);
     final agendaFilters = await _permissionService.getAgendaFilters(userId);
     var activeRoles = await _roleService.getUserRoles(userId);
 
@@ -1057,14 +1169,28 @@ class _ProfilesPageState extends State<ProfilesPage> {
     bool showInEvaluations =
         visibilityPermissions['show_in_evaluations'] ?? false;
 
+    bool notifyEventResponses = false;
+    bool savingEventResponsePreference = false;
+    if (activeRoles.contains('admin')) {
+      try {
+        final preference = await supabase
+            .from('admin_notification_preferences')
+            .select('notify_event_responses')
+            .eq('admin_id', userId)
+            .maybeSingle();
+        notifyEventResponses = preference?['notify_event_responses'] == true;
+      } catch (error) {
+        debugPrint('Erro ao carregar avisos do administrador: $error');
+      }
+    }
+
     String selectedCoachTeamGender = _normalizeCoachTeamGender(
       profile['coach_team_gender'],
     );
 
     // ── Estado local reativo para o papel primário ───────────────────────────
-    String currentUserType = (profile['user_type'] ?? 'member')
-        .toString()
-        .trim();
+    String currentUserType =
+        (profile['user_type'] ?? 'member').toString().trim();
     // ────────────────────────────────────────────────────────────────────────
 
     bool showMonthFilter = agendaFilters['show_month_filter'] ?? true;
@@ -1126,6 +1252,20 @@ class _ProfilesPageState extends State<ProfilesPage> {
       );
       profile['coach_team_gender'] = selectedCoachTeamGender;
       await fetchProfiles();
+    }
+
+    Future<void> saveEventResponsePreference(bool enabled) async {
+      final organizationId = OrganizationContextService.instance.currentId;
+      if (organizationId.isEmpty) {
+        throw Exception(
+            'Clube não identificado. Atualize a tela e tente novamente.');
+      }
+      await supabase.from('admin_notification_preferences').upsert({
+        'admin_id': userId,
+        'organization_id': organizationId,
+        'notify_event_responses': enabled,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'admin_id');
     }
 
     await showDialog(
@@ -1202,8 +1342,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           userName: userName,
                           currentPrimaryRole: currentUserType,
                           onRolesSaved: (newPrimaryRole) async {
-                            final refreshedRoles = await _roleService
-                                .getUserRoles(userId);
+                            final refreshedRoles =
+                                await _roleService.getUserRoles(userId);
                             if (!context.mounted) return;
                             setDialogState(() {
                               activeRoles = refreshedRoles;
@@ -1231,55 +1371,53 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children:
-                        [
-                          ('access', 'Acessos', Icons.grid_view_rounded),
-                          if (activeRoles.contains('admin'))
-                            (
-                              'admin',
-                              'Admin',
-                              Icons.admin_panel_settings_outlined,
-                            ),
-                          if (activeRoles.contains('coach'))
-                            ('coach', 'Técnico', Icons.sports_rounded),
-                          if (activeRoles.contains('athlete'))
-                            ('visibility', 'Atleta', Icons.visibility_outlined),
-                          if (permissionValues['agenda'] == true)
-                            ('agenda', 'Agenda', Icons.calendar_month_outlined),
-                          if (permissionValues['financeiro'] == true)
-                            ('finance', 'Financeiro', Icons.payments_outlined),
-                        ].map((item) {
-                          final selected = selectedPermissionSection == item.$1;
-                          return ChoiceChip(
-                            avatar: Icon(
-                              item.$3,
-                              size: 16,
-                              color: selected ? Colors.white : olympusBlue,
-                            ),
-                            label: Text(item.$2),
-                            labelPadding: const EdgeInsets.symmetric(
-                              horizontal: 2,
-                            ),
-                            selected: selected,
-                            showCheckmark: false,
-                            selectedColor: olympusBlue,
-                            backgroundColor: Colors.white,
-                            side: BorderSide(
-                              color: selected
-                                  ? olympusBlue
-                                  : const Color(0xFFE4EDF5),
-                            ),
-                            labelStyle: TextStyle(
-                              color: selected ? Colors.white : olympusBlue,
-                              fontWeight: FontWeight.w800,
-                            ),
-                            onSelected: (_) {
-                              setDialogState(() {
-                                selectedPermissionSection = item.$1;
-                              });
-                            },
-                          );
-                        }).toList(),
+                    children: [
+                      ('access', 'Acessos', Icons.grid_view_rounded),
+                      if (activeRoles.contains('admin'))
+                        (
+                          'admin',
+                          'Admin',
+                          Icons.admin_panel_settings_outlined,
+                        ),
+                      if (activeRoles.contains('coach'))
+                        ('coach', 'Técnico', Icons.sports_rounded),
+                      if (activeRoles.contains('athlete'))
+                        ('visibility', 'Atleta', Icons.visibility_outlined),
+                      if (permissionValues['agenda'] == true)
+                        ('agenda', 'Agenda', Icons.calendar_month_outlined),
+                      if (permissionValues['financeiro'] == true)
+                        ('finance', 'Financeiro', Icons.payments_outlined),
+                    ].map((item) {
+                      final selected = selectedPermissionSection == item.$1;
+                      return ChoiceChip(
+                        avatar: Icon(
+                          item.$3,
+                          size: 16,
+                          color: selected ? Colors.white : olympusBlue,
+                        ),
+                        label: Text(item.$2),
+                        labelPadding: const EdgeInsets.symmetric(
+                          horizontal: 2,
+                        ),
+                        selected: selected,
+                        showCheckmark: false,
+                        selectedColor: olympusBlue,
+                        backgroundColor: Colors.white,
+                        side: BorderSide(
+                          color:
+                              selected ? olympusBlue : const Color(0xFFE4EDF5),
+                        ),
+                        labelStyle: TextStyle(
+                          color: selected ? Colors.white : olympusBlue,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        onSelected: (_) {
+                          setDialogState(() {
+                            selectedPermissionSection = item.$1;
+                          });
+                        },
+                      );
+                    }).toList(),
                   ),
 
                   const SizedBox(height: 12),
@@ -1355,9 +1493,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                   content: Text(
                                     'Permissão de ${title.toLowerCase()} ${value ? 'concedida' : 'revogada'} com sucesso!',
                                   ),
-                                  backgroundColor: value
-                                      ? Colors.green
-                                      : Colors.orange,
+                                  backgroundColor:
+                                      value ? Colors.green : Colors.orange,
                                 ),
                               );
                             }
@@ -1380,6 +1517,85 @@ class _ProfilesPageState extends State<ProfilesPage> {
 
                   if (selectedPermissionSection == 'admin' &&
                       activeRoles.contains('admin')) ...[
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE4EDF5)),
+                      ),
+                      child: SwitchListTile.adaptive(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 3,
+                        ),
+                        secondary: const Icon(
+                          Icons.notifications_active_outlined,
+                          color: olympusBlue,
+                        ),
+                        title: const Text(
+                          'Avisar aceite ou recusa',
+                          style: TextStyle(
+                            color: olympusBlue,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Este administrador receberá um aviso quando um atleta responder a um evento.',
+                          style: TextStyle(
+                            color: Colors.grey[700],
+                            fontSize: 12,
+                          ),
+                        ),
+                        value: notifyEventResponses,
+                        activeColor: olympusGold,
+                        onChanged: savingEventResponsePreference
+                            ? null
+                            : (enabled) async {
+                                setDialogState(() {
+                                  savingEventResponsePreference = true;
+                                  notifyEventResponses = enabled;
+                                });
+                                try {
+                                  await saveEventResponsePreference(enabled);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          enabled
+                                              ? 'Avisos de aceite e recusa habilitados para $userName.'
+                                              : 'Avisos de aceite e recusa desabilitados para $userName.',
+                                        ),
+                                        backgroundColor: enabled
+                                            ? Colors.green
+                                            : Colors.blueGrey,
+                                      ),
+                                    );
+                                  }
+                                } catch (error) {
+                                  setDialogState(() {
+                                    notifyEventResponses = !enabled;
+                                  });
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Não foi possível salvar os avisos: $error',
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                } finally {
+                                  if (context.mounted) {
+                                    setDialogState(() {
+                                      savingEventResponsePreference = false;
+                                    });
+                                  }
+                                }
+                              },
+                      ),
+                    ),
+                    const SizedBox(height: 14),
                     const Text(
                       'Acessos no modo Administrador:',
                       style: TextStyle(
@@ -1452,9 +1668,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 content: Text(
                                   'Visibilidade no ranking ${value ? 'habilitada' : 'desabilitada'} com sucesso!',
                                 ),
-                                backgroundColor: value
-                                    ? Colors.green
-                                    : Colors.orange,
+                                backgroundColor:
+                                    value ? Colors.green : Colors.orange,
                               ),
                             );
                           }
@@ -1492,9 +1707,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 content: Text(
                                   'Visibilidade nas avaliações ${value ? 'habilitada' : 'desabilitada'} com sucesso!',
                                 ),
-                                backgroundColor: value
-                                    ? Colors.green
-                                    : Colors.orange,
+                                backgroundColor:
+                                    value ? Colors.green : Colors.orange,
                               ),
                             );
                           }
@@ -1547,9 +1761,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 content: Text(
                                   'Filtro de mês ${value ? 'habilitado' : 'desabilitado'} com sucesso!',
                                 ),
-                                backgroundColor: value
-                                    ? Colors.green
-                                    : Colors.orange,
+                                backgroundColor:
+                                    value ? Colors.green : Colors.orange,
                               ),
                             );
                           }
@@ -1576,64 +1789,62 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children:
-                          [
-                            {'value': 'treino', 'label': 'Treino'},
-                            {'value': 'amistoso', 'label': 'Amistoso'},
-                            {'value': 'campeonato', 'label': 'Campeonatos'},
-                          ].map((item) {
-                            final value = item['value']!;
-                            final selected = allowedEventTypes.contains(value);
-                            return FilterChip(
-                              label: Text(item['label']!),
-                              selected: selected,
-                              selectedColor: olympusGold.withOpacity(0.2),
-                              checkmarkColor: olympusBlue,
-                              onSelected: (enabled) async {
-                                final updated = List<String>.from(
-                                  allowedEventTypes,
-                                );
-                                if (enabled) {
-                                  if (!updated.contains(value))
-                                    updated.add(value);
-                                } else {
-                                  updated.remove(value);
-                                }
-                                if (updated.isEmpty) {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Selecione pelo menos um tipo de evento.',
-                                        ),
-                                        backgroundColor: Colors.orange,
-                                      ),
-                                    );
-                                  }
-                                  return;
-                                }
-                                try {
-                                  setDialogState(() {
-                                    allowedEventTypes
-                                      ..clear()
-                                      ..addAll(updated);
-                                  });
-                                  await saveAgendaFilters();
-                                } catch (e) {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Erro ao atualizar tipos de evento: $e',
-                                        ),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
+                      children: [
+                        {'value': 'treino', 'label': 'Treino'},
+                        {'value': 'amistoso', 'label': 'Amistoso'},
+                        {'value': 'campeonato', 'label': 'Campeonatos'},
+                      ].map((item) {
+                        final value = item['value']!;
+                        final selected = allowedEventTypes.contains(value);
+                        return FilterChip(
+                          label: Text(item['label']!),
+                          selected: selected,
+                          selectedColor: olympusGold.withOpacity(0.2),
+                          checkmarkColor: olympusBlue,
+                          onSelected: (enabled) async {
+                            final updated = List<String>.from(
+                              allowedEventTypes,
                             );
-                          }).toList(),
+                            if (enabled) {
+                              if (!updated.contains(value)) updated.add(value);
+                            } else {
+                              updated.remove(value);
+                            }
+                            if (updated.isEmpty) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Selecione pelo menos um tipo de evento.',
+                                    ),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+                            try {
+                              setDialogState(() {
+                                allowedEventTypes
+                                  ..clear()
+                                  ..addAll(updated);
+                              });
+                              await saveAgendaFilters();
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Erro ao atualizar tipos de evento: $e',
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                        );
+                      }).toList(),
                     ),
                     const SizedBox(height: 16),
                     SwitchListTile(
@@ -1656,9 +1867,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 content: Text(
                                   'Filtro de status ${value ? 'habilitado' : 'desabilitado'} com sucesso!',
                                 ),
-                                backgroundColor: value
-                                    ? Colors.green
-                                    : Colors.orange,
+                                backgroundColor:
+                                    value ? Colors.green : Colors.orange,
                               ),
                             );
                           }
@@ -1686,70 +1896,69 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children:
-                            [
-                              {'value': 'accepted', 'label': 'Aceitou'},
-                              {'value': 'rejected', 'label': 'Recusou'},
-                              {'value': 'pending', 'label': 'Pendentes'},
-                            ].map((item) {
-                              final value = item['value']!;
-                              final selected = allowedConvocationStatuses
-                                  .contains(value);
-                              return FilterChip(
-                                label: Text(item['label']!),
-                                selected: selected,
-                                selectedColor: olympusGold.withOpacity(0.2),
-                                checkmarkColor: olympusBlue,
-                                onSelected: (enabled) async {
-                                  final updated = List<String>.from(
-                                    allowedConvocationStatuses,
-                                  );
-                                  if (enabled) {
-                                    if (!updated.contains(value)) {
-                                      updated.add(value);
-                                    }
-                                  } else {
-                                    updated.remove(value);
-                                  }
-                                  if (updated.isEmpty) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Selecione pelo menos um status de convocação.',
-                                          ),
-                                          backgroundColor: Colors.orange,
-                                        ),
-                                      );
-                                    }
-                                    return;
-                                  }
-                                  try {
-                                    setDialogState(() {
-                                      allowedConvocationStatuses
-                                        ..clear()
-                                        ..addAll(updated);
-                                    });
-                                    await saveAgendaFilters();
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Erro ao atualizar status permitidos: $e',
-                                          ),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
-                                    }
-                                  }
-                                },
+                        children: [
+                          {'value': 'accepted', 'label': 'Aceitou'},
+                          {'value': 'rejected', 'label': 'Recusou'},
+                          {'value': 'pending', 'label': 'Pendentes'},
+                        ].map((item) {
+                          final value = item['value']!;
+                          final selected =
+                              allowedConvocationStatuses.contains(value);
+                          return FilterChip(
+                            label: Text(item['label']!),
+                            selected: selected,
+                            selectedColor: olympusGold.withOpacity(0.2),
+                            checkmarkColor: olympusBlue,
+                            onSelected: (enabled) async {
+                              final updated = List<String>.from(
+                                allowedConvocationStatuses,
                               );
-                            }).toList(),
+                              if (enabled) {
+                                if (!updated.contains(value)) {
+                                  updated.add(value);
+                                }
+                              } else {
+                                updated.remove(value);
+                              }
+                              if (updated.isEmpty) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(
+                                    context,
+                                  ).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Selecione pelo menos um status de convocação.',
+                                      ),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
+                              try {
+                                setDialogState(() {
+                                  allowedConvocationStatuses
+                                    ..clear()
+                                    ..addAll(updated);
+                                });
+                                await saveAgendaFilters();
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(
+                                    context,
+                                  ).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Erro ao atualizar status permitidos: $e',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                          );
+                        }).toList(),
                       ),
                     ],
                   ],
@@ -1787,9 +1996,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 content: Text(
                                   'Opção Ver convocados ${value ? 'habilitada' : 'desabilitada'} com sucesso!',
                                 ),
-                                backgroundColor: value
-                                    ? Colors.green
-                                    : Colors.orange,
+                                backgroundColor:
+                                    value ? Colors.green : Colors.orange,
                               ),
                             );
                           }
@@ -1827,9 +2035,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                 content: Text(
                                   'Opção Exportar dados do jogo ${value ? 'habilitada' : 'desabilitada'} com sucesso!',
                                 ),
-                                backgroundColor: value
-                                    ? Colors.green
-                                    : Colors.orange,
+                                backgroundColor:
+                                    value ? Colors.green : Colors.orange,
                               ),
                             );
                           }
@@ -1870,77 +2077,75 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children:
-                          [
-                            {'value': 'monthly', 'label': 'Mensalidade'},
-                            {'value': 'games', 'label': 'Jogos'},
-                            {'value': 'maintenance', 'label': 'Manutenção'},
-                            {'value': 'other', 'label': 'Outros'},
-                          ].map((item) {
-                            final value = item['value']!;
-                            final selected = allowedFinancialTypes.contains(
-                              value,
+                      children: [
+                        {'value': 'monthly', 'label': 'Mensalidade'},
+                        {'value': 'games', 'label': 'Jogos'},
+                        {'value': 'maintenance', 'label': 'Manutenção'},
+                        {'value': 'other', 'label': 'Outros'},
+                      ].map((item) {
+                        final value = item['value']!;
+                        final selected = allowedFinancialTypes.contains(
+                          value,
+                        );
+                        return FilterChip(
+                          label: Text(item['label']!),
+                          selected: selected,
+                          selectedColor: olympusGold.withOpacity(0.2),
+                          checkmarkColor: olympusBlue,
+                          onSelected: (enabled) async {
+                            final updated = List<String>.from(
+                              allowedFinancialTypes,
                             );
-                            return FilterChip(
-                              label: Text(item['label']!),
-                              selected: selected,
-                              selectedColor: olympusGold.withOpacity(0.2),
-                              checkmarkColor: olympusBlue,
-                              onSelected: (enabled) async {
-                                final updated = List<String>.from(
-                                  allowedFinancialTypes,
+                            if (enabled) {
+                              if (!updated.contains(value)) updated.add(value);
+                            } else {
+                              updated.remove(value);
+                            }
+                            if (updated.isEmpty) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Selecione pelo menos um tipo financeiro.',
+                                    ),
+                                    backgroundColor: Colors.orange,
+                                  ),
                                 );
-                                if (enabled) {
-                                  if (!updated.contains(value))
-                                    updated.add(value);
-                                } else {
-                                  updated.remove(value);
-                                }
-                                if (updated.isEmpty) {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Selecione pelo menos um tipo financeiro.',
-                                        ),
-                                        backgroundColor: Colors.orange,
-                                      ),
-                                    );
-                                  }
-                                  return;
-                                }
-                                try {
-                                  setDialogState(() {
-                                    allowedFinancialTypes
-                                      ..clear()
-                                      ..addAll(updated);
-                                  });
-                                  await saveFinancialFilters();
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Tipos do financeiro atualizados com sucesso!',
-                                        ),
-                                        backgroundColor: Colors.green,
-                                      ),
-                                    );
-                                  }
-                                } catch (e) {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Erro ao atualizar tipos financeiros: $e',
-                                        ),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
-                            );
-                          }).toList(),
+                              }
+                              return;
+                            }
+                            try {
+                              setDialogState(() {
+                                allowedFinancialTypes
+                                  ..clear()
+                                  ..addAll(updated);
+                              });
+                              await saveFinancialFilters();
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Tipos do financeiro atualizados com sucesso!',
+                                    ),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Erro ao atualizar tipos financeiros: $e',
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                        );
+                      }).toList(),
                     ),
                   ],
                 ],
@@ -2064,7 +2269,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
             ),
             const SizedBox(height: 10),
             const Text(
-              'Envie esta senha para o usuário.',
+              'Envie esta senha temporária para o usuário. No primeiro acesso, '
+              'ele será obrigado a criar uma senha pessoal.',
               style: TextStyle(fontSize: 12, color: Colors.grey),
               textAlign: TextAlign.center,
             ),
@@ -2192,9 +2398,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
           ),
           actions: [
             TextButton(
-              onPressed: isSubmitting
-                  ? null
-                  : () => Navigator.pop(dialogContext),
+              onPressed:
+                  isSubmitting ? null : () => Navigator.pop(dialogContext),
               child: const Text('Cancelar'),
             ),
             ElevatedButton.icon(
@@ -2213,53 +2418,45 @@ class _ProfilesPageState extends State<ProfilesPage> {
 
                       final password = _generateRandomPassword();
                       final email = emailCtrl.text.trim();
-                      final adminRefreshToken =
-                          supabase.auth.currentSession?.refreshToken;
-                      final adminUserId = supabase.auth.currentUser?.id;
 
                       setDialogState(() => isSubmitting = true);
 
                       try {
-                        final response = await supabase.auth.signUp(
-                          email: email,
-                          password: password,
-                        );
-
-                        if (response.user == null) {
-                          throw Exception('Usuário não foi criado.');
-                        }
-
-                        if (adminRefreshToken != null) {
-                          await supabase.auth.setSession(adminRefreshToken);
-                          await Future.delayed(
-                            const Duration(milliseconds: 300),
-                          );
-                        }
-
-                        if (adminUserId != null &&
-                            supabase.auth.currentUser?.id != adminUserId) {
+                        final organization = await OrganizationContextService
+                            .instance
+                            .initialize(force: true);
+                        if (organization == null || !organization.canManage) {
                           throw Exception(
-                            'Não foi possível restaurar a sessão do administrador.',
+                            'Não foi possível confirmar o clube administrado.',
                           );
                         }
 
-                        final userId = response.user!.id;
-
-                        await Future.delayed(const Duration(milliseconds: 500));
-
-                        await supabase
-                            .from('profiles')
-                            .update({
-                              'full_name': nameCtrl.text.trim(),
-                              'phone': phoneCtrl.text.replaceAll(
-                                RegExp(r'\D'),
-                                '',
-                              ),
-                              'user_type': selectedType,
-                              'is_active': true,
-                              'updated_at': DateTime.now().toIso8601String(),
-                            })
-                            .eq('id', userId);
+                        final response = await supabase.functions.invoke(
+                          'create-organization-user',
+                          body: {
+                            'organization_id': organization.id,
+                            'email': email,
+                            'password': password,
+                            'full_name': nameCtrl.text.trim(),
+                            'phone': phoneCtrl.text.replaceAll(
+                              RegExp(r'\D'),
+                              '',
+                            ),
+                            'user_type': selectedType,
+                          },
+                        );
+                        final payload = response.data;
+                        if (response.status < 200 ||
+                            response.status >= 300 ||
+                            payload is! Map ||
+                            payload['success'] != true) {
+                          final message = payload is Map
+                              ? payload['error']?.toString()
+                              : null;
+                          throw Exception(
+                            message ?? 'Usuário não foi criado.',
+                          );
+                        }
 
                         if (!mounted) return;
 
@@ -2269,31 +2466,13 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       } catch (e) {
                         debugPrint('❌ Erro ao cadastrar: $e');
 
-                        if (adminRefreshToken != null) {
-                          try {
-                            await supabase.auth.setSession(adminRefreshToken);
-                          } catch (restoreError) {
-                            debugPrint(
-                              '❌ Erro ao restaurar sessão do admin: $restoreError',
-                            );
-                          }
-                        }
-
                         if (!mounted) return;
 
-                        String errorMessage = 'Erro ao cadastrar';
-                        if (e.toString().contains('Database error')) {
-                          errorMessage =
-                              'Erro no banco. Verifique se o trigger está configurado corretamente.';
-                        } else if (e.toString().contains(
-                          'User already registered',
-                        )) {
+                        String errorMessage =
+                            e.toString().replaceFirst('Exception: ', '');
+                        if (e.toString().contains('already registered') ||
+                            e.toString().contains('já possui conta')) {
                           errorMessage = 'E-mail já cadastrado.';
-                        } else if (e.toString().contains(
-                          'Não foi possível restaurar a sessão do administrador',
-                        )) {
-                          errorMessage =
-                              'Usuário criado, mas a sessão do admin não foi restaurada corretamente.';
                         }
 
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -2345,11 +2524,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
       final matchesStatus = _showInactiveUsers ? !isActive : isActive;
       final matchesGender =
           _selectedGenderFilter == 'Todos' || gender == _selectedGenderFilter;
-      final matchesUserType =
-          _selectedUserTypeFilter == 'Todos' ||
+      final matchesUserType = _selectedUserTypeFilter == 'Todos' ||
           roles.contains(_selectedUserTypeFilter);
-      final matchesSearch =
-          _profilesSearchQuery.trim().isEmpty ||
+      final matchesSearch = _profilesSearchQuery.trim().isEmpty ||
           searchText.contains(_profilesSearchQuery.trim().toLowerCase());
 
       return matchesStatus && matchesGender && matchesUserType && matchesSearch;
@@ -2640,8 +2817,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
   }
 
   Widget _buildCompactFiltersBar(int resultsCount) {
-    final appliedFilters =
-        (_selectedGenderFilter != 'Todos' ? 1 : 0) +
+    final appliedFilters = (_selectedGenderFilter != 'Todos' ? 1 : 0) +
         (_selectedUserTypeFilter != 'Todos' ? 1 : 0);
 
     return Padding(
@@ -2943,6 +3119,17 @@ class _ProfilesPageState extends State<ProfilesPage> {
       ..sort((a, b) => _roleSortIndex(a).compareTo(_roleSortIndex(b)));
     final userType = _visualRoleForProfile(profile);
     final isAthlete = activeRoles.contains('athlete');
+    final isTechnicalProfessional = userType.toLowerCase() == 'coach' ||
+        activeRoles.any(
+          (role) => const {
+            'coach',
+            'treinador',
+            'technical_coordinator',
+            'head_coach',
+            'assistant_coach',
+            'intern',
+          }.contains(role.toLowerCase()),
+        );
     final phone = (profile['phone'] ?? '').toString();
     final cpf = (profile['cpf'] ?? '').toString();
     final gender = (profile['gender'] ?? '').toString();
@@ -3119,9 +3306,18 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         if (value == 'edit') {
                           showProfileDialog(profile: profile);
                         } else if (value == 'delete') {
-                          _confirmDelete(profile['id']);
+                          _confirmDelete(profile);
                         } else if (value == 'permissions') {
                           _showPermissionsDialog(profile);
+                        } else if (value == 'technical_access') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AdminTechnicalStaffPage(
+                                initialUserId: profile['id']?.toString(),
+                              ),
+                            ),
+                          ).then((_) => fetchProfiles());
                         } else if (value == 'training_days') {
                           _showTrainingDaysDialog(profile);
                         } else if (value == 'reset_password') {
@@ -3144,6 +3340,13 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           icon: Icons.lock_person_outlined,
                           label: 'Permissões',
                         ),
+                        if (isTechnicalProfessional)
+                          _buildProfileMenuItem(
+                            value: 'technical_access',
+                            icon: Icons.account_tree_rounded,
+                            label: 'Função e acessos técnicos',
+                            color: olympusGold,
+                          ),
                         if (isAthlete)
                           _buildProfileMenuItem(
                             value: 'training_days',
@@ -3274,8 +3477,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             alignment: Alignment.center,
             errorBuilder: (context, error, stackTrace) =>
@@ -3746,9 +3948,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
         img.encodeJpg(normalized, quality: 88),
       );
 
-      await supabase.storage
-          .from('avatars')
-          .uploadBinary(
+      await supabase.storage.from('avatars').uploadBinary(
             fileName,
             fileBytes,
             fileOptions: const FileOptions(
@@ -4289,7 +4489,13 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
         future: _selectedImage!.readAsBytes(),
         builder: (context, snapshot) {
           if (snapshot.hasData && snapshot.data != null) {
-            return Image.memory(snapshot.data!, fit: BoxFit.cover);
+            return Image.memory(
+              snapshot.data!,
+              fit: BoxFit.cover,
+              cacheWidth: 512,
+              cacheHeight: 512,
+              filterQuality: FilterQuality.medium,
+            );
           }
           return const Icon(Icons.person, size: 60, color: Colors.grey);
         },

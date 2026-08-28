@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -101,12 +102,12 @@ class _AdminAthletesStatisticsListPageState
 
   String _evaluationSearchText(Map<String, dynamic> row) {
     return [
-          row['tipo'],
-          row['slot'],
-          row['motivo'],
-          row['fundamento'],
-          row['observacao'],
-        ]
+      row['tipo'],
+      row['slot'],
+      row['motivo'],
+      row['fundamento'],
+      row['observacao'],
+    ]
         .map(_normalizeEvaluationText)
         .where((value) => value.isNotEmpty)
         .join(' ');
@@ -303,9 +304,7 @@ class _AdminAthletesStatisticsListPageState
           (athlete['id'] ?? '').toString(): athlete,
       };
 
-      final convocationRows = await _supabase
-          .from('convocations')
-          .select('''
+      final convocationRows = await _supabase.from('convocations').select('''
 user_id,
 event_id,
 status,
@@ -316,8 +315,7 @@ gender,
 event_date,
 event_time
 )
-''')
-          .inFilter('user_id', ids);
+''').inFilter('user_id', ids);
 
       final convokedTrainingEventIdsByAthlete = <String, Set<String>>{};
       final expiredWithoutCheckinByAthlete = <String, Set<String>>{};
@@ -351,8 +349,7 @@ event_time
             .putIfAbsent(athleteId, () => <String>{})
             .add(eventId);
 
-        final checkinClosed =
-            eventDate != null &&
+        final checkinClosed = eventDate != null &&
             now.isAfter(eventDate.add(const Duration(minutes: 30)));
 
         if (checkinClosed) {
@@ -370,10 +367,10 @@ event_time
       final checkinRows = allTrainingEventIds.isEmpty
           ? <dynamic>[]
           : await _supabase
-                .from('checkins')
-                .select('user_id, event_id, check_in_status')
-                .inFilter('user_id', ids)
-                .inFilter('event_id', allTrainingEventIds);
+              .from('checkins')
+              .select('user_id, event_id, check_in_status')
+              .inFilter('user_id', ids)
+              .inFilter('event_id', allTrainingEventIds);
 
       final presenceByAthlete = <String, Set<String>>{};
 
@@ -652,8 +649,7 @@ event_time
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             alignment: Alignment.center,
             errorBuilder: (_, __, ___) {
@@ -1236,9 +1232,9 @@ event_time
                 builder: (context, constraints) {
                   final crossAxisCount =
                       _AdminListResponsive.athletesCrossAxisCount(
-                        context,
-                        constraints.maxWidth,
-                      );
+                    context,
+                    constraints.maxWidth,
+                  );
 
                   if (crossAxisCount == 1) {
                     return Column(
@@ -1309,10 +1305,10 @@ class _AdminAthleteStats {
   });
 
   const _AdminAthleteStats.empty()
-    : presencas = 0,
-      faltas = 0,
-      destaques = 0,
-      atencoes = 0;
+      : presencas = 0,
+        faltas = 0,
+        destaques = 0,
+        atencoes = 0;
 
   final int presencas;
   final int faltas;

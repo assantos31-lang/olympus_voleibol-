@@ -10,6 +10,8 @@ import '../../pages/admin_competitions_page.dart';
 import '../../pages/chat_rooms_page.dart';
 import '../../services/chat_service.dart';
 import '../../services/permission_service.dart';
+import '../../services/technical_staff_service.dart';
+import '../../theme/olympus_theme.dart';
 import 'coach_athlete_evaluations_page.dart';
 import 'coach_complete_profile_page.dart';
 import 'coach_evaluations_hub_page.dart';
@@ -18,6 +20,7 @@ import 'coach_pending_center_page.dart';
 import 'coach_smart_dashboard_page.dart';
 import 'coach_training_sessions_page.dart';
 import 'coach_training_planning_dashboard_page.dart';
+import 'coach_technical_team_page.dart';
 
 class CoachDashboardPage extends StatefulWidget {
   const CoachDashboardPage({super.key});
@@ -40,6 +43,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
   int _unreadMessagesCount = 0;
   int _chatUnreadCount = 0;
   bool _canAccessChat = true;
+  bool _canViewTechnicalTeam = false;
+  bool _canCreateTechnicalTraining = true;
   DateTime? _lastCompetitionsViewedAt;
   RealtimeChannel? _competitionsRealtimeChannel;
   RealtimeChannel? _messageParticipantsRealtimeChannel;
@@ -55,6 +60,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
   String _coachFullName = 'Técnico';
   String _coachAvatarUrl = '';
   String _coachRoleLabel = 'Técnico';
+  String _technicalRoleLabel = '';
   String _coachTeamGender = 'all';
   int _activeAthletesCount = 0;
   int _todayTrainingsCount = 0;
@@ -99,7 +105,29 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _refreshDashboard();
+    _loadTechnicalStaffAccess();
     _listenChatUnreadCount();
+  }
+
+  Future<void> _loadTechnicalStaffAccess() async {
+    try {
+      final assignment = await TechnicalStaffService().loadCurrentAssignment();
+      final allowed = assignment?.canManageStaff == true ||
+          (assignment?.isActive == true &&
+              assignment?.technicalRole == TechnicalStaffRole.headCoach);
+      if (!mounted) return;
+      setState(() {
+        _canViewTechnicalTeam = allowed;
+        if (assignment != null) {
+          _canCreateTechnicalTraining = assignment.canCreateTraining;
+          _technicalRoleLabel =
+              TechnicalStaffRole.label(assignment.technicalRole);
+          _coachRoleLabel = _technicalRoleLabel;
+        }
+      });
+    } catch (_) {
+      // A tela continua compatível enquanto a migration é publicada.
+    }
   }
 
   void _listenChatUnreadCount() {
@@ -120,8 +148,11 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     super.didChangeDependencies();
 
     if (!_isBackgroundReady) {
+      final branding = OlympusBrandingController.instance.branding;
       precacheImage(
-        const AssetImage('assets/images/monte_olimpo_v2.png'),
+        branding.backgroundImageUrl.isNotEmpty
+            ? NetworkImage(branding.backgroundImageUrl)
+            : AssetImage(branding.backgroundAsset),
         context,
       ).whenComplete(() {
         if (mounted) {
@@ -256,7 +287,9 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       setState(() {
         _coachFullName = fullName.isEmpty ? 'Técnico' : fullName;
         _coachAvatarUrl = avatarUrl;
-        _coachRoleLabel = _profileRoleLabel(userType);
+        _coachRoleLabel = _technicalRoleLabel.isEmpty
+            ? _profileRoleLabel(userType)
+            : _technicalRoleLabel;
         _coachTeamGender = coachTeamGender;
       });
     } catch (e) {
@@ -328,6 +361,14 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         type == 'liga';
   }
 
+  bool _isCoachEventRole(dynamic value) {
+    final role = (value ?? '').toString().trim().toLowerCase();
+    return role == 'coach' ||
+        role == 'treinador' ||
+        role == 'tecnico' ||
+        role == 'técnico';
+  }
+
   bool _coachCanAccessAthleteGender(dynamic athleteGender) {
     final normalizedCoachGender =
         _permissionService.normalizeCoachTeamGender(_coachTeamGender);
@@ -372,9 +413,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
             .eq('coach_id', user.id),
         supabase
             .from('convocations')
-            .select('event_id')
-            .eq('user_id', user.id)
-            .eq('event_role', 'coach'),
+            .select('event_id, event_role')
+            .eq('user_id', user.id),
       ]);
 
       final profiles = List<Map<String, dynamic>>.from(results[0] as List);
@@ -388,6 +428,11 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
           List<Map<String, dynamic>>.from(results[5] as List);
       final coachConvocationRows =
           List<Map<String, dynamic>>.from(results[6] as List);
+      final coachEventIds = coachConvocationRows
+          .where((row) => _isCoachEventRole(row['event_role']))
+          .map((row) => (row['event_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
 
       final activeAthleteIds = profiles
           .where((profile) {
@@ -415,6 +460,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
 
       for (final event in events) {
         final id = (event['id'] ?? '').toString();
+        if (id.isEmpty || !coachEventIds.contains(id)) continue;
         final type = (event['event_type'] ?? '').toString();
         final rawDate = _parseFlexibleDate(event['event_date']) ??
             _parseFlexibleDate(event['created_at']);
@@ -515,10 +561,6 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
               .toInt();
 
       final plannedEventIds = trainingPlanRows
-          .map((row) => (row['event_id'] ?? '').toString())
-          .where((id) => id.isNotEmpty)
-          .toSet();
-      final coachEventIds = coachConvocationRows
           .map((row) => (row['event_id'] ?? '').toString())
           .where((id) => id.isNotEmpty)
           .toSet();
@@ -627,9 +669,29 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
 
   Future<void> _loadCompetitionNewCount() async {
     try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final convocationRows = await supabase
+          .from('convocations')
+          .select('event_id, event_role')
+          .eq('user_id', user.id);
+      final eventIds = List<Map<String, dynamic>>.from(convocationRows)
+          .where((row) => _isCoachEventRole(row['event_role']))
+          .map((row) => (row['event_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList(growable: false);
+
+      if (eventIds.isEmpty) {
+        if (mounted) setState(() => _competitionNewCount = 0);
+        return;
+      }
+
       final response = await supabase
           .from('events')
           .select('id, created_at, event_type')
+          .inFilter('id', eventIds)
           .inFilter('event_type', ['campeonato', 'amistoso']);
 
       final referenceDate = _lastCompetitionsViewedAt ??
@@ -886,13 +948,38 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     ).then((_) => _loadCompetitionNewCount());
   }
 
-  void _navigateToTrainingPlanner() {
+  void _navigateToAgenda() {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => const CoachTrainingSessionsPage(
           initialTipoEvento: 'treino',
           lockTipoEvento: true,
+          pageTitle: 'Agenda do Técnico',
+          agendaMode: true,
+        ),
+      ),
+    ).then((_) => _loadDashboardIntelligence());
+  }
+
+  void _navigateToTrainingPlanner() {
+    if (!_canCreateTechnicalTraining) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'O administrador ainda não liberou a criação de treinos.',
+          ),
+        ),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CoachTrainingSessionsPage(
+          initialTipoEvento: 'treino',
+          lockTipoEvento: true,
+          pageTitle: 'Planejamento de treinos',
         ),
       ),
     );
@@ -989,20 +1076,34 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
   }
 
   Widget _buildPremiumDashboardBackground() {
+    final branding = OlympusBrandingController.instance.branding;
     return SizedBox.expand(
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Image.asset(
-            'assets/images/monte_olimpo_v2.png',
-            width: double.infinity,
-            height: double.infinity,
-            fit: BoxFit.cover,
-            alignment: Alignment.center,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(color: const Color(0xFF102845));
-            },
-          ),
+          branding.backgroundImageUrl.isNotEmpty
+              ? CachedNetworkImage(
+                  imageUrl: branding.backgroundImageUrl,
+                  width: double.infinity,
+                  height: double.infinity,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.center,
+                  errorWidget: (_, __, ___) => Image.asset(
+                    branding.backgroundAsset,
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
+                  ),
+                )
+              : Image.asset(
+                  branding.backgroundAsset,
+                  width: double.infinity,
+                  height: double.infinity,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.center,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(color: const Color(0xFF102845));
+                  },
+                ),
           Container(
             color: Colors.black.withOpacity(0.10),
           ),
@@ -1070,6 +1171,13 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
 
     return '${parts.first.characters.first}${parts.last.characters.first}'
         .toUpperCase();
+  }
+
+  void _navigateToTechnicalTeam() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CoachTechnicalTeamPage()),
+    );
   }
 
   String? _resolvedCoachAvatarUrl() {
@@ -2099,7 +2207,14 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         onTap: _navigateToEvaluationsHub,
       ),
       (
-        label: 'Planejar',
+        label: 'Agenda',
+        icon: Icons.calendar_month_rounded,
+        color: olympusGold,
+        badge: 0,
+        onTap: _navigateToAgenda,
+      ),
+      (
+        label: 'Planejamento',
         icon: Icons.menu_book_rounded,
         color: olympusGold,
         badge: _unplannedTrainingsCount,
@@ -2129,73 +2244,70 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       ),
     ];
 
-    return SizedBox(
-      width: double.infinity,
-      height: 88,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final itemWidth =
-              ((constraints.maxWidth - 32) / actions.length).clamp(54.0, 72.0);
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: actions.indexed.map((entry) {
-              final action = entry.$2;
-              return Padding(
-                padding: EdgeInsets.only(left: entry.$1 == 0 ? 0 : 8),
-                child: SizedBox(
-                  width: itemWidth,
-                  child: InkWell(
-                    onTap: action.onTap,
-                    borderRadius: BorderRadius.circular(18),
-                    child: Column(
-                      children: [
-                        Badge(
-                          isLabelVisible: action.badge > 0,
-                          label: Text(
-                            action.badge > 99 ? '99+' : '${action.badge}',
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const columns = 3;
+        const spacing = 12.0;
+        final itemWidth =
+            (constraints.maxWidth - (spacing * (columns - 1))) / columns;
+        return Wrap(
+          alignment: WrapAlignment.center,
+          spacing: spacing,
+          runSpacing: 12,
+          children: actions.indexed.map((entry) {
+            final action = entry.$2;
+            return SizedBox(
+              width: itemWidth,
+              height: 88,
+              child: InkWell(
+                onTap: action.onTap,
+                borderRadius: BorderRadius.circular(18),
+                child: Column(
+                  children: [
+                    Badge(
+                      isLabelVisible: action.badge > 0,
+                      label: Text(
+                        action.badge > 99 ? '99+' : '${action.badge}',
+                      ),
+                      backgroundColor: Colors.redAccent,
+                      child: Container(
+                        width: 54,
+                        height: 54,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: action.color.withOpacity(0.16),
+                          border: Border.all(
+                            color: action.color.withOpacity(0.52),
                           ),
-                          backgroundColor: Colors.redAccent,
-                          child: Container(
-                            width: 54,
-                            height: 54,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: action.color.withOpacity(0.16),
-                              border: Border.all(
-                                color: action.color.withOpacity(0.52),
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: action.color.withOpacity(0.14),
-                                  blurRadius: 12,
-                                ),
-                              ],
+                          boxShadow: [
+                            BoxShadow(
+                              color: action.color.withOpacity(0.14),
+                              blurRadius: 12,
                             ),
-                            child: Icon(action.icon,
-                                color: action.color, size: 25),
-                          ),
+                          ],
                         ),
-                        const SizedBox(height: 7),
-                        Text(
-                          action.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 10.2,
-                          ),
-                        ),
-                      ],
+                        child: Icon(action.icon, color: action.color, size: 25),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 7),
+                    Text(
+                      action.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 10.2,
+                      ),
+                    ),
+                  ],
                 ),
-              );
-            }).toList(),
-          );
-        },
-      ),
+              ),
+            );
+          }).toList(),
+        );
+      },
     );
   }
 
@@ -2284,26 +2396,20 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       Color color,
       VoidCallback onTap,
     })>[
+      if (_canViewTechnicalTeam)
+        (
+          label: 'Minha equipe técnica',
+          subtitle: 'Profissionais, liderança e treinos',
+          icon: Icons.account_tree_rounded,
+          color: const Color(0xFFFFD166),
+          onTap: _navigateToTechnicalTeam,
+        ),
       (
         label: 'Análise completa',
         subtitle: 'Indicadores e evolução da equipe',
         icon: Icons.insights_rounded,
         color: const Color(0xFFB69CFF),
         onTap: _navigateToSmartDashboard,
-      ),
-      (
-        label: 'Sessões de treino',
-        subtitle: 'Planejamento e avaliação rápida',
-        icon: Icons.fitness_center_rounded,
-        color: const Color(0xFF73E2A7),
-        onTap: _navigateToTrainingPlanner,
-      ),
-      (
-        label: 'Avaliar atletas',
-        subtitle: 'Acompanhamento técnico da equipe',
-        icon: Icons.assignment_turned_in_rounded,
-        color: const Color(0xFF70E1F5),
-        onTap: _navigateToAthleteEvaluations,
       ),
     ];
 

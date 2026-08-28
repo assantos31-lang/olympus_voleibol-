@@ -18,7 +18,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.example.olympus_voleibol"
+    namespace = "com.olympusvolei"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -59,6 +59,12 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }
@@ -68,5 +74,7 @@ flutter {
 }
 
 dependencies {
+    // 1.19 exige compileSdk 37 e AGP 9.1, ainda fora da cadeia estável do Flutter.
+    implementation("androidx.core:core-ktx:1.17.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }

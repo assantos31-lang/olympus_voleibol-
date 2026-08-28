@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class _StatsResponsive {
@@ -518,12 +519,12 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
   String _evaluationSearchText(Map<String, dynamic> row) {
     return [
-          row['tipo'],
-          row['slot'],
-          row['motivo'],
-          row['fundamento'],
-          row['observacao'],
-        ]
+      row['tipo'],
+      row['slot'],
+      row['motivo'],
+      row['fundamento'],
+      row['observacao'],
+    ]
         .map(_normalizeEvaluationText)
         .where((value) => value.isNotEmpty)
         .join(' ');
@@ -717,12 +718,12 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
       try {
         rows = await _supabase.rpc(
-          'get_checked_in_training_plan_blocks_for_athlete',
+          'get_checked_in_training_plan_blocks_for_athlete_v2',
           params: {'p_athlete_id': athleteId},
         );
       } catch (_) {
         rows = await _supabase.rpc(
-          'get_checked_in_training_plan_blocks_for_athlete',
+          'get_checked_in_training_plan_blocks_for_athlete_v2',
         );
       }
 
@@ -846,9 +847,8 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         throw Exception('Usuário não autenticado.');
       }
 
-      final athleteId = widget.adminView
-          ? (widget.athleteId ?? '').trim()
-          : user.id;
+      final athleteId =
+          widget.adminView ? (widget.athleteId ?? '').trim() : user.id;
 
       if (athleteId.isEmpty) {
         throw Exception('Atleta não identificado.');
@@ -867,14 +867,14 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         'id, event_id, coach_id, athlete_id, tipo, slot, motivo, fundamento, observacao, created_at, score',
       );
 
-      final evaluations =
-          evaluationsRows.where((row) {
-            return (row['athlete_id'] ?? '').toString() == athleteId;
-          }).toList()..sort((a, b) {
-            final ad = _parseDate(a['created_at']) ?? DateTime(1900);
-            final bd = _parseDate(b['created_at']) ?? DateTime(1900);
-            return bd.compareTo(ad);
-          });
+      final evaluations = evaluationsRows.where((row) {
+        return (row['athlete_id'] ?? '').toString() == athleteId;
+      }).toList()
+        ..sort((a, b) {
+          final ad = _parseDate(a['created_at']) ?? DateTime(1900);
+          final bd = _parseDate(b['created_at']) ?? DateTime(1900);
+          return bd.compareTo(ad);
+        });
 
       final checkins = await _safeSelect(
         'checkins',
@@ -1378,6 +1378,11 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
           : (row['category'] ?? '').toString().trim();
 
       map[category] = (map[category] ?? 0) + _durationMinutesFromPlanBlock(row);
+      if (category != 'Físico') {
+        final physical =
+            int.tryParse((row['physical_minutes'] ?? '0').toString()) ?? 0;
+        map['Físico'] = (map['Físico'] ?? 0) + physical;
+      }
     }
 
     return map;
@@ -1558,8 +1563,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) {
               return Container(color: const Color(0xFF102845));
@@ -1595,8 +1599,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }) {
     return Container(
       width: double.infinity,
-      margin:
-          margin ??
+      margin: margin ??
           EdgeInsets.fromLTRB(
             _StatsResponsive.isDesktop(context)
                 ? 48
@@ -1723,13 +1726,12 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   }
 
   Widget _header() {
-    final fullName =
-        (_profile?['full_name'] ??
-                (widget.adminView
-                    ? 'Atleta'
-                    : _supabase.auth.currentUser?.userMetadata?['full_name']) ??
-                'Atleta')
-            .toString();
+    final fullName = (_profile?['full_name'] ??
+            (widget.adminView
+                ? 'Atleta'
+                : _supabase.auth.currentUser?.userMetadata?['full_name']) ??
+            'Atleta')
+        .toString();
     final avatarUrl = (_profile?['avatar_url'] ?? '').toString();
 
     return Container(
@@ -1766,24 +1768,23 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             children: [
               Hero(
                 tag: AthleteStatisticsPage.heroTag,
-                flightShuttleBuilder:
-                    (
-                      flightContext,
-                      animation,
-                      flightDirection,
-                      fromHeroContext,
-                      toHeroContext,
-                    ) {
-                      return ScaleTransition(
-                        scale: Tween<double>(begin: 0.96, end: 1.0).animate(
-                          CurvedAnimation(
-                            parent: animation,
-                            curve: Curves.easeOutCubic,
-                          ),
-                        ),
-                        child: toHeroContext.widget,
-                      );
-                    },
+                flightShuttleBuilder: (
+                  flightContext,
+                  animation,
+                  flightDirection,
+                  fromHeroContext,
+                  toHeroContext,
+                ) {
+                  return ScaleTransition(
+                    scale: Tween<double>(begin: 0.96, end: 1.0).animate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      ),
+                    ),
+                    child: toHeroContext.widget,
+                  );
+                },
                 child: CircleAvatar(
                   radius: 31,
                   backgroundColor: olympusGold,
@@ -2650,17 +2651,14 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                           itemCount: rows.length,
                           itemBuilder: (context, index) {
                             final item = rows[index];
-                            final tipo = (item['tipo'] ?? 'Avaliação')
-                                .toString();
-                            final fundamento = (item['fundamento'] ?? '')
-                                .toString()
-                                .trim();
-                            final motivo = (item['motivo'] ?? '')
-                                .toString()
-                                .trim();
-                            final observacao = (item['observacao'] ?? '')
-                                .toString()
-                                .trim();
+                            final tipo =
+                                (item['tipo'] ?? 'Avaliação').toString();
+                            final fundamento =
+                                (item['fundamento'] ?? '').toString().trim();
+                            final motivo =
+                                (item['motivo'] ?? '').toString().trim();
+                            final observacao =
+                                (item['observacao'] ?? '').toString().trim();
                             final delta = _scoreDeltaForEvaluation(item);
                             final deltaColor = _scoreDeltaColor(delta);
 
@@ -2824,8 +2822,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child:
-                    valueWidget ??
+                child: valueWidget ??
                     Text(
                       value,
                       style: TextStyle(
@@ -2866,10 +2863,10 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         'color': olympusPurple,
         'explanation':
             'Base atual: ${_formatPercentValue(_presenceRate)} de presença e ${_formatPercentValue(_absenceRate)} de faltas sobre $_trainingBaseCount treino(s) já consolidado(s).\n\n'
-            'Presenças: $_trainingPresenceCount • Faltas: $_trainingAcceptedAbsentCount • Pendentes: $_trainingPendingCount • Recusados: $_trainingRejectedCount.\n\n'
-            'Presença = check-ins realizados em treinos convocados.\n'
-            'Falta = treinos convocados sem check-in após 30 minutos.\n\n'
-            'Regra válida ${_periodRuleLabel()}.',
+                'Presenças: $_trainingPresenceCount • Faltas: $_trainingAcceptedAbsentCount • Pendentes: $_trainingPendingCount • Recusados: $_trainingRejectedCount.\n\n'
+                'Presença = check-ins realizados em treinos convocados.\n'
+                'Falta = treinos convocados sem check-in após 30 minutos.\n\n'
+                'Regra válida ${_periodRuleLabel()}.',
       },
       {
         'icon': Icons.star_rounded,
@@ -2960,10 +2957,10 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
     final genderLabel = _athleteGender.isEmpty
         ? 'não informado'
         : _athleteGender == 'feminino'
-        ? 'Feminino'
-        : _athleteGender == 'masculino'
-        ? 'Masculino'
-        : _athleteGender;
+            ? 'Feminino'
+            : _athleteGender == 'masculino'
+                ? 'Masculino'
+                : _athleteGender;
 
     return _glassCard(
       padding: const EdgeInsets.all(14),
@@ -3271,9 +3268,9 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
 
                                     final normalized =
                                         ((localX - left) / chartWidth).clamp(
-                                          0.0,
-                                          1.0,
-                                        );
+                                      0.0,
+                                      1.0,
+                                    );
                                     final month = (normalized * 11).round() + 1;
 
                                     setState(() {
@@ -4061,9 +4058,8 @@ class _TrainingPlanPiePainter extends CustomPainter {
 
     for (final category in categories) {
       final value = data[category] ?? 0;
-      final percent = totalMinutes <= 0
-          ? 0
-          : (value / totalMinutes * 100).round();
+      final percent =
+          totalMinutes <= 0 ? 0 : (value / totalMinutes * 100).round();
       final color = colors[category] ?? titleColor;
 
       canvas.drawCircle(

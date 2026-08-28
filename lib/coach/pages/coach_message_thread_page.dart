@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/badge_service.dart';
@@ -308,8 +309,7 @@ class _CoachMessageThreadPageState extends State<CoachMessageThreadPage> {
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             alignment: Alignment.center,
             errorBuilder: (_, __, ___) {

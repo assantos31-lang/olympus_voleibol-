@@ -326,6 +326,8 @@ class _CoachTrainingPlanDetailPageState
       'fim': _calcularHorarioFimPadrao(inicio),
       'observacao': '',
       'posicoes': <String>[],
+      'percentual_esforco_fisico': 0,
+      'minutos_fisicos': 0,
     };
   }
 
@@ -369,6 +371,10 @@ class _CoachTrainingPlanDetailPageState
         (row['category'] ?? '').toString(),
         (row['type'] ?? '').toString(),
       ).toList(),
+      'percentual_esforco_fisico':
+          int.tryParse((row['physical_effort_percent'] ?? '0').toString()) ?? 0,
+      'minutos_fisicos':
+          int.tryParse((row['physical_minutes'] ?? '0').toString()) ?? 0,
     };
   }
 
@@ -390,7 +396,7 @@ class _CoachTrainingPlanDetailPageState
       final blocosResponse = await _supabase
           .from('training_plan_blocks')
           .select(
-              'id, category, type, start_time, end_time, observation, position')
+              'id, category, type, start_time, end_time, observation, position, physical_effort_percent, physical_minutes')
           .eq('event_id', _eventId)
           .eq('coach_id', user.id)
           .order('position', ascending: true);
@@ -523,6 +529,9 @@ class _CoachTrainingPlanDetailPageState
       'end_time': _normalizarHorario(bloco['fim']),
       'observation': (bloco['observacao'] ?? '').toString().trim(),
       'position': index,
+      'physical_effort_percent':
+          (bloco['percentual_esforco_fisico'] as num?)?.round() ?? 0,
+      'physical_minutes': (bloco['minutos_fisicos'] as num?)?.round() ?? 0,
       'updated_at': DateTime.now().toIso8601String(),
     };
 
@@ -613,6 +622,8 @@ class _CoachTrainingPlanDetailPageState
       'fim': _calcularHorarioFimPadrao(horarioInicial),
       'observacao': '',
       'posicoes': <String>[],
+      'percentual_esforco_fisico': 0,
+      'minutos_fisicos': 0,
     };
 
     setState(() {
@@ -737,6 +748,12 @@ class _CoachTrainingPlanDetailPageState
     };
     String opcaoSelecionada =
         _parseOpcaoTreino(categoriaSelecionada, tipoSelecionado);
+    int percentualEsforcoFisico =
+        int.tryParse((bloco['percentual_esforco_fisico'] ?? '0').toString()) ??
+            0;
+    if (categoriaSelecionada == 'Físico' && percentualEsforcoFisico == 0) {
+      percentualEsforcoFisico = 100;
+    }
 
     String horarioInicio = index == 0
         ? _getHorarioInicialTreino()
@@ -763,6 +780,9 @@ class _CoachTrainingPlanDetailPageState
       );
 
       final currentBlockId = _blocos[index]['id'] ?? bloco['id'];
+      final duracaoBloco = _duracaoEmMinutos(horarioInicio, horarioFim);
+      final minutosFisicos =
+          (duracaoBloco * percentualEsforcoFisico / 100).round();
       setState(() {
         _blocos[index] = {
           'id': currentBlockId,
@@ -772,6 +792,8 @@ class _CoachTrainingPlanDetailPageState
           'fim': horarioFim.trim(),
           'observacao': observacaoController.text.trim(),
           'posicoes': posicoesSelecionadas.toList(),
+          'percentual_esforco_fisico': percentualEsforcoFisico,
+          'minutos_fisicos': minutosFisicos,
         };
         _encadearBlocosDepoisDe(index);
       });
@@ -835,7 +857,13 @@ class _CoachTrainingPlanDetailPageState
                 selected: selected,
                 onSelected: (_) {
                   setModalState(() {
+                    final categoriaAnterior = categoriaSelecionada;
                     categoriaSelecionada = categoria;
+                    if (categoria == 'Físico') {
+                      percentualEsforcoFisico = 100;
+                    } else if (categoriaAnterior == 'Físico') {
+                      percentualEsforcoFisico = 0;
+                    }
                     if (categoria == 'Fundamentos') {
                       opcaoSelecionada = '';
                       fundamentosSelecionados = {
@@ -1210,6 +1238,72 @@ class _CoachTrainingPlanDetailPageState
                           ),
                         ],
                         const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: olympusBlue.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: olympusBlue.withOpacity(0.14),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.monitor_heart_outlined,
+                                    color: olympusBlue,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Expanded(
+                                    child: Text(
+                                      'Esforço físico do bloco',
+                                      style: TextStyle(
+                                        color: olympusBlue,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    '$percentualEsforcoFisico%',
+                                    style: const TextStyle(
+                                      color: olympusBlue,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Slider(
+                                value: percentualEsforcoFisico.toDouble(),
+                                min: 0,
+                                max: 100,
+                                divisions: 20,
+                                label: '$percentualEsforcoFisico%',
+                                activeColor: olympusGold,
+                                onChanged: (value) {
+                                  setModalState(() {
+                                    percentualEsforcoFisico = value.round();
+                                  });
+                                  sincronizarEAgendarSalvamento();
+                                },
+                              ),
+                              Text(
+                                'Equivale a ${(_duracaoEmMinutos(horarioInicio, horarioFim) * percentualEsforcoFisico / 100).round()} min físicos em ${_duracaoEmMinutos(horarioInicio, horarioFim)} min de atividade.',
+                                style: const TextStyle(
+                                  color: olympusMuted,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         Row(
                           children: [
                             buildHorarioBox(
@@ -1437,6 +1531,11 @@ class _CoachTrainingPlanDetailPageState
         ? _calcularHorarioFimPadrao(inicio)
         : _normalizarHorario(bloco['fim']);
     final observacao = (bloco['observacao'] ?? '').toString();
+    final percentualFisico =
+        int.tryParse((bloco['percentual_esforco_fisico'] ?? '0').toString()) ??
+            0;
+    final minutosFisicos =
+        int.tryParse((bloco['minutos_fisicos'] ?? '0').toString()) ?? 0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -1523,6 +1622,17 @@ class _CoachTrainingPlanDetailPageState
               fontWeight: FontWeight.w700,
             ),
           ),
+          if (percentualFisico > 0) ...[
+            const SizedBox(height: 5),
+            Text(
+              'Esforço físico: $percentualFisico% • $minutosFisicos min',
+              style: TextStyle(
+                color: const Color(0xFFF59E0B),
+                fontSize: isMobile ? 11 : 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
           if (observacao.trim().isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(

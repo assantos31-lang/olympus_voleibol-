@@ -5,6 +5,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/organization_context_service.dart';
+import '../theme/olympus_theme.dart';
+
 class AddEventPage extends StatefulWidget {
   final List<Map<String, String>>? registeredAthletes;
   final List<Map<String, String>>? registeredTechnicians;
@@ -23,11 +26,14 @@ class AddEventPage extends StatefulWidget {
 
 class _AddEventPageState extends State<AddEventPage> {
   final _formKey = GlobalKey<FormState>();
-  final goldenColor = const Color(0xFFD4AF37);
-  final techColor = const Color(0xFF1E3A8A);
-  final backgroundColor = const Color(0xFFF8F9FA);
-  final cardColor = const Color(0xFF0A2463);
-  final surfaceColor = const Color(0xFF1E3A8A);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get goldenColor => _branding.secondaryColor;
+  Color get techColor => _branding.primaryColor;
+  Color get backgroundColor => _branding.backgroundColor.withOpacity(0.90);
+  Color get cardColor => _branding.primaryColor;
+  Color get surfaceColor =>
+      Color.lerp(_branding.primaryColor, Colors.white, 0.10) ??
+      _branding.primaryColor;
 
   EventType _selectedType = EventType.treino;
   final _dateController = TextEditingController();
@@ -157,13 +163,18 @@ class _AddEventPageState extends State<AddEventPage> {
     try {
       final supabase = Supabase.instance.client;
 
+      await OrganizationContextService.instance.initialize(force: true);
+      final organizationId = OrganizationContextService.instance.currentId;
+
       final profilesResponse = await supabase
           .from('profiles')
           .select('id, full_name, user_type, gender, training_weekdays')
+          .eq('organization_id', organizationId)
           .eq('is_active', true);
       final rolesResponse = await supabase
           .from('user_roles')
           .select('user_id, role')
+          .eq('organization_id', organizationId)
           .eq('is_active', true);
 
       final rolesByUser = <String, Set<String>>{};
@@ -182,7 +193,9 @@ class _AddEventPageState extends State<AddEventPage> {
       }
 
       final athletesResponse = profilesResponse
-          .where((profile) => hasRole(profile, 'athlete'))
+          .where((profile) =>
+              hasRole(profile, 'athlete') ||
+              (profile['user_type'] ?? '').toString().toLowerCase() == 'member')
           .toList();
       final coachesResponse = profilesResponse
           .where((profile) => hasRole(profile, 'coach'))
@@ -231,9 +244,7 @@ class _AddEventPageState extends State<AddEventPage> {
   List<Map<String, String>> get _athletesList {
     final list = widget.registeredAthletes?.isNotEmpty == true
         ? widget.registeredAthletes!
-        : _athletesFromSupabase.isNotEmpty
-            ? _athletesFromSupabase
-            : _mockAthletes;
+        : _athletesFromSupabase;
 
     return _sortByName(list);
   }
@@ -241,23 +252,10 @@ class _AddEventPageState extends State<AddEventPage> {
   List<Map<String, String>> get _techniciansList {
     final list = widget.registeredTechnicians?.isNotEmpty == true
         ? widget.registeredTechnicians!
-        : _techniciansFromSupabase.isNotEmpty
-            ? _techniciansFromSupabase
-            : _mockTechnicians;
+        : _techniciansFromSupabase;
 
     return _sortByName(list);
   }
-
-  static const List<Map<String, String>> _mockAthletes = [
-    {'nome': 'Ana Silva', 'genero': 'Feminino'},
-    {'nome': 'Beatriz Costa', 'genero': 'Feminino'},
-    {'nome': 'Carla Souza', 'genero': 'Feminino'},
-    {'nome': 'João Santos', 'genero': 'Masculino'},
-    {'nome': 'Pedro Lima', 'genero': 'Masculino'},
-    {'nome': 'Lucas Oliveira', 'genero': 'Masculino'},
-  ];
-
-  static const List<Map<String, String>> _mockTechnicians = [];
 
   String _normalizeGenero(String? genero) {
     final valor = (genero ?? '').trim().toLowerCase();
@@ -1026,139 +1024,155 @@ class _AddEventPageState extends State<AddEventPage> {
 
   @override
   Widget build(BuildContext context) {
+    final primary = _branding.primaryColor;
+    final secondary = _branding.secondaryColor;
+    final onPrimary =
+        ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
+            ? Colors.white
+            : Colors.black87;
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: Row(
           mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.event, color: Color(0xFFD4AF37)),
-            SizedBox(width: 8),
+          children: [
+            Icon(Icons.event, color: secondary),
+            const SizedBox(width: 8),
             Text(
               'Novo Evento',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: Colors.white,
+                color: onPrimary,
                 fontFamily: 'Roboto',
                 fontSize: 20,
               ),
             ),
           ],
         ),
-        backgroundColor: const Color(0xFF1E3A5F),
-        foregroundColor: Colors.white,
+        backgroundColor: primary,
+        foregroundColor: onPrimary,
         elevation: 2,
       ),
-      body: Form(
-        key: _formKey,
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildFormCard(
-                    icon: Icons.event_note_rounded,
-                    title: 'Dados do evento',
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildEventTypeSelector(),
-                        const SizedBox(height: 18),
-                        _buildGenderSelector(),
-                        if (_selectedType == EventType.campeonato) ...[
-                          const SizedBox(height: 18),
-                          _buildChampionshipNameField(),
-                          const SizedBox(height: 16),
-                          _buildRideLogisticsOption(),
-                        ],
-                        if (_selectedType == EventType.amistoso ||
-                            _selectedType == EventType.campeonato) ...[
-                          const SizedBox(height: 18),
-                          _buildOpponentField(),
-                          const SizedBox(height: 16),
-                          _buildSetsFormatSelector(),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildFormCard(
-                    icon: Icons.schedule_rounded,
-                    title: 'Data e horário',
-                    child: _buildResponsiveDateTimeFields(),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildFormCard(
-                    icon: Icons.groups_rounded,
-                    title: 'Convocação',
-                    child: _buildConvocationSection(),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildFormCard(
-                    icon: Icons.location_on_outlined,
-                    title: 'Local e acesso',
-                    child: Column(
-                      children: [
-                        _buildAddressSection(),
-                        const SizedBox(height: 16),
-                        _buildCheckInOption(),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 80),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: SafeArea(
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _isSaving ? null : _salvarEvento,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: goldenColor,
-                      foregroundColor: const Color(0xFF0A2463),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+      body: Stack(
+        children: [
+          const Positioned.fill(child: OlympusBrandBackgroundImage()),
+          Positioned.fill(
+            child: ColoredBox(color: backgroundColor),
+          ),
+          Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      _buildFormCard(
+                        icon: Icons.event_note_rounded,
+                        title: 'Dados do evento',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildEventTypeSelector(),
+                            const SizedBox(height: 18),
+                            _buildGenderSelector(),
+                            if (_selectedType == EventType.campeonato) ...[
+                              const SizedBox(height: 18),
+                              _buildChampionshipNameField(),
+                              const SizedBox(height: 16),
+                              _buildRideLogisticsOption(),
+                            ],
+                            if (_selectedType == EventType.amistoso ||
+                                _selectedType == EventType.campeonato) ...[
+                              const SizedBox(height: 18),
+                              _buildOpponentField(),
+                              const SizedBox(height: 16),
+                              _buildSetsFormatSelector(),
+                            ],
+                          ],
+                        ),
                       ),
-                      elevation: 0,
-                    ),
-                    child: _isSaving
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                  Color(0xFF0A2463)),
-                            ),
-                          )
-                        : Text(
-                            _isEditing ? 'Atualizar Evento' : 'Salvar Evento',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                      const SizedBox(height: 16),
+                      _buildFormCard(
+                        icon: Icons.schedule_rounded,
+                        title: 'Data e horário',
+                        child: _buildResponsiveDateTimeFields(),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildFormCard(
+                        icon: Icons.groups_rounded,
+                        title: 'Convocação',
+                        child: _buildConvocationSection(),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildFormCard(
+                        icon: Icons.location_on_outlined,
+                        title: 'Local e acesso',
+                        child: Column(
+                          children: [
+                            _buildAddressSection(),
+                            const SizedBox(height: 16),
+                            _buildCheckInOption(),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 80),
+                    ],
                   ),
                 ),
-              ),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, -2),
+                      ),
+                    ],
+                  ),
+                  child: SafeArea(
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _isSaving ? null : _salvarEvento,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: goldenColor,
+                          foregroundColor: const Color(0xFF0A2463),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: _isSaving
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Color(0xFF0A2463)),
+                                ),
+                              )
+                            : Text(
+                                _isEditing
+                                    ? 'Atualizar Evento'
+                                    : 'Salvar Evento',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1936,6 +1950,8 @@ class _AddEventPageState extends State<AddEventPage> {
   }
 
   Widget _buildConvocationSection() {
+    final visiblePeople =
+        _filtroPessoa == 'Atleta' ? _getFilteredAthletes() : _techniciansList;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1993,35 +2009,50 @@ class _AddEventPageState extends State<AddEventPage> {
               border:
                   Border.all(color: const Color(0xFF0A2463).withOpacity(0.2)),
             ),
-            child: ListView(
-              padding: const EdgeInsets.all(8),
-              children: _filtroPessoa == 'Atleta'
-                  ? _getFilteredAthletes().map((athlete) {
-                      final athleteId = athlete['uid'] ?? '';
-                      return _buildPersonTile(
-                        name: athlete['nome']!,
-                        subtitle: athlete['genero'],
-                        avatarUrl: athlete['avatar_url'],
-                        isSelected: _selectedAthleteIds.contains(athleteId),
-                        onToggle: athleteId.isEmpty
-                            ? null
-                            : () => _toggleAthleteSelection(athleteId),
-                      );
-                    }).toList()
-                  : _techniciansList.map((tech) {
-                      final technicianId = tech['uid'] ?? '';
-                      return _buildPersonTile(
-                        name: tech['nome']!,
-                        subtitle: tech['especialidade'],
-                        avatarUrl: tech['avatar_url'],
-                        isSelected:
-                            _selectedTechnicianIds.contains(technicianId),
-                        onToggle: technicianId.isEmpty
-                            ? null
-                            : () => _toggleTechnicianSelection(technicianId),
-                      );
-                    }).toList(),
-            ),
+            child: visiblePeople.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Text(
+                        _filtroPessoa == 'Atleta'
+                            ? 'Nenhum atleta cadastrado neste clube.'
+                            : 'Nenhum treinador cadastrado neste clube.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey[700]),
+                      ),
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.all(8),
+                    children: _filtroPessoa == 'Atleta'
+                        ? visiblePeople.map((athlete) {
+                            final athleteId = athlete['uid'] ?? '';
+                            return _buildPersonTile(
+                              name: athlete['nome']!,
+                              subtitle: athlete['genero'],
+                              avatarUrl: athlete['avatar_url'],
+                              isSelected:
+                                  _selectedAthleteIds.contains(athleteId),
+                              onToggle: athleteId.isEmpty
+                                  ? null
+                                  : () => _toggleAthleteSelection(athleteId),
+                            );
+                          }).toList()
+                        : visiblePeople.map((tech) {
+                            final technicianId = tech['uid'] ?? '';
+                            return _buildPersonTile(
+                              name: tech['nome']!,
+                              subtitle: tech['especialidade'],
+                              avatarUrl: tech['avatar_url'],
+                              isSelected:
+                                  _selectedTechnicianIds.contains(technicianId),
+                              onToggle: technicianId.isEmpty
+                                  ? null
+                                  : () =>
+                                      _toggleTechnicianSelection(technicianId),
+                            );
+                          }).toList(),
+                  ),
           ),
         if (_selectedAthleteIds.isNotEmpty) ...[
           const SizedBox(height: 12),

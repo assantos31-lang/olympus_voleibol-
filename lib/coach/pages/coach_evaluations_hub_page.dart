@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 
 import 'coach_athlete_evaluations_page.dart';
 import '../../pages/coach_received_evaluations_page.dart';
@@ -45,8 +46,7 @@ class CoachEvaluationsHubPage extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.asset(
-          'assets/images/monte_olimpo_v2.png',
+        OlympusBrandBackgroundImage(
           fit: BoxFit.cover,
           alignment: Alignment.center,
           errorBuilder: (_, __, ___) {

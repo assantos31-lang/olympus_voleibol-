@@ -168,7 +168,10 @@ class _DashboardRouterPageState extends State<DashboardRouterPage> {
         return;
       }
 
-      final rolesFuture = _roleService.getUserRoles(user.id);
+      final rolesFuture = _roleService.getUserRoles(
+        user.id,
+        forceRefresh: true,
+      );
       final profile = await supabase
           .from('profiles')
           .select(

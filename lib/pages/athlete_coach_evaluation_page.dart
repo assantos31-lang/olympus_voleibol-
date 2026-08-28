@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/coach_evaluation_service.dart';
@@ -1264,8 +1265,7 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
             Positioned.fill(
               child: Opacity(
                 opacity: 0.70,
-                child: Image.asset(
-                  'assets/images/monte_olimpo_v2.png',
+                child: OlympusBrandBackgroundImage(
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(color: olympusBlue),
                 ),

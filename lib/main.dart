@@ -17,6 +17,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'firebase_options.dart';
 import 'pages/admin_home_page.dart';
 import 'pages/admin_athletes_statistics_list_page.dart';
+import 'pages/admin_checkin_ranking_page.dart';
 import 'pages/admin_coach_evaluations_page.dart';
 import 'pages/athlete_agenda_page.dart';
 import 'pages/athlete_dashboard_page.dart';
@@ -30,12 +31,15 @@ import 'coach/pages/coach_received_evaluations_page.dart';
 import 'coach/pages/coach_messages_page.dart';
 import 'pages/dashboard_router_page.dart';
 import 'pages/login_page.dart';
+import 'pages/force_password_change_page.dart';
 import 'pages/profiles_page.dart';
 import 'services/auth_service.dart';
 import 'services/active_chat_service.dart';
 import 'services/badge_service.dart';
 import 'services/chat_service.dart';
+import 'services/organization_context_service.dart';
 import 'services/push_token_service.dart';
+import 'theme/olympus_theme.dart';
 import 'widgets/financial_access_gate.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -54,8 +58,7 @@ bool _notificationSettingsWarningShown = false;
 Future<void> _warnIfIosNotificationsAreDisabled(BuildContext context) async {
   if (kIsWeb || !Platform.isIOS || _notificationSettingsWarningShown) return;
 
-  final settings =
-      await FirebaseMessaging.instance.getNotificationSettings();
+  final settings = await FirebaseMessaging.instance.getNotificationSettings();
   if (settings.authorizationStatus != AuthorizationStatus.denied) return;
   if (!context.mounted) return;
 
@@ -218,9 +221,12 @@ Future<void> _initializeSupabase() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb && Platform.isAndroid) {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
   final imageCache = PaintingBinding.instance.imageCache;
-  imageCache.maximumSize = 250;
-  imageCache.maximumSizeBytes = 80 << 20;
+  imageCache.maximumSize = 150;
+  imageCache.maximumSizeBytes = 48 << 20;
 
   try {
     var firebaseReady = false;
@@ -370,9 +376,8 @@ Future<void> _setupPushNotifications() async {
       final isPrivateMessageNotification = isChatNotification ||
           type == 'platform_message' ||
           type == 'app_message';
-      final visibleNotificationBody = isPrivateMessageNotification
-          ? 'Nova mensagem'
-          : notification.body;
+      final visibleNotificationBody =
+          isPrivateMessageNotification ? 'Nova mensagem' : notification.body;
       final payloadNotificationId = int.tryParse(
         (data['notification_id'] ??
                 data['notificationId'] ??
@@ -619,11 +624,18 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   DateTime? _lastResumeSyncAt;
+  late final Listenable _brandingListenable;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _brandingListenable = Listenable.merge([
+      OlympusBrandingController.instance,
+      PublicAppBrandingController.instance,
+    ]);
+    unawaited(OlympusBrandingController.instance.initialize());
+    unawaited(PublicAppBrandingController.instance.initialize());
   }
 
   @override
@@ -661,50 +673,60 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: navigatorKey,
-      title: 'Olympus Voleibol',
-      debugShowCheckedModeBanner: false,
-      builder: (context, child) => FinancialAccessGate(
-        child: child ?? const SizedBox.shrink(),
-      ),
-      locale: const Locale('pt', 'BR'),
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: const [Locale('pt', 'BR'), Locale('en', 'US')],
-      theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
-      initialRoute: '/',
-      routes: {
-        '/': (context) => const AppBootstrapPage(),
-        '/login': (context) => const LoginPage(),
-        '/profiles': (context) => const AdminOnlyProfilesRoute(),
-        '/athlete-dashboard': (context) => const AthleteDashboardPage(),
-        '/athlete-agenda': (context) => const AthleteAgendaPage(),
-        '/athlete-financial': (context) => const AthleteFinancialPage(),
-        '/athlete-statistics': (context) => const AthleteStatisticsPage(),
-        '/complete-profile': (context) => const CompleteProfilePage(),
-        '/dashboard': (context) => const DashboardRouterPage(),
-        '/admin-home': (context) => const AdminHomePage(),
-        '/admin-athletes-statistics': (context) =>
-            const AdminAthletesStatisticsListPage(),
-        '/athlete-coach-evaluation': (context) =>
-            const AthleteCoachEvaluationPage(),
-        '/admin-coach-evaluations': (context) =>
-            const AdminCoachEvaluationsPage(),
-        '/coach-received-evaluations': (context) =>
-            const CoachReceivedEvaluationsPage(),
-        '/chat-rooms': (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          String? roomId;
-          if (args is Map) {
-            roomId = (args['roomId'] ?? args['room_id'] ?? args['threadId'])
-                ?.toString();
-          }
-          return ChatRoomsPage(initialRoomId: roomId);
-        },
+    return AnimatedBuilder(
+      animation: _brandingListenable,
+      builder: (context, _) {
+        final branding = OlympusBrandingController.instance.branding;
+        return MaterialApp(
+          navigatorKey: navigatorKey,
+          title: branding.teamName,
+          debugShowCheckedModeBanner: false,
+          builder: (context, child) => OlympusGlobalBackground(
+            child: FinancialAccessGate(
+              child: child ?? const SizedBox.shrink(),
+            ),
+          ),
+          locale: const Locale('pt', 'BR'),
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: const [Locale('pt', 'BR'), Locale('en', 'US')],
+          theme: branding.toThemeData(),
+          initialRoute: '/',
+          routes: {
+            '/': (context) => const AppBootstrapPage(),
+            '/login': (context) => const LoginPage(),
+            '/profiles': (context) => const AdminOnlyProfilesRoute(),
+            '/athlete-dashboard': (context) => const AthleteDashboardPage(),
+            '/athlete-agenda': (context) => const AthleteAgendaPage(),
+            '/athlete-financial': (context) => const AthleteFinancialPage(),
+            '/athlete-statistics': (context) => const AthleteStatisticsPage(),
+            '/complete-profile': (context) => const CompleteProfilePage(),
+            '/dashboard': (context) => const DashboardRouterPage(),
+            '/admin-home': (context) => const AdminHomePage(),
+            '/admin-athletes-statistics': (context) =>
+                const AdminAthletesStatisticsListPage(),
+            '/admin-checkin-ranking': (context) =>
+                const AdminCheckinRankingPage(),
+            '/athlete-coach-evaluation': (context) =>
+                const AthleteCoachEvaluationPage(),
+            '/admin-coach-evaluations': (context) =>
+                const AdminCoachEvaluationsPage(),
+            '/coach-received-evaluations': (context) =>
+                const CoachReceivedEvaluationsPage(),
+            '/chat-rooms': (context) {
+              final args = ModalRoute.of(context)?.settings.arguments;
+              String? roomId;
+              if (args is Map) {
+                roomId = (args['roomId'] ?? args['room_id'] ?? args['threadId'])
+                    ?.toString();
+              }
+              return ChatRoomsPage(initialRoomId: roomId);
+            },
+          },
+        );
       },
     );
   }
@@ -757,10 +779,7 @@ class _AppBootstrapPageState extends State<AppBootstrapPage> {
         body: Stack(
           children: [
             Positioned.fill(
-              child: Image.asset(
-                'assets/images/monte_olimpo_v2.png',
-                fit: BoxFit.cover,
-              ),
+              child: OlympusBrandBackgroundImage(),
             ),
             Positioned.fill(
               child: Container(color: Colors.black.withOpacity(0.65)),
@@ -823,11 +842,7 @@ class PremiumLoadingScreen extends StatelessWidget {
       body: Stack(
         children: [
           Positioned.fill(
-            child: Image.asset(
-              'assets/images/monte_olimpo_v2.png',
-              fit: BoxFit.cover,
-              alignment: Alignment.center,
-            ),
+            child: OlympusBrandBackgroundImage(),
           ),
           Positioned.fill(
             child: Container(color: Colors.black.withOpacity(0.55)),
@@ -879,12 +894,32 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> {
   final _auth = Supabase.instance.client.auth;
+  StreamSubscription<AuthState>? _organizationAuthSubscription;
   bool _initialAuthResolved = false;
   bool _postLoginServicesScheduled = false;
 
   @override
   void initState() {
     super.initState();
+
+    _organizationAuthSubscription = _auth.onAuthStateChange.listen((state) {
+      if (state.event == AuthChangeEvent.signedOut) {
+        unawaited(OrganizationContextService.instance.reset());
+        unawaited(OlympusBrandingController.instance.reset());
+        return;
+      }
+      if (state.session != null &&
+          (state.event == AuthChangeEvent.signedIn ||
+              state.event == AuthChangeEvent.initialSession ||
+              state.event == AuthChangeEvent.userUpdated)) {
+        unawaited(
+          OrganizationContextService.instance.refresh().then(
+                (_) =>
+                    OlympusBrandingController.instance.initialize(force: true),
+              ),
+        );
+      }
+    });
 
     Future<void>.delayed(const Duration(milliseconds: 1200), () {
       if (!mounted) return;
@@ -893,6 +928,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
         _initialAuthResolved = true;
       });
     });
+  }
+
+  @override
+  void dispose() {
+    _organizationAuthSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -908,10 +949,23 @@ class _AuthWrapperState extends State<AuthWrapper> {
         }
 
         if (hasSession) {
+          final mustChangePassword =
+              _auth.currentUser?.userMetadata?['must_change_password'] == true;
+          if (mustChangePassword) {
+            return const ForcePasswordChangePage();
+          }
+
+          final mustCompleteProfile =
+              _auth.currentUser?.userMetadata?['must_complete_profile'] == true;
+          if (mustCompleteProfile) {
+            return const CompleteProfilePage();
+          }
+
           if (!_postLoginServicesScheduled) {
             _postLoginServicesScheduled = true;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               PushTokenService.instance.syncCurrentUserTokenIfPossible();
+              OlympusBrandingController.instance.initialize(force: true);
               BadgeService.updateBadge();
               ChatService().markMyPendingMessagesDelivered();
               _warnIfIosNotificationsAreDisabled(context);

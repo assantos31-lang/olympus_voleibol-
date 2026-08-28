@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -505,8 +506,7 @@ class _AthleteStatisticsHubState extends State<AthleteStatisticsPage> {
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) {
               return Container(color: const Color(0xFF102845));
@@ -1973,7 +1973,7 @@ class _AthleteStatisticsDetailPageState
   Future<List<Map<String, dynamic>>> _loadTrainingPlanBlocks() async {
     try {
       final rows = await _supabase.rpc(
-        'get_checked_in_training_plan_blocks_for_athlete',
+        'get_checked_in_training_plan_blocks_for_athlete_v2',
       );
 
       final list = List<Map<String, dynamic>>.from(rows as List);
@@ -3124,6 +3124,11 @@ class _AthleteStatisticsDetailPageState
           : (row['category'] ?? '').toString().trim();
 
       map[category] = (map[category] ?? 0) + _durationMinutesFromPlanBlock(row);
+      if (category != 'Físico') {
+        final physical =
+            int.tryParse((row['physical_minutes'] ?? '0').toString()) ?? 0;
+        map['Físico'] = (map['Físico'] ?? 0) + physical;
+      }
     }
 
     return map;
@@ -3310,8 +3315,7 @@ class _AthleteStatisticsDetailPageState
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) {
               return Container(color: const Color(0xFF102845));

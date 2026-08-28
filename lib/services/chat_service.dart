@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/chat_message.dart';
 import '../models/chat_poll.dart';
 import '../models/chat_room.dart';
+import 'organization_storage_service.dart';
 
 class ChatRoomListItem {
   final ChatRoom room;
@@ -55,10 +56,7 @@ class ChatService {
             notification.tag == tag || notification.groupKey == tag;
         final activeId = notification.id;
         if (belongsToRoom && activeId != null) {
-          await _localNotifications.cancel(
-            activeId,
-            tag: notification.tag,
-          );
+          await _localNotifications.cancel(activeId, tag: notification.tag);
           await _localNotifications.cancel(activeId);
         }
       }
@@ -922,8 +920,9 @@ class ChatService {
     final bytes = await file.readAsBytes();
     final extension = file.path.split('.').last.toLowerCase();
     final safeExtension = extension.isEmpty ? 'jpg' : extension;
-    final path =
-        'chat_rooms/$roomId/avatar_${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
+    final path = OrganizationStorageService.scopedPath(
+      'chat_rooms/$roomId/avatar_${DateTime.now().millisecondsSinceEpoch}.$safeExtension',
+    );
 
     await supabase.storage.from('avatars').uploadBinary(
           path,
@@ -948,8 +947,9 @@ class ChatService {
     final bytes = await file.readAsBytes();
     final extension = file.path.split('.').last.toLowerCase();
     final safeExtension = extension.isEmpty ? 'jpg' : extension;
-    final path =
-        'chat_messages/$roomId/image_${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
+    final path = OrganizationStorageService.scopedPath(
+      'chat_messages/$roomId/image_${DateTime.now().millisecondsSinceEpoch}.$safeExtension',
+    );
 
     await supabase.storage.from('avatars').uploadBinary(
           path,
@@ -979,8 +979,9 @@ class ChatService {
       'webp' => 'image/webp',
       _ => 'image/jpeg',
     };
-    final path =
-        'chat_stickers/$userId/$roomId/sticker_${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
+    final path = OrganizationStorageService.scopedPath(
+      'chat_stickers/$userId/$roomId/sticker_${DateTime.now().millisecondsSinceEpoch}.$safeExtension',
+    );
 
     await supabase.storage.from('avatars').uploadBinary(
           path,
@@ -997,8 +998,9 @@ class ChatService {
   }) async {
     final extension = file.path.split('.').last.toLowerCase();
     final safeExtension = extension.isEmpty ? 'mp4' : extension;
-    final path =
-        'chat_messages/$roomId/video_${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
+    final path = OrganizationStorageService.scopedPath(
+      'chat_messages/$roomId/video_${DateTime.now().millisecondsSinceEpoch}.$safeExtension',
+    );
 
     await supabase.storage.from('avatars').upload(
           path,
@@ -1018,8 +1020,9 @@ class ChatService {
   }) async {
     final extension = file.path.split('.').last.toLowerCase();
     final safeExtension = extension.isEmpty ? 'm4a' : extension;
-    final path =
-        'chat_messages/$roomId/audio_${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
+    final path = OrganizationStorageService.scopedPath(
+      'chat_messages/$roomId/audio_${DateTime.now().millisecondsSinceEpoch}.$safeExtension',
+    );
 
     await supabase.storage.from('avatars').upload(
           path,
@@ -1502,15 +1505,8 @@ class ChatService {
     return controller.stream;
   }
 
-  Future<List<ChatMessage>> getLatestMessages(
-    String roomId, {
-    int limit = 50,
-  }) {
-    return _loadMessagesForRoom(
-      roomId,
-      limit: limit,
-      includeMetadata: false,
-    );
+  Future<List<ChatMessage>> getLatestMessages(String roomId, {int limit = 50}) {
+    return _loadMessagesForRoom(roomId, limit: limit, includeMetadata: false);
   }
 
   Future<List<ChatMessage>> getOlderMessages({
@@ -1518,11 +1514,7 @@ class ChatService {
     required DateTime before,
     int limit = 50,
   }) {
-    return _loadMessagesForRoom(
-      roomId,
-      before: before,
-      limit: limit,
-    );
+    return _loadMessagesForRoom(roomId, before: before, limit: limit);
   }
 
   Future<List<ChatMessage>> searchMessages({

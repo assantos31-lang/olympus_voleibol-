@@ -2,6 +2,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../theme/olympus_theme.dart';
+import '../services/organization_context_service.dart';
+import '../services/organization_storage_service.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
@@ -36,6 +40,7 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
 
   String _selectedGender = '';
   String _selectedPosition = '';
+  String _userType = 'member';
   String _existingAvatarUrl = '';
   XFile? _selectedImage;
   bool _isLoading = false;
@@ -94,6 +99,7 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
           _stateController.text = profile['state'] ?? '';
           _selectedGender = profile['gender'] ?? '';
           _selectedPosition = profile['court_position'] ?? '';
+          _userType = _normalizeUserType(profile['user_type']);
           _existingAvatarUrl = profile['avatar_url'] ?? '';
         });
       }
@@ -219,18 +225,15 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
 
           if (mounted) {
             setState(() {
-              _streetController.text =
-                  address['road'] ??
+              _streetController.text = address['road'] ??
                   address['pedestrian'] ??
                   address['footway'] ??
                   '';
-              _neighborhoodController.text =
-                  address['suburb'] ??
+              _neighborhoodController.text = address['suburb'] ??
                   address['neighbourhood'] ??
                   address['quarter'] ??
                   '';
-              _cityController.text =
-                  address['city'] ??
+              _cityController.text = address['city'] ??
                   address['town'] ??
                   address['village'] ??
                   address['municipality'] ??
@@ -295,14 +298,14 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
 
     try {
       final user = supabase.auth.currentUser;
-      final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${user?.id}.jpg';
+      await OrganizationContextService.instance.initialize(force: true);
+      final fileName = OrganizationStorageService.scopedPath(
+        '${DateTime.now().millisecondsSinceEpoch}_${user?.id}.jpg',
+      );
       final Uint8List? fileBytes = await _selectedImage!.readAsBytes();
       if (fileBytes == null) return null;
 
-      await supabase.storage
-          .from('avatars')
-          .uploadBinary(
+      await supabase.storage.from('avatars').uploadBinary(
             fileName,
             fileBytes,
             fileOptions: const FileOptions(upsert: true),
@@ -365,23 +368,42 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
     return parts.every((part) => part.trim().length >= 2);
   }
 
+  String _normalizeUserType(dynamic value) {
+    switch ((value ?? '').toString().trim().toLowerCase()) {
+      case 'admin':
+      case 'administrator':
+      case 'administrador':
+        return 'admin';
+      case 'athlete':
+      case 'atleta':
+        return 'athlete';
+      case 'coach':
+      case 'tecnico':
+      case 'técnico':
+      case 'treinador':
+        return 'coach';
+      default:
+        return 'member';
+    }
+  }
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (!_isFullName(_fullNameController.text)) {
+    if (_selectedImage == null && _existingAvatarUrl.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Informe nome completo válido (nome e sobrenome)'),
+          content: Text('Selecione uma foto para concluir o cadastro.'),
           backgroundColor: Colors.red,
         ),
       );
       return;
     }
 
-    if (_selectedImage == null && _existingAvatarUrl.isEmpty) {
+    if (!_isFullName(_fullNameController.text)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Selecione uma foto para continuar'),
+          content: Text('Informe nome completo válido (nome e sobrenome)'),
           backgroundColor: Colors.red,
         ),
       );
@@ -394,6 +416,9 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
       String? avatarUrl = _existingAvatarUrl;
       if (_selectedImage != null) {
         avatarUrl = await _uploadImage();
+        if (avatarUrl == null || avatarUrl.isEmpty) {
+          throw Exception('Não foi possível salvar a foto do perfil.');
+        }
       }
 
       final user = supabase.auth.currentUser;
@@ -415,17 +440,29 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
         'city': _cityController.text.trim(),
         'state': _stateController.text.trim().toUpperCase(),
         'updated_at': DateTime.now().toIso8601String(),
-        if (avatarUrl != null && avatarUrl.isNotEmpty) 'avatar_url': avatarUrl,
+        'avatar_url': avatarUrl,
       };
 
       await supabase.from('profiles').update(data).eq('id', user.id);
+
+      final currentMetadata = user.userMetadata ?? const <String, dynamic>{};
+      await supabase.auth.updateUser(
+        UserAttributes(
+          data: {
+            ...currentMetadata,
+            'must_complete_profile': false,
+            'profile_completed_at': DateTime.now().toUtc().toIso8601String(),
+          },
+        ),
+      );
+      await supabase.auth.refreshSession();
 
       if (!mounted) return;
 
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(
           context,
-          '/dashboard',
+          '/',
           (route) => false,
         );
       }
@@ -448,364 +485,396 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Completar Cadastro'),
-        backgroundColor: Colors.orange,
-        foregroundColor: Colors.white,
-        leading: const SizedBox(), // Remove botão de voltar
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Bem-vindo, Atleta!',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.orange,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Complete seu cadastro para continuar',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey),
-              ),
-              const SizedBox(height: 24),
-
-              // Foto
-              Center(
-                child: GestureDetector(
-                  onTap: _pickImage,
-                  child: Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.orange, width: 3),
-                    ),
-                    child: ClipOval(child: _getAvatarImage()),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Center(
-                child: TextButton.icon(
-                  onPressed: _pickImage,
-                  icon: const Icon(Icons.photo_camera, color: Colors.orange),
-                  label: const Text('Selecionar Foto'),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Nome Completo
-              TextFormField(
-                controller: _fullNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Nome Completo *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.person),
-                ),
-                validator: (value) {
-                  final name = value?.trim() ?? '';
-
-                  if (name.isEmpty) {
-                    return 'Pendente preenchimento do campo Nome Completo';
-                  }
-
-                  if (!_isFullName(name)) {
-                    return 'Informe nome completo válido';
-                  }
-
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-
-              // CPF e RG
-              Row(
+    final colors = Theme.of(context).colorScheme;
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Editar Perfil'),
+          automaticallyImplyLeading: false,
+        ),
+        body: OlympusBrandedBackground(
+          showImage: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _cpfController,
-                      decoration: const InputDecoration(
-                        labelText: 'CPF *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.credit_card),
-                      ),
-                      keyboardType: TextInputType.number,
-                      validator: (value) => _removeMask(value).length != 11
-                          ? 'Pendente preenchimento do campo CPF'
-                          : null,
+                  Text(
+                    'Complete seu perfil',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: colors.primary,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _rgController,
-                      decoration: const InputDecoration(
-                        labelText: 'RG *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.credit_card),
-                      ),
-                      keyboardType: TextInputType.number,
-                      validator: (value) => value?.isEmpty ?? true
-                          ? 'Pendente preenchimento do campo RG'
-                          : null,
-                    ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Preencha os campos obrigatórios para acessar o app',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
+                  const SizedBox(height: 24),
 
-              // Telefone e Gênero
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _phoneController,
-                      decoration: const InputDecoration(
-                        labelText: 'Telefone *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.phone),
-                      ),
-                      keyboardType: TextInputType.phone,
-                      validator: (value) => _removeMask(value).length < 10
-                          ? 'Pendente preenchimento do campo Telefone'
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      value: _selectedGender.isNotEmpty
-                          ? _selectedGender
-                          : null,
-                      decoration: const InputDecoration(
-                        labelText: 'Gênero *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.transgender),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'Masculino',
-                          child: Text('Masculino'),
+                  // Foto
+                  Center(
+                    child: GestureDetector(
+                      onTap: _pickImage,
+                      child: Container(
+                        width: 120,
+                        height: 120,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[200],
+                          shape: BoxShape.circle,
+                          border: Border.all(color: colors.secondary, width: 3),
                         ),
-                        DropdownMenuItem(
-                          value: 'Feminino',
-                          child: Text('Feminino'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedGender = value ?? '';
-                          _selectedPosition = '';
-                        });
-                      },
-                      validator: (value) => value == null
-                          ? 'Pendente preenchimento do campo Gênero'
-                          : null,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // Data de Nascimento
-              TextFormField(
-                controller: _birthDateController,
-                decoration: InputDecoration(
-                  labelText: 'Data de Nascimento',
-                  border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.calendar_today),
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.calendar_today),
-                    onPressed: _selectDate,
-                  ),
-                ),
-                readOnly: true,
-                validator: (value) => value == null || value.isEmpty
-                    ? 'Pendente preenchimento do campo Data de Nascimento'
-                    : null,
-              ),
-              const SizedBox(height: 12),
-
-              // Posição na Quadra (apenas para atletas)
-              if (_selectedGender.isNotEmpty)
-                DropdownButtonFormField<String>(
-                  value: _selectedPosition.isNotEmpty
-                      ? _selectedPosition
-                      : null,
-                  decoration: const InputDecoration(
-                    labelText: 'Posição na Quadra',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.sports_volleyball),
-                  ),
-                  items: _positions[_selectedGender]!
-                      .map(
-                        (pos) => DropdownMenuItem(
-                          value: pos['value'],
-                          child: Text(pos['label']!),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) =>
-                      setState(() => _selectedPosition = value ?? ''),
-                ),
-              const SizedBox(height: 24),
-
-              // Endereço
-              const Text(
-                'Endereço',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-
-              TextFormField(
-                controller: _zipCodeController,
-                decoration: InputDecoration(
-                  labelText: 'CEP *',
-                  border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.location_on),
-                  suffixIcon: _isFetchingCep
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : null,
-                ),
-                keyboardType: TextInputType.number,
-                maxLength: 9,
-                validator: (value) => _removeMask(value).length != 8
-                    ? 'Pendente preenchimento do campo CEP'
-                    : null,
-              ),
-              const SizedBox(height: 8),
-
-              Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: TextFormField(
-                      controller: _streetController,
-                      decoration: const InputDecoration(
-                        labelText: 'Rua *',
-                        border: OutlineInputBorder(),
+                        child: ClipOval(child: _getAvatarImage()),
                       ),
-                      validator: (value) => value?.isEmpty ?? true
-                          ? 'Pendente preenchimento do campo Rua'
-                          : null,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _streetNumberController,
-                      decoration: const InputDecoration(
-                        labelText: 'Número *',
-                        border: OutlineInputBorder(),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: _pickImage,
+                      icon: Icon(Icons.photo_camera, color: colors.secondary),
+                      label: const Text('Selecionar Foto *'),
+                    ),
+                  ),
+                  if (_selectedImage == null && _existingAvatarUrl.isEmpty)
+                    const Center(
+                      child: Text(
+                        'A foto é obrigatória no primeiro cadastro.',
+                        style: TextStyle(color: Colors.red, fontSize: 12),
                       ),
-                      keyboardType: TextInputType.number,
-                      validator: (value) => value?.isEmpty ?? true
-                          ? 'Pendente preenchimento do campo Número'
-                          : null,
                     ),
+                  const SizedBox(height: 24),
+
+                  // Nome Completo
+                  TextFormField(
+                    controller: _fullNameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nome Completo *',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.person),
+                    ),
+                    validator: (value) {
+                      final name = value?.trim() ?? '';
+
+                      if (name.isEmpty) {
+                        return 'Pendente preenchimento do campo Nome Completo';
+                      }
+
+                      if (!_isFullName(name)) {
+                        return 'Informe nome completo válido';
+                      }
+
+                      return null;
+                    },
                   ),
-                ],
-              ),
-              const SizedBox(height: 8),
+                  const SizedBox(height: 12),
 
-              TextFormField(
-                controller: _complementController,
-                decoration: const InputDecoration(
-                  labelText: 'Complemento',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              TextFormField(
-                controller: _neighborhoodController,
-                decoration: const InputDecoration(
-                  labelText: 'Bairro *',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) => value?.isEmpty ?? true
-                    ? 'Pendente preenchimento do campo Bairro'
-                    : null,
-              ),
-              const SizedBox(height: 8),
-
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: TextFormField(
-                      controller: _cityController,
-                      decoration: const InputDecoration(
-                        labelText: 'Cidade *',
-                        border: OutlineInputBorder(),
+                  // O papel é definido pela administração e não pode ser
+                  // alterado pelo próprio usuário durante o primeiro acesso.
+                  DropdownButtonFormField<String>(
+                    value: _userType,
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo de Usuário *',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.badge),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'member', child: Text('Membro')),
+                      DropdownMenuItem(value: 'athlete', child: Text('Atleta')),
+                      DropdownMenuItem(value: 'coach', child: Text('Técnico')),
+                      DropdownMenuItem(
+                        value: 'admin',
+                        child: Text('Administrador'),
                       ),
-                      validator: (value) => value?.isEmpty ?? true
-                          ? 'Pendente preenchimento do campo Cidade'
-                          : null,
-                    ),
+                    ],
+                    onChanged: null,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _stateController,
-                      decoration: const InputDecoration(
-                        labelText: 'Estado *',
-                        border: OutlineInputBorder(),
-                      ),
-                      maxLength: 2,
-                      validator: (value) => value?.isEmpty ?? true
-                          ? 'Pendente preenchimento do campo Estado'
-                          : null,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
+                  const SizedBox(height: 12),
 
-              // Botão Salvar
-              SizedBox(
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _isLoading || _isUploading ? null : _saveProfile,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: _isLoading || _isUploading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation(Colors.white),
+                  // CPF e RG
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _cpfController,
+                          decoration: const InputDecoration(
+                            labelText: 'CPF *',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.credit_card),
                           ),
-                        )
-                      : const Text(
-                          'Completar Cadastro',
-                          style: TextStyle(fontSize: 16),
+                          keyboardType: TextInputType.number,
+                          validator: (value) => _removeMask(value).length != 11
+                              ? 'Pendente preenchimento do campo CPF'
+                              : null,
                         ),
-                ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _rgController,
+                          decoration: const InputDecoration(
+                            labelText: 'RG *',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.credit_card),
+                          ),
+                          keyboardType: TextInputType.number,
+                          validator: (value) => value?.isEmpty ?? true
+                              ? 'Pendente preenchimento do campo RG'
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Telefone e Gênero
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _phoneController,
+                          decoration: const InputDecoration(
+                            labelText: 'Telefone *',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.phone),
+                          ),
+                          keyboardType: TextInputType.phone,
+                          validator: (value) => _removeMask(value).length < 10
+                              ? 'Pendente preenchimento do campo Telefone'
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: _selectedGender.isNotEmpty
+                              ? _selectedGender
+                              : null,
+                          decoration: const InputDecoration(
+                            labelText: 'Gênero *',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.transgender),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'Masculino',
+                              child: Text('Masculino'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Feminino',
+                              child: Text('Feminino'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedGender = value ?? '';
+                              _selectedPosition = '';
+                            });
+                          },
+                          validator: (value) => value == null
+                              ? 'Pendente preenchimento do campo Gênero'
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Data de Nascimento
+                  TextFormField(
+                    controller: _birthDateController,
+                    decoration: InputDecoration(
+                      labelText: 'Data de Nascimento *',
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.calendar_today),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.calendar_today),
+                        onPressed: _selectDate,
+                      ),
+                    ),
+                    readOnly: true,
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Pendente preenchimento da Data de Nascimento'
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Posição na Quadra (apenas para atletas)
+                  if (_userType == 'athlete' && _selectedGender.isNotEmpty)
+                    DropdownButtonFormField<String>(
+                      value: _selectedPosition.isNotEmpty
+                          ? _selectedPosition
+                          : null,
+                      decoration: const InputDecoration(
+                        labelText: 'Posição na Quadra *',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.sports_volleyball),
+                      ),
+                      items: _positions[_selectedGender]!
+                          .map(
+                            (pos) => DropdownMenuItem(
+                              value: pos['value'],
+                              child: Text(pos['label']!),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) =>
+                          setState(() => _selectedPosition = value ?? ''),
+                      validator: (value) => value == null || value.isEmpty
+                          ? 'Informe a posição do atleta'
+                          : null,
+                    ),
+                  const SizedBox(height: 24),
+
+                  // Endereço
+                  const Text(
+                    'Endereço',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+
+                  TextFormField(
+                    controller: _zipCodeController,
+                    decoration: InputDecoration(
+                      labelText: 'CEP *',
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.location_on),
+                      suffixIcon: _isFetchingCep
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : null,
+                    ),
+                    keyboardType: TextInputType.number,
+                    maxLength: 9,
+                    validator: (value) => _removeMask(value).length != 8
+                        ? 'Pendente preenchimento do campo CEP'
+                        : null,
+                  ),
+                  const SizedBox(height: 8),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextFormField(
+                          controller: _streetController,
+                          decoration: const InputDecoration(
+                            labelText: 'Rua *',
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (value) => value?.isEmpty ?? true
+                              ? 'Pendente preenchimento do campo Rua'
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _streetNumberController,
+                          decoration: const InputDecoration(
+                            labelText: 'Número *',
+                            border: OutlineInputBorder(),
+                          ),
+                          keyboardType: TextInputType.number,
+                          validator: (value) => value?.isEmpty ?? true
+                              ? 'Pendente preenchimento do campo Número'
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+
+                  TextFormField(
+                    controller: _complementController,
+                    decoration: const InputDecoration(
+                      labelText: 'Complemento',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  TextFormField(
+                    controller: _neighborhoodController,
+                    decoration: const InputDecoration(
+                      labelText: 'Bairro *',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) => value?.isEmpty ?? true
+                        ? 'Pendente preenchimento do campo Bairro'
+                        : null,
+                  ),
+                  const SizedBox(height: 8),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextFormField(
+                          controller: _cityController,
+                          decoration: const InputDecoration(
+                            labelText: 'Cidade *',
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (value) => value?.isEmpty ?? true
+                              ? 'Pendente preenchimento do campo Cidade'
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _stateController,
+                          decoration: const InputDecoration(
+                            labelText: 'Estado *',
+                            border: OutlineInputBorder(),
+                          ),
+                          maxLength: 2,
+                          validator: (value) => value?.isEmpty ?? true
+                              ? 'Pendente preenchimento do campo Estado'
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Botão Salvar
+                  SizedBox(
+                    height: 50,
+                    child: FilledButton(
+                      onPressed:
+                          _isLoading || _isUploading ? null : _saveProfile,
+                      child: _isLoading || _isUploading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor:
+                                    AlwaysStoppedAnimation(Colors.white),
+                              ),
+                            )
+                          : const Text(
+                              'Salvar',
+                              style: TextStyle(fontSize: 16),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ),
-              const SizedBox(height: 16),
-            ],
+            ),
           ),
         ),
       ),
@@ -818,7 +887,13 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
         future: _selectedImage!.readAsBytes(),
         builder: (context, snapshot) {
           if (snapshot.hasData && snapshot.data != null) {
-            return Image.memory(snapshot.data!, fit: BoxFit.cover);
+            return Image.memory(
+              snapshot.data!,
+              fit: BoxFit.cover,
+              cacheWidth: 512,
+              cacheHeight: 512,
+              filterQuality: FilterQuality.medium,
+            );
           }
           return const Icon(Icons.person, size: 60, color: Colors.grey);
         },

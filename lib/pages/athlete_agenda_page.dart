@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'dart:convert';
 import 'dart:math' show sin, cos, sqrt, asin;
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -12,7 +13,16 @@ import '../services/permission_service.dart';
 import '../widgets/event_address_link.dart';
 
 class AthleteAgendaPage extends StatefulWidget {
-  const AthleteAgendaPage({Key? key}) : super(key: key);
+  final bool requireAgendaPermission;
+  final bool coachMode;
+  final String title;
+
+  const AthleteAgendaPage({
+    Key? key,
+    this.requireAgendaPermission = true,
+    this.coachMode = false,
+    this.title = 'Minhas Convocações',
+  }) : super(key: key);
 
   @override
   State<AthleteAgendaPage> createState() => _AthleteAgendaPageState();
@@ -81,6 +91,21 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
       }
+      return;
+    }
+
+    if (!widget.requireAgendaPermission) {
+      if (!mounted) return;
+      setState(() {
+        _hasPermission = true;
+        _checkingPermission = false;
+        if (widget.coachMode) {
+          _showStatusFilter = false;
+          _allowedEventTypes = ['treino', 'amistoso', 'campeonato'];
+        }
+      });
+      _setMesAtual();
+      _buscarEventos();
       return;
     }
 
@@ -566,6 +591,7 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
       }
       final response = await _supabase.from('convocations').select('''
 event_id,
+event_role,
 status,
 events!$_eventsEmbedFk (
 id,
@@ -586,7 +612,13 @@ longitude,
 enable_ride_logistics
 )
 ''').eq('user_id', user.id);
-      if (response.isEmpty) {
+      final scopedResponse = widget.coachMode
+          ? response.where((item) {
+              final role = (item['event_role'] ?? '').toString().toLowerCase();
+              return role == 'coach';
+            }).toList()
+          : response;
+      if (scopedResponse.isEmpty) {
         if (!mounted) return;
         setState(() {
           _eventos = [];
@@ -597,9 +629,11 @@ enable_ride_logistics
       }
       final eventosList = <Map<String, dynamic>>[];
       final statusMap = <String, Map<String, String>>{};
-      for (final item in response) {
+      for (final item in scopedResponse) {
         final eventData = item['events'];
-        final status = _normalizarConvocationStatus(item['status']);
+        final status = widget.coachMode
+            ? 'accepted'
+            : _normalizarConvocationStatus(item['status']);
         if (eventData != null) {
           final mapEvento = Map<String, dynamic>.from(eventData);
           final eid = (mapEvento['id'] ?? '').toString();
@@ -609,11 +643,13 @@ enable_ride_logistics
           statusMap[eid] = {'status': status};
         }
       }
-      final eventIds = eventosList.map((e) => e['id'].toString()).toList();
-      final checkinMap = await _buscarCheckinsDoUsuario(user.id, eventIds);
-      for (final e in eventosList) {
-        final id = e['id'].toString();
-        e['check_in_status'] = _normalizarCheckInStatus(checkinMap[id]);
+      if (!widget.coachMode) {
+        final eventIds = eventosList.map((e) => e['id'].toString()).toList();
+        final checkinMap = await _buscarCheckinsDoUsuario(user.id, eventIds);
+        for (final e in eventosList) {
+          final id = e['id'].toString();
+          e['check_in_status'] = _normalizarCheckInStatus(checkinMap[id]);
+        }
       }
       eventosList.sort((a, b) {
         final dateA = (a['event_date'] ?? '').toString();
@@ -1386,6 +1422,7 @@ enable_ride_logistics
             .update({'status': 'accepted', 'justification': null})
             .eq('event_id', eventId)
             .eq('user_id', user.id);
+        await _notifyAdminsEventResponse(eventId, 'accepted');
         if (!mounted) return;
         _showSuccess('Convocação aceita!');
         _refreshEventos();
@@ -1690,12 +1727,33 @@ enable_ride_logistics
           .update({'status': 'rejected', 'justification': justification})
           .eq('event_id', eventId)
           .eq('user_id', user.id);
+      await _notifyAdminsEventResponse(eventId, 'rejected');
       if (!mounted) return;
       _showError('Convocação recusada');
       _refreshEventos();
     } catch (e) {
       if (!mounted) return;
       _showError('Erro: $e');
+    }
+  }
+
+  Future<void> _notifyAdminsEventResponse(
+    dynamic eventId,
+    String status,
+  ) async {
+    if (eventId == null) return;
+    try {
+      await _supabase.rpc(
+        'notify_admins_event_response_v1',
+        params: {
+          'p_event_id': eventId,
+          'p_status': status,
+        },
+      );
+    } catch (e) {
+      // A resposta do atleta é a ação principal e nunca deve ser desfeita
+      // caso o aviso administrativo esteja temporariamente indisponível.
+      debugPrint('Erro ao avisar administradores sobre convocação: $e');
     }
   }
 
@@ -2791,8 +2849,7 @@ enable_ride_logistics
     return Stack(
       children: [
         Positioned.fill(
-          child: Image.asset(
-            'assets/images/monte_olimpo_v2.png',
+          child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             alignment: Alignment.center,
             errorBuilder: (context, error, stackTrace) {
@@ -2950,9 +3007,9 @@ enable_ride_logistics
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Minhas Convocações',
-          style: TextStyle(
+        title: Text(
+          widget.title,
+          style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
           ),
@@ -3648,7 +3705,8 @@ enable_ride_logistics
                                                       ),
                                                       const SizedBox(height: 8),
                                                     ],
-                                                    if (status == 'pending')
+                                                    if (!widget.coachMode &&
+                                                        status == 'pending')
                                                       Row(
                                                         children: [
                                                           Expanded(
@@ -3740,8 +3798,9 @@ enable_ride_logistics
                                                           ),
                                                         ],
                                                       ),
-                                                    if (status !=
-                                                        'pending') ...[
+                                                    if (!widget.coachMode &&
+                                                        status !=
+                                                            'pending') ...[
                                                       const SizedBox(height: 6),
                                                       SizedBox(
                                                         height: 32,
@@ -3778,8 +3837,9 @@ enable_ride_logistics
                                                         ),
                                                       ),
                                                     ],
-                                                    if (avisoCheckIn
-                                                        .isNotEmpty) ...[
+                                                    if (!widget.coachMode &&
+                                                        avisoCheckIn
+                                                            .isNotEmpty) ...[
                                                       const SizedBox(height: 8),
                                                       Container(
                                                         padding:
@@ -3830,8 +3890,9 @@ enable_ride_logistics
                                                         ),
                                                       ),
                                                     ],
-                                                    if (jaFezCheckin ||
-                                                        podeFazerCheckin) ...[
+                                                    if (!widget.coachMode &&
+                                                        (jaFezCheckin ||
+                                                            podeFazerCheckin)) ...[
                                                       const SizedBox(height: 8),
                                                       if (jaFezCheckin)
                                                         Row(

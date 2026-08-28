@@ -1,11 +1,36 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 
+import 'organization_feature_service.dart';
+import 'organization_context_service.dart';
+
 class PermissionService {
   final SupabaseClient _supabase = Supabase.instance.client;
   static const Duration _cacheDuration = Duration(minutes: 2);
   static final Map<String, _PermissionCacheEntry> _permissionCache = {};
   static final Map<String, Future<Map<String, bool>>> _permissionsInFlight = {};
+
+  static const Map<String, List<String>> _featurePermissionAliases = {
+    'agenda': ['agenda', 'admin_agenda'],
+    'checkin': ['checkin'],
+    'training_plans': ['training_plans', 'admin_training_plans', 'planning'],
+    'competitions': ['competitions', 'admin_competitions'],
+    'statistics': ['statistics', 'admin_statistics', 'athlete_statistics'],
+    'evaluations': [
+      'evaluations',
+      'admin_evaluations',
+      'admin_coach_evaluations',
+      'coach_evaluations',
+    ],
+    'chat': ['chat'],
+    'messages': ['messages', 'admin_messages'],
+    'birthdays': ['birthdays', 'admin_birthdays'],
+    'financial': ['financial', 'admin_financial', 'athlete_financial'],
+    'custom_branding': ['branding', 'admin_branding'],
+    'exports': ['exports'],
+    'advanced_media': ['advanced_media'],
+    'push_notifications': ['push_notifications'],
+  };
 
   Future<bool> hasAccess(String userId, String pageName) async {
     final permissions = await getUserPermissions(userId);
@@ -112,6 +137,16 @@ class PermissionService {
       for (var item in response) {
         permissions[item['page_name']] = item['can_access'];
       }
+
+      final organizationFeatures =
+          await OrganizationFeatureService.instance.getFeatures();
+      for (final entry in _featurePermissionAliases.entries) {
+        if (organizationFeatures[entry.key] == false) {
+          for (final permission in entry.value) {
+            permissions[permission] = false;
+          }
+        }
+      }
       return permissions;
     } catch (e) {
       print('❌ Erro ao buscar permissões: $e');
@@ -120,7 +155,8 @@ class PermissionService {
   }
 
   Future<List<Map<String, dynamic>>> getUsersWithPermissions(
-      String pageName) async {
+    String pageName,
+  ) async {
     try {
       final profilesResponse = await _supabase
           .from('profiles')
@@ -282,10 +318,7 @@ class PermissionService {
           .maybeSingle();
 
       if (response == null || response['allowed_filters'] == null) {
-        return {
-          'ver_convocados': false,
-          'exportar_dados_jogo': false,
-        };
+        return {'ver_convocados': false, 'exportar_dados_jogo': false};
       }
 
       final raw = response['allowed_filters'];
@@ -296,18 +329,12 @@ class PermissionService {
         if (decoded is Map<String, dynamic>) {
           filters = decoded;
         } else {
-          return {
-            'ver_convocados': false,
-            'exportar_dados_jogo': false,
-          };
+          return {'ver_convocados': false, 'exportar_dados_jogo': false};
         }
       } else if (raw is Map) {
         filters = Map<String, dynamic>.from(raw);
       } else {
-        return {
-          'ver_convocados': false,
-          'exportar_dados_jogo': false,
-        };
+        return {'ver_convocados': false, 'exportar_dados_jogo': false};
       }
 
       return {
@@ -316,10 +343,7 @@ class PermissionService {
       };
     } catch (e) {
       print('❌ Erro ao buscar ações da agenda: $e');
-      return {
-        'ver_convocados': false,
-        'exportar_dados_jogo': false,
-      };
+      return {'ver_convocados': false, 'exportar_dados_jogo': false};
     }
   }
 
@@ -404,9 +428,7 @@ class PermissionService {
   }) async {
     final currentAccess = await hasAccess(userId, 'financeiro');
 
-    final filters = {
-      'allowed_financial_types': allowedFinancialTypes,
-    };
+    final filters = {'allowed_financial_types': allowedFinancialTypes};
 
     await updatePermission(
       userId: userId,
@@ -417,7 +439,8 @@ class PermissionService {
   }
 
   Future<Map<String, bool>> getRankingEvaluationVisibility(
-      String userId) async {
+    String userId,
+  ) async {
     try {
       final response = await _supabase
           .from('page_permissions')
@@ -425,10 +448,7 @@ class PermissionService {
           .eq('user_id', userId)
           .inFilter('page_name', ['ranking', 'avaliacoes']);
 
-      final result = {
-        'show_in_ranking': false,
-        'show_in_evaluations': false,
-      };
+      final result = {'show_in_ranking': false, 'show_in_evaluations': false};
 
       for (final item in response) {
         final pageName = (item['page_name'] ?? '').toString();
@@ -444,10 +464,7 @@ class PermissionService {
       return result;
     } catch (e) {
       print('❌ Erro ao buscar visibilidade de ranking/avaliações: $e');
-      return {
-        'show_in_ranking': false,
-        'show_in_evaluations': false,
-      };
+      return {'show_in_ranking': false, 'show_in_evaluations': false};
     }
   }
 
@@ -511,8 +528,9 @@ class PermissionService {
           .select('id, user_type, gender, is_active')
           .inFilter('id', visibleIds);
 
-      final profiles =
-          List<Map<String, dynamic>>.from(profilesResponse as List);
+      final profiles = List<Map<String, dynamic>>.from(
+        profilesResponse as List,
+      );
 
       return profiles
           .where((profile) {
@@ -569,14 +587,29 @@ class PermissionService {
       final targetUserId = userId ?? _supabase.auth.currentUser?.id;
       if (targetUserId == null || targetUserId.isEmpty) return 'all';
 
+      try {
+        final assignment = await _supabase
+            .from('technical_staff_assignments')
+            .select('team_scope')
+            .eq(
+              'organization_id',
+              OrganizationContextService.instance.currentId,
+            )
+            .eq('user_id', targetUserId)
+            .eq('status', 'active')
+            .maybeSingle();
+        if (assignment != null) {
+          return normalizeCoachTeamGender(assignment['team_scope']);
+        }
+      } catch (_) {
+        // Compatibilidade enquanto a hierarquia técnica não está disponível.
+      }
+
       final response = await _supabase
           .from('profiles')
-          .select('user_type, coach_team_gender')
+          .select('coach_team_gender')
           .eq('id', targetUserId)
           .maybeSingle();
-
-      final userType = (response?['user_type'] ?? '').toString().toLowerCase();
-      if (userType != 'coach') return 'all';
 
       return normalizeCoachTeamGender(response?['coach_team_gender']);
     } catch (e) {
@@ -590,14 +623,26 @@ class PermissionService {
     required String coachTeamGender,
   }) async {
     try {
+      await _supabase.from('profiles').update({
+        'coach_team_gender': normalizeCoachTeamGender(coachTeamGender),
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', userId);
+      final normalized = normalizeCoachTeamGender(coachTeamGender);
       await _supabase
-          .from('profiles')
+          .from('technical_staff_assignments')
           .update({
-            'coach_team_gender': normalizeCoachTeamGender(coachTeamGender),
+            'team_scope': normalized == 'Masculino'
+                ? 'male'
+                : normalized == 'Feminino'
+                    ? 'female'
+                    : 'all',
             'updated_at': DateTime.now().toIso8601String(),
           })
-          .eq('id', userId)
-          .eq('user_type', 'coach');
+          .eq(
+            'organization_id',
+            OrganizationContextService.instance.currentId,
+          )
+          .eq('user_id', userId);
     } catch (e) {
       print('❌ Erro ao atualizar gênero do time do treinador: $e');
       rethrow;

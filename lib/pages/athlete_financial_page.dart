@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -10,6 +11,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../models/financial_record_model.dart';
 import '../services/permission_service.dart';
 import '../services/olympus_memory_cache.dart';
+import '../services/organization_storage_service.dart';
 
 class AthleteFinancialPage extends StatefulWidget {
   const AthleteFinancialPage({
@@ -121,10 +123,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       final viewedAt = DateTime.now().toIso8601String();
       await _supabase.auth.updateUser(
         UserAttributes(
-          data: {
-            ...?user.userMetadata,
-            'last_financial_viewed_at': viewedAt,
-          },
+          data: {...?user.userMetadata, 'last_financial_viewed_at': viewedAt},
         ),
       );
     } catch (e) {
@@ -314,9 +313,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
     }
   }
 
-  NotificationDetails _financialNotificationDetails({
-    required bool isOverdue,
-  }) {
+  NotificationDetails _financialNotificationDetails({required bool isOverdue}) {
     final androidDetails = AndroidNotificationDetails(
       'financial_due_notifications',
       'Financeiro',
@@ -334,10 +331,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       presentSound: true,
     );
 
-    return NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
+    return NotificationDetails(android: androidDetails, iOS: iosDetails);
   }
 
   bool _hasReceipt(FinancialRecord record) {
@@ -396,13 +390,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
           0,
         ).subtract(const Duration(days: 2));
 
-        final dueDay = DateTime(
-          dueDate.year,
-          dueDate.month,
-          dueDate.day,
-          9,
-          0,
-        );
+        final dueDay = DateTime(dueDate.year, dueDate.month, dueDate.day, 9, 0);
 
         final overdueDay = DateTime(
           dueDate.year,
@@ -525,16 +513,19 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       final fileExt = image.name.split('.').last;
       final fileName =
           '${record.id}_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
-      final filePath = '${record.athleteId}/$fileName';
+      final filePath = OrganizationStorageService.scopedPath(
+        '${record.athleteId}/$fileName',
+      );
       final bytes = await image.readAsBytes();
 
-      await _supabase.storage.from('receipts').uploadBinary(filePath, bytes,
-          fileOptions: const FileOptions(upsert: true));
+      await _supabase.storage.from('receipts').uploadBinary(
+            filePath,
+            bytes,
+            fileOptions: const FileOptions(upsert: true),
+          );
 
-      await _supabase.from('financial_records').update({
-        'receipt_url': filePath,
-        'status': 'pending',
-      }).eq('id', record.id);
+      await _supabase.from('financial_records').update(
+          {'receipt_url': filePath, 'status': 'pending'}).eq('id', record.id);
 
       await _notifyAdminsAboutReceipt(record: record);
 
@@ -672,8 +663,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
           offset: Offset(0, parallaxY),
           child: Transform.scale(
             scale: 1.10,
-            child: Image.asset(
-              'assets/images/monte_olimpo_v2.png',
+            child: OlympusBrandBackgroundImage(
               fit: BoxFit.cover,
               alignment: Alignment.center,
               errorBuilder: (context, error, stackTrace) {
@@ -686,9 +676,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
           filter: ImageFilter.blur(sigmaX: 0.55, sigmaY: 0.55),
           child: Container(color: Colors.transparent),
         ),
-        Container(
-          color: const Color(0xFF07182B).withOpacity(0.50),
-        ),
+        Container(color: const Color(0xFF07182B).withOpacity(0.50)),
         DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -711,10 +699,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [
-                    olympusBlue.withOpacity(0.34),
-                    Colors.transparent,
-                  ],
+                  colors: [olympusBlue.withOpacity(0.34), Colors.transparent],
                 ),
               ),
             ),
@@ -764,10 +749,12 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
 
   double _getPaidTotalForSelectedMonth() {
     return _allRecords
-        .where((record) =>
-            record.year == _selectedYear &&
-            record.month == _selectedMonth &&
-            record.status == 'approved')
+        .where(
+          (record) =>
+              record.year == _selectedYear &&
+              record.month == _selectedMonth &&
+              record.status == 'approved',
+        )
         .fold<double>(0, (sum, record) => sum + record.value);
   }
 
@@ -855,17 +842,20 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                     icon: Icons.calendar_month,
                     value: _selectedMonth,
                     items: List.generate(12, (i) => i + 1)
-                        .map((m) => DropdownMenuItem(
-                              value: m,
-                              child: Text(
-                                DateFormat.MMMM('pt_BR')
-                                    .format(DateTime(2024, m)),
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                        .map(
+                          (m) => DropdownMenuItem(
+                            value: m,
+                            child: Text(
+                              DateFormat.MMMM(
+                                'pt_BR',
+                              ).format(DateTime(2024, m)),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
                               ),
-                            ))
+                            ),
+                          ),
+                        )
                         .toList(),
                     onChanged: (v) => setState(() {
                       _selectedMonth = v!;
@@ -881,16 +871,18 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                     icon: Icons.date_range,
                     value: _selectedYear,
                     items: List.generate(5, (i) => 2026 + i)
-                        .map((y) => DropdownMenuItem(
-                              value: y,
-                              child: Text(
-                                y.toString(),
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                        .map(
+                          (y) => DropdownMenuItem(
+                            value: y,
+                            child: Text(
+                              y.toString(),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
                               ),
-                            ))
+                            ),
+                          ),
+                        )
                         .toList(),
                     onChanged: (v) => setState(() {
                       _selectedYear = v!;
@@ -908,29 +900,44 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
               value: _selectedType,
               items: [
                 const DropdownMenuItem(
-                    value: 'all',
-                    child: Text('Todos os Tipos',
-                        style: TextStyle(fontWeight: FontWeight.w600))),
+                  value: 'all',
+                  child: Text(
+                    'Todos os Tipos',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
                 if (_allowedTypes.contains('monthly'))
                   const DropdownMenuItem(
-                      value: 'monthly',
-                      child: Text('Mensalidade',
-                          style: TextStyle(fontWeight: FontWeight.w600))),
+                    value: 'monthly',
+                    child: Text(
+                      'Mensalidade',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 if (_allowedTypes.contains('games'))
                   const DropdownMenuItem(
-                      value: 'games',
-                      child: Text('Jogos',
-                          style: TextStyle(fontWeight: FontWeight.w600))),
+                    value: 'games',
+                    child: Text(
+                      'Jogos',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 if (_allowedTypes.contains('maintenance'))
                   const DropdownMenuItem(
-                      value: 'maintenance',
-                      child: Text('Manutenção',
-                          style: TextStyle(fontWeight: FontWeight.w600))),
+                    value: 'maintenance',
+                    child: Text(
+                      'Manutenção',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 if (_allowedTypes.contains('other'))
                   const DropdownMenuItem(
-                      value: 'other',
-                      child: Text('Outros',
-                          style: TextStyle(fontWeight: FontWeight.w600))),
+                    value: 'other',
+                    child: Text(
+                      'Outros',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
               ],
               onChanged: (v) => setState(() {
                 _selectedType = v!;
@@ -950,15 +957,21 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   }
 
   Widget _buildSmartAlertCard(
-      double open, double overdue, int pendingReceipts) {
+    double open,
+    double overdue,
+    int pendingReceipts,
+  ) {
     if (_overdueCount == 0 && _newBillsCount == 0 && pendingReceipts == 0) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
         child: Row(
           children: [
-            const Icon(Icons.check_circle_rounded,
-                color: Colors.greenAccent, size: 18),
+            const Icon(
+              Icons.check_circle_rounded,
+              color: Colors.greenAccent,
+              size: 18,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -983,9 +996,10 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.10),
-              blurRadius: 10,
-              offset: const Offset(0, 4))
+            color: Colors.black.withOpacity(0.10),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Column(
@@ -994,18 +1008,21 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
           Row(
             children: [
               Icon(
-                  _overdueCount > 0
-                      ? Icons.warning_rounded
-                      : Icons.info_rounded,
-                  color: _overdueCount > 0 ? Colors.red : olympusGold,
-                  size: 20),
+                _overdueCount > 0 ? Icons.warning_rounded : Icons.info_rounded,
+                color: _overdueCount > 0 ? Colors.red : olympusGold,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               const Expanded(
-                  child: Text('Atenção no financeiro',
-                      style: TextStyle(
-                          color: olympusBlue,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900))),
+                child: Text(
+                  'Atenção no financeiro',
+                  style: TextStyle(
+                    color: olympusBlue,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
               TextButton(
                 onPressed: () => setState(() {
                   _quickFilter = _overdueCount > 0 ? 'overdue' : 'pending';
@@ -1021,14 +1038,23 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
             runSpacing: 8,
             children: [
               if (_overdueCount > 0)
-                _buildAlertPill(Icons.warning_rounded,
-                    '$_overdueCount em atraso', Colors.red),
+                _buildAlertPill(
+                  Icons.warning_rounded,
+                  '$_overdueCount em atraso',
+                  Colors.red,
+                ),
               if (open > 0)
-                _buildAlertPill(Icons.attach_money_rounded, _formatMoney(open),
-                    olympusBlue),
+                _buildAlertPill(
+                  Icons.attach_money_rounded,
+                  _formatMoney(open),
+                  olympusBlue,
+                ),
               if (pendingReceipts > 0)
-                _buildAlertPill(Icons.attach_file_rounded,
-                    '$pendingReceipts comprovante(s)', Colors.blue),
+                _buildAlertPill(
+                  Icons.attach_file_rounded,
+                  '$pendingReceipts comprovante(s)',
+                  Colors.blue,
+                ),
             ],
           ),
         ],
@@ -1040,41 +1066,69 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-          color: color.withOpacity(0.10),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: color.withOpacity(0.25))),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, color: color, size: 14),
-        const SizedBox(width: 5),
-        Text(text,
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 14),
+          const SizedBox(width: 5),
+          Text(
+            text,
             style: TextStyle(
-                color: color, fontSize: 12, fontWeight: FontWeight.w800))
-      ]),
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildCompactFinancialSummary(
-      double paid, double open, double overdue) {
+    double paid,
+    double open,
+    double overdue,
+  ) {
     return _buildGlassPanel(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       radius: 18,
       child: Row(
         children: [
-          _buildSummaryInlineItem('Pago', _formatMoney(paid),
-              Icons.check_circle_rounded, Colors.green),
+          _buildSummaryInlineItem(
+            'Pago',
+            _formatMoney(paid),
+            Icons.check_circle_rounded,
+            Colors.green,
+          ),
           _buildSummaryDivider(),
-          _buildSummaryInlineItem('Aberto', _formatMoney(open),
-              Icons.schedule_rounded, Colors.orange),
+          _buildSummaryInlineItem(
+            'Aberto',
+            _formatMoney(open),
+            Icons.schedule_rounded,
+            Colors.orange,
+          ),
           _buildSummaryDivider(),
-          _buildSummaryInlineItem('Atrasado', _formatMoney(overdue),
-              Icons.warning_rounded, Colors.red),
+          _buildSummaryInlineItem(
+            'Atrasado',
+            _formatMoney(overdue),
+            Icons.warning_rounded,
+            Colors.red,
+          ),
         ],
       ),
     );
   }
 
   Widget _buildSummaryInlineItem(
-      String label, String value, IconData icon, Color color) {
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Expanded(
       child: Row(
         children: [
@@ -1097,16 +1151,20 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      color: color, fontSize: 13, fontWeight: FontWeight.w900),
+                    color: color,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
                 Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                      color: Color(0xFF5C6670),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700),
+                    color: Color(0xFF5C6670),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ],
             ),
@@ -1126,8 +1184,9 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   }
 
   Widget _buildSmartFilterToggle() {
-    final monthLabel =
-        DateFormat.MMMM('pt_BR').format(DateTime(2024, _selectedMonth));
+    final monthLabel = DateFormat.MMMM(
+      'pt_BR',
+    ).format(DateTime(2024, _selectedMonth));
     final typeLabel =
         _selectedType == 'all' ? 'Todos os tipos' : _typeLabel(_selectedType);
 
@@ -1152,8 +1211,11 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: olympusGold.withOpacity(0.28)),
               ),
-              child:
-                  const Icon(Icons.tune_rounded, color: olympusBlue, size: 18),
+              child: const Icon(
+                Icons.tune_rounded,
+                color: olympusBlue,
+                size: 18,
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1237,20 +1299,26 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_getFinancialScoreLabel(),
-                    style: TextStyle(
-                        color: scoreColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900)),
+                Text(
+                  _getFinancialScoreLabel(),
+                  style: TextStyle(
+                    color: scoreColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(_getSmartInsight(),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: Colors.white.withOpacity(0.82),
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        height: 1.15)),
+                Text(
+                  _getSmartInsight(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.82),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.15,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1265,37 +1333,47 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE1E8F0))),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE1E8F0)),
+      ),
       child: Row(
         children: [
           Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: scoreColor.withOpacity(0.18),
-                  border: Border.all(color: scoreColor.withOpacity(0.55))),
-              child:
-                  Icon(_getFinancialScoreIcon(), color: scoreColor, size: 22)),
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: scoreColor.withOpacity(0.18),
+              border: Border.all(color: scoreColor.withOpacity(0.55)),
+            ),
+            child: Icon(_getFinancialScoreIcon(), color: scoreColor, size: 22),
+          ),
           const SizedBox(width: 10),
           Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                Text(_getFinancialScoreLabel(),
-                    style: TextStyle(
-                        color: scoreColor,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _getFinancialScoreLabel(),
+                  style: TextStyle(
+                    color: scoreColor,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
                 const SizedBox(height: 3),
-                Text(_getSmartInsight(),
-                    style: TextStyle(
-                        color: Colors.white.withOpacity(0.82),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600)),
-              ])),
+                Text(
+                  _getSmartInsight(),
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.82),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1312,22 +1390,34 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
             SizedBox(
               width: itemWidth,
               child: _buildQuickFilterChip(
-                  'all', 'Todos', Icons.grid_view_rounded),
+                'all',
+                'Todos',
+                Icons.grid_view_rounded,
+              ),
             ),
             SizedBox(
               width: itemWidth,
               child: _buildQuickFilterChip(
-                  'overdue', 'Atrasados', Icons.warning_rounded),
+                'overdue',
+                'Atrasados',
+                Icons.warning_rounded,
+              ),
             ),
             SizedBox(
               width: itemWidth,
               child: _buildQuickFilterChip(
-                  'pending', 'Pendentes', Icons.schedule_rounded),
+                'pending',
+                'Pendentes',
+                Icons.schedule_rounded,
+              ),
             ),
             SizedBox(
               width: itemWidth,
               child: _buildQuickFilterChip(
-                  'paid', 'Pagos', Icons.check_circle_rounded),
+                'paid',
+                'Pagos',
+                Icons.check_circle_rounded,
+              ),
             ),
           ],
         );
@@ -1412,71 +1502,92 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withOpacity(0.10),
-                blurRadius: 10,
-                offset: const Offset(0, 4))
-          ]),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Row(children: [
-          Icon(Icons.timeline_rounded, color: olympusBlue, size: 18),
-          SizedBox(width: 6),
-          Text('Linha do tempo do ano',
-              style: TextStyle(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.10),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.timeline_rounded, color: olympusBlue, size: 18),
+              SizedBox(width: 6),
+              Text(
+                'Linha do tempo do ano',
+                style: TextStyle(
                   color: olympusBlue,
                   fontSize: 13,
-                  fontWeight: FontWeight.w900))
-        ]),
-        const SizedBox(height: 10),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: List.generate(12, (index) {
-              final month = index + 1;
-              final monthRecords = recordsInYear
-                  .where((record) => record.month == month)
-                  .toList();
-              final status = _getMonthTimelineStatus(monthRecords);
-              final color = status['color'] as Color;
-              final icon = status['icon'] as IconData;
-              final text = status['text'] as String;
-              final label = DateFormat.MMM('pt_BR')
-                  .format(DateTime(_selectedYear, month))
-                  .replaceAll('.', '');
-              return Container(
-                width: 78,
-                margin: const EdgeInsets.only(right: 8),
-                padding:
-                    const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-                decoration: BoxDecoration(
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: List.generate(12, (index) {
+                final month = index + 1;
+                final monthRecords = recordsInYear
+                    .where((record) => record.month == month)
+                    .toList();
+                final status = _getMonthTimelineStatus(monthRecords);
+                final color = status['color'] as Color;
+                final icon = status['icon'] as IconData;
+                final text = status['text'] as String;
+                final label = DateFormat.MMM(
+                  'pt_BR',
+                ).format(DateTime(_selectedYear, month)).replaceAll('.', '');
+                return Container(
+                  width: 78,
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 10,
+                    horizontal: 8,
+                  ),
+                  decoration: BoxDecoration(
                     color: color.withOpacity(0.10),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: color.withOpacity(0.25))),
-                child: Column(children: [
-                  Icon(icon, color: color, size: 18),
-                  const SizedBox(height: 5),
-                  Text(label,
-                      style: const TextStyle(
+                    border: Border.all(color: color.withOpacity(0.25)),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(icon, color: color, size: 18),
+                      const SizedBox(height: 5),
+                      Text(
+                        label,
+                        style: const TextStyle(
                           color: olympusBlue,
                           fontSize: 11,
-                          fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 3),
-                  Text(text,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        text,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
                           color: color,
                           fontSize: 9.5,
-                          fontWeight: FontWeight.w800))
-                ]),
-              );
-            }),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ),
           ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 
@@ -1485,7 +1596,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       return {
         'text': 'Sem débito',
         'color': Colors.grey,
-        'icon': Icons.remove_circle_outline_rounded
+        'icon': Icons.remove_circle_outline_rounded,
       };
     }
     final now = DateTime.now();
@@ -1499,30 +1610,30 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       return {
         'text': 'Atrasado',
         'color': Colors.red,
-        'icon': Icons.cancel_rounded
+        'icon': Icons.cancel_rounded,
       };
     if (records.any((record) => record.status == 'pending'))
       return {
         'text': 'Pendente',
         'color': Colors.orange,
-        'icon': Icons.schedule_rounded
+        'icon': Icons.schedule_rounded,
       };
     if (records.every((record) => record.status == 'approved'))
       return {
         'text': 'Pago',
         'color': Colors.green,
-        'icon': Icons.check_circle_rounded
+        'icon': Icons.check_circle_rounded,
       };
     if (records.any((record) => record.status == 'rejected'))
       return {
         'text': 'Rejeitado',
         'color': Colors.red,
-        'icon': Icons.report_gmailerrorred_rounded
+        'icon': Icons.report_gmailerrorred_rounded,
       };
     return {
       'text': 'Aberto',
       'color': olympusBlue,
-      'icon': Icons.receipt_long_rounded
+      'icon': Icons.receipt_long_rounded,
     };
   }
 
@@ -1532,10 +1643,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       appBar: AppBar(
         title: const Text(
           'Financeiro',
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 20,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 20),
         ),
         backgroundColor: olympusBlue.withOpacity(0.92),
         foregroundColor: Colors.white,
@@ -1549,9 +1657,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       ),
       body: Stack(
         children: [
-          Positioned.fill(
-            child: _buildPremiumFinancialBackground(),
-          ),
+          Positioned.fill(child: _buildPremiumFinancialBackground()),
           NestedScrollView(
             controller: _parallaxScrollController,
             physics: const BouncingScrollPhysics(
@@ -1623,8 +1729,9 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         CircularProgressIndicator(
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(olympusGold),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            olympusGold,
+                          ),
                         ),
                         SizedBox(height: 16),
                         Text(
@@ -1662,10 +1769,8 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                               const SizedBox(height: 16),
                               const Text(
                                 'Nenhum registro encontrado',
-                                style: TextStyle(
-                                  color: olympusBlue,
-                                  fontSize: 16,
-                                ),
+                                style:
+                                    TextStyle(color: olympusBlue, fontSize: 16),
                                 textAlign: TextAlign.center,
                               ),
                             ],
@@ -1689,10 +1794,12 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                             ),
                             gridDelegate:
                                 SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount:
-                                  _getCrossAxisCount(constraints.maxWidth),
-                              childAspectRatio:
-                                  _getChildAspectRatio(constraints.maxWidth),
+                              crossAxisCount: _getCrossAxisCount(
+                                constraints.maxWidth,
+                              ),
+                              childAspectRatio: _getChildAspectRatio(
+                                constraints.maxWidth,
+                              ),
                               crossAxisSpacing: 8,
                               mainAxisSpacing: 8,
                             ),
@@ -1701,12 +1808,17 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                               final record = _records[index];
                               final typeColor = _getTypeColor(record.type);
                               final dueDate = _getDueDate(record);
-                              final statusText =
-                                  _getStatusText(record.status, dueDate);
-                              final statusColor =
-                                  _getStatusColor(record.status, dueDate);
-                              final formattedDueDate =
-                                  DateFormat('dd/MM/yyyy').format(dueDate);
+                              final statusText = _getStatusText(
+                                record.status,
+                                dueDate,
+                              );
+                              final statusColor = _getStatusColor(
+                                record.status,
+                                dueDate,
+                              );
+                              final formattedDueDate = DateFormat(
+                                'dd/MM/yyyy',
+                              ).format(dueDate);
                               final isOverdue = statusText == 'Atrasado';
 
                               return ClipRRect(
@@ -1746,7 +1858,11 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                       borderRadius: BorderRadius.circular(20),
                                       child: Padding(
                                         padding: const EdgeInsets.fromLTRB(
-                                            10, 10, 10, 14),
+                                          10,
+                                          10,
+                                          10,
+                                          14,
+                                        ),
                                         child: Column(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
@@ -1759,14 +1875,18 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                   padding:
                                                       const EdgeInsets.all(8),
                                                   decoration: BoxDecoration(
-                                                    color: typeColor
-                                                        .withOpacity(0.12),
+                                                    color:
+                                                        typeColor.withOpacity(
+                                                      0.12,
+                                                    ),
                                                     borderRadius:
                                                         BorderRadius.circular(
                                                             10),
                                                     border: Border.all(
-                                                      color: typeColor
-                                                          .withOpacity(0.18),
+                                                      color:
+                                                          typeColor.withOpacity(
+                                                        0.18,
+                                                      ),
                                                     ),
                                                   ),
                                                   child: Icon(
@@ -1830,7 +1950,9 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                 color:
                                                     typeColor.withOpacity(0.10),
                                                 borderRadius:
-                                                    BorderRadius.circular(10),
+                                                    BorderRadius.circular(
+                                                  10,
+                                                ),
                                               ),
                                               child: Text(
                                                 record.typeLabel,
@@ -1853,7 +1975,9 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                         .withOpacity(0.10)
                                                     : const Color(0xFFF5F7FA),
                                                 borderRadius:
-                                                    BorderRadius.circular(12),
+                                                    BorderRadius.circular(
+                                                  12,
+                                                ),
                                                 border: Border.all(
                                                   color: isOverdue
                                                       ? Colors.red
@@ -1870,10 +1994,13 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                     decoration: BoxDecoration(
                                                       color: isOverdue
                                                           ? Colors.red
-                                                              .withOpacity(0.12)
+                                                              .withOpacity(
+                                                              0.12,
+                                                            )
                                                           : typeColor
                                                               .withOpacity(
-                                                                  0.12),
+                                                              0.12,
+                                                            ),
                                                       borderRadius:
                                                           BorderRadius.circular(
                                                               8),
@@ -1913,7 +2040,8 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                                                 ? Colors
                                                                     .red[700]
                                                                 : const Color(
-                                                                    0xFF1E3A5F),
+                                                                    0xFF1E3A5F,
+                                                                  ),
                                                             fontWeight:
                                                                 FontWeight.w800,
                                                           ),
@@ -2016,13 +2144,15 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
 
                 double segmentHeight(double value) {
                   if (total <= 0) return 0;
-                  return (totalHeight * (value / total))
-                      .clamp(3.0, totalHeight);
+                  return (totalHeight * (value / total)).clamp(
+                    3.0,
+                    totalHeight,
+                  );
                 }
 
-                final label = DateFormat.MMM('pt_BR')
-                    .format(DateTime(_selectedYear, month))
-                    .replaceAll('.', '');
+                final label = DateFormat.MMM(
+                  'pt_BR',
+                ).format(DateTime(_selectedYear, month)).replaceAll('.', '');
 
                 return Expanded(
                   child: Padding(
@@ -2126,10 +2256,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
         Container(
           width: 8,
           height: 8,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 4),
         Text(
@@ -2174,10 +2301,13 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
             side: BorderSide(color: olympusBlue.withOpacity(0.24)),
             backgroundColor: Colors.white.withOpacity(0.55),
             padding: const EdgeInsets.symmetric(vertical: 8),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            textStyle:
-                const TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            textStyle: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 11,
+            ),
           ),
         ),
       );
@@ -2209,9 +2339,12 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
               backgroundColor: Colors.white.withOpacity(0.55),
               padding: const EdgeInsets.symmetric(vertical: 8),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14)),
-              textStyle:
-                  const TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              textStyle: const TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 11,
+              ),
             ),
           ),
         ),
@@ -2231,9 +2364,12 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                 elevation: 0,
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-                textStyle:
-                    const TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 11,
+                ),
               ),
             ),
           ),
@@ -2270,11 +2406,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 3),
             child: Row(
               children: [
-                Icon(
-                  icon,
-                  size: 13,
-                  color: iconColor,
-                ),
+                Icon(icon, size: 13, color: iconColor),
                 const SizedBox(width: 4),
                 Text(
                   label,
@@ -2421,9 +2553,10 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
     final description = record.description?.trim();
     if (description == null || description.isEmpty) return null;
 
-    final match =
-        RegExp(r'Chave Pix(?: \(([^)]+)\))?:\s*(.+)', caseSensitive: false)
-            .firstMatch(description);
+    final match = RegExp(
+      r'Chave Pix(?: \(([^)]+)\))?:\s*(.+)',
+      caseSensitive: false,
+    ).firstMatch(description);
 
     if (match == null) return null;
 
@@ -2440,8 +2573,10 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   bool _descriptionIsOnlyPix(FinancialRecord record) {
     final description = record.description?.trim();
     if (description == null || description.isEmpty) return false;
-    return RegExp(r'^Chave Pix(?: \(([^)]+)\))?:\s*.+$', caseSensitive: false)
-        .hasMatch(description);
+    return RegExp(
+      r'^Chave Pix(?: \(([^)]+)\))?:\s*.+$',
+      caseSensitive: false,
+    ).hasMatch(description);
   }
 
   void _showRecordDetails(FinancialRecord record) {
@@ -2671,8 +2806,9 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                         ClipboardData(text: pixKey!),
                                       );
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           const SnackBar(
                                             content: Text('Chave Pix copiada!'),
                                             backgroundColor: Colors.green,
@@ -2703,7 +2839,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                           gradient: LinearGradient(
                             colors: [
                               const Color(0xFFE8F5E9),
-                              const Color(0xFFC8E6C9)
+                              const Color(0xFFC8E6C9),
                             ],
                             begin: Alignment.centerLeft,
                             end: Alignment.centerRight,
@@ -2748,8 +2884,11 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                 ],
                               ),
                             ),
-                            Icon(Icons.chevron_right,
-                                color: const Color(0xFF388E3C), size: 16),
+                            Icon(
+                              Icons.chevron_right,
+                              color: const Color(0xFF388E3C),
+                              size: 16,
+                            ),
                           ],
                         ),
                       )
@@ -2759,13 +2898,12 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                         width: double.infinity,
                         margin: const EdgeInsets.only(top: 4),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [
-                              olympusBlue,
-                              olympusLightBlue,
-                            ],
+                            colors: [olympusBlue, olympusLightBlue],
                             begin: Alignment.centerLeft,
                             end: Alignment.centerRight,
                           ),
@@ -2824,7 +2962,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                           gradient: LinearGradient(
                             colors: [
                               const Color(0xFFE8F5E9),
-                              const Color(0xFFC8E6C9)
+                              const Color(0xFFC8E6C9),
                             ],
                             begin: Alignment.centerLeft,
                             end: Alignment.centerRight,
@@ -2869,8 +3007,11 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                 ],
                               ),
                             ),
-                            Icon(Icons.chevron_right,
-                                color: const Color(0xFF388E3C), size: 16),
+                            Icon(
+                              Icons.chevron_right,
+                              color: const Color(0xFF388E3C),
+                              size: 16,
+                            ),
                           ],
                         ),
                       ),
@@ -2901,11 +3042,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
             color: (iconColor ?? olympusBlue).withOpacity(0.1),
             borderRadius: BorderRadius.circular(6),
           ),
-          child: Icon(
-            icon,
-            size: 18,
-            color: iconColor ?? olympusBlue,
-          ),
+          child: Icon(icon, size: 18, color: iconColor ?? olympusBlue),
         ),
         const SizedBox(width: 10),
         Expanded(

@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 
 class CoachPendingCenterPage extends StatelessWidget {
   const CoachPendingCenterPage({
@@ -33,8 +34,7 @@ class CoachPendingCenterPage extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.asset(
-          'assets/images/monte_olimpo_v2.png',
+        OlympusBrandBackgroundImage(
           fit: BoxFit.cover,
           alignment: Alignment.center,
           errorBuilder: (_, __, ___) {

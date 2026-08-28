@@ -49,3 +49,9 @@ app.*.map.json
 *.p8
 *.p12
 *.mobileprovision
+
+# Cópias locais de recuperação e arquivos temporários do banco
+/_codex_backups/
+/_before_history_restore_backup/
+/_recovery_from_vscode_history/
+/supabase/migrations/*.bak
