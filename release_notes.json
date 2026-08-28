@@ -1,6 +1,9 @@
 [
   {
     "language": "pt-BR",
-    "text": "Nova agenda do técnico, melhorias no planejamento e no painel de treinos, gestão da equipe técnica e notificações administrativas."
+    "text": "Nova agenda do técnico, melhorias no planejamento e no painel de treinos, gestão da equipe técnica e notificações administrativas.",
+    "description": "O Olympus Voleibol conecta administradores, técnicos e atletas em um só lugar. Organize equipes, eventos, convocações, treinos, planejamentos, avaliações e notificações com uma experiência simples e integrada.",
+    "keywords": "vôlei,voleibol,equipe,treinos,agenda,atletas,campeonato,gestão esportiva",
+    "support_url": "https://olympus-voleibol.web.app/"
   }
 ]
