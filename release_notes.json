@@ -5,5 +5,19 @@
     "description": "O Olympus Voleibol conecta administradores, técnicos e atletas em um só lugar. Organize equipes, eventos, convocações, treinos, planejamentos, avaliações e notificações com uma experiência simples e integrada.",
     "keywords": "vôlei,voleibol,equipe,treinos,agenda,atletas,campeonato,gestão esportiva",
     "support_url": "https://olympus-voleibol.web.app/"
+  },
+  {
+    "language": "en-US",
+    "text": "New coach agenda, improved training planning and dashboard, technical staff management, and administrative notifications.",
+    "description": "Olympus Voleibol connects administrators, coaches, and athletes in one place. Manage teams, events, call-ups, training plans, evaluations, and notifications through a simple integrated experience.",
+    "keywords": "volleyball,team,training,agenda,athletes,championship,sports management",
+    "support_url": "https://olympus-voleibol.web.app/"
+  },
+  {
+    "language": "pt-PT",
+    "text": "Nova agenda do treinador, melhorias no planeamento e no painel de treinos, gestão da equipa técnica e notificações administrativas.",
+    "description": "O Olympus Voleibol liga administradores, treinadores e atletas num só lugar. Organize equipas, eventos, convocatórias, treinos, planeamentos, avaliações e notificações de forma simples e integrada.",
+    "keywords": "voleibol,equipa,treinos,agenda,atletas,campeonato,gestão desportiva",
+    "support_url": "https://olympus-voleibol.web.app/"
   }
 ]
