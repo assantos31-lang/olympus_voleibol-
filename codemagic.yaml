@@ -29,7 +29,11 @@ workflows:
       - name: Definir versão de produção
         script: |
           set -e
-          RELEASE_VERSION="${CM_TAG#production-}"
+          if [ -n "${CM_TAG:-}" ]; then
+            RELEASE_VERSION="${CM_TAG#production-}"
+          else
+            RELEASE_VERSION=$(awk '/^version:/ {print $2}' pubspec.yaml | cut -d+ -f1)
+          fi
           if ! echo "$RELEASE_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "A tag deve seguir o formato production-X.Y.Z."
             exit 1
@@ -90,7 +94,11 @@ workflows:
       - name: Definir versão de produção
         script: |
           set -e
-          RELEASE_VERSION="${CM_TAG#production-}"
+          if [ -n "${CM_TAG:-}" ]; then
+            RELEASE_VERSION="${CM_TAG#production-}"
+          else
+            RELEASE_VERSION=$(awk '/^version:/ {print $2}' pubspec.yaml | cut -d+ -f1)
+          fi
           if ! echo "$RELEASE_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "A tag deve seguir o formato production-X.Y.Z."
             exit 1
