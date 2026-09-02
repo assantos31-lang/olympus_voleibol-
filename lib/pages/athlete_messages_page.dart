@@ -15,9 +15,11 @@ class AthleteMessagesPage extends StatefulWidget {
 
 class _AthleteMessagesPageState extends State<AthleteMessagesPage> {
   final SupabaseClient supabase = Supabase.instance.client;
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get olympusBlue => _branding.primaryColor;
+  Color get olympusGold => _branding.secondaryColor;
+  Color get olympusLightBlue =>
+      Color.lerp(_branding.primaryColor, Colors.white, 0.16)!;
 
   bool _loading = true;
   bool _refreshing = false;
@@ -412,7 +414,8 @@ class _AthleteMessagesPageState extends State<AthleteMessagesPage> {
             fit: BoxFit.cover,
             alignment: Alignment.center,
             errorBuilder: (_, __, ___) {
-              return Container(color: const Color(0xFF102845));
+              return Container(
+                  color: Color.lerp(olympusBlue, Colors.black, 0.24)!);
             },
           ),
         ),
@@ -827,9 +830,11 @@ class AthleteMessageThreadPage extends StatefulWidget {
 class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
   final SupabaseClient supabase = Supabase.instance.client;
   final AppMessageService _messageService = AppMessageService();
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get olympusBlue => _branding.primaryColor;
+  Color get olympusGold => _branding.secondaryColor;
+  Color get olympusLightBlue =>
+      Color.lerp(_branding.primaryColor, Colors.white, 0.16)!;
 
   final TextEditingController _replyController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -1239,7 +1244,8 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
             fit: BoxFit.cover,
             alignment: Alignment.center,
             errorBuilder: (_, __, ___) {
-              return Container(color: const Color(0xFF102845));
+              return Container(
+                  color: Color.lerp(olympusBlue, Colors.black, 0.24)!);
             },
           ),
         ),
@@ -1357,7 +1363,7 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
                           PopupMenuButton<String>(
                             tooltip: 'Opções da mensagem',
                             padding: EdgeInsets.zero,
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.more_vert,
                               size: 19,
                               color: olympusBlue,
@@ -1495,10 +1501,10 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
-                        gradient: const LinearGradient(
+                        gradient: LinearGradient(
                           colors: [
-                            Color(0xFFF0D771),
-                            Color(0xFFB48A23),
+                            Color.lerp(olympusGold, Colors.white, 0.30)!,
+                            Color.lerp(olympusGold, Colors.black, 0.20)!,
                           ],
                         ),
                         boxShadow: [
@@ -1521,7 +1527,7 @@ class _AthleteMessageThreadPageState extends State<AthleteMessageThreadPage> {
                           ),
                         ),
                         child: _sending
-                            ? const SizedBox(
+                            ? SizedBox(
                                 width: 18,
                                 height: 18,
                                 child: CircularProgressIndicator(

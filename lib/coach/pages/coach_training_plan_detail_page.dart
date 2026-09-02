@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CoachTrainingPlanDetailPage extends StatefulWidget {
@@ -20,8 +21,6 @@ class _CoachTrainingPlanDetailPageState
     extends State<CoachTrainingPlanDetailPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusCard = Colors.white;
   static const Color olympusText = Color(0xFF17324D);
@@ -476,7 +475,7 @@ class _CoachTrainingPlanDetailPageState
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
+            colorScheme: ColorScheme.light(
               primary: olympusBlue,
             ),
           ),
@@ -983,7 +982,7 @@ class _CoachTrainingPlanDetailPageState
                   children: [
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.sports_volleyball_rounded,
                           color: olympusBlue,
                           size: 18,
@@ -992,7 +991,7 @@ class _CoachTrainingPlanDetailPageState
                         Expanded(
                           child: Text(
                             posicao,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: olympusBlue,
                               fontSize: 13,
                               fontWeight: FontWeight.w900,
@@ -1087,7 +1086,7 @@ class _CoachTrainingPlanDetailPageState
                         const SizedBox(height: 6),
                         Row(
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.access_time_rounded,
                               size: 16,
                               color: olympusBlue,
@@ -1095,7 +1094,7 @@ class _CoachTrainingPlanDetailPageState
                             const SizedBox(width: 6),
                             Text(
                               valor.isEmpty ? '--:--' : valor,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: olympusBlue,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w800,
@@ -1140,14 +1139,14 @@ class _CoachTrainingPlanDetailPageState
                         const SizedBox(height: 16),
                         Text(
                           'Bloco ${index + 1}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: olympusBlue,
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                           'Tipo de treino',
                           style: TextStyle(
                             color: olympusBlue,
@@ -1166,9 +1165,9 @@ class _CoachTrainingPlanDetailPageState
                           ],
                         ),
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                           'Posição em quadra *',
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: olympusBlue,
                             fontSize: 14,
                             fontWeight: FontWeight.w800,
@@ -1205,7 +1204,7 @@ class _CoachTrainingPlanDetailPageState
                                   color: olympusGold.withOpacity(0.35),
                                 ),
                               ),
-                              child: const Text(
+                              child: Text(
                                 'Escolha uma posição para ver os fundamentos disponíveis.',
                                 style: TextStyle(
                                   color: olympusBlue,
@@ -1222,7 +1221,7 @@ class _CoachTrainingPlanDetailPageState
                             categoriaSelecionada == 'Tático'
                                 ? 'Selecione a opção tática *'
                                 : 'Selecione a opção física *',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: olympusBlue,
                               fontSize: 14,
                               fontWeight: FontWeight.w800,
@@ -1253,13 +1252,13 @@ class _CoachTrainingPlanDetailPageState
                             children: [
                               Row(
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.monitor_heart_outlined,
                                     color: olympusBlue,
                                     size: 20,
                                   ),
                                   const SizedBox(width: 8),
-                                  const Expanded(
+                                  Expanded(
                                     child: Text(
                                       'Esforço físico do bloco',
                                       style: TextStyle(
@@ -1271,7 +1270,7 @@ class _CoachTrainingPlanDetailPageState
                                   ),
                                   Text(
                                     '$percentualEsforcoFisico%',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: olympusBlue,
                                       fontWeight: FontWeight.w900,
                                     ),
@@ -1560,7 +1559,7 @@ class _CoachTrainingPlanDetailPageState
                 child: Center(
                   child: Text(
                     '${index + 1}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: olympusBlue,
                       fontWeight: FontWeight.w800,
                     ),
@@ -1776,7 +1775,7 @@ class _CoachTrainingPlanDetailPageState
                               Expanded(
                                 child: Text(
                                   'Planejado  ${_formatDuracao(_minutosPlanejados)}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: olympusBlue,
                                     fontWeight: FontWeight.w800,
                                   ),

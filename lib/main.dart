@@ -67,8 +67,9 @@ Future<void> _warnIfIosNotificationsAreDisabled(BuildContext context) async {
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: const Text('Ative as notificações'),
-      content: const Text(
-        'As notificações do Olympus estão desativadas neste iPhone. '
+      content: Text(
+        'As notificações do ${OlympusBrandingController.instance.branding.teamName} '
+        'estão desativadas neste iPhone. '
         'Ative-as nos Ajustes para receber mensagens e avisos.',
       ),
       actions: [
@@ -99,7 +100,7 @@ int _stableNotificationId(String value) {
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
   'messages_channel',
   'Messages',
-  description: 'Canal de notificações do Olympus',
+  description: 'Canal de notificações do clube',
   importance: Importance.max,
   showBadge: true,
 );
@@ -409,7 +410,7 @@ Future<void> _setupPushNotifications() async {
           android: AndroidNotificationDetails(
             'messages_channel',
             'Messages',
-            channelDescription: 'Canal de notificações do Olympus',
+            channelDescription: 'Canal de notificações do clube',
             importance: Importance.max,
             priority: Priority.high,
             groupKey: groupKey,
@@ -953,12 +954,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
               _auth.currentUser?.userMetadata?['must_change_password'] == true;
           if (mustChangePassword) {
             return const ForcePasswordChangePage();
-          }
-
-          final mustCompleteProfile =
-              _auth.currentUser?.userMetadata?['must_complete_profile'] == true;
-          if (mustCompleteProfile) {
-            return const CompleteProfilePage();
           }
 
           if (!_postLoginServicesScheduled) {

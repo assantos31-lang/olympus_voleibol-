@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/technical_staff_service.dart';
+import '../../theme/olympus_theme.dart';
 import 'coach_training_plan_detail_page.dart';
 import 'coach_training_planning_dashboard_page.dart';
 
@@ -15,7 +16,7 @@ class CoachTrainingApprovalPage extends StatefulWidget {
 
 class _CoachTrainingApprovalPageState
     extends State<CoachTrainingApprovalPage> {
-  static const _blue = Color(0xFF1E3A5F);
+  Color get _blue => olympusBlue;
   static const _gold = Color(0xFFD4AF37);
   static const _green = Color(0xFF16A34A);
   static const _orange = Color(0xFFF59E0B);
@@ -447,7 +448,7 @@ class _CoachTrainingApprovalPageState
         ),
         title: Text(
           _text(item['event_name']).isEmpty ? 'Treino' : _text(item['event_name']),
-          style: const TextStyle(color: _blue, fontWeight: FontWeight.w900),
+          style: TextStyle(color: _blue, fontWeight: FontWeight.w900),
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 5),

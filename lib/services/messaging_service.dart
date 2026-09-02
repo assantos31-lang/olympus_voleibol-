@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'organization_context_service.dart';
+
 class MessagingService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -61,7 +63,7 @@ class MessagingService {
       final senderName =
           senderProfile?['full_name']?.toString().trim().isNotEmpty == true
               ? senderProfile!['full_name'].toString().trim()
-              : 'Olympus Voleibol';
+              : OrganizationContextService.instance.currentName;
 
       final tokenRows = await _supabase
           .from('user_push_tokens')

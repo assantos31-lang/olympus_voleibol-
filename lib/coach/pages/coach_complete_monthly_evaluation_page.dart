@@ -59,8 +59,6 @@ class CoachCompleteMonthlyEvaluationPage extends StatefulWidget {
 
 class _CoachCompleteMonthlyEvaluationPageState
     extends State<CoachCompleteMonthlyEvaluationPage> {
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusCard = Colors.white;
   static const Color olympusText = Color(0xFF17324D);
@@ -560,11 +558,11 @@ class _CoachCompleteMonthlyEvaluationPageState
       padding: EdgeInsets.all(isMobile ? 18 : 22),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           colors: [
-            Color(0xFF071A30),
-            Color(0xFF123861),
-            Color(0xFF2C5F8D),
+            Color.lerp(olympusBlue, Colors.black, 0.36)!,
+            Color.lerp(olympusBlue, Colors.black, 0.08)!,
+            Color.lerp(olympusBlue, Colors.white, 0.18)!,
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -623,7 +621,7 @@ class _CoachCompleteMonthlyEvaluationPageState
                         ),
                       ],
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.assignment_turned_in_rounded,
                       color: olympusBlue,
                       size: 31,
@@ -693,10 +691,10 @@ class _CoachCompleteMonthlyEvaluationPageState
               height: isMobile ? 46 : 54,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   colors: [
-                    Color(0xFF1E3A5F),
-                    Color(0xFF2C5F8D),
+                    olympusCard,
+                    Color.lerp(olympusCard, Colors.white, 0.16)!,
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -749,7 +747,7 @@ class _CoachCompleteMonthlyEvaluationPageState
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(color: olympusGold.withOpacity(0.35)),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
@@ -973,11 +971,11 @@ class _CoachCompleteMonthlyEvaluationPageState
           value: _sendToAthlete,
           contentPadding: EdgeInsets.zero,
           activeColor: olympusBlue,
-          secondary: const Icon(
+          secondary: Icon(
             Icons.send_outlined,
             color: olympusBlue,
           ),
-          title: const Text(
+          title: Text(
             'Enviar para atleta',
             style: TextStyle(
               color: olympusBlue,
@@ -1051,8 +1049,8 @@ class _CoachCompleteMonthlyEvaluationPageState
         backgroundColor: olympusBg,
         appBar: AppBar(
           title: const Text('Avaliação completa mensal'),
-          backgroundColor: olympusBlue,
-          foregroundColor: Colors.white,
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          foregroundColor: Theme.of(context).colorScheme.onPrimary,
         ),
         body: Center(
           child: Padding(
@@ -1067,7 +1065,7 @@ class _CoachCompleteMonthlyEvaluationPageState
               child: Text(
                 'Nenhum atleta encontrado em ${'Avaliação completa mensal'}.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   color: olympusBlue,
                   fontWeight: FontWeight.w900,
                   fontSize: 16,
@@ -1083,8 +1081,8 @@ class _CoachCompleteMonthlyEvaluationPageState
       backgroundColor: olympusBg,
       appBar: AppBar(
         title: const Text('Avaliação completa mensal'),
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
       ),
       body: Stack(
         children: [

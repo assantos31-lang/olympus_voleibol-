@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../pages/athlete_training_history_page.dart';
@@ -15,8 +16,6 @@ class _CoachRankingPageState extends State<CoachRankingPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
   final PermissionService _permissionService = PermissionService();
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
 
   bool _loading = true;
   bool _savingWeights = false;
@@ -644,7 +643,7 @@ class _CoachRankingPageState extends State<CoachRankingPage> {
                   children: [
                     Expanded(
                       child: Text(label,
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: olympusBlue, fontWeight: FontWeight.w800)),
                     ),
                     IconButton(
@@ -654,7 +653,7 @@ class _CoachRankingPageState extends State<CoachRankingPage> {
                       width: 42,
                       child: Text('$value',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: olympusBlue,
                               fontWeight: FontWeight.w900,
                               fontSize: 16)),
@@ -687,7 +686,7 @@ class _CoachRankingPageState extends State<CoachRankingPage> {
                                 color: Colors.grey.shade300,
                                 borderRadius: BorderRadius.circular(999)))),
                     const SizedBox(height: 16),
-                    const Text('Configurar pesos do ranking',
+                    Text('Configurar pesos do ranking',
                         style: TextStyle(
                             color: olympusBlue,
                             fontSize: 18,
@@ -770,7 +769,7 @@ class _CoachRankingPageState extends State<CoachRankingPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(title,
-            style: const TextStyle(
+            style: TextStyle(
                 color: olympusBlue, fontSize: 12, fontWeight: FontWeight.w900)),
         const SizedBox(height: 6),
         Wrap(
@@ -799,7 +798,7 @@ class _CoachRankingPageState extends State<CoachRankingPage> {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                   child: Text('Ranking geral',
                       style: TextStyle(
                           color: olympusBlue,
@@ -861,12 +860,12 @@ class _CoachRankingPageState extends State<CoachRankingPage> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.lock_outline, color: olympusGold, size: 18),
+                  Icon(Icons.lock_outline, color: olympusGold, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Ranking filtrado automaticamente para ${_generoLabel(_coachTeamGender)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: olympusBlue,
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
@@ -916,7 +915,7 @@ class _CoachRankingPageState extends State<CoachRankingPage> {
           : olympusBlue.withOpacity(0.10),
       child: Text(nome.isNotEmpty ? nome[0].toUpperCase() : '?',
           style:
-              const TextStyle(color: olympusBlue, fontWeight: FontWeight.w800)),
+              TextStyle(color: olympusBlue, fontWeight: FontWeight.w800)),
     );
   }
 

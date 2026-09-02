@@ -22,9 +22,11 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
   bool _checkingPermission = true;
   bool _hasPermission = false;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get olympusBlue => _branding.primaryColor;
+  Color get olympusGold => _branding.secondaryColor;
+  Color get olympusLightBlue =>
+      Color.lerp(_branding.primaryColor, _branding.surfaceColor, 0.20)!;
 
   @override
   void initState() {
@@ -224,31 +226,16 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
     return olympusGold.withOpacity(0.18);
   }
 
-  Color _baseCardColorByGender(String? gender) {
-    final normalized = (gender ?? '').trim().toLowerCase();
-    if (normalized == 'masculino') {
-      return const Color(0xFF243F56);
-    }
-    if (normalized == 'feminino') {
-      return const Color(0xFF624154);
-    }
-    return Colors.white;
-  }
+  Color _baseCardColorByGender(String? gender) => olympusBlue;
 
   Color _cardTextColorByGender(String? gender) {
-    final normalized = (gender ?? '').trim().toLowerCase();
-    if (normalized == 'masculino' || normalized == 'feminino') {
-      return Colors.white;
-    }
-    return olympusBlue;
+    return ThemeData.estimateBrightnessForColor(olympusBlue) == Brightness.dark
+        ? Colors.white
+        : _branding.textColor;
   }
 
   Color _cardSubtleTextColorByGender(String? gender) {
-    final normalized = (gender ?? '').trim().toLowerCase();
-    if (normalized == 'masculino' || normalized == 'feminino') {
-      return Colors.white.withOpacity(0.88);
-    }
-    return Colors.grey[700]!;
+    return _cardTextColorByGender(gender).withOpacity(0.78);
   }
 
   String? _resolveAvatarUrl(String? rawValue) {
@@ -267,7 +254,7 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
       alignment: Alignment.center,
       child: Text(
         fullName.isNotEmpty ? fullName[0].toUpperCase() : '?',
-        style: const TextStyle(
+        style: TextStyle(
           fontWeight: FontWeight.bold,
           color: olympusBlue,
         ),
@@ -440,7 +427,7 @@ class _AdminBirthdaysPageState extends State<AdminBirthdaysPage> {
                     color: olympusGold,
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: const Text(
+                  child: Text(
                     'Mês atual',
                     style: TextStyle(
                       color: olympusBlue,

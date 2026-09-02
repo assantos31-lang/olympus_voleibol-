@@ -89,9 +89,11 @@ class _AddEventPageState extends State<AddEventPage> {
           _selectedType = EventType.campeonato;
         }
 
-        final eventName = widget.evento!['event_name'] ?? '';
-        if (eventName.contains('Olympus VS ')) {
-          _opponentController.text = eventName.replaceFirst('Olympus VS ', '');
+        final eventName = (widget.evento!['event_name'] ?? '').toString();
+        final versusParts =
+            eventName.split(RegExp(r'\s+VS\s+', caseSensitive: false));
+        if (versusParts.length > 1) {
+          _opponentController.text = versusParts.sublist(1).join(' VS ').trim();
         }
 
         _dateController.text = widget.evento!['event_date'] ?? '';
@@ -840,7 +842,7 @@ class _AddEventPageState extends State<AddEventPage> {
       final eventData = {
         'user_id': user.id,
         'event_name': _opponentController.text.isNotEmpty
-            ? 'Olympus VS ${_opponentController.text}'
+            ? '${_branding.teamName} VS ${_opponentController.text}'
             : 'Evento ${_selectedType.name}',
         'event_type': _selectedType.name,
         'event_date': _dateController.text,
@@ -1257,7 +1259,7 @@ class _AddEventPageState extends State<AddEventPage> {
           child: TextFormField(
             controller: _championshipNameController,
             style: const TextStyle(color: Color(0xFF0A2463)),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               hintText: 'Ex: Liga de Jundiaí, Campeonato Paulista...',
               hintStyle: TextStyle(color: Colors.grey),
               border: InputBorder.none,
@@ -1495,12 +1497,12 @@ class _AddEventPageState extends State<AddEventPage> {
           child: TextFormField(
             controller: _opponentController,
             style: const TextStyle(color: Color(0xFF0A2463)),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               hintText: 'Digite o nome do adversário',
               hintStyle: TextStyle(color: Colors.grey),
               border: InputBorder.none,
-              prefixText: 'Olympus VS ',
-              prefixStyle: TextStyle(color: Color(0xFFD4AF37)),
+              prefixText: '${_branding.teamName} VS ',
+              prefixStyle: TextStyle(color: goldenColor),
             ),
             validator: (value) {
               if (value?.isEmpty ?? true) return 'Informe o adversário';

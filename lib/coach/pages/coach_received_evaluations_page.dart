@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CoachReceivedEvaluationsPage extends StatefulWidget {
@@ -18,8 +19,6 @@ class _CoachReceivedEvaluationsPageState
 
   List<Map<String, dynamic>> _evaluations = [];
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusBg = Color(0xFFF4F7FB);
 
   @override
@@ -145,8 +144,8 @@ athlete:profiles!coach_evaluations_athlete_id_fkey (
       backgroundColor: olympusBg,
       appBar: AppBar(
         title: const Text('Avaliações Recebidas'),
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
       ),
       body: _loading
           ? const Center(
@@ -198,7 +197,7 @@ athlete:profiles!coach_evaluations_athlete_id_fkey (
                                 children: [
                                   Row(
                                     children: [
-                                      const Icon(
+                                      Icon(
                                         Icons.rate_review_outlined,
                                         color: olympusGold,
                                       ),

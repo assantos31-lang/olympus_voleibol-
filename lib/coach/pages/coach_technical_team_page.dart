@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/technical_staff_service.dart';
+import '../../theme/olympus_theme.dart';
 import 'coach_training_approval_page.dart';
 import 'coach_training_plan_detail_page.dart';
 import 'coach_training_planning_dashboard_page.dart';
@@ -14,7 +15,7 @@ class CoachTechnicalTeamPage extends StatefulWidget {
 }
 
 class _CoachTechnicalTeamPageState extends State<CoachTechnicalTeamPage> {
-  static const _blue = Color(0xFF1E3A5F);
+  Color get _blue => olympusBlue;
   static const _gold = Color(0xFFD4AF37);
   final TechnicalStaffService _service = TechnicalStaffService();
 
@@ -23,11 +24,48 @@ class _CoachTechnicalTeamPageState extends State<CoachTechnicalTeamPage> {
   List<Map<String, dynamic>> _profiles = const [];
   bool _loading = true;
   String? _error;
+  RealtimeChannel? _realtimeChannel;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _setupRealtime();
+  }
+
+  void _setupRealtime() {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null || _realtimeChannel != null) return;
+    _realtimeChannel = Supabase.instance.client
+        .channel('coach-technical-team-$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'technical_staff_assignments',
+          callback: (_) => _load(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'profiles',
+          callback: (_) => _load(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'training_plans',
+          callback: (_) => _load(),
+        )
+        .subscribe();
+  }
+
+  @override
+  void dispose() {
+    final channel = _realtimeChannel;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+    }
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -81,7 +119,7 @@ class _CoachTechnicalTeamPageState extends State<CoachTechnicalTeamPage> {
       child: avatarUrl.isEmpty
           ? Text(
               name.isEmpty ? 'T' : name.substring(0, 1).toUpperCase(),
-              style: const TextStyle(
+              style: TextStyle(
                 color: _blue,
                 fontWeight: FontWeight.w900,
               ),
@@ -110,11 +148,13 @@ class _CoachTechnicalTeamPageState extends State<CoachTechnicalTeamPage> {
 
   @override
   Widget build(BuildContext context) {
+    final branding = OlympusBrandingController.instance.branding;
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
+      backgroundColor: branding.backgroundColor,
       appBar: AppBar(
-        backgroundColor: _blue,
-        foregroundColor: Colors.white,
+        backgroundColor: colors.primary,
+        foregroundColor: colors.onPrimary,
         title: const Text('Minha Equipe Técnica'),
       ),
       body: _loading
@@ -143,7 +183,7 @@ class _CoachTechnicalTeamPageState extends State<CoachTechnicalTeamPage> {
                               _current!.canApproveTraining)
                             _buildTrainingActions(),
                           const SizedBox(height: 20),
-                          const Text(
+                          Text(
                             'Profissionais sob sua visão',
                             style: TextStyle(
                               color: _blue,
@@ -160,10 +200,11 @@ class _CoachTechnicalTeamPageState extends State<CoachTechnicalTeamPage> {
   }
 
   Widget _buildHeader() {
+    final colors = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: _blue,
+        color: colors.primary,
         borderRadius: BorderRadius.circular(22),
       ),
       child: Column(
@@ -255,7 +296,7 @@ class _CoachTechnicalTeamPageState extends State<CoachTechnicalTeamPage> {
         leading: _staffAvatar(item.userId),
         title: Text(
           _name(item.userId),
-          style: const TextStyle(color: _blue, fontWeight: FontWeight.w800),
+          style: TextStyle(color: _blue, fontWeight: FontWeight.w800),
         ),
         subtitle: Text(
           '${TechnicalStaffRole.label(item.technicalRole)}${item.supervisorUserId == null ? '' : ' • responde a ${_name(item.supervisorUserId!)}'}',
@@ -284,7 +325,7 @@ class _CoachPlanningAccessPage extends StatefulWidget {
 
 class _CoachPlanningAccessPageState extends State<_CoachPlanningAccessPage> {
   final _supabase = Supabase.instance.client;
-  static const _blue = Color(0xFF1E3A5F);
+  Color get _blue => olympusBlue;
   static const _gold = Color(0xFFD4AF37);
 
   bool _loading = true;
@@ -422,9 +463,9 @@ class _CoachPlanningAccessPageState extends State<_CoachPlanningAccessPage> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                const Text(
+                Text(
                   'Atribuir planejamentos',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _blue,
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
@@ -438,8 +479,14 @@ class _CoachPlanningAccessPageState extends State<_CoachPlanningAccessPage> {
                 const SizedBox(height: 14),
                 SegmentedButton<bool>(
                   segments: const [
-                    ButtonSegment(value: false, icon: Icon(Icons.upcoming_rounded), label: Text('Futuros')),
-                    ButtonSegment(value: true, icon: Icon(Icons.history_rounded), label: Text('Passados')),
+                    ButtonSegment(
+                        value: false,
+                        icon: Icon(Icons.upcoming_rounded),
+                        label: Text('Futuros')),
+                    ButtonSegment(
+                        value: true,
+                        icon: Icon(Icons.history_rounded),
+                        label: Text('Passados')),
                   ],
                   selected: {_showPast},
                   onSelectionChanged: (value) => setState(() {
@@ -448,7 +495,9 @@ class _CoachPlanningAccessPageState extends State<_CoachPlanningAccessPage> {
                   }),
                   style: ButtonStyle(
                     backgroundColor: WidgetStateProperty.resolveWith(
-                      (states) => states.contains(WidgetState.selected) ? _gold : Colors.white,
+                      (states) => states.contains(WidgetState.selected)
+                          ? _gold
+                          : Colors.white,
                     ),
                   ),
                 ),
@@ -483,37 +532,45 @@ class _CoachPlanningAccessPageState extends State<_CoachPlanningAccessPage> {
                           value: _selectedEventIds.contains(eventId),
                           activeColor: _gold,
                           checkColor: _blue,
-                          onChanged: _showPast || _text(event['planning_status']) == 'published'
+                          onChanged: _showPast ||
+                                  _text(event['planning_status']) == 'published'
                               ? null
                               : (selected) => setState(() {
-                                  if (selected == true) {
-                                    _selectedEventIds.add(eventId);
-                                  } else {
-                                    _selectedEventIds.remove(eventId);
-                                  }
-                                }),
+                                    if (selected == true) {
+                                      _selectedEventIds.add(eventId);
+                                    } else {
+                                      _selectedEventIds.remove(eventId);
+                                    }
+                                  }),
                         ),
                         title: Text(
-                          _text(event['event_name']).isEmpty ? 'Treino' : _text(event['event_name']),
-                          style: const TextStyle(color: _blue, fontWeight: FontWeight.w800),
+                          _text(event['event_name']).isEmpty
+                              ? 'Treino'
+                              : _text(event['event_name']),
+                          style: TextStyle(
+                              color: _blue, fontWeight: FontWeight.w800),
                         ),
                         subtitle: Text(
                           '${event['event_date'] ?? ''} • ${event['event_time'] ?? ''}\n$plannerLabel • ${_statusLabel(_text(event['planning_status']))}',
                         ),
                         isThreeLine: true,
-                        trailing: plannerId == currentUserId && _text(event['planning_status']) == 'enabled'
+                        trailing: plannerId == currentUserId &&
+                                _text(event['planning_status']) == 'enabled'
                             ? IconButton(
                                 tooltip: 'Abrir planejamento',
                                 onPressed: () async {
                                   await Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => CoachTrainingPlanDetailPage(treino: event),
+                                      builder: (_) =>
+                                          CoachTrainingPlanDetailPage(
+                                              treino: event),
                                     ),
                                   );
                                   await _load();
                                 },
-                                icon: const Icon(Icons.edit_calendar_rounded, color: _blue),
+                                icon: Icon(Icons.edit_calendar_rounded,
+                                    color: _blue),
                               )
                             : null,
                       ),
@@ -521,24 +578,32 @@ class _CoachPlanningAccessPageState extends State<_CoachPlanningAccessPage> {
                   }),
                 if (_selectedEventIds.isNotEmpty && !_showPast) ...[
                   const SizedBox(height: 12),
-                  Text('${_selectedEventIds.length} treino(s) selecionado(s)', style: const TextStyle(fontWeight: FontWeight.w800)),
+                  Text('${_selectedEventIds.length} treino(s) selecionado(s)',
+                      style: const TextStyle(fontWeight: FontWeight.w800)),
                   const SizedBox(height: 8),
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: _saving ? null : () => _assignSelected(toCoach: true),
+                          onPressed: _saving
+                              ? null
+                              : () => _assignSelected(toCoach: true),
                           icon: const Icon(Icons.person_rounded),
-                          label: Text('${widget.coachName} planeja', overflow: TextOverflow.ellipsis),
+                          label: Text('${widget.coachName} planeja',
+                              overflow: TextOverflow.ellipsis),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: _saving ? null : () => _assignSelected(toCoach: false),
+                          onPressed: _saving
+                              ? null
+                              : () => _assignSelected(toCoach: false),
                           icon: const Icon(Icons.supervisor_account_rounded),
                           label: const Text('Eu planejo'),
-                          style: ElevatedButton.styleFrom(backgroundColor: _blue, foregroundColor: Colors.white),
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: _blue,
+                              foregroundColor: Colors.white),
                         ),
                       ),
                     ],

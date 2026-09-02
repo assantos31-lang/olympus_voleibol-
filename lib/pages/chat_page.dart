@@ -97,10 +97,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _savedStickers = [];
   bool _loadingSavedStickers = false;
 
-  static const Color _gold = Color(0xFFD4B06A);
-  static const Color _goldSoft = Color(0xFFE8D19A);
-  static const Color _navy = Color(0xFF0E2A57);
-  static const Color _navyDark = Color(0xFF091428);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get _gold => _branding.secondaryColor;
+  Color get _goldSoft =>
+      Color.lerp(_branding.secondaryColor, _branding.surfaceColor, 0.35)!;
+  Color get _navy => _branding.primaryColor;
+  Color get _navyDark => _branding.premiumCardColor;
   static const List<_OfficialSticker> _officialStickers = [
     _OfficialSticker('Bora treinar', 'assets/stickers/bora_treinar.webp'),
     _OfficialSticker('Mandou bem', 'assets/stickers/mandou_bem.webp'),
@@ -621,7 +623,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             ? Center(
                 child: Text(
                   initial,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _navy,
                     fontWeight: FontWeight.w800,
                   ),
@@ -633,7 +635,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 memCacheWidth: 240,
                 memCacheHeight: 240,
                 fadeInDuration: const Duration(milliseconds: 120),
-                placeholder: (_, __) => const Center(
+                placeholder: (_, __) => Center(
                   child: SizedBox(
                     width: 17,
                     height: 17,
@@ -646,7 +648,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 errorWidget: (_, __, ___) => Center(
                   child: Text(
                     initial,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _navy,
                       fontWeight: FontWeight.w800,
                     ),
@@ -1121,7 +1123,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'Enviar mídia',
                   style: TextStyle(
                     color: _navy,
@@ -1229,7 +1231,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             const SizedBox(height: 8),
             Text(
               label,
-              style: const TextStyle(color: _navy, fontWeight: FontWeight.w800),
+              style: TextStyle(color: _navy, fontWeight: FontWeight.w800),
             ),
           ],
         ),
@@ -1396,7 +1398,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
+              Text(
                 'Qualidade do vídeo',
                 style: TextStyle(
                   color: _navy,
@@ -1406,13 +1408,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 12),
               ListTile(
-                leading: const Icon(Icons.hd_rounded, color: _navy),
+                leading: Icon(Icons.hd_rounded, color: _navy),
                 title: const Text('Qualidade original'),
                 subtitle: const Text('100% do arquivo, envio mais pesado'),
                 onTap: () => Navigator.pop(context, _VideoSendQuality.original),
               ),
               ListTile(
-                leading: const Icon(Icons.data_saver_on_rounded, color: _navy),
+                leading: Icon(Icons.data_saver_on_rounded, color: _navy),
                 title: const Text('Economia de dados'),
                 subtitle: const Text(
                   'Reduz resolução e tamanho, como no WhatsApp',
@@ -1514,7 +1516,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 size: 34,
               ),
               const SizedBox(height: 10),
-              const Text(
+              Text(
                 'Excluir de Minhas figurinhas?',
                 style: TextStyle(
                   color: _navy,
@@ -1674,7 +1676,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 ),
                 if ((message.myReactionEmoji ?? '').trim().isNotEmpty)
                   ListTile(
-                    leading: const Icon(
+                    leading: Icon(
                       Icons.emoji_emotions_outlined,
                       color: _navy,
                     ),
@@ -1682,7 +1684,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     onTap: () => Navigator.pop(context, 'clear_reaction'),
                   ),
                 ListTile(
-                  leading: const Icon(Icons.reply_rounded, color: _navy),
+                  leading: Icon(Icons.reply_rounded, color: _navy),
                   title: const Text('Responder'),
                   subtitle: const Text('Responder esta mensagem'),
                   onTap: () => Navigator.pop(context, 'reply'),
@@ -1691,7 +1693,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     !message.isDeleted &&
                     !message.isAudio)
                   ListTile(
-                    leading: const Icon(Icons.copy_rounded, color: _navy),
+                    leading: Icon(Icons.copy_rounded, color: _navy),
                     title: const Text('Copiar texto'),
                     onTap: () => Navigator.pop(context, 'copy'),
                   ),
@@ -1711,17 +1713,19 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   ),
                 if (message.isSticker || message.isVideoSticker)
                   ListTile(
-                    leading: const Icon(
+                    leading: Icon(
                       Icons.add_circle_outline_rounded,
                       color: _navy,
                     ),
                     title: const Text('Salvar em Minhas figurinhas'),
-                    subtitle: const Text('Salva somente dentro do Olympus'),
+                    subtitle: Text(
+                      'Salva somente dentro do ${_branding.teamName}',
+                    ),
                     onTap: () => Navigator.pop(context, 'save_sticker'),
                   ),
                 if (isMine && !message.isDeleted)
                   ListTile(
-                    leading: const Icon(
+                    leading: Icon(
                       Icons.info_outline_rounded,
                       color: _navy,
                     ),
@@ -1736,7 +1740,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     !message.isSticker &&
                     !message.isVideoSticker)
                   ListTile(
-                    leading: const Icon(Icons.edit_rounded, color: _navy),
+                    leading: Icon(Icons.edit_rounded, color: _navy),
                     title: const Text('Editar mensagem'),
                     subtitle: const Text('Disponível por até 2 minutos'),
                     onTap: () => Navigator.pop(context, 'edit'),
@@ -1800,7 +1804,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         return FractionallySizedBox(
           heightFactor: 0.78,
           child: Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: _navyDark,
               borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
             ),
@@ -1831,7 +1835,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                               color: _gold.withValues(alpha: 0.35),
                             ),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.done_all_rounded,
                             color: _gold,
                           ),
@@ -1896,7 +1900,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       builder: (context, snapshot) {
                         if (snapshot.connectionState ==
                             ConnectionState.waiting) {
-                          return const Center(
+                          return Center(
                             child: CircularProgressIndicator(color: _gold),
                           );
                         }
@@ -1908,7 +1912,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.lock_outline_rounded,
                                     color: _gold,
                                     size: 34,
@@ -2101,7 +2105,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       alignment: Alignment.center,
                       child: Text(
                         initial,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _gold,
                           fontWeight: FontWeight.w900,
                         ),
@@ -2117,7 +2121,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         alignment: Alignment.center,
                         child: Text(
                           initial,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _gold,
                             fontWeight: FontWeight.w900,
                           ),
@@ -2195,13 +2199,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           color: _gold.withOpacity(0.18),
                           borderRadius: BorderRadius.circular(16),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.edit_note_rounded,
                           color: _navy,
                         ),
                       ),
                       const SizedBox(width: 12),
-                      const Expanded(
+                      Expanded(
                         child: Text(
                           'Editar mensagem',
                           style: TextStyle(
@@ -2219,7 +2223,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     autofocus: true,
                     maxLines: 5,
                     minLines: 3,
-                    style: const TextStyle(color: _navy),
+                    style: TextStyle(color: _navy),
                     decoration: InputDecoration(
                       hintText: 'Mensagem',
                       filled: true,
@@ -2231,7 +2235,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
-                        borderSide: const BorderSide(color: _gold, width: 1.4),
+                        borderSide: BorderSide(color: _gold, width: 1.4),
                       ),
                     ),
                   ),
@@ -2442,7 +2446,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                 )
                               : null),
                       child: selectedImage == null && currentAvatar == null
-                          ? const Icon(Icons.camera_alt, color: _gold)
+                          ? Icon(Icons.camera_alt, color: _gold)
                           : null,
                     ),
                   ),
@@ -2560,7 +2564,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 side: BorderSide(color: _gold.withValues(alpha: 0.55)),
               ),
               titlePadding: const EdgeInsets.fromLTRB(22, 20, 22, 8),
-              title: const Row(
+              title: Row(
                 children: [
                   CircleAvatar(
                     radius: 19,
@@ -2591,13 +2595,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   decoration: InputDecoration(
                     labelText: 'Nome exibido',
                     hintText: 'Ex.: André Alves',
-                    prefixIcon: const Icon(
+                    prefixIcon: Icon(
                       Icons.person_outline_rounded,
                       color: _navy,
                     ),
                     filled: true,
                     fillColor: Colors.white,
-                    labelStyle: const TextStyle(color: _navy),
+                    labelStyle: TextStyle(color: _navy),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
                       borderSide: BorderSide(
@@ -2606,7 +2610,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: _gold, width: 2),
+                      borderSide: BorderSide(color: _gold, width: 2),
                     ),
                   ),
                 ),
@@ -2795,10 +2799,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       color: _gold.withOpacity(0.18),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: const Icon(Icons.groups_rounded, color: _navy),
+                    child: Icon(Icons.groups_rounded, color: _navy),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Participantes',
                       style: TextStyle(
@@ -2825,7 +2829,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                               },
                               decoration: InputDecoration(
                                 hintText: 'Buscar participante…',
-                                prefixIcon: const Icon(
+                                prefixIcon: Icon(
                                   Icons.search_rounded,
                                   color: _navy,
                                 ),
@@ -2905,7 +2909,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                               fullName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _navy,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -2926,7 +2930,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                         color: _gold.withValues(alpha: 0.45),
                                       ),
                                     ),
-                                    icon: const Icon(
+                                    icon: Icon(
                                       Icons.more_vert_rounded,
                                       color: _navy,
                                     ),
@@ -3056,7 +3060,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                     ],
                                   )
                                 : role == 'admin'
-                                    ? const Tooltip(
+                                    ? Tooltip(
                                         message: 'Administrador',
                                         child: Icon(
                                           Icons.shield_rounded,
@@ -3347,7 +3351,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                                 ),
                                               ),
                                               if (isSelected)
-                                                const Padding(
+                                                Padding(
                                                   padding: EdgeInsets.only(
                                                     left: 8,
                                                   ),
@@ -3551,13 +3555,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                 color: _gold.withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(16),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.poll_rounded,
                                 color: _navy,
                               ),
                             ),
                             const SizedBox(width: 10),
-                            const Expanded(
+                            Expanded(
                               child: Text(
                                 'Criar enquete',
                                 style: TextStyle(
@@ -3584,7 +3588,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           ),
                         ),
                         const SizedBox(height: 14),
-                        const Text(
+                        Text(
                           'Opções',
                           style: TextStyle(
                             color: _navy,
@@ -3757,13 +3761,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                 color: _gold.withValues(alpha: 0.22),
                                 borderRadius: BorderRadius.circular(16),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.how_to_vote_rounded,
                                 color: _navy,
                               ),
                             ),
                             const SizedBox(width: 10),
-                            const Expanded(
+                            Expanded(
                               child: Text(
                                 'Enquete do grupo',
                                 style: TextStyle(
@@ -3778,7 +3782,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         const SizedBox(height: 12),
                         Text(
                           poll.question,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _navy,
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
@@ -3803,7 +3807,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                               activeColor: _gold,
                               title: Text(
                                 option.text,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: _navy,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -3895,7 +3899,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           decoration: BoxDecoration(
             color: const Color(0xEAF7F4EC),
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFD4AF37), width: 0.8),
+            border: Border.all(color: _gold, width: 0.8),
             boxShadow: const [
               BoxShadow(
                 color: Color(0x26000000),
@@ -3908,8 +3912,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             child: Text(
               _messageDayLabel(date),
-              style: const TextStyle(
-                color: Color(0xFF1E3A5F),
+              style: TextStyle(
+                color: _navy,
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
@@ -4064,7 +4068,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const SizedBox(
+                        SizedBox(
                           width: 14,
                           height: 14,
                           child: CircularProgressIndicator(
@@ -4078,7 +4082,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                             text,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: _navy,
                               fontSize: 12,
                               fontWeight: FontWeight.w800,
@@ -4136,7 +4140,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ),
       child: Text(
         text,
-        style: const TextStyle(color: _goldSoft, fontWeight: FontWeight.w600),
+        style: TextStyle(color: _goldSoft, fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -4154,7 +4158,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               color: _gold,
               borderRadius: BorderRadius.circular(14),
             ),
-            child: const Text(
+            child: Text(
               'Mensagens não lidas',
               style: TextStyle(
                 color: _navy,
@@ -4180,13 +4184,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       margin: const EdgeInsets.fromLTRB(12, 6, 12, 4),
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B1E3D).withValues(alpha: 0.94),
+        color: _navyDark.withValues(alpha: 0.94),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _gold.withValues(alpha: 0.55)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.push_pin_rounded, color: _gold, size: 20),
+          Icon(Icons.push_pin_rounded, color: _gold, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -4196,7 +4200,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   _pinnedMessages.length == 1
                       ? 'Mensagem fixada'
                       : '${_pinnedMessages.length} mensagens fixadas',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _goldSoft,
                     fontSize: 11,
                     fontWeight: FontWeight.w900,
@@ -4230,12 +4234,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off_rounded, color: _navy, size: 38),
+            Icon(Icons.cloud_off_rounded, color: _navy, size: 38),
             const SizedBox(height: 12),
             Text(
               _messagesLoadError ?? 'Não foi possível carregar as mensagens.',
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 color: _navy,
                 fontWeight: FontWeight.w800,
               ),
@@ -4258,7 +4262,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   Widget _buildOlderMessagesControl() {
     if (_loadingOlderMessages) {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.symmetric(vertical: 14),
         child: Center(
           child: SizedBox(
@@ -4321,7 +4325,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 placeholder: (_, __) => Center(
                   child: Text(
                     initial,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _goldSoft,
                       fontWeight: FontWeight.w700,
                     ),
@@ -4330,7 +4334,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 errorWidget: (_, __, ___) => Center(
                   child: Text(
                     initial,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _goldSoft,
                       fontWeight: FontWeight.w700,
                     ),
@@ -4340,7 +4344,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             : Center(
                 child: Text(
                   initial,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _goldSoft,
                     fontWeight: FontWeight.w700,
                   ),
@@ -4365,7 +4369,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       decoration: BoxDecoration(
         color: _navy.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(12),
-        border: const Border(left: BorderSide(color: _gold, width: 4)),
+        border: Border(left: BorderSide(color: _gold, width: 4)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -4497,7 +4501,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
+              Text(
                 'Criar figurinha',
                 style: TextStyle(
                   color: _navy,
@@ -4761,9 +4765,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
-            side: const BorderSide(color: _gold, width: 1.2),
+            side: BorderSide(color: _gold, width: 1.2),
           ),
-          title: const Row(
+          title: Row(
             children: [
               Icon(Icons.delete_outline_rounded, color: _navy),
               SizedBox(width: 10),
@@ -5018,7 +5022,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Text(
                             'Figurinhas Olympus',
                             style: TextStyle(
@@ -5073,7 +5077,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     ),
                     if (_savedStickers.isNotEmpty) ...[
                       const SizedBox(height: 10),
-                      const Align(
+                      Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
                           'Minhas figurinhas',
@@ -5188,7 +5192,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         color: Colors.white.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(18),
       ),
-      child: const Column(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.broken_image_rounded, color: _navy),
@@ -5244,7 +5248,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               future: reactionsFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState != ConnectionState.done) {
-                  return const SizedBox(
+                  return SizedBox(
                     height: 180,
                     child: Center(
                       child: CircularProgressIndicator(color: _gold),
@@ -5275,7 +5279,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.fromLTRB(20, 4, 20, 12),
                       child: Text(
                         'Reações',
@@ -5318,13 +5322,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                               child: avatarUrl == null
                                   ? Text(
                                       initial,
-                                      style: const TextStyle(color: _gold),
+                                      style: TextStyle(color: _gold),
                                     )
                                   : null,
                             ),
                             title: Text(
                               name.isEmpty ? 'Usuário' : name,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _navy,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -5669,7 +5673,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     const readBlue = Color(0xFF1687E8);
 
     if (isGroup && msg.isReadByAll) {
-      return const SizedBox(
+      return SizedBox(
         width: 25,
         height: 18,
         child: Stack(
@@ -5714,7 +5718,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B1E3D).withValues(alpha: 0.92),
+        color: _navyDark.withValues(alpha: 0.92),
         border: Border(top: BorderSide(color: _gold.withValues(alpha: 0.18))),
       ),
       child: Row(
@@ -5805,7 +5809,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             ),
             title: Text(
               name,
-              style: const TextStyle(
+              style: TextStyle(
                 color: _navy,
                 fontWeight: FontWeight.w800,
               ),
@@ -5845,7 +5849,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   ),
                 ),
                 const SizedBox(width: 9),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Gravando áudio...',
                     style: TextStyle(color: _navy, fontWeight: FontWeight.w800),
@@ -5853,7 +5857,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 ),
                 Text(
                   _recordingTime(_recordingDuration),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _navy,
                     fontWeight: FontWeight.w900,
                   ),
@@ -5896,10 +5900,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: const Color(0xFF0B1E3D).withValues(alpha: 0.94),
+              color: _navyDark.withValues(alpha: 0.94),
               child: Row(
                 children: [
-                  const SizedBox(
+                  SizedBox(
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
@@ -5910,7 +5914,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   const SizedBox(width: 10),
                   Text(
                     _uploadStatus!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _goldSoft,
                       fontWeight: FontWeight.w700,
                     ),
@@ -5921,7 +5925,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           Container(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 12),
             decoration: BoxDecoration(
-              color: const Color(0xFF0B1E3D).withValues(alpha: 0.86),
+              color: _navyDark.withValues(alpha: 0.86),
               border: Border(
                 top: BorderSide(color: _gold.withValues(alpha: 0.18)),
               ),
@@ -5945,7 +5949,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       ),
                       IconButton(
                         onPressed: isBusy ? null : _showMediaSourceSheet,
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.attach_file_rounded,
                           color: _gold,
                         ),
@@ -5969,7 +5973,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                   );
                                   _messageFocusNode.requestFocus();
                                 },
-                          icon: const Icon(
+                          icon: Icon(
                             Icons.alternate_email_rounded,
                             color: _gold,
                           ),
@@ -6058,7 +6062,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
               ),
-              title: const Text(
+              title: Text(
                 'Configurações do chat',
                 style: TextStyle(color: _navy, fontWeight: FontWeight.w900),
               ),
@@ -6066,7 +6070,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Tamanho da fonte',
                     style: TextStyle(color: _navy, fontWeight: FontWeight.w800),
                   ),
@@ -6124,6 +6128,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final branding = OlympusBrandingController.instance.branding;
+    final brandPrimary = branding.primaryColor;
+    final brandDark = Color.lerp(brandPrimary, Colors.black, 0.55)!;
+    final onPrimary = Theme.of(context).colorScheme.onPrimary;
     final currentUserId = _chatService.currentUserId;
     final isGroup = _room.type == 'group';
     final canManageRoom =
@@ -6140,11 +6148,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
-      backgroundColor: _navy,
+      backgroundColor: brandPrimary,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: brandPrimary,
         elevation: 0,
-        foregroundColor: Colors.white,
+        foregroundColor: onPrimary,
         title: StreamBuilder<List<Map<String, dynamic>>>(
           stream: _chatService.streamUsersPresence(otherParticipantIds),
           builder: (context, presenceSnapshot) {
@@ -6173,7 +6181,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           ? Text(
                               (title.trim().isNotEmpty ? title.trim()[0] : 'C')
                                   .toUpperCase(),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _goldSoft,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -6199,7 +6207,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                               subtitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _goldSoft,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -6226,17 +6234,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           IconButton(
             onPressed: _showParticipantsDialog,
             tooltip: 'Participantes',
-            icon: const Icon(Icons.group, color: _gold),
+            icon: Icon(Icons.group, color: _gold),
           ),
           if (isGroup && _canCreatePoll)
             IconButton(
               onPressed: _showCreatePollDialog,
               tooltip: 'Criar enquete',
-              icon: const Icon(Icons.poll_rounded, color: _gold),
+              icon: Icon(Icons.poll_rounded, color: _gold),
             ),
           PopupMenuButton<String>(
             tooltip: 'Mais opções',
-            icon: const Icon(Icons.more_vert_rounded, color: _gold),
+            icon: Icon(Icons.more_vert_rounded, color: _gold),
             onSelected: (value) {
               if (value == 'edit_my_name') {
                 _showEditMyChatNameDialog();
@@ -6253,7 +6261,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'edit_my_name',
                 child: Row(
                   children: [
@@ -6263,7 +6271,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   ],
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'chat_settings',
                 child: Row(
                   children: [
@@ -6274,7 +6282,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 ),
               ),
               if (isGroup && (isRoomAdmin || canManageRoom))
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'edit_group',
                   child: Row(
                     children: [
@@ -6344,11 +6352,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         children: [
           Positioned.fill(
             child: DecoratedBox(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [_navy, _navyDark],
+                  colors: [brandPrimary, brandDark],
                 ),
               ),
             ),
@@ -6362,11 +6370,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             ),
           ),
           Positioned.fill(
-            child: Container(color: _navyDark.withValues(alpha: 0.58)),
+            child: Container(color: brandDark.withValues(alpha: 0.58)),
           ),
           Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(painter: _ChatLensPainter(gold: _gold)),
+              child: CustomPaint(
+                painter: _ChatLensPainter(
+                  gold: _gold,
+                  baseColor: _branding.primaryColor,
+                ),
+              ),
             ),
           ),
           Column(
@@ -6393,12 +6406,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       hintStyle: TextStyle(
                         color: Colors.white.withValues(alpha: 0.58),
                       ),
-                      prefixIcon: const Icon(
+                      prefixIcon: Icon(
                         Icons.search_rounded,
                         color: _gold,
                       ),
                       suffixIcon: _searchingServer
-                          ? const Padding(
+                          ? Padding(
                               padding: EdgeInsets.all(14),
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
@@ -6431,7 +6444,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
-                        borderSide: const BorderSide(color: _gold),
+                        borderSide: BorderSide(color: _gold),
                       ),
                     ),
                   ),
@@ -6459,7 +6472,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           }
                           if (!snapshot.hasData &&
                               _lastStableMessages.isEmpty) {
-                            return const Center(
+                            return Center(
                               child: CircularProgressIndicator(color: _gold),
                             );
                           }
@@ -6693,7 +6706,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                 ),
                               ),
                               if (!_initialMessagesPositioned)
-                                const Positioned.fill(
+                                Positioned.fill(
                                   child: Center(
                                     child: CircularProgressIndicator(
                                       color: _gold,
@@ -6737,13 +6750,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.keyboard_double_arrow_down_rounded,
                                     color: _navy,
                                     size: 19,
                                   ),
                                   const SizedBox(width: 5),
-                                  const Text(
+                                  Text(
                                     'Mais recentes',
                                     style: TextStyle(
                                       color: _navy,
@@ -6761,7 +6774,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                         horizontal: 6,
                                         vertical: 2,
                                       ),
-                                      decoration: const BoxDecoration(
+                                      decoration: BoxDecoration(
                                         color: _navy,
                                         borderRadius: BorderRadius.all(
                                           Radius.circular(10),
@@ -6807,10 +6820,12 @@ class _PollVotesDialog extends StatelessWidget {
   final ChatPoll poll;
   final List<Map<String, dynamic>> votes;
 
-  static const Color _navy = Color(0xFF0E2A57);
-  static const Color _navyLight = Color(0xFF244A79);
-  static const Color _gold = Color(0xFFD4B06A);
-  static const Color _cream = Color(0xFFF7F4EC);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get _navy => _branding.primaryColor;
+  Color get _navyLight =>
+      Color.lerp(_branding.primaryColor, _branding.surfaceColor, 0.20)!;
+  Color get _gold => _branding.secondaryColor;
+  Color get _cream => _branding.surfaceColor;
 
   Color _optionColor(String text, int index) {
     final normalized = text.trim().toLowerCase();
@@ -6818,11 +6833,11 @@ class _PollVotesDialog extends StatelessWidget {
     if (normalized.startsWith('não') || normalized.startsWith('nao')) {
       return const Color(0xFFB45555);
     }
-    const colors = [
-      Color(0xFF2C5F8D),
-      Color(0xFF8A6B24),
-      Color(0xFF6B5798),
-      Color(0xFF397A80),
+    final colors = [
+      _navy,
+      _gold,
+      Color.lerp(_navy, _gold, 0.35)!,
+      Color.lerp(_navy, _gold, 0.70)!,
     ];
     return colors[index % colors.length];
   }
@@ -6972,7 +6987,7 @@ class _PollVotesDialog extends StatelessWidget {
                         Expanded(
                           child: Text(
                             name,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: _navy,
                               fontSize: 14,
                               fontWeight: FontWeight.w800,
@@ -7040,7 +7055,7 @@ class _PollVotesDialog extends StatelessWidget {
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(20, 18, 12, 18),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   gradient: LinearGradient(colors: [_navy, _navyLight]),
                 ),
                 child: Row(
@@ -7053,7 +7068,7 @@ class _PollVotesDialog extends StatelessWidget {
                         color: _gold.withValues(alpha: 0.20),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.how_to_vote_rounded,
                         color: _gold,
                       ),
@@ -7099,13 +7114,13 @@ class _PollVotesDialog extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
                 child: Row(
                   children: [
-                    const Icon(Icons.groups_rounded, color: _gold, size: 21),
+                    Icon(Icons.groups_rounded, color: _gold, size: 21),
                     const SizedBox(width: 8),
                     Text(
                       votes.length == 1
                           ? '1 participante votou'
                           : '${votes.length} participantes votaram',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _navy,
                         fontWeight: FontWeight.w900,
                       ),
@@ -7126,7 +7141,7 @@ class _PollVotesDialog extends StatelessWidget {
                               color: _navy.withValues(alpha: 0.30),
                             ),
                             const SizedBox(height: 12),
-                            const Text(
+                            Text(
                               'Nenhum voto registrado ainda.',
                               textAlign: TextAlign.center,
                               style: TextStyle(
@@ -7235,10 +7250,11 @@ class _VideoStickerTrimDialog extends StatefulWidget {
 }
 
 class _VideoStickerTrimDialogState extends State<_VideoStickerTrimDialog> {
-  static const Color _navy = Color(0xFF0E2A57);
-  static const Color _navyDark = Color(0xFF091428);
-  static const Color _gold = Color(0xFFD4B06A);
-  static const Color _goldSoft = Color(0xFFE8D19A);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get _navy => _branding.primaryColor;
+  Color get _navyDark => _branding.premiumCardColor;
+  Color get _gold => _branding.secondaryColor;
+  Color get _goldSoft => Color.lerp(_gold, _branding.surfaceColor, 0.35)!;
 
   late final VideoPlayerController _controller;
   RangeValues _range = const RangeValues(0, 1);
@@ -7371,7 +7387,7 @@ class _VideoStickerTrimDialogState extends State<_VideoStickerTrimDialog> {
           maxHeight: MediaQuery.sizeOf(context).height - 40,
         ),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [_navy, _navyDark],
@@ -7405,14 +7421,14 @@ class _VideoStickerTrimDialogState extends State<_VideoStickerTrimDialog> {
                           color: _gold.withValues(alpha: 0.55),
                         ),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.content_cut_rounded,
                         color: _goldSoft,
                         size: 23,
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -7456,7 +7472,7 @@ class _VideoStickerTrimDialogState extends State<_VideoStickerTrimDialog> {
                       color: Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Column(
+                    child: Column(
                       children: [
                         Icon(
                           Icons.video_file_outlined,
@@ -7476,7 +7492,7 @@ class _VideoStickerTrimDialogState extends State<_VideoStickerTrimDialog> {
                     ),
                   )
                 else if (!ready)
-                  const SizedBox(
+                  SizedBox(
                     height: 280,
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -7553,7 +7569,7 @@ class _VideoStickerTrimDialogState extends State<_VideoStickerTrimDialog> {
                               ),
                               child: Text(
                                 '${selectedDuration.toStringAsFixed(1)} s',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: _goldSoft,
                                   fontWeight: FontWeight.w900,
                                 ),
@@ -7576,7 +7592,7 @@ class _VideoStickerTrimDialogState extends State<_VideoStickerTrimDialog> {
                       thumbColor: _goldSoft,
                       overlayColor: _gold.withValues(alpha: 0.18),
                       valueIndicatorColor: _gold,
-                      valueIndicatorTextStyle: const TextStyle(
+                      valueIndicatorTextStyle: TextStyle(
                         color: _navyDark,
                         fontWeight: FontWeight.w900,
                       ),
@@ -7628,7 +7644,7 @@ class _VideoStickerTrimDialogState extends State<_VideoStickerTrimDialog> {
                       color: Colors.white.withValues(alpha: 0.06),
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
                         Icon(
                           Icons.volume_off_rounded,
@@ -8217,8 +8233,9 @@ class _ChatVideoPlayerState extends State<_ChatVideoPlayer> {
 
 class _ChatLensPainter extends CustomPainter {
   final Color gold;
+  final Color baseColor;
 
-  const _ChatLensPainter({required this.gold});
+  const _ChatLensPainter({required this.gold, required this.baseColor});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -8234,10 +8251,14 @@ class _ChatLensPainter extends CustomPainter {
     );
 
     final Paint pillPaint = Paint()
-      ..shader = const LinearGradient(
+      ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [Color(0xFF183A72), Color(0xFF264A7A), Color(0xFF16325F)],
+        colors: [
+          Color.lerp(baseColor, Colors.black, 0.18)!,
+          Color.lerp(baseColor, Colors.white, 0.12)!,
+          Color.lerp(baseColor, Colors.black, 0.28)!,
+        ],
       ).createShader(pillRect);
 
     canvas.drawRRect(pill, pillPaint);
@@ -8334,5 +8355,6 @@ class _ChatLensPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _ChatLensPainter oldDelegate) =>
+      oldDelegate.gold != gold || oldDelegate.baseColor != baseColor;
 }

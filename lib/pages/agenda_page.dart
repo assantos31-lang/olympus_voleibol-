@@ -9,6 +9,7 @@ import '../pages/add_event_page.dart';
 import '../services/permission_service.dart'; // ✅ NOVO
 import '../services/role_service.dart';
 import '../services/olympus_memory_cache.dart';
+import '../theme/olympus_theme.dart';
 import '../widgets/event_address_link.dart';
 
 class AgendaPage extends StatefulWidget {
@@ -60,9 +61,6 @@ class _AgendaPageState extends State<AgendaPage> {
   bool _mostrarEventosPassados = false;
   Set<String> _placaresExpandidos = {}; // IDs dos placares expandidos
   // ✅ Cores do logo Olympus Voleibol
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
 
   @override
   void initState() {
@@ -731,7 +729,7 @@ class _AgendaPageState extends State<AgendaPage> {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    const Text(
+                    Text(
                       'Planejamento do treino',
                       style: TextStyle(
                         fontSize: 20,
@@ -868,7 +866,7 @@ class _AgendaPageState extends State<AgendaPage> {
                           ),
                         ),
                         const SizedBox(height: 18),
-                        const Text(
+                        Text(
                           'Planejamento do treino',
                           style: TextStyle(
                             fontSize: 20,
@@ -891,7 +889,7 @@ class _AgendaPageState extends State<AgendaPage> {
                             isExpanded: true,
                             decoration: InputDecoration(
                               labelText: 'Treinador',
-                              prefixIcon: const Icon(
+                              prefixIcon: Icon(
                                 Icons.sports_rounded,
                                 color: olympusGold,
                               ),
@@ -900,7 +898,7 @@ class _AgendaPageState extends State<AgendaPage> {
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(
+                                borderSide: BorderSide(
                                   color: olympusGold,
                                   width: 1.5,
                                 ),
@@ -946,7 +944,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                   coachName.isNotEmpty
                                       ? coachName.characters.first.toUpperCase()
                                       : 'T',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: olympusBlue,
                                     fontWeight: FontWeight.w800,
                                   ),
@@ -959,7 +957,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                   children: [
                                     Text(
                                       coachName,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: olympusBlue,
                                         fontWeight: FontWeight.w800,
                                       ),
@@ -1067,7 +1065,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                             ),
                                             child: Text(
                                               '${index + 1}',
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontWeight: FontWeight.w800,
                                                 color: olympusBlue,
                                               ),
@@ -1077,7 +1075,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                           Expanded(
                                             child: Text(
                                               titulo,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontWeight: FontWeight.w800,
                                                 fontSize: 14,
                                                 color: olympusBlue,
@@ -1791,7 +1789,7 @@ class _AgendaPageState extends State<AgendaPage> {
                           children: [
                             Text(
                               'Convocados: ${evento['event_name']}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
                                 color: olympusBlue,
@@ -2069,7 +2067,7 @@ class _AgendaPageState extends State<AgendaPage> {
                           children: [
                             Text(
                               'Check-in: ${evento['event_name']}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
                                 color: olympusBlue,
@@ -2412,7 +2410,7 @@ class _AgendaPageState extends State<AgendaPage> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: olympusGold, width: 2),
+                  borderSide: BorderSide(color: olympusGold, width: 2),
                 ),
                 disabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -2492,7 +2490,7 @@ class _AgendaPageState extends State<AgendaPage> {
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.fromLTRB(20, 20, 12, 18),
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [olympusBlue, olympusLightBlue],
                             begin: Alignment.topLeft,
@@ -2510,7 +2508,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                   color: olympusGold.withOpacity(0.45),
                                 ),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.manage_accounts_outlined,
                                 color: olympusGold,
                                 size: 28,
@@ -2569,7 +2567,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                   decoration: olympusInputDecoration(
                                     'Selecione o participante',
                                   ),
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.keyboard_arrow_down_rounded,
                                     color: olympusGold,
                                   ),
@@ -2703,7 +2701,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                   decoration: olympusInputDecoration(
                                     'Escolha o novo status',
                                   ),
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.keyboard_arrow_down_rounded,
                                     color: olympusGold,
                                   ),
@@ -2793,7 +2791,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Icon(
+                                    Icon(
                                       Icons.info_outline,
                                       color: olympusBlue,
                                       size: 20,
@@ -2952,7 +2950,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                   ),
                                 ),
                                 icon: saving
-                                    ? const SizedBox(
+                                    ? SizedBox(
                                         width: 16,
                                         height: 16,
                                         child: CircularProgressIndicator(
@@ -3077,7 +3075,7 @@ class _AgendaPageState extends State<AgendaPage> {
       ThemeData olympusPickerTheme(BuildContext pickerContext) {
         final base = Theme.of(pickerContext);
         return base.copyWith(
-          colorScheme: const ColorScheme.light(
+          colorScheme: ColorScheme.light(
             primary: olympusBlue,
             onPrimary: Colors.white,
             secondary: olympusGold,
@@ -3126,7 +3124,7 @@ class _AgendaPageState extends State<AgendaPage> {
               return olympusBlue;
             }),
             entryModeIconColor: olympusBlue,
-            helpTextStyle: const TextStyle(
+            helpTextStyle: TextStyle(
               color: olympusBlue,
               fontWeight: FontWeight.w700,
             ),
@@ -3182,7 +3180,7 @@ class _AgendaPageState extends State<AgendaPage> {
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.fromLTRB(20, 18, 12, 18),
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [olympusBlue, olympusLightBlue],
                           begin: Alignment.topLeft,
@@ -3201,7 +3199,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                 color: olympusGold.withOpacity(0.55),
                               ),
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.more_time_outlined,
                               color: olympusGold,
                               size: 28,
@@ -3274,7 +3272,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                 children: [
                                   Row(
                                     children: [
-                                      const Icon(
+                                      Icon(
                                         Icons.person_outline,
                                         color: olympusGold,
                                         size: 18,
@@ -3302,7 +3300,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                       ),
                                       filled: true,
                                       fillColor: Colors.white,
-                                      prefixIcon: const Icon(
+                                      prefixIcon: Icon(
                                         Icons.hourglass_empty_rounded,
                                         color: olympusGold,
                                       ),
@@ -3314,7 +3312,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                       ),
                                       focusedBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(14),
-                                        borderSide: const BorderSide(
+                                        borderSide: BorderSide(
                                           color: olympusGold,
                                           width: 1.5,
                                         ),
@@ -3325,7 +3323,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                         vertical: 14,
                                       ),
                                     ),
-                                    icon: const Icon(
+                                    icon: Icon(
                                       Icons.keyboard_arrow_down_rounded,
                                       color: olympusGold,
                                     ),
@@ -3370,7 +3368,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                     ),
                                     child: Row(
                                       children: [
-                                        const Icon(
+                                        Icon(
                                           Icons.verified_user_outlined,
                                           color: olympusBlue,
                                           size: 18,
@@ -3450,7 +3448,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                         children: [
                                           Row(
                                             children: [
-                                              const Icon(
+                                              Icon(
                                                 Icons.calendar_month_outlined,
                                                 color: olympusBlue,
                                                 size: 18,
@@ -3473,7 +3471,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                               'dd/MM/yyyy',
                                               'pt_BR',
                                             ).format(selectedDate),
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               color: olympusBlue,
                                               fontWeight: FontWeight.w800,
                                               fontSize: 16,
@@ -3530,7 +3528,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                         children: [
                                           Row(
                                             children: [
-                                              const Icon(
+                                              Icon(
                                                 Icons.access_time_rounded,
                                                 color: olympusBlue,
                                                 size: 18,
@@ -3550,7 +3548,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                           const SizedBox(height: 8),
                                           Text(
                                             selectedTime.format(context),
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               color: olympusBlue,
                                               fontWeight: FontWeight.w800,
                                               fontSize: 16,
@@ -3574,7 +3572,7 @@ class _AgendaPageState extends State<AgendaPage> {
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.info_outline,
                                     color: olympusBlue,
                                     size: 20,
@@ -3704,7 +3702,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                 ),
                               ),
                               icon: saving
-                                  ? const SizedBox(
+                                  ? SizedBox(
                                       width: 16,
                                       height: 16,
                                       child: CircularProgressIndicator(
@@ -4002,7 +4000,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                             borderRadius: BorderRadius.circular(
                                               12,
                                             ),
-                                            borderSide: const BorderSide(
+                                            borderSide: BorderSide(
                                               color: olympusGold,
                                               width: 2,
                                             ),
@@ -4062,7 +4060,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                             borderRadius: BorderRadius.circular(
                                               12,
                                             ),
-                                            borderSide: const BorderSide(
+                                            borderSide: BorderSide(
                                               color: olympusGold,
                                               width: 2,
                                             ),
@@ -4338,6 +4336,9 @@ class _AgendaPageState extends State<AgendaPage> {
 
   @override
   Widget build(BuildContext context) {
+    final branding = OlympusBrandingController.instance.branding;
+    final primary = branding.primaryColor;
+    final onPrimary = Theme.of(context).colorScheme.onPrimary;
     // ✅ NOVO: Verifica permissão antes de mostrar a tela
     if (_checkingPermission) {
       return Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -4347,8 +4348,8 @@ class _AgendaPageState extends State<AgendaPage> {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Agenda'),
-          backgroundColor: olympusBlue,
-          foregroundColor: Colors.white,
+          backgroundColor: primary,
+          foregroundColor: onPrimary,
         ),
         body: Center(
           child: Column(
@@ -4376,8 +4377,8 @@ class _AgendaPageState extends State<AgendaPage> {
                   Navigator.of(context).pop();
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: olympusBlue,
-                  foregroundColor: Colors.white,
+                  backgroundColor: primary,
+                  foregroundColor: onPrimary,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 32,
                     vertical: 12,
@@ -4397,8 +4398,9 @@ class _AgendaPageState extends State<AgendaPage> {
           'Minha Agenda',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: olympusBlue,
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: primary,
+        foregroundColor: onPrimary,
+        iconTheme: IconThemeData(color: onPrimary),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -4413,9 +4415,12 @@ class _AgendaPageState extends State<AgendaPage> {
           // ✅ FILTROS MODERNOS COM CORES OLYMPUS
           Container(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [olympusBlue, olympusLightBlue],
+                colors: [
+                  primary,
+                  Color.lerp(primary, branding.backgroundColor, 0.18)!,
+                ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
               ),
@@ -4515,7 +4520,7 @@ class _AgendaPageState extends State<AgendaPage> {
             ),
           ),
           if (_loadingEvents && _eventos.isNotEmpty)
-            const LinearProgressIndicator(
+            LinearProgressIndicator(
               minHeight: 3,
               color: olympusGold,
               backgroundColor: Color(0xFFE8EEF5),
@@ -5077,7 +5082,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                         ],
                                         Row(
                                           children: [
-                                            const Icon(
+                                            Icon(
                                               Icons.people_outline,
                                               size: 16,
                                               color: olympusGold,
@@ -5085,7 +5090,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                             const SizedBox(width: 8),
                                             Text(
                                               '$totalConvocados atleta${totalConvocados == 1 ? '' : 's'} convocado${totalConvocados == 1 ? '' : 's'}',
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 color: olympusBlue,
                                                 fontWeight: FontWeight.w600,
                                                 fontSize: 14,
@@ -5098,7 +5103,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                           const SizedBox(height: 4),
                                           Row(
                                             children: [
-                                              const Icon(
+                                              Icon(
                                                 Icons.sports_rounded,
                                                 size: 16,
                                                 color: olympusGold,
@@ -5106,7 +5111,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                               const SizedBox(width: 8),
                                               Text(
                                                 '${quantidades['technicians']} treinador${quantidades['technicians'] == 1 ? '' : 'es'} vinculado${quantidades['technicians'] == 1 ? '' : 's'} • sem check-in',
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   color: olympusGold,
                                                   fontWeight: FontWeight.w700,
                                                   fontSize: 12,
@@ -5503,7 +5508,7 @@ class _AgendaPageState extends State<AgendaPage> {
                     const SizedBox(height: 24),
                     Text(
                       evento['event_name'] ?? 'Detalhes do Evento',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
                         color: olympusBlue,
@@ -5541,7 +5546,7 @@ class _AgendaPageState extends State<AgendaPage> {
                     ],
                     if (evento['street'] != null) ...[
                       const Divider(),
-                      const Text(
+                      Text(
                         'Localização',
                         style: TextStyle(
                           fontSize: 16,
@@ -5554,7 +5559,7 @@ class _AgendaPageState extends State<AgendaPage> {
                         event: evento,
                         address: EventMapLauncher.buildAddress(evento),
                         iconColor: olympusGold,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
                           color: olympusBlue,
@@ -5616,7 +5621,7 @@ class _AgendaPageState extends State<AgendaPage> {
                 ),
                 Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                     color: olympusBlue,
@@ -5679,7 +5684,7 @@ class _AgendaPageState extends State<AgendaPage> {
                 ),
                 child: Text(
                   count.toString(),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontSize: 10,
                     fontWeight: FontWeight.w900,

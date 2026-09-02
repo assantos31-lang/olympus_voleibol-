@@ -16,9 +16,6 @@ class CoachSmartDashboardPage extends StatefulWidget {
 class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
-  static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusPurple = Color(0xFF7C3AED);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusText = Color(0xFF17324D);
@@ -847,7 +844,9 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
             duration: const Duration(milliseconds: 180),
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
             decoration: BoxDecoration(
-              color: selected ? olympusGold : const Color(0xFF294F76),
+              color: selected
+                  ? olympusGold
+                  : Color.lerp(olympusBlue, Colors.white, 0.14)!,
               borderRadius: BorderRadius.circular(999),
               border: Border.all(
                 color: selected
@@ -949,11 +948,11 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           colors: [
-            Color(0xFF0D223B),
-            Color(0xFF123861),
-            Color(0xFF235E94),
+            Color.lerp(olympusBlue, Colors.black, 0.28)!,
+            olympusBlue,
+            Color.lerp(olympusBlue, Colors.white, 0.16)!,
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -991,7 +990,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
             children: [
               Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.auto_graph_rounded,
                     color: olympusGold,
                     size: 27,
@@ -1087,7 +1086,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
                 value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   color: olympusBlue,
                   fontSize: 22,
                   fontWeight: FontWeight.w900,
@@ -1216,7 +1215,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(
+            style: TextStyle(
               color: olympusBlue,
               fontSize: 18,
               fontWeight: FontWeight.w900,
@@ -1299,7 +1298,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
           Expanded(
             child: Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 color: olympusBlue,
                 fontWeight: FontWeight.w900,
               ),
@@ -1452,7 +1451,7 @@ class _CoachSmartDashboardPageState extends State<CoachSmartDashboardPage> {
                   Expanded(
                     child: Text(
                       name,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: olympusBlue,
                         fontWeight: FontWeight.w900,
                       ),

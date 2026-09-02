@@ -85,9 +85,6 @@ class CoachAthleteEvaluationTeamSelectPage extends StatefulWidget {
 
 class _CoachAthleteEvaluationTeamSelectPageState
     extends State<CoachAthleteEvaluationTeamSelectPage> {
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
-  static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusPurple = Color(0xFF7C3AED);
   static const Color olympusBg = Color(0xFFF4F7FB);
 
@@ -187,11 +184,11 @@ class _CoachAthleteEvaluationTeamSelectPageState
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           colors: [
-            Color(0xFF071A30),
-            Color(0xFF123861),
-            Color(0xFF2C5F8D),
+            Color.lerp(olympusBlue, Colors.black, 0.36)!,
+            Color.lerp(olympusBlue, Colors.black, 0.08)!,
+            Color.lerp(olympusBlue, Colors.white, 0.18)!,
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -274,7 +271,7 @@ class _CoachAthleteEvaluationTeamSelectPageState
                 Expanded(
                   child: Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: olympusBlue,
                       fontSize: 19,
                       fontWeight: FontWeight.w900,
@@ -300,8 +297,8 @@ class _CoachAthleteEvaluationTeamSelectPageState
       backgroundColor: olympusBg,
       appBar: AppBar(
         title: const Text('Avaliação de Atletas'),
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
       ),
       body: Stack(
         children: [
@@ -356,8 +353,6 @@ class _CoachAthleteEvaluationsPageState
   final SupabaseClient _supabase = Supabase.instance.client;
   final PermissionService _permissionService = PermissionService();
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusPurple = Color(0xFF7C3AED);
   static const Color olympusSuccess = Color(0xFF16A34A);
   static const Color olympusWarning = Color(0xFFF59E0B);
@@ -725,7 +720,7 @@ events!convocations_event_id_fkey (
           color: Colors.white.withOpacity(0.96),
           borderRadius: BorderRadius.circular(18),
         ),
-        child: const Row(
+        child: Row(
           children: [
             Icon(Icons.event_busy_outlined, color: olympusBlue),
             SizedBox(width: 10),
@@ -810,12 +805,12 @@ events!convocations_event_id_fkey (
       ),
       child: Row(
         children: [
-          const Icon(Icons.notifications_active_outlined, color: olympusBlue),
+          Icon(Icons.notifications_active_outlined, color: olympusBlue),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               'Fechamento mensal: $_pendingMonthlyCount atleta(s) ainda sem avaliação completa.',
-              style: const TextStyle(
+              style: TextStyle(
                 color: olympusBlue,
                 fontSize: 13,
                 fontWeight: FontWeight.w900,
@@ -934,7 +929,7 @@ events!convocations_event_id_fkey (
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(left: 4, bottom: 10),
             child: Text(
               'Avaliação completa',
@@ -969,8 +964,8 @@ events!convocations_event_id_fkey (
     return Scaffold(
       appBar: AppBar(
         title: const Text('Avaliação de Atletas'),
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         actions: [
           IconButton(
             onPressed: _carregarAtletasVisiveis,
@@ -1069,8 +1064,6 @@ class _AthleteEvaluationCard extends StatelessWidget {
   final VoidCallback onCompleteTap;
   final VoidCallback onViewTap;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusPurple = Color(0xFF7C3AED);
   static const Color olympusSuccess = Color(0xFF16A34A);
   static const Color olympusWarning = Color(0xFFF59E0B);
@@ -1405,7 +1398,6 @@ class AthleteEvaluationFormPage extends StatefulWidget {
 }
 
 class _AthleteEvaluationFormPageState extends State<AthleteEvaluationFormPage> {
-  static const Color olympusBlue = Color(0xFF1E3A5F);
 
   final TextEditingController _focusController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
@@ -1452,8 +1444,8 @@ class _AthleteEvaluationFormPageState extends State<AthleteEvaluationFormPage> {
       backgroundColor: const Color(0xFFF4F7FB),
       appBar: AppBar(
         title: Text('Avaliação rápida - ${widget.athleteName}'),
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -1498,7 +1490,7 @@ class _AthleteEvaluationFormPageState extends State<AthleteEvaluationFormPage> {
               value: _sendToAthlete,
               contentPadding: EdgeInsets.zero,
               activeColor: olympusBlue,
-              secondary: const Icon(
+              secondary: Icon(
                 Icons.send_outlined,
                 color: olympusBlue,
               ),

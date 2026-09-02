@@ -27,8 +27,6 @@ class AthleteCoachEvaluationPage extends StatefulWidget {
 
 class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
     with WidgetsBindingObserver {
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusMuted = Color(0xFF53657B);
   static const Color olympusBorder = Color(0xFFE4EDF5);
@@ -540,7 +538,7 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontWeight: FontWeight.w900,
                   ),
@@ -603,7 +601,7 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: olympusBlue),
+            borderSide: BorderSide(color: olympusBlue),
           ),
         ),
       ),
@@ -639,8 +637,10 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
                         const Color(0xFF17283D).withOpacity(0.72),
                       ]
                     : [
-                        const Color(0xFF163B60).withOpacity(0.96),
-                        const Color(0xFF0C2743).withOpacity(0.94),
+                        Color.lerp(olympusBlue, Colors.white, 0.10)!
+                            .withOpacity(0.96),
+                        Color.lerp(olympusBlue, Colors.black, 0.30)!
+                            .withOpacity(0.94),
                       ],
               ),
               borderRadius: BorderRadius.circular(20),
@@ -763,11 +763,12 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF081D33).withOpacity(0.86),
+            color: Color.lerp(olympusBlue, Colors.black, 0.34)!
+                .withOpacity(0.86),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: olympusGold.withOpacity(0.28)),
           ),
-          child: const Row(
+          child: Row(
             children: [
               CircleAvatar(
                 radius: 23,
@@ -869,13 +870,14 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 34),
             decoration: BoxDecoration(
-              color: const Color(0xFF102D4F).withOpacity(0.92),
+              color: Color.lerp(olympusBlue, Colors.black, 0.28)!
+                  .withOpacity(0.92),
               borderRadius: BorderRadius.circular(22),
               border: Border.all(color: Colors.white.withOpacity(0.13)),
             ),
-            child: const Column(
+            child: Column(
               children: [
-                CircleAvatar(
+                const CircleAvatar(
                   radius: 28,
                   backgroundColor: Color(0x3364FFDA),
                   child: Icon(
@@ -884,8 +886,8 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
                     size: 28,
                   ),
                 ),
-                SizedBox(height: 14),
-                Text(
+                const SizedBox(height: 14),
+                const Text(
                   'Nenhum treino para avaliar',
                   style: TextStyle(
                     color: Colors.white,
@@ -893,8 +895,8 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                SizedBox(height: 6),
-                Text(
+                const SizedBox(height: 6),
+                const Text(
                   'Quando houver um treino com check-in neste mês, ele aparecerá aqui.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white60, height: 1.35),
@@ -910,7 +912,7 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
         const SizedBox(height: 14),
-        const Text(
+        Text(
           'Avaliar treino',
           style: TextStyle(
             color: olympusBlue,
@@ -973,7 +975,7 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: olympusGold.withOpacity(0.28)),
             ),
-            child: const Text(
+            child: Text(
               'Nenhum treinador foi encontrado entre os convocados deste treino.',
               style: TextStyle(
                 color: olympusBlue,
@@ -1017,7 +1019,7 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
         SwitchListTile(
           value: _anonymous,
           onChanged: (value) => setState(() => _anonymous = value),
-          title: const Text(
+          title: Text(
             'Enviar como anônimo para o treinador',
             style: TextStyle(color: olympusBlue, fontWeight: FontWeight.w800),
           ),
@@ -1053,7 +1055,7 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
         const SizedBox(height: 14),
-        const Text(
+        Text(
           'Avaliação mensal',
           style: TextStyle(
             color: olympusBlue,
@@ -1162,7 +1164,7 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
         SwitchListTile(
           value: _monthlyAnonymous,
           onChanged: (value) => setState(() => _monthlyAnonymous = value),
-          title: const Text(
+          title: Text(
             'Enviar como anônimo para o treinador',
             style: TextStyle(color: olympusBlue, fontWeight: FontWeight.w800),
           ),
@@ -1283,7 +1285,8 @@ class _AthleteCoachEvaluationPageState extends State<AthleteCoachEvaluationPage>
                     color: _mode == _CoachEvaluationMode.menu ||
                             (_mode == _CoachEvaluationMode.training &&
                                 _events.isEmpty)
-                        ? const Color(0xFF071A30).withOpacity(0.78)
+                        ? Color.lerp(olympusBlue, Colors.black, 0.36)!
+                            .withOpacity(0.78)
                         : Colors.white.withOpacity(0.95),
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(color: Colors.white.withOpacity(0.45)),

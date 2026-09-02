@@ -8,6 +8,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/financial_record_model.dart';
 import '../services/financial_access_service.dart';
 import '../services/olympus_memory_cache.dart';
+import '../services/organization_context_service.dart';
+import '../theme/olympus_theme.dart';
 
 class AdminFinancialPage extends StatefulWidget {
   const AdminFinancialPage({super.key});
@@ -17,6 +19,7 @@ class AdminFinancialPage extends StatefulWidget {
 }
 
 class _AdminFinancialPageState extends State<AdminFinancialPage> {
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
   final _supabase = Supabase.instance.client;
   final FinancialAccessService _financialAccessService =
       FinancialAccessService();
@@ -388,7 +391,7 @@ class _AdminFinancialPageState extends State<AdminFinancialPage> {
 
 Tudo bem?
 
-Identificamos uma cobranca em aberto no Olympus Voleibol:
+Identificamos uma cobranca em aberto no ${OrganizationContextService.instance.currentName}:
 
 Tipo: ${record.typeLabel}
 Valor: R\$ ${record.value.toStringAsFixed(2).replaceAll('.', ',')}
@@ -1155,12 +1158,12 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
         labelText: label,
         hintText: hintText,
         prefixText: prefixText,
-        labelStyle: const TextStyle(
+        labelStyle: TextStyle(
           fontSize: 11,
-          color: Color(0xFF2C3E5A),
+          color: olympusBlue,
           fontWeight: FontWeight.w700,
         ),
-        prefixIcon: Icon(icon, size: 18, color: const Color(0xFF2C3E5A)),
+        prefixIcon: Icon(icon, size: 18, color: olympusBlue),
         filled: true,
         fillColor: const Color(0xFFF6F8FB),
         contentPadding: const EdgeInsets.symmetric(
@@ -1462,8 +1465,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                             icon: const Icon(Icons.close_rounded, size: 18),
                             label: const Text('Cancelar'),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF2C3E5A),
-                              side: const BorderSide(color: Color(0xFF2C3E5A)),
+                              foregroundColor: olympusBlue,
+                              side: BorderSide(color: olympusBlue),
                               padding: const EdgeInsets.symmetric(vertical: 13),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
@@ -1519,7 +1522,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                             icon: const Icon(Icons.save_rounded, size: 18),
                             label: const Text('Salvar'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2C3E5A),
+                              backgroundColor: olympusBlue,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 13),
                               shape: RoundedRectangleBorder(
@@ -1566,7 +1569,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       case 'other':
         return const Color(0xFFfa709a);
       default:
-        return const Color(0xFF2C3E5A);
+        return olympusBlue;
     }
   }
 
@@ -1738,10 +1741,10 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: CircleAvatar(
-                      backgroundColor: const Color(0xFF2C3E5A).withOpacity(0.1),
-                      child: const Icon(
+                      backgroundColor: olympusBlue.withOpacity(0.1),
+                      child: Icon(
                         Icons.groups_rounded,
-                        color: Color(0xFF2C3E5A),
+                        color: olympusBlue,
                       ),
                     ),
                     title: const Text(
@@ -4879,21 +4882,23 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
       required IconData icon,
       required bool selected,
       required VoidCallback onTap,
-      Color color = const Color(0xFF2C3E5A),
+      Color? color,
     }) {
+      final chipColor = color ?? olympusBlue;
       return FilterChip(
         selected: selected,
         label: Text(label),
-        avatar: Icon(icon, size: 16, color: selected ? Colors.white : color),
-        selectedColor: color,
+        avatar:
+            Icon(icon, size: 16, color: selected ? Colors.white : chipColor),
+        selectedColor: chipColor,
         checkmarkColor: Colors.white,
         labelStyle: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w800,
-          color: selected ? Colors.white : color,
+          color: selected ? Colors.white : chipColor,
         ),
-        backgroundColor: color.withOpacity(0.08),
-        side: BorderSide(color: color.withOpacity(0.22)),
+        backgroundColor: chipColor.withOpacity(0.08),
+        side: BorderSide(color: chipColor.withOpacity(0.22)),
         onSelected: (_) => onTap(),
       );
     }
@@ -5334,7 +5339,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                         icon: const Icon(Icons.list_alt_rounded),
                         label: const Text('Ir para registros financeiros'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2C3E5A),
+                          backgroundColor: olympusBlue,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
@@ -5351,8 +5356,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                         icon: const Icon(Icons.add_rounded),
                         label: const Text('Cadastrar novo registro'),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF2C3E5A),
-                          side: const BorderSide(color: Color(0xFF2C3E5A)),
+                          foregroundColor: olympusBlue,
+                          side: BorderSide(color: olympusBlue),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
@@ -5449,8 +5454,6 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
             _showDashboardPage ? 'Dashboard Financeiro' : 'Financeiro - Admin',
             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 20),
           ),
-          backgroundColor: const Color(0xFF2C3E5A),
-          foregroundColor: Colors.white,
           elevation: 0,
           leading: !_showDashboardPage
               ? IconButton(
@@ -5490,7 +5493,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                backgroundColor: const Color(0xFF2C3E5A),
+                backgroundColor: _branding.primaryColor,
               ),
         body: _showDashboardPage
             ? _buildDashboardHomePage()
@@ -5523,7 +5526,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                                   'Total',
                                   totalRecords,
                                   Icons.receipt_long,
-                                  const Color(0xFF2C3E5A),
+                                  _branding.premiumCardColor,
                                   totalValue,
                                   _selectedStatus == 'all',
                                 ),
@@ -6540,7 +6543,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                         icon: Icons.person,
                         label: 'Atleta',
                         value: _getAthleteName(record.athleteId),
-                        valueColor: const Color(0xFF2C3E5A),
+                        valueColor: olympusBlue,
                         valueWeight: FontWeight.w600,
                       ),
                       const Divider(height: 32),
@@ -6548,7 +6551,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                         icon: Icons.attach_money,
                         label: 'Valor',
                         value: 'R\$ ${record.value.toStringAsFixed(2)}',
-                        valueColor: const Color(0xFF2C3E5A),
+                        valueColor: olympusBlue,
                         valueWeight: FontWeight.bold,
                       ),
                       const Divider(height: 32),
@@ -6615,7 +6618,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                     icon: const Icon(Icons.visibility),
                     label: const Text('Confirmar visualização do Admin'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2C3E5A),
+                      backgroundColor: olympusBlue,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
@@ -6633,8 +6636,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                     icon: const Icon(Icons.account_balance_wallet_rounded),
                     label: const Text('Histórico financeiro do atleta'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF2C3E5A),
-                      side: const BorderSide(color: Color(0xFF2C3E5A)),
+                      foregroundColor: olympusBlue,
+                      side: BorderSide(color: olympusBlue),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -6730,8 +6733,8 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                       icon: const Icon(Icons.edit_outlined),
                       label: const Text('Editar débito'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF2C3E5A),
-                        side: const BorderSide(color: Color(0xFF2C3E5A)),
+                        foregroundColor: olympusBlue,
+                        side: BorderSide(color: olympusBlue),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -6920,7 +6923,7 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                           icon: const Icon(Icons.edit, size: 18),
                           label: const Text('Editar'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2C3E5A),
+                            backgroundColor: olympusBlue,
                             foregroundColor: Colors.white,
                           ),
                         ),
@@ -6986,15 +6989,18 @@ Por favor, regularize quando puder. Se ja realizou o pagamento, envie o comprova
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF2C3E5A), Color(0xFF4A6FA5)],
+                          gradient: LinearGradient(
+                            colors: [
+                              Color.lerp(olympusBlue, Colors.black, 0.18)!,
+                              Color.lerp(olympusBlue, Colors.white, 0.22)!,
+                            ],
                             begin: Alignment.centerLeft,
                             end: Alignment.centerRight,
                           ),
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF2C3E5A).withOpacity(0.3),
+                              color: olympusBlue.withOpacity(0.3),
                               spreadRadius: 1,
                               blurRadius: 6,
                               offset: const Offset(0, 3),

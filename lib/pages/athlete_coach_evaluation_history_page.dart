@@ -16,8 +16,6 @@ class AthleteCoachEvaluationHistoryPage extends StatefulWidget {
 
 class _AthleteCoachEvaluationHistoryPageState
     extends State<AthleteCoachEvaluationHistoryPage> {
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
 
   final CoachEvaluationService _service = CoachEvaluationService();
   bool _loading = true;
@@ -108,7 +106,10 @@ class _AthleteCoachEvaluationHistoryPageState
           Positioned.fill(
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 2.5, sigmaY: 2.5),
-              child: Container(color: const Color(0xFF071A30).withOpacity(.72)),
+              child: Container(
+                color: Color.lerp(olympusBlue, Colors.black, 0.36)!
+                    .withOpacity(.72),
+              ),
             ),
           ),
         ],
@@ -195,7 +196,7 @@ class _AthleteCoachEvaluationHistoryPageState
           const SizedBox(height: 9),
           Row(
             children: [
-              const Icon(Icons.star_rounded, color: olympusGold, size: 19),
+              Icon(Icons.star_rounded, color: olympusGold, size: 19),
               const SizedBox(width: 5),
               Text(
                 'Nota geral: ${row['rating_general'] ?? '-'} / 5',
@@ -268,13 +269,14 @@ class _AthleteCoachEvaluationHistoryPageState
                   Container(
                     padding: const EdgeInsets.all(15),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF081D33).withOpacity(0.88),
+                      color: Color.lerp(olympusBlue, Colors.black, 0.34)!
+                          .withOpacity(0.88),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: olympusGold.withOpacity(0.28)),
                     ),
                     child: Row(
                       children: [
-                        const CircleAvatar(
+                        CircleAvatar(
                           backgroundColor: Color(0x33D4AF37),
                           child:
                               Icon(Icons.history_rounded, color: olympusGold),

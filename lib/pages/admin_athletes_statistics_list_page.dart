@@ -52,9 +52,6 @@ class _AdminAthletesStatisticsListPageState
     extends State<AdminAthletesStatisticsListPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusMuted = Color(0xFF53657B);
   static const Color olympusBorder = Color(0xFFE4EDF5);
@@ -693,8 +690,12 @@ event_time
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0D223B), Color(0xFF123861), Color(0xFF235E94)],
+        gradient: LinearGradient(
+          colors: [
+            Color.lerp(olympusBlue, Colors.black, 0.28)!,
+            olympusBlue,
+            Color.lerp(olympusBlue, Colors.white, 0.16)!,
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -717,7 +718,7 @@ event_time
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: olympusGold.withOpacity(0.42)),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.query_stats_rounded,
               color: olympusGold,
               size: 28,
@@ -799,7 +800,7 @@ event_time
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: olympusBlue, width: 1.4),
+                borderSide: BorderSide(color: olympusBlue, width: 1.4),
               ),
             ),
           ),
@@ -988,7 +989,7 @@ event_time
                                 alignment: Alignment.center,
                                 child: Text(
                                   _initials(name),
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: olympusBlue,
                                     fontSize: 19,
                                     fontWeight: FontWeight.w900,
@@ -1010,7 +1011,7 @@ event_time
                                   alignment: Alignment.center,
                                   child: Text(
                                     _initials(name),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: olympusBlue,
                                       fontSize: 19,
                                       fontWeight: FontWeight.w900,
@@ -1029,7 +1030,7 @@ event_time
                             name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: olympusBlue,
                               fontSize: 15.5,
                               fontWeight: FontWeight.w900,

@@ -98,9 +98,10 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   bool _canAccessBirthdays = false;
   bool _canAccessChat = true;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  Color get olympusBlue => _branding.primaryColor;
+  Color get olympusGold => _branding.secondaryColor;
+  Color get olympusLightBlue =>
+      Color.lerp(_branding.primaryColor, Colors.white, 0.16)!;
   static const String _eventsEmbedFk = 'convocations_event_id_fkey';
 
   OlympusBranding get _branding => OlympusBrandingController.instance.branding;
@@ -368,11 +369,11 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
                   color: olympusGold.withOpacity(0.85),
                   width: 1.6,
                 ),
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   colors: [
-                    Color(0xFF0D223B),
-                    Color(0xFF123861),
-                    Color(0xFF235E94),
+                    Color.lerp(olympusBlue, Colors.black, 0.36)!,
+                    Color.lerp(olympusBlue, Colors.black, 0.08)!,
+                    Color.lerp(olympusBlue, Colors.white, 0.18)!,
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -398,8 +399,11 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
                     height: 88,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFF0D771), Color(0xFFB48A23)],
+                      gradient: LinearGradient(
+                        colors: [
+                          Color.lerp(olympusGold, Colors.white, 0.30)!,
+                          Color.lerp(olympusGold, Colors.black, 0.20)!
+                        ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
@@ -411,7 +415,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
                         ),
                       ],
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.emoji_events_rounded,
                       color: olympusBlue,
                       size: 42,
@@ -451,8 +455,8 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
                     ),
                     child: Text(
                       currentLevel.toUpperCase(),
-                      style: const TextStyle(
-                        color: Color(0xFFFFF2B8),
+                      style: TextStyle(
+                        color: Color.lerp(olympusGold, Colors.white, 0.62)!,
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 0.8,
@@ -1167,7 +1171,7 @@ event_time
             child: avatarUrl.isEmpty
                 ? Text(
                     firstName.isNotEmpty ? firstName[0].toUpperCase() : '?',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w800,
                       color: olympusBlue,
                     ),
@@ -1319,8 +1323,12 @@ event_time
               color: olympusGold.withOpacity(0.55),
               width: 1.4,
             ),
-            gradient: const LinearGradient(
-              colors: [Color(0xFF0D223B), Color(0xFF123861), Color(0xFF235E94)],
+            gradient: LinearGradient(
+              colors: [
+                Color.lerp(olympusBlue, Colors.black, 0.36)!,
+                Color.lerp(olympusBlue, Colors.black, 0.08)!,
+                Color.lerp(olympusBlue, Colors.white, 0.18)!
+              ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -1349,8 +1357,11 @@ event_time
                       height: 42,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFF0D771), Color(0xFFB48A23)],
+                        gradient: LinearGradient(
+                          colors: [
+                            Color.lerp(olympusGold, Colors.white, 0.30)!,
+                            Color.lerp(olympusGold, Colors.black, 0.20)!
+                          ],
                         ),
                         boxShadow: [
                           BoxShadow(
@@ -1359,7 +1370,7 @@ event_time
                           ),
                         ],
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.auto_awesome_rounded,
                         color: olympusBlue,
                         size: 22,
@@ -1704,7 +1715,7 @@ event_time
                                 Expanded(
                                   child: Text(
                                     _getMonthlyHistoryLabel(month, year),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w800,
                                       color: olympusBlue,
@@ -1795,7 +1806,7 @@ event_time
         children: [
           Row(
             children: [
-              const Icon(Icons.rule_rounded, color: olympusBlue, size: 18),
+              Icon(Icons.rule_rounded, color: olympusBlue, size: 18),
               const SizedBox(width: 8),
               Text(
                 'Regras do ranking',
@@ -2002,7 +2013,7 @@ event_time
                   children: [
                     Text(
                       _getMonthlyHistoryLabel(month, year),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
                         color: olympusBlue,
@@ -2076,7 +2087,7 @@ event_time
             ),
             TextSpan(
               text: value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w800,
                 color: olympusBlue,
@@ -2497,8 +2508,12 @@ event_time
               color: olympusGold.withOpacity(0.60),
               width: 1.4,
             ),
-            gradient: const LinearGradient(
-              colors: [Color(0xFF102845), Color(0xFF173A61), Color(0xFF204E7B)],
+            gradient: LinearGradient(
+              colors: [
+                Color.lerp(olympusBlue, Colors.black, 0.24)!,
+                Color.lerp(olympusBlue, Colors.black, 0.06)!,
+                Color.lerp(olympusBlue, Colors.white, 0.12)!
+              ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -2555,8 +2570,11 @@ event_time
                             height: 42,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFFF0D771), Color(0xFFB48A23)],
+                              gradient: LinearGradient(
+                                colors: [
+                                  Color.lerp(olympusGold, Colors.white, 0.30)!,
+                                  Color.lerp(olympusGold, Colors.black, 0.20)!
+                                ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
@@ -2568,9 +2586,10 @@ event_time
                                 ),
                               ],
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.emoji_events_rounded,
-                              color: Color(0xFF173A61),
+                              color:
+                                  Color.lerp(olympusBlue, Colors.black, 0.06)!,
                               size: 22,
                             ),
                           ),
@@ -2595,7 +2614,7 @@ event_time
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Níveis de presença mensal no padrão Olympus.',
+                        'Níveis de presença mensal no padrão do clube.',
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.72),
                           fontSize: 13,
@@ -2685,8 +2704,9 @@ event_time
                                       ),
                                       child: Text(
                                         item['range']!,
-                                        style: const TextStyle(
-                                          color: Color(0xFFFFF2B8),
+                                        style: TextStyle(
+                                          color: Color.lerp(
+                                              olympusGold, Colors.white, 0.62)!,
                                           fontSize: 13,
                                           fontWeight: FontWeight.w800,
                                         ),
@@ -3084,8 +3104,12 @@ event_time
             spreadRadius: 1,
           ),
         ],
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0D223B), Color(0xFF123861), Color(0xFF235E94)],
+        gradient: LinearGradient(
+          colors: [
+            Color.lerp(_brandPrimary, Colors.black, 0.36)!,
+            _brandPrimary,
+            _brandLight,
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -3147,8 +3171,11 @@ event_time
                             height: 90,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFFF0D771), Color(0xFFB48A23)],
+                              gradient: LinearGradient(
+                                colors: [
+                                  Color.lerp(olympusGold, Colors.white, 0.30)!,
+                                  Color.lerp(olympusGold, Colors.black, 0.20)!
+                                ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
@@ -3171,7 +3198,8 @@ event_time
                               child: SizedBox.square(
                                 dimension: 84,
                                 child: ColoredBox(
-                                  color: const Color(0xFF113457),
+                                  color: Color.lerp(
+                                      olympusBlue, Colors.black, 0.12)!,
                                   child: avatarUrl != null
                                       ? CachedNetworkImage(
                                           imageUrl: avatarUrl,
@@ -3215,8 +3243,9 @@ event_time
                             child: Text(
                               _getPerformanceLevel(),
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Color(0xFFFFF2B8),
+                              style: TextStyle(
+                                color: Color.lerp(
+                                    olympusGold, Colors.white, 0.62)!,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -3248,8 +3277,7 @@ event_time
                                     backgroundColor: Colors.white.withOpacity(
                                       0.15,
                                     ),
-                                    valueColor:
-                                        const AlwaysStoppedAnimation<Color>(
+                                    valueColor: AlwaysStoppedAnimation<Color>(
                                       olympusGold,
                                     ),
                                   ),
@@ -3446,8 +3474,11 @@ event_time
       padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF132743), Color(0xFF1B3154)],
+        gradient: LinearGradient(
+          colors: [
+            Color.lerp(olympusBlue, Colors.black, 0.32)!,
+            Color.lerp(olympusBlue, Colors.black, 0.16)!
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -3555,7 +3586,7 @@ event_time
                           ),
                         ),
                         alignment: Alignment.center,
-                        child: const Text(
+                        child: Text(
                           '!',
                           style: TextStyle(
                             color: olympusGold,
@@ -3639,7 +3670,7 @@ event_time
       padding: const EdgeInsets.fromLTRB(9, 8, 9, 8),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(11),
-        color: const Color(0xFF061A31).withOpacity(0.72),
+        color: Color.lerp(olympusBlue, Colors.black, 0.55)!.withOpacity(0.72),
         border: Border.all(color: const Color(0xFF4FA3FF).withOpacity(0.34)),
       ),
       child: Row(
@@ -3787,7 +3818,7 @@ event_time
         gradient: LinearGradient(
           colors: [
             accentColor.withOpacity(0.30),
-            const Color(0xFF0F2138),
+            Color.lerp(olympusBlue, Colors.black, 0.40)!,
             accentColor.withOpacity(0.12),
           ],
           begin: Alignment.topLeft,
@@ -3954,9 +3985,9 @@ event_time
         children: [
           Row(
             children: [
-              const Icon(Icons.calendar_month, color: olympusGold, size: 18),
+              Icon(Icons.calendar_month, color: olympusGold, size: 18),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Eventos da semana',
                 style: TextStyle(
                   fontSize: 15,
@@ -3984,7 +4015,7 @@ event_time
                     ),
                     child: Text(
                       '${DateFormat('dd/MM').format(eventDate)} • ${DateFormat('HH:mm').format(eventDate)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                         color: olympusBlue,
@@ -4019,7 +4050,7 @@ event_time
       child: Center(
         child: Text(
           firstName[0].toUpperCase(),
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 32,
             fontWeight: FontWeight.bold,
             color: olympusBlue,
@@ -4687,7 +4718,8 @@ event_time
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
             decoration: BoxDecoration(
-              color: const Color(0xFF081D33).withOpacity(0.88),
+              color: Color.lerp(olympusBlue, Colors.black, 0.34)!
+                  .withOpacity(0.88),
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: Colors.white.withOpacity(0.12)),
             ),
@@ -4996,13 +5028,13 @@ event_time
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF102D4F).withOpacity(0.88),
+        color: Color.lerp(olympusBlue, Colors.black, 0.20)!.withOpacity(0.88),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: Colors.white.withOpacity(0.13)),
       ),
       child: Column(
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(15, 14, 15, 7),
             child: Row(
               children: [
@@ -5016,7 +5048,7 @@ event_time
                 ),
                 Spacer(),
                 Text(
-                  'OLYMPUS',
+                  _branding.teamName.toUpperCase(),
                   style: TextStyle(
                     color: olympusGold,
                     fontSize: 10,
@@ -5141,7 +5173,7 @@ event_time
             ),
           ],
         ),
-        child: const Column(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
@@ -5293,9 +5325,11 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
   final supabase = Supabase.instance.client;
   final _authService = AuthService();
   final PermissionService _permissionService = PermissionService();
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get olympusBlue => _branding.primaryColor;
+  Color get olympusGold => _branding.secondaryColor;
+  Color get olympusLightBlue =>
+      Color.lerp(_branding.primaryColor, Colors.white, 0.16)!;
 
   void _showChangePasswordDialog() {
     final currentPasswordCtrl = TextEditingController();
@@ -5323,9 +5357,9 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                 decoration: InputDecoration(
                   labelText: 'Senha Atual *',
                   border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.lock, color: olympusGold),
+                  prefixIcon: Icon(Icons.lock, color: olympusGold),
                   focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: olympusGold, width: 2),
+                    borderSide: BorderSide(color: olympusGold, width: 2),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -5337,9 +5371,9 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                 decoration: InputDecoration(
                   labelText: 'Nova Senha *',
                   border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.lock, color: olympusGold),
+                  prefixIcon: Icon(Icons.lock, color: olympusGold),
                   focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: olympusGold, width: 2),
+                    borderSide: BorderSide(color: olympusGold, width: 2),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -5351,9 +5385,9 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                 decoration: InputDecoration(
                   labelText: 'Confirmar Nova Senha *',
                   border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.lock, color: olympusGold),
+                  prefixIcon: Icon(Icons.lock, color: olympusGold),
                   focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: olympusGold, width: 2),
+                    borderSide: BorderSide(color: olympusGold, width: 2),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -5406,7 +5440,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                         );
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
+                          SnackBar(
                             content: Text('✅ Senha alterada com sucesso!'),
                             backgroundColor: olympusBlue,
                           ),
@@ -5431,7 +5465,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                 foregroundColor: olympusBlue,
               ),
               child: _isLoading
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
@@ -5535,7 +5569,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
 
     if (result['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Conta excluída com sucesso'),
           backgroundColor: olympusBlue,
         ),
@@ -5554,12 +5588,14 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
   @override
   Widget build(BuildContext context) {
     final profile = widget.profile;
+    final branding = OlympusBrandingController.instance.branding;
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Meu Perfil'),
-        backgroundColor: olympusBlue.withOpacity(0.86),
-        foregroundColor: Colors.white,
+        backgroundColor: colors.primary.withOpacity(0.92),
+        foregroundColor: colors.onPrimary,
         elevation: 0,
       ),
       body: profile == null
@@ -5594,8 +5630,13 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                olympusBlue.withOpacity(0.94),
-                                olympusLightBlue.withOpacity(0.86),
+                                colors.primary.withOpacity(0.94),
+                                Color.lerp(
+                                  colors.primary,
+                                  branding.backgroundColor,
+                                  0.18,
+                                )!
+                                    .withOpacity(0.86),
                               ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
@@ -5907,18 +5948,19 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
   }
 
   Widget _buildOlympusProfileBackground() {
+    final primary = OlympusBrandingController.instance.branding.primaryColor;
     return Stack(
       fit: StackFit.expand,
       children: [
         const OlympusBrandBackgroundImage(),
-        Container(color: const Color(0xFF07182B).withOpacity(0.68)),
+        Container(color: primary.withOpacity(0.68)),
         DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                olympusBlue.withOpacity(0.22),
+                primary.withOpacity(0.22),
                 Colors.transparent,
                 Colors.black.withOpacity(0.24),
               ],
@@ -5945,7 +5987,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
           const SizedBox(width: 8),
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
               color: olympusBlue,
@@ -5972,7 +6014,7 @@ class _AthleteProfilePageState extends State<AthleteProfilePage> {
       ),
       subtitle: Text(
         value ?? 'Não informado',
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w500,
           color: olympusBlue,
@@ -6066,9 +6108,11 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   bool _isUploading = false;
   bool _isFetchingCep = false;
   String _selectedGender = '';
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get olympusBlue => _branding.primaryColor;
+  Color get olympusGold => _branding.secondaryColor;
+  Color get olympusLightBlue =>
+      Color.lerp(_branding.primaryColor, Colors.white, 0.16)!;
 
   final Map<String, List<Map<String, String>>> _positions = {
     'Masculino': [
@@ -6162,7 +6206,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
           });
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
+              SnackBar(
                 content: Text('✅ Endereço preenchido automaticamente!'),
                 duration: Duration(seconds: 2),
                 backgroundColor: olympusBlue,
@@ -6302,7 +6346,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
       await supabase.from('profiles').update(data).eq('id', user.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('✅ Perfil atualizado com sucesso!'),
           backgroundColor: olympusBlue,
         ),
@@ -6351,7 +6395,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(18),
-        borderSide: const BorderSide(color: olympusGold, width: 1.8),
+        borderSide: BorderSide(color: olympusGold, width: 1.8),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(18),
@@ -6366,18 +6410,19 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   }
 
   Widget _athleteEditBackground() {
+    final branding = OlympusBrandingController.instance.branding;
     return Stack(
       fit: StackFit.expand,
       children: [
         const OlympusBrandBackgroundImage(),
-        Container(color: const Color(0xFF07182B).withOpacity(0.64)),
+        Container(color: branding.primaryColor.withOpacity(0.64)),
         DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                olympusBlue.withOpacity(0.36),
+                branding.primaryColor.withOpacity(0.36),
                 Colors.transparent,
                 Colors.black.withOpacity(0.34),
               ],
@@ -6405,13 +6450,14 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
   @override
   Widget build(BuildContext context) {
     final isCompact = MediaQuery.of(context).size.width < 430;
+    final colors = Theme.of(context).colorScheme;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Editar dados'),
-        backgroundColor: olympusBlue.withOpacity(0.88),
-        foregroundColor: Colors.white,
+        backgroundColor: colors.primary.withOpacity(0.92),
+        foregroundColor: colors.onPrimary,
         elevation: 0,
       ),
       body: Stack(
@@ -6439,8 +6485,11 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                           padding: const EdgeInsets.all(3),
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            gradient: const LinearGradient(
-                              colors: [olympusGold, Color(0xFFFFF2B8)],
+                            gradient: LinearGradient(
+                              colors: [
+                                olympusGold,
+                                Color.lerp(olympusGold, Colors.white, 0.62)!
+                              ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
@@ -6454,7 +6503,8 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                           ),
                           child: ClipOval(
                             child: Container(
-                              color: const Color(0xFF113457),
+                              color:
+                                  Color.lerp(olympusBlue, Colors.black, 0.12)!,
                               child: _getAvatarImage(),
                             ),
                           ),
@@ -6468,7 +6518,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                             child: InkWell(
                               customBorder: const CircleBorder(),
                               onTap: _pickImage,
-                              child: const Padding(
+                              child: Padding(
                                 padding: EdgeInsets.all(10),
                                 child: Icon(
                                   Icons.photo_camera_rounded,
@@ -6597,7 +6647,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                                   icon: Icons.cake_outlined,
                                   hint: 'dd/mm/aaaa',
                                   suffixIcon: IconButton(
-                                    icon: const Icon(
+                                    icon: Icon(
                                       Icons.calendar_month_rounded,
                                       color: olympusGold,
                                     ),
@@ -6693,7 +6743,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                                   icon: Icons.location_searching_rounded,
                                   hint: '00000-000',
                                   suffixIcon: _isFetchingCep
-                                      ? const Padding(
+                                      ? Padding(
                                           padding: EdgeInsets.all(14),
                                           child: SizedBox(
                                             width: 18,
@@ -6835,7 +6885,7 @@ class _AthleteProfileEditDialogState extends State<_AthleteProfileEditDialog> {
                                       ? null
                                       : _saveProfile,
                                   icon: _isLoading || _isUploading
-                                      ? const SizedBox(
+                                      ? SizedBox(
                                           width: 18,
                                           height: 18,
                                           child: CircularProgressIndicator(

@@ -126,9 +126,6 @@ class AthleteStatisticsPage extends StatefulWidget {
 class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusSuccess = Color(0xFF16A34A);
   static const Color olympusWarning = Color(0xFFF59E0B);
@@ -330,12 +327,12 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Row(
           children: [
-            const Icon(Icons.info_outline, color: olympusBlue),
+            Icon(Icons.info_outline, color: olympusBlue),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   color: olympusBlue,
                   fontWeight: FontWeight.w900,
                 ),
@@ -367,8 +364,9 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
   Widget _infoButton({
     required String title,
     required String explanation,
-    Color color = olympusGold,
+    Color? color,
   }) {
+    final resolvedColor = color ?? olympusGold;
     return InkWell(
       borderRadius: BorderRadius.circular(999),
       onTap: () => _showItemExplanation(title: title, explanation: explanation),
@@ -378,13 +376,13 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: color.withOpacity(0.16),
-          border: Border.all(color: color.withOpacity(0.55)),
+          color: resolvedColor.withOpacity(0.16),
+          border: Border.all(color: resolvedColor.withOpacity(0.55)),
         ),
         child: Text(
           '!',
           style: TextStyle(
-            color: color,
+            color: resolvedColor,
             fontSize: 12,
             height: 1,
             fontWeight: FontWeight.w900,
@@ -1709,9 +1707,11 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      const Color(0xFF071A30).withOpacity(0.70),
-                      const Color(0xFF123861).withOpacity(0.35),
-                      const Color(0xFF2C5F8D).withOpacity(0.25),
+                      Color.lerp(olympusBlue, Colors.black, 0.36)!
+                          .withOpacity(0.70),
+                      olympusBlue.withOpacity(0.35),
+                      Color.lerp(olympusBlue, Colors.white, 0.18)!
+                          .withOpacity(0.25),
                     ],
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
@@ -1748,8 +1748,12 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
       padding: EdgeInsets.all(_StatsResponsive.space(context, 16)),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0D223B), Color(0xFF123861), Color(0xFF235E94)],
+        gradient: LinearGradient(
+          colors: [
+            Color.lerp(olympusBlue, Colors.black, 0.28)!,
+            olympusBlue,
+            Color.lerp(olympusBlue, Colors.white, 0.16)!,
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1794,7 +1798,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                   child: avatarUrl.trim().isEmpty
                       ? Text(
                           fullName.isNotEmpty ? fullName[0].toUpperCase() : '?',
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: olympusBlue,
                             fontSize: 24,
                             fontWeight: FontWeight.w900,
@@ -2002,11 +2006,11 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             ),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(28),
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 colors: [
-                  Color(0xFF071A30),
-                  Color(0xFF123861),
-                  Color(0xFF2C5F8D),
+                  Color.lerp(olympusBlue, Colors.black, 0.38)!,
+                  olympusBlue,
+                  Color.lerp(olympusBlue, Colors.white, 0.18)!,
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -2081,7 +2085,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                               ),
                             ],
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.scoreboard_rounded,
                             color: olympusBlue,
                             size: 28,
@@ -2239,7 +2243,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
               children: [
                 Text(
                   category,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontSize: 13,
                     fontWeight: FontWeight.w900,
@@ -2382,7 +2386,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                               ),
                             ],
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.pie_chart_rounded,
                             color: olympusBlue,
                             size: 25,
@@ -2393,7 +2397,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
+                              Text(
                                 'Tempo do Treino',
                                 style: TextStyle(
                                   color: olympusBlue,
@@ -2481,7 +2485,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                       ),
                       if (typeRanking.isNotEmpty) ...[
                         const SizedBox(height: 4),
-                        const Text(
+                        Text(
                           'Principais focos treinados',
                           style: TextStyle(
                             color: olympusBlue,
@@ -2509,7 +2513,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                                 ),
                                 Text(
                                   _formatTrainingMinutes(entry.value),
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: olympusBlue,
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w900,
@@ -2563,11 +2567,11 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(22),
-                    gradient: const LinearGradient(
+                    gradient: LinearGradient(
                       colors: [
-                        Color(0xFF0D223B),
-                        Color(0xFF123861),
-                        Color(0xFF235E94),
+                        Color.lerp(olympusBlue, Colors.black, 0.28)!,
+                        olympusBlue,
+                        Color.lerp(olympusBlue, Colors.white, 0.16)!,
                       ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
@@ -2592,7 +2596,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                             color: olympusGold.withOpacity(0.44),
                           ),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.scoreboard_rounded,
                           color: olympusGold,
                           size: 26,
@@ -2713,7 +2717,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                                             Expanded(
                                               child: Text(
                                                 tipo.toUpperCase(),
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   color: olympusBlue,
                                                   fontSize: 13,
                                                   fontWeight: FontWeight.w900,
@@ -2734,7 +2738,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                                           const SizedBox(height: 5),
                                           Text(
                                             fundamento,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               color: olympusLightBlue,
                                               fontSize: 12.5,
                                               fontWeight: FontWeight.w800,
@@ -2942,7 +2946,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
         Expanded(
           child: Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: olympusBlue,
               fontSize: 17,
               fontWeight: FontWeight.w900,
@@ -2967,9 +2971,9 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
       children: [
         Row(
           children: [
-            const Icon(Icons.fact_check_outlined, color: olympusGold, size: 22),
+            Icon(Icons.fact_check_outlined, color: olympusGold, size: 22),
             const SizedBox(width: 8),
-            const Expanded(
+            Expanded(
               child: Text(
                 'Como calculamos sua presença',
                 style: TextStyle(
@@ -3060,11 +3064,11 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(26),
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 colors: [
-                  Color(0xFF081C33),
-                  Color(0xFF123861),
-                  Color(0xFF1E5C8C),
+                  Color.lerp(olympusBlue, Colors.black, 0.34)!,
+                  olympusBlue,
+                  Color.lerp(olympusBlue, Colors.white, 0.18)!,
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -3143,7 +3147,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                               ),
                             ],
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.show_chart_rounded,
                             color: olympusBlue,
                             size: 24,
@@ -3218,7 +3222,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.touch_app_rounded,
                               color: olympusGold,
                               size: 18,
@@ -3485,7 +3489,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                     Expanded(
                       child: Text(
                         entry.key,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: olympusBlue,
                           fontWeight: FontWeight.w800,
                         ),
@@ -3580,7 +3584,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.bolt_rounded, color: olympusGold, size: 20),
+                Icon(Icons.bolt_rounded, color: olympusGold, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -3642,7 +3646,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                 children: [
                   Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.mail_outline_rounded,
                         color: olympusBlue,
                         size: 18,
@@ -3653,7 +3657,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                           _messageTitle(message),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: olympusBlue,
                             fontSize: 13,
                             fontWeight: FontWeight.w900,
@@ -3775,7 +3779,7 @@ class _AthleteStatisticsPageState extends State<AthleteStatisticsPage> {
                       .isNotEmpty)
                     Text(
                       'Fundamento: ${(evaluation['fundamento'] ?? '').toString()}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: olympusBlue,
                         fontWeight: FontWeight.w800,
                         fontSize: 12.5,

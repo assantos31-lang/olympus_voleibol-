@@ -24,9 +24,6 @@ class CoachMessageThreadPage extends StatefulWidget {
 
 class _CoachMessageThreadPageState extends State<CoachMessageThreadPage> {
   final SupabaseClient supabase = Supabase.instance.client;
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
   final TextEditingController _replyController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -577,7 +574,7 @@ class _CoachMessageThreadPageState extends State<CoachMessageThreadPage> {
                           ),
                         ),
                         child: _sending
-                            ? const SizedBox(
+                            ? SizedBox(
                                 width: 18,
                                 height: 18,
                                 child: CircularProgressIndicator(

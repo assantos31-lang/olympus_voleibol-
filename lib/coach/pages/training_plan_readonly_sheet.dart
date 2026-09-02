@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class TrainingPlanReadonlySheet {
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusMuted = Color(0xFF53657B);
 
   static Future<void> show(
@@ -156,7 +155,7 @@ class TrainingPlanReadonlySheet {
                   ),
                   child: Text(
                     emptyMessage,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: olympusBlue,
                       fontWeight: FontWeight.w700,
                     ),
@@ -244,7 +243,7 @@ class TrainingPlanReadonlySheet {
                         isExpanded: true,
                         decoration: InputDecoration(
                           labelText: 'Treinador',
-                          prefixIcon: const Icon(
+                          prefixIcon: Icon(
                             Icons.sports_rounded,
                             color: olympusGold,
                           ),
@@ -344,7 +343,7 @@ class TrainingPlanReadonlySheet {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Planejamento do treino',
           style: TextStyle(
             color: olympusBlue,
@@ -387,7 +386,7 @@ class TrainingPlanReadonlySheet {
               coachName.trim().isNotEmpty
                   ? coachName.trim().substring(0, 1).toUpperCase()
                   : 'T',
-              style: const TextStyle(
+              style: TextStyle(
                 color: olympusBlue,
                 fontWeight: FontWeight.w900,
               ),
@@ -402,7 +401,7 @@ class TrainingPlanReadonlySheet {
                   coachName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontWeight: FontWeight.w900,
                   ),
@@ -435,7 +434,7 @@ class TrainingPlanReadonlySheet {
       ),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           color: olympusBlue,
           fontSize: 13,
           fontWeight: FontWeight.w700,
@@ -475,7 +474,7 @@ class TrainingPlanReadonlySheet {
                 ),
                 child: Text(
                   '${index + 1}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontWeight: FontWeight.w900,
                   ),
@@ -488,7 +487,7 @@ class TrainingPlanReadonlySheet {
                   children: [
                     Text(
                       type.isEmpty ? category : type,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: olympusBlue,
                         fontWeight: FontWeight.w900,
                       ),

@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/organization_storage_service.dart';
+import '../services/organization_context_service.dart';
 
 class AdminCompetitionsPage extends StatefulWidget {
   final bool canEdit;
@@ -22,9 +23,15 @@ class AdminCompetitionsPage extends StatefulWidget {
 class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
     with SingleTickerProviderStateMixin {
   final SupabaseClient _supabase = Supabase.instance.client;
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
-  static const Color olympusGold = Color(0xFFD4AF37);
+  static Color get olympusBlue =>
+      OlympusBrandingController.instance.branding.primaryColor;
+  static Color get olympusGold =>
+      OlympusBrandingController.instance.branding.secondaryColor;
+  static Color get olympusLightBlue => Color.lerp(
+        OlympusBrandingController.instance.branding.primaryColor,
+        Colors.white,
+        0.16,
+      )!;
 
   late final TabController _tabController;
   bool _loading = true;
@@ -410,7 +417,7 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
                         ),
                       ),
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         'Classificação da fase classificatória',
                         style: TextStyle(
                           color: olympusBlue,
@@ -630,7 +637,7 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
                     const SizedBox(height: 16),
                     Text(
                       'Editar Conquista',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: olympusBlue,
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
@@ -1117,8 +1124,9 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: false,
       appBar: AppBar(
-        backgroundColor: olympusBlue.withOpacity(0.96),
-        foregroundColor: Colors.white,
+        backgroundColor:
+            Theme.of(context).colorScheme.primary.withOpacity(0.96),
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         elevation: 0,
         title: const Text(
           'Competições',
@@ -1163,7 +1171,7 @@ class _AdminCompetitionsPageState extends State<AdminCompetitionsPage>
                               ),
                               child: DecoratedBox(
                                 decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
+                                  gradient: LinearGradient(
                                     colors: [Color(0xFFFFE28A), olympusGold],
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
@@ -1506,7 +1514,7 @@ class _ChampionshipCard extends StatelessWidget {
                     : null,
               ),
               child: imageUrl == null || imageUrl!.isEmpty
-                  ? const Icon(
+                  ? Icon(
                       Icons.add_photo_alternate_outlined,
                       size: 34,
                       color: _AdminCompetitionsPageState.olympusGold,
@@ -1796,10 +1804,10 @@ class HallOfAchievementsPage extends StatelessWidget {
     required this.canEdit,
   });
 
-  static const Color olympusBlue = _AdminCompetitionsPageState.olympusBlue;
-  static const Color olympusLightBlue =
+  static Color get olympusBlue => _AdminCompetitionsPageState.olympusBlue;
+  static Color get olympusLightBlue =>
       _AdminCompetitionsPageState.olympusLightBlue;
-  static const Color olympusGold = _AdminCompetitionsPageState.olympusGold;
+  static Color get olympusGold => _AdminCompetitionsPageState.olympusGold;
 
   Widget _buildPremiumBackground() {
     return Stack(
@@ -1881,8 +1889,9 @@ class HallOfAchievementsPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
-        backgroundColor: olympusBlue.withOpacity(0.96),
-        foregroundColor: Colors.white,
+        backgroundColor:
+            Theme.of(context).colorScheme.primary.withOpacity(0.96),
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         elevation: 0,
         title: const Text(
           'Hall de Conquistas',
@@ -1963,7 +1972,7 @@ class HallOfAchievementsPage extends StatelessWidget {
                                       ),
                                       child: achievement.imageUrl == null ||
                                               achievement.imageUrl!.isEmpty
-                                          ? const Icon(
+                                          ? Icon(
                                               Icons.workspace_premium,
                                               size: 34,
                                               color: olympusBlue,
@@ -1998,7 +2007,7 @@ class HallOfAchievementsPage extends StatelessWidget {
                                           const SizedBox(height: 8),
                                           Text(
                                             achievement.title,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               color: olympusBlue,
                                               fontSize: 18,
                                               fontWeight: FontWeight.w900,
@@ -2016,7 +2025,7 @@ class HallOfAchievementsPage extends StatelessWidget {
                                           const SizedBox(height: 6),
                                           Text(
                                             '${achievement.dateLabel}${achievement.year == 0 ? '' : ' • ${achievement.year}'}',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               color: olympusBlue,
                                               fontWeight: FontWeight.w700,
                                               fontSize: 12,
@@ -2079,8 +2088,8 @@ class TournamentPhotosGalleryPage extends StatelessWidget {
     required this.events,
   });
 
-  static const Color olympusBlue = _AdminCompetitionsPageState.olympusBlue;
-  static const Color olympusLightBlue =
+  static Color get olympusBlue => _AdminCompetitionsPageState.olympusBlue;
+  static Color get olympusLightBlue =>
       _AdminCompetitionsPageState.olympusLightBlue;
 
   Widget _buildPremiumBackground() {
@@ -2176,8 +2185,9 @@ class TournamentPhotosGalleryPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
-        backgroundColor: olympusBlue.withOpacity(0.96),
-        foregroundColor: Colors.white,
+        backgroundColor:
+            Theme.of(context).colorScheme.primary.withOpacity(0.96),
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         elevation: 0,
         title: const Text(
           'Fotos do Torneio',
@@ -2455,7 +2465,7 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
                 fit: BoxFit.contain,
                 loadingBuilder: (context, child, progress) {
                   if (progress == null) return child;
-                  return const Center(
+                  return Center(
                     child: CircularProgressIndicator(
                       color: _AdminCompetitionsPageState.olympusGold,
                     ),
@@ -2679,7 +2689,7 @@ class _CompetitionMatchCardState extends State<_CompetitionMatchCard> {
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.stacked_line_chart_rounded,
                   color: _AdminCompetitionsPageState.olympusGold,
                   size: 18,
@@ -3021,7 +3031,7 @@ class _EventCardPhotoPreview extends StatelessWidget {
                 if (progress == null) return child;
                 return Container(
                   color: const Color(0xFFEDE7F3),
-                  child: const Center(
+                  child: Center(
                     child: CircularProgressIndicator(
                       color: _AdminCompetitionsPageState.olympusBlue,
                     ),
@@ -3032,7 +3042,7 @@ class _EventCardPhotoPreview extends StatelessWidget {
                 return Container(
                   color: const Color(0xFFEDE7F3),
                   alignment: Alignment.center,
-                  child: const Icon(
+                  child: Icon(
                     Icons.image_not_supported_outlined,
                     color: _AdminCompetitionsPageState.olympusBlue,
                     size: 34,
@@ -3224,9 +3234,6 @@ class ChampionshipGamesPage extends StatefulWidget {
 
 class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
-  static const Color olympusGold = Color(0xFFD4AF37);
 
   late List<_EventCompetitionCard> _events;
 
@@ -3446,7 +3453,7 @@ class _ChampionshipGamesPageState extends State<ChampionshipGamesPage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Pontuação do jogo',
                     style: TextStyle(
                       color: olympusBlue,
@@ -3646,8 +3653,6 @@ class FeaturedMatchPage extends StatefulWidget {
 
 class _FeaturedMatchPageState extends State<FeaturedMatchPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
   bool _saving = false;
   late bool _isFeatured;
   String? _imageUrl;
@@ -3758,8 +3763,8 @@ class _FeaturedMatchPageState extends State<FeaturedMatchPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF6F1FA),
       appBar: AppBar(
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         title: const Text(
           'Destacar Partida',
           style: TextStyle(fontWeight: FontWeight.w800),
@@ -3778,7 +3783,7 @@ class _FeaturedMatchPageState extends State<FeaturedMatchPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Configurar Destaque',
                   style: TextStyle(
                     color: olympusBlue,
@@ -3807,13 +3812,13 @@ class _FeaturedMatchPageState extends State<FeaturedMatchPage> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.star, color: olympusGold, size: 24),
+                    Icon(Icons.star, color: olympusGold, size: 24),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
+                          Text(
                             'Habilitar Destaque',
                             style: TextStyle(
                               color: olympusBlue,
@@ -3846,7 +3851,7 @@ class _FeaturedMatchPageState extends State<FeaturedMatchPage> {
                   const SizedBox(height: 16),
                   const Divider(),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Imagem de Destaque',
                     style: TextStyle(
                       color: olympusBlue,
@@ -3970,8 +3975,6 @@ class EventPhotosPage extends StatefulWidget {
 
 class _EventPhotosPageState extends State<EventPhotosPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
   bool _loading = true;
   List<Map<String, dynamic>> _photos = [];
 
@@ -4023,7 +4026,14 @@ class _EventPhotosPageState extends State<EventPhotosPage> {
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
     if (image == null) return;
 
+    String? uploadedFilePath;
     try {
+      final organization =
+          await OrganizationContextService.instance.initialize(force: true);
+      if (organization == null) {
+        throw StateError('Não foi possível identificar o clube ativo.');
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -4037,6 +4047,7 @@ class _EventPhotosPageState extends State<EventPhotosPage> {
       final fileName = OrganizationStorageService.scopedPath(
         'events/${widget.eventId}/$timestamp.jpg',
       );
+      uploadedFilePath = fileName;
 
       if (kIsWeb) {
         final bytes = await image.readAsBytes();
@@ -4060,6 +4071,7 @@ class _EventPhotosPageState extends State<EventPhotosPage> {
       await _supabase.from('event_photos').insert({
         'event_id': widget.eventId,
         'image_url': imageUrl,
+        'organization_id': organization.id,
       });
 
       if (mounted) {
@@ -4072,10 +4084,24 @@ class _EventPhotosPageState extends State<EventPhotosPage> {
         await _loadPhotos();
       }
     } catch (e) {
+      if (uploadedFilePath != null) {
+        try {
+          await _supabase.storage
+              .from('event-images')
+              .remove([uploadedFilePath]);
+        } catch (_) {
+          // A limpeza é apenas compensatória; preserva o erro original.
+        }
+      }
       if (mounted) {
+        final permissionDenied = e is PostgrestException && e.code == '42501';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ Erro ao enviar foto: $e'),
+            content: Text(
+              permissionDenied
+                  ? 'Seu perfil não tem permissão para adicionar fotos neste clube.'
+                  : 'Não foi possível enviar a foto. Tente novamente.',
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -4140,8 +4166,8 @@ class _EventPhotosPageState extends State<EventPhotosPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF6F1FA),
       appBar: AppBar(
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         title: const Text(
           'Fotos do Jogo',
           style: TextStyle(fontWeight: FontWeight.w800),
@@ -4288,8 +4314,6 @@ class AdminCompetitionResultPage extends StatefulWidget {
 class _AdminCompetitionResultPageState
     extends State<AdminCompetitionResultPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
   bool _saving = false;
   late final TextEditingController _finalLabelController;
   late final TextEditingController _olympusSetsController;
@@ -4589,8 +4613,8 @@ class _AdminCompetitionResultPageState
     return Scaffold(
       backgroundColor: const Color(0xFFF6F1FA),
       appBar: AppBar(
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         title: const Text(
           'Resultado do jogo',
           style: TextStyle(fontWeight: FontWeight.w800),
@@ -4613,7 +4637,7 @@ class _AdminCompetitionResultPageState
                   event.championshipName.isEmpty
                       ? event.typeLabel
                       : event.championshipName,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontWeight: FontWeight.w800,
                     fontSize: 18,
@@ -4689,7 +4713,7 @@ class _AdminCompetitionResultPageState
             ],
           ),
           const SizedBox(height: 18),
-          const Text(
+          Text(
             'Placares parciais',
             style: TextStyle(
               color: olympusBlue,
@@ -4713,7 +4737,7 @@ class _AdminCompetitionResultPageState
                 children: [
                   Text(
                     '${row.setNumber}º Set',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: olympusBlue,
                       fontWeight: FontWeight.w800,
                     ),
@@ -4932,9 +4956,9 @@ class _EventCompetitionCard {
   }
 
   String get opponentName {
-    final upper = name.toUpperCase();
-    if (upper.startsWith('OLYMPUS VS ')) {
-      return name.substring(11).trim();
+    final parts = name.split(RegExp(r'\s+VS\s+', caseSensitive: false));
+    if (parts.length > 1) {
+      return parts.sublist(1).join(' VS ').trim();
     }
     return name;
   }

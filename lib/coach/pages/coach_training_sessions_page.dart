@@ -42,9 +42,6 @@ class CoachTrainingSessionsPage extends StatefulWidget {
 class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusCard = Colors.white;
   static const Color olympusText = Color(0xFF17324D);
@@ -62,6 +59,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
   bool _showAllPendingPlans = false;
   bool _mostrarTodosPlanejamentos = false;
   bool _showPastEvents = false;
+  bool _canViewConfirmations = false;
   TechnicalStaffAssignment? _technicalAssignment;
   Set<String> _visibleCoachIds = const {};
   Map<String, String> _visibleCoachNames = const {};
@@ -105,6 +103,10 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
       }
       final currentUserId = _supabase.auth.currentUser?.id;
       if (currentUserId != null) {
+        final actions = await PermissionService().getAgendaActionPermissions(
+          currentUserId,
+        );
+        _canViewConfirmations = actions['ver_convocados'] == true;
         _visibleCoachIds = {currentUserId};
         if (_technicalAssignment?.isCoordinator == true) {
           final values = await Future.wait([
@@ -146,6 +148,30 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
           schema: 'public',
           table: 'training_plan_blocks',
           callback: (_) => _buscarTreinosDoTecnico(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'training_plans',
+          callback: (_) => _buscarTreinosDoTecnico(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'events',
+          callback: (_) => _buscarTreinosDoTecnico(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'convocations',
+          callback: (_) => _buscarTreinosDoTecnico(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'technical_staff_assignments',
+          callback: (_) => _initializeTechnicalScope(),
         )
         .subscribe();
   }
@@ -357,9 +383,9 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
     final counts = <String, Map<String, int>>{
       for (final eventId in eventIds)
         eventId: {
-        'accepted': 0,
-        'rejected': 0,
-        'pending': 0,
+          'accepted': 0,
+          'rejected': 0,
+          'pending': 0,
         },
     };
     final response = await _supabase
@@ -367,10 +393,8 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
         .select('event_id, status, event_role')
         .inFilter('event_id', eventIds);
     for (final row in List<Map<String, dynamic>>.from(response as List)) {
-      final role = (row['event_role'] ?? 'athlete')
-          .toString()
-          .trim()
-          .toLowerCase();
+      final role =
+          (row['event_role'] ?? 'athlete').toString().trim().toLowerCase();
       if (role == 'coach') continue;
       final eventId = (row['event_id'] ?? '').toString();
       final eventCounts = counts[eventId];
@@ -495,8 +519,8 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
             plannedQuery =
                 plannedQuery.inFilter('coach_id', _visibleCoachIds.toList());
           }
-          final plannedRows = await plannedQuery
-              .timeout(const Duration(seconds: 15));
+          final plannedRows =
+              await plannedQuery.timeout(const Duration(seconds: 15));
 
           for (final row in List<Map<String, dynamic>>.from(plannedRows)) {
             final eventId = (row['event_id'] ?? '').toString();
@@ -1189,7 +1213,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
         selectedColor: olympusGold,
         backgroundColor: Colors.white.withOpacity(0.16),
         disabledColor: Colors.white.withOpacity(0.16),
-        labelStyle: const TextStyle(
+        labelStyle: TextStyle(
           color: olympusBlue,
           fontSize: 12,
           fontWeight: FontWeight.w800,
@@ -1354,7 +1378,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                       color: olympusGold.withOpacity(0.60),
                       width: 1.3,
                     ),
-                    gradient: const LinearGradient(
+                    gradient: LinearGradient(
                       colors: [olympusBlue, olympusLightBlue],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
@@ -1381,7 +1405,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                                     ],
                                   ),
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.directions_car_filled_rounded,
                                   color: olympusBlue,
                                   size: 22,
@@ -1974,7 +1998,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
             ),
             if (selected) ...[
               const SizedBox(height: 1),
-              const Text(
+              Text(
                 'Selecionado',
                 style: TextStyle(
                   color: olympusBlue,
@@ -2116,14 +2140,14 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                   color: olympusGold.withOpacity(0.14),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.pending_actions_rounded,
                   color: olympusBlue,
                   size: 19,
                 ),
               ),
               const SizedBox(width: 9),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2215,7 +2239,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                             (event['event_name'] ?? 'Treino').toString(),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: olympusBlue,
                               fontSize: 11.5,
                               fontWeight: FontWeight.w800,
@@ -2325,7 +2349,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                 children: [
                   Text(
                     '${_labelTipoEvento(_filtroTipoEvento)} no mês',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: olympusBlue,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w900,
@@ -2403,7 +2427,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                     widget.lockTipoEvento
                         ? '${_labelTipoEvento(_filtroTipoEvento)}'
                         : 'Eventos separados',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: olympusBlue,
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
@@ -2460,13 +2484,13 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
               ),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.calendar_view_month_rounded,
                     color: olympusBlue,
                     size: 18,
                   ),
                   const SizedBox(width: 8),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Total no mês',
                       style: TextStyle(
@@ -2478,7 +2502,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                   ),
                   Text(
                     '${_getEventosDoTipoSelecionado().length}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: olympusBlue,
                       fontSize: 18,
                       fontWeight: FontWeight.w900,
@@ -2496,6 +2520,13 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
 
   Widget _buildFiltersAndSummary() {
     if (widget.agendaMode) return _buildAgendaFilters();
+    final branding = OlympusBrandingController.instance.branding;
+    final primary = branding.primaryColor;
+    final secondary = Color.lerp(
+      primary,
+      branding.backgroundColor,
+      0.18,
+    )!;
     return LayoutBuilder(
       builder: (context, constraints) {
         final mobile = constraints.maxWidth < 600;
@@ -2506,9 +2537,9 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
             children: [
               Container(
                 padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [olympusBlue, olympusLightBlue],
+                    colors: [primary, secondary],
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                   ),
@@ -2580,9 +2611,9 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
           children: [
             Container(
               padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [olympusBlue, olympusLightBlue],
+                  colors: [primary, secondary],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                 ),
@@ -2637,11 +2668,16 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
   }
 
   Widget _buildAgendaFilters() {
+    final branding = OlympusBrandingController.instance.branding;
+    final primary = branding.primaryColor;
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [olympusBlue, olympusLightBlue],
+          colors: [
+            primary,
+            Color.lerp(primary, branding.backgroundColor, 0.18)!,
+          ],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -2682,7 +2718,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
               ),
               label: const Text('Passados'),
               selectedColor: olympusGold,
-              backgroundColor: olympusBlue,
+              backgroundColor: primary,
               side: BorderSide(
                 color: _showPastEvents ? olympusGold : Colors.white38,
               ),
@@ -3005,7 +3041,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => const Center(
+      builder: (dialogContext) => Center(
         child: CircularProgressIndicator(color: olympusGold),
       ),
     );
@@ -3020,7 +3056,12 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
           .where((participante) {
         final tipo =
             (participante['user_type'] ?? '').toString().trim().toLowerCase();
-        return tipo == 'athlete' || tipo == 'atleta';
+        // Perfis antigos de atletas foram gravados como `member`. Eles também
+        // são convocados e não podem desaparecer da lista de confirmações.
+        return tipo == 'athlete' ||
+            tipo == 'atleta' ||
+            tipo == 'member' ||
+            tipo == 'membro';
       }).toList()
         ..sort((a, b) {
           const ordem = {'accepted': 0, 'pending': 1, 'rejected': 2};
@@ -3065,7 +3106,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
               children: [
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.people_outline_rounded,
                       color: olympusGold,
                       size: 28,
@@ -3079,7 +3120,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                             'Confirmações: ${(treino['event_name'] ?? 'Treino').toString()}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: olympusBlue,
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
@@ -3298,33 +3339,34 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                     ),
                   ),
                   const Spacer(),
-                  PopupMenuButton<String>(
-                    tooltip: 'Opções do treino',
-                    icon: const Icon(
-                      Icons.more_vert_rounded,
-                      color: olympusBlue,
-                    ),
-                    onSelected: (value) {
-                      if (value == 'confirmacoes') {
-                        _mostrarConfirmacoesTreino(treino);
-                      }
-                    },
-                    itemBuilder: (context) => const [
-                      PopupMenuItem<String>(
-                        value: 'confirmacoes',
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.how_to_reg_outlined,
-                              color: olympusBlue,
-                            ),
-                            SizedBox(width: 10),
-                            Text('Ver confirmações'),
-                          ],
-                        ),
+                  if (_canViewConfirmations)
+                    PopupMenuButton<String>(
+                      tooltip: 'Opções do treino',
+                      icon: Icon(
+                        Icons.more_vert_rounded,
+                        color: olympusBlue,
                       ),
-                    ],
-                  ),
+                      onSelected: (value) {
+                        if (value == 'confirmacoes') {
+                          _mostrarConfirmacoesTreino(treino);
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem<String>(
+                          value: 'confirmacoes',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.how_to_reg_outlined,
+                                color: olympusBlue,
+                              ),
+                              SizedBox(width: 10),
+                              Text('Ver confirmações'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -3507,25 +3549,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                       label: const Text('Liberar planejamento para técnico'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: olympusBlue,
-                        side: const BorderSide(color: olympusGold),
-                      ),
-                    ),
-                  ),
-                ],
-                if (!widget.agendaMode &&
-                    _technicalAssignment?.isCoordinator == true &&
-                    hasPlanning &&
-                    treino['planning_status'] != 'published') ...[
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () => _publicarPlanejamento(treino),
-                      icon: const Icon(Icons.publish_rounded),
-                      label: const Text('Disponibilizar treino pronto'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: olympusGold,
-                        foregroundColor: olympusBlue,
+                        side: BorderSide(color: olympusGold),
                       ),
                     ),
                   ),
@@ -3539,21 +3563,23 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
   }
 
   Widget _buildOlympusBackground() {
+    final branding = OlympusBrandingController.instance.branding;
     return Stack(
       fit: StackFit.expand,
       children: [
         OlympusBrandBackgroundImage(
           fit: BoxFit.cover,
           alignment: Alignment.center,
-          errorBuilder: (_, __, ___) => Container(color: olympusBlue),
+          errorBuilder: (_, __, ___) => Container(color: branding.primaryColor),
         ),
-        Container(color: const Color(0xFF07182B).withOpacity(0.62)),
+        Container(color: branding.primaryColor.withOpacity(0.62)),
       ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
@@ -3563,8 +3589,8 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                   ? 'Avaliar ${_labelTipoEvento(_filtroTipoEvento)}'
                   : 'Eventos e avaliações'),
         ),
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
+        backgroundColor: colors.primary,
+        foregroundColor: colors.onPrimary,
         actions: [
           if (_technicalAssignment?.isCoordinator == true)
             IconButton(

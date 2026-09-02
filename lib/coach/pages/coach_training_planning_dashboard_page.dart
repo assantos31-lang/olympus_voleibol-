@@ -22,9 +22,6 @@ class _CoachTrainingPlanningDashboardPageState
     extends State<CoachTrainingPlanningDashboardPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusMuted = Color(0xFF53657B);
   static const Color olympusBorder = Color(0xFFE4EDF5);
@@ -397,7 +394,7 @@ class _CoachTrainingPlanningDashboardPageState
           child: OlympusBrandBackgroundImage(
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) {
-              return Container(color: const Color(0xFF102845));
+              return Container(color: olympusBlue);
             },
           ),
         ),
@@ -412,7 +409,7 @@ class _CoachTrainingPlanningDashboardPageState
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  const Color(0xFF102845).withOpacity(0.78),
+                  olympusBlue.withOpacity(0.78),
                   olympusBlue.withOpacity(0.46),
                   Colors.black.withOpacity(0.74),
                 ],
@@ -432,11 +429,11 @@ class _CoachTrainingPlanningDashboardPageState
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           colors: [
-            Color(0xFF071A30),
-            Color(0xFF123861),
-            Color(0xFF2C5F8D),
+            Color.lerp(olympusBlue, Colors.black, 0.36)!,
+            Color.lerp(olympusBlue, Colors.black, 0.08)!,
+            Color.lerp(olympusBlue, Colors.white, 0.18)!,
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -496,7 +493,7 @@ class _CoachTrainingPlanningDashboardPageState
                         ),
                       ],
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.analytics_rounded,
                       color: olympusBlue,
                       size: 30,
@@ -629,12 +626,12 @@ class _CoachTrainingPlanningDashboardPageState
       children: [
         Row(
           children: [
-            const Icon(Icons.timer_rounded, color: olympusGold, size: 26),
+            Icon(Icons.timer_rounded, color: olympusGold, size: 26),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 _monthLabel(_selectedMonth),
-                style: const TextStyle(
+                style: TextStyle(
                   color: olympusBlue,
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
@@ -643,7 +640,7 @@ class _CoachTrainingPlanningDashboardPageState
             ),
             Text(
               _formatMinutes(_totalMinutes),
-              style: const TextStyle(
+              style: TextStyle(
                 color: olympusBlue,
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
@@ -727,7 +724,7 @@ class _CoachTrainingPlanningDashboardPageState
             Expanded(
               child: Text(
                 category,
-                style: const TextStyle(
+                style: TextStyle(
                   color: olympusBlue,
                   fontSize: 13,
                   fontWeight: FontWeight.w900,
@@ -852,7 +849,7 @@ class _CoachTrainingPlanningDashboardPageState
                   Expanded(
                     child: Text(
                       category,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: olympusBlue,
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
@@ -918,7 +915,7 @@ class _CoachTrainingPlanningDashboardPageState
                             Expanded(
                               child: Text(
                                 row.type,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: olympusBlue,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w800,
@@ -987,9 +984,9 @@ class _CoachTrainingPlanningDashboardPageState
       children: [
         Row(
           children: [
-            const Icon(Icons.leaderboard_rounded, color: olympusGold, size: 24),
+            Icon(Icons.leaderboard_rounded, color: olympusGold, size: 24),
             const SizedBox(width: 8),
-            const Expanded(
+            Expanded(
               child: Text(
                 'Ranking de foco do mês',
                 style: TextStyle(
@@ -1049,7 +1046,7 @@ class _CoachTrainingPlanningDashboardPageState
                       children: [
                         Text(
                           row.type,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: olympusBlue,
                             fontSize: 13,
                             fontWeight: FontWeight.w900,
@@ -1089,10 +1086,9 @@ class _CoachTrainingPlanningDashboardPageState
       children: [
         Row(
           children: [
-            const Icon(Icons.lightbulb_outline_rounded,
-                color: olympusGold, size: 24),
+            Icon(Icons.lightbulb_outline_rounded, color: olympusGold, size: 24),
             const SizedBox(width: 8),
-            const Expanded(
+            Expanded(
               child: Text(
                 'Insights do planejamento',
                 style: TextStyle(
@@ -1117,7 +1113,7 @@ class _CoachTrainingPlanningDashboardPageState
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.bolt_rounded, color: olympusGold, size: 21),
+                Icon(Icons.bolt_rounded, color: olympusGold, size: 21),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -1218,7 +1214,7 @@ class _CoachTrainingPlanningDashboardPageState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Planejamento de Treinos',
                         style: TextStyle(
                           color: olympusBlue,
@@ -1236,7 +1232,7 @@ class _CoachTrainingPlanningDashboardPageState
                           color: olympusBlue.withOpacity(.10),
                           borderRadius: BorderRadius.circular(99),
                         ),
-                        child: const Text(
+                        child: Text(
                           'CRIAR • EDITAR • AVALIAR',
                           style: TextStyle(
                             color: olympusBlue,
@@ -1252,7 +1248,7 @@ class _CoachTrainingPlanningDashboardPageState
                 Container(
                   width: 38,
                   height: 38,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: olympusBlue,
                     shape: BoxShape.circle,
                   ),
@@ -1279,7 +1275,7 @@ class _CoachTrainingPlanningDashboardPageState
           color: Colors.white.withOpacity(0.96),
           borderRadius: BorderRadius.circular(22),
         ),
-        child: const Text(
+        child: Text(
           'Ainda não há planejamento salvo no Supabase.\n\nAbra um treino, crie os blocos e salve categoria, tipo e horários.',
           textAlign: TextAlign.center,
           style: TextStyle(

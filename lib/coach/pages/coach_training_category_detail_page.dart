@@ -15,7 +15,6 @@ class CoachTrainingCategoryDetailPage extends StatelessWidget {
   final String monthLabel;
   final List<Map<String, dynamic>> rows;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
   static const Color olympusMuted = Color(0xFF53657B);
   static const Color olympusBorder = Color(0xFFE4EDF5);
 
@@ -144,7 +143,10 @@ class CoachTrainingCategoryDetailPage extends StatelessWidget {
         Positioned.fill(
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
-            child: Container(color: const Color(0xFF071A30).withOpacity(.78)),
+            child: Container(
+              color: Color.lerp(olympusBlue, Colors.black, 0.36)!
+                  .withOpacity(.78),
+            ),
           ),
         ),
       ],
@@ -254,7 +256,7 @@ class CoachTrainingCategoryDetailPage extends StatelessWidget {
                             Expanded(
                               child: Text(
                                 summary.position,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: olympusBlue,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w900,
@@ -292,7 +294,7 @@ class CoachTrainingCategoryDetailPage extends StatelessWidget {
                                   backgroundColor: color.withOpacity(.09),
                                   side:
                                       BorderSide(color: color.withOpacity(.18)),
-                                  labelStyle: const TextStyle(
+                                  labelStyle: TextStyle(
                                     color: olympusBlue,
                                     fontSize: 11.5,
                                     fontWeight: FontWeight.w700,

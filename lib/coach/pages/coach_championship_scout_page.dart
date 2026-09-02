@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -38,9 +39,6 @@ class CoachChampionshipScoutEvaluationPage extends StatefulWidget {
 
 class _CoachChampionshipScoutEvaluationPageState
     extends State<CoachChampionshipScoutEvaluationPage> {
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusText = Color(0xFF17324D);
   static const Color olympusMuted = Color(0xFF53657B);
@@ -404,7 +402,7 @@ class _CoachChampionshipScoutEvaluationPageState
                 const SizedBox(height: 16),
                 Text(
                   'Motivo do erro em ${metric.title}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
@@ -428,7 +426,7 @@ class _CoachChampionshipScoutEvaluationPageState
                           label: Text(motivo),
                           onPressed: () => Navigator.pop(context, motivo),
                           backgroundColor: olympusBg,
-                          labelStyle: const TextStyle(
+                          labelStyle: TextStyle(
                             color: olympusBlue,
                             fontWeight: FontWeight.w800,
                           ),
@@ -818,7 +816,7 @@ class _CoachChampionshipScoutEvaluationPageState
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [olympusBlue, olympusLightBlue],
                       begin: Alignment.topLeft,
@@ -912,7 +910,7 @@ class _CoachChampionshipScoutEvaluationPageState
                               children: [
                                 Text(
                                   'Set $setNumber • +$positivos ações • $erros erros',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: olympusBlue,
                                     fontWeight: FontWeight.w900,
                                   ),
@@ -1020,7 +1018,7 @@ class _CoachChampionshipScoutEvaluationPageState
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text(
+                    Text(
                       'Quantidade de sets',
                       style: TextStyle(
                         color: olympusBlue,
@@ -1259,9 +1257,12 @@ class _CoachChampionshipScoutEvaluationPageState
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [Color(0xFF1E3A5F), Color(0xFF2C5F8D)],
+                      colors: [
+                        olympusBlue,
+                        Color.lerp(olympusBlue, Colors.white, 0.16)!,
+                      ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
@@ -1279,7 +1280,7 @@ class _CoachChampionshipScoutEvaluationPageState
                               border: Border.all(
                                   color: olympusGold.withOpacity(0.35)),
                             ),
-                            child: const Icon(Icons.emoji_events_rounded,
+                            child: Icon(Icons.emoji_events_rounded,
                                 color: olympusGold),
                           ),
                           const SizedBox(width: 12),
@@ -1556,7 +1557,7 @@ class _CoachChampionshipScoutEvaluationPageState
                     value,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: olympusBlue,
                       fontSize: 13,
                       fontWeight: FontWeight.w900,
@@ -1614,7 +1615,7 @@ class _CoachChampionshipScoutEvaluationPageState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Dashboard do técnico',
             style: TextStyle(
               color: olympusBlue,
@@ -1673,7 +1674,7 @@ class _CoachChampionshipScoutEvaluationPageState
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontSize: 12,
                     fontWeight: FontWeight.w900,
@@ -1855,7 +1856,7 @@ class _CoachChampionshipScoutEvaluationPageState
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
+                  gradient: LinearGradient(
                     colors: [olympusBlue, olympusLightBlue],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -1869,7 +1870,7 @@ class _CoachChampionshipScoutEvaluationPageState
                 ),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2083,7 +2084,7 @@ class _CoachChampionshipScoutEvaluationPageState
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
+                  gradient: LinearGradient(
                     colors: [olympusBlue, olympusLightBlue],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -2097,7 +2098,7 @@ class _CoachChampionshipScoutEvaluationPageState
                 ),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2336,7 +2337,7 @@ class _CoachChampionshipScoutEvaluationPageState
                           (item['nome'] ?? 'Atleta').toString(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: olympusBlue,
                             fontSize: 12,
                             fontWeight: FontWeight.w900,
@@ -2480,9 +2481,9 @@ class _CoachChampionshipScoutEvaluationPageState
       blur: 18,
       child: Row(
         children: [
-          const Icon(Icons.tune_rounded, color: olympusBlue, size: 18),
+          Icon(Icons.tune_rounded, color: olympusBlue, size: 18),
           const SizedBox(width: 8),
-          const Text(
+          Text(
             'Set',
             style: TextStyle(
               color: olympusBlue,
@@ -2538,7 +2539,7 @@ class _CoachChampionshipScoutEvaluationPageState
               ),
               child: Text(
                 '$_quantidadeSets sets',
-                style: const TextStyle(
+                style: TextStyle(
                   color: olympusBlue,
                   fontSize: 10.5,
                   fontWeight: FontWeight.w900,
@@ -2697,7 +2698,7 @@ class _CoachChampionshipScoutEvaluationPageState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Visão consolidada do jogo',
             style: TextStyle(
               color: olympusBlue,
@@ -2749,7 +2750,7 @@ class _CoachChampionshipScoutEvaluationPageState
               color: olympusGold.withOpacity(0.16),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.emoji_events_rounded,
               color: olympusGold,
             ),
@@ -2920,7 +2921,7 @@ class _CoachChampionshipScoutEvaluationPageState
               const SizedBox(width: 6),
               Text(
                 metric.title,
-                style: const TextStyle(
+                style: TextStyle(
                   color: olympusBlue,
                   fontSize: 13,
                   fontWeight: FontWeight.w900,
@@ -3007,7 +3008,7 @@ class _CoachChampionshipScoutEvaluationPageState
                         child: avatarUrl.trim().isEmpty
                             ? Text(
                                 nome.isNotEmpty ? nome[0].toUpperCase() : '?',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: olympusBlue,
                                   fontWeight: FontWeight.w900,
                                 ),
@@ -3114,7 +3115,7 @@ class _CoachChampionshipScoutEvaluationPageState
                           label: const Text('Salvar observação'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: olympusBlue,
-                            side: const BorderSide(color: olympusBlue),
+                            side: BorderSide(color: olympusBlue),
                           ),
                         ),
                       ),
@@ -3161,7 +3162,7 @@ class _CoachChampionshipScoutEvaluationPageState
           collapsedIconColor: olympusMuted,
           title: Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: olympusBlue,
               fontSize: 13,
               fontWeight: FontWeight.w900,
@@ -3203,7 +3204,7 @@ class _CoachChampionshipScoutEvaluationPageState
                 ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: olympusBlue,
-                  side: const BorderSide(color: olympusBlue),
+                  side: BorderSide(color: olympusBlue),
                   padding: const EdgeInsets.symmetric(vertical: 10),
                 ),
               ),
@@ -3219,7 +3220,7 @@ class _CoachChampionshipScoutEvaluationPageState
                 ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: olympusBlue,
-                  side: const BorderSide(color: olympusBlue),
+                  side: BorderSide(color: olympusBlue),
                   padding: const EdgeInsets.symmetric(vertical: 10),
                 ),
               ),
@@ -3330,7 +3331,7 @@ class _CoachChampionshipScoutEvaluationPageState
                   width: isMobile ? 34 : 38,
                   height: isMobile ? 34 : 38,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
+                    gradient: LinearGradient(
                       colors: [olympusBlue, olympusLightBlue],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
@@ -3362,7 +3363,7 @@ class _CoachChampionshipScoutEvaluationPageState
                   label: const Text('Relatório'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: olympusBlue,
-                    side: const BorderSide(color: olympusBlue),
+                    side: BorderSide(color: olympusBlue),
                     visualDensity: VisualDensity.compact,
                     padding:
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

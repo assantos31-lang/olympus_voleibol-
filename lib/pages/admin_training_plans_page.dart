@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'admin_training_plans_list_page.dart';
@@ -18,9 +19,6 @@ class AdminTrainingPlansPage extends StatefulWidget {
 class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
-  static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusText = Color(0xFF17324D);
   static const Color olympusMuted = Color(0xFF53657B);
@@ -795,13 +793,13 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                                 color: olympusBlue.withOpacity(0.10),
                                 borderRadius: BorderRadius.circular(14),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.tune_rounded,
                                 color: olympusBlue,
                               ),
                             ),
                             const SizedBox(width: 12),
-                            const Expanded(
+                            Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -877,7 +875,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                           },
                         ),
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                           'Gênero',
                           style: TextStyle(
                             color: olympusBlue,
@@ -1014,7 +1012,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: olympusBlue,
             fontSize: 12,
             fontWeight: FontWeight.w900,
@@ -1056,7 +1054,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
 
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [olympusBlue, olympusLightBlue],
           begin: Alignment.topCenter,
@@ -1231,7 +1229,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
 
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [olympusBlue, olympusLightBlue],
           begin: Alignment.topCenter,
@@ -1531,7 +1529,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
             children: [
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   color: olympusBlue,
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
@@ -1741,7 +1739,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                             children: [
                               Text(
                                 title,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: olympusBlue,
                                   fontSize: 18,
                                   fontWeight: FontWeight.w900,
@@ -1824,7 +1822,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                                           children: [
                                             Text(
                                               _asString(item['title']),
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 color: olympusBlue,
                                                 fontSize: 13.5,
                                                 fontWeight: FontWeight.w900,
@@ -2290,7 +2288,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                         Expanded(
                           child: Text(
                             category,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: olympusBlue,
                               fontSize: 13,
                               fontWeight: FontWeight.w900,
@@ -2601,7 +2599,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                       const SizedBox(height: 7),
                       Text(
                         entry.value,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: olympusBlue,
                           fontSize: 10.5,
                           fontWeight: FontWeight.w900,
@@ -2995,7 +2993,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                               Expanded(
                                 child: Text(
                                   coachName,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: olympusBlue,
                                     fontSize: 13.5,
                                     fontWeight: FontWeight.w900,
@@ -3023,7 +3021,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                           Expanded(
                             child: Text(
                               coachName,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: olympusBlue,
                                 fontSize: 13.5,
                                 fontWeight: FontWeight.w900,
@@ -3098,7 +3096,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Fundamentos mais usados no filtro atual',
                       style: TextStyle(
                         color: olympusBlue,
@@ -3130,7 +3128,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                           ),
                           child: Text(
                             '$foundation • ${_formatDuration(total)}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: olympusBlue,
                               fontSize: 10.8,
                               fontWeight: FontWeight.w900,
@@ -3240,7 +3238,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                         children: [
                           Text(
                             category,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: olympusBlue,
                               fontSize: 13,
                               fontWeight: FontWeight.w900,
@@ -3265,7 +3263,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
                           Expanded(
                             child: Text(
                               category,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: olympusBlue,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w900,
@@ -3538,7 +3536,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
@@ -3574,7 +3572,7 @@ class _AdminTrainingPlansPageState extends State<AdminTrainingPlansPage> {
             children: [
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   color: olympusBlue,
                   fontSize: 15,
                   fontWeight: FontWeight.w900,

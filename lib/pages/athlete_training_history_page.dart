@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AthleteTrainingHistoryPage extends StatefulWidget {
@@ -22,8 +23,6 @@ class _AthleteTrainingHistoryPageState
     extends State<AthleteTrainingHistoryPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
 
   bool _loading = true;
   String? _error;
@@ -161,7 +160,7 @@ class _AthleteTrainingHistoryPageState
       child: avatarUrl.isEmpty
           ? Text(
               athleteName.isNotEmpty ? athleteName[0].toUpperCase() : '?',
-              style: const TextStyle(
+              style: TextStyle(
                 color: olympusBlue,
                 fontWeight: FontWeight.w800,
               ),

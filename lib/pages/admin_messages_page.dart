@@ -1277,9 +1277,10 @@ class AdminCreateMessagePage extends StatefulWidget {
 class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
   final SupabaseClient supabase = Supabase.instance.client;
 
-  static const Color _olympusBlue = Color(0xFF0D2D59);
-  static const Color _olympusBlueLight = Color(0xFF1D568C);
-  static const Color _olympusGold = Color(0xFFE2B95F);
+  Color get _olympusBlue => olympusBlue;
+  Color get _olympusBlueLight =>
+      Color.lerp(olympusBlue, Colors.white, 0.18)!;
+  Color get _olympusGold => olympusGold;
   static const Color _olympusCream = Color(0xFFFFFBF3);
 
   final TextEditingController _subjectController = TextEditingController();
@@ -2309,7 +2310,7 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           colors: [_olympusBlue, _olympusBlueLight],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -2336,7 +2337,7 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
                   color: _olympusGold.withOpacity(0.18),
                   border: Border.all(color: _olympusGold.withOpacity(0.7)),
                 ),
-                child: const Icon(Icons.campaign_rounded, color: _olympusGold),
+                child: Icon(Icons.campaign_rounded, color: _olympusGold),
               ),
               const SizedBox(width: 12),
               const Expanded(
@@ -2370,7 +2371,7 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
                 ),
                 child: Text(
                   '$percent%',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _olympusGold,
                     fontWeight: FontWeight.w900,
                   ),
@@ -2385,13 +2386,13 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
               value: _composerProgress,
               minHeight: 7,
               backgroundColor: Colors.white.withOpacity(0.16),
-              valueColor: const AlwaysStoppedAnimation<Color>(_olympusGold),
+              valueColor: AlwaysStoppedAnimation<Color>(_olympusGold),
             ),
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.people_alt_rounded,
                 size: 17,
                 color: _olympusGold,
@@ -2459,7 +2460,7 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
                     children: [
                       Text(
                         'ETAPA $step',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _olympusGold,
                           fontSize: 10,
                           fontWeight: FontWeight.w900,
@@ -2468,7 +2469,7 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
                       ),
                       Text(
                         title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _olympusBlue,
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
@@ -2596,6 +2597,9 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
 
   @override
   Widget build(BuildContext context) {
+    final branding = OlympusBrandingController.instance.branding;
+    final primary = branding.primaryColor;
+    final onPrimary = Theme.of(context).colorScheme.onPrimary;
     final showProfile = _sendMode == 'Por perfil';
     final showGenderFilter =
         _sendMode == '1 usuário' || _sendMode == 'Vários usuários';
@@ -2606,12 +2610,12 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
         (_sendMode == 'Vários usuários');
 
     return Scaffold(
-      backgroundColor: _olympusBlue,
+      backgroundColor: primary,
       appBar: AppBar(
-        backgroundColor: _olympusBlue,
-        foregroundColor: Colors.white,
+        backgroundColor: primary,
+        foregroundColor: onPrimary,
         elevation: 0,
-        title: const Column(
+        title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
@@ -2619,9 +2623,9 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
               style: TextStyle(fontWeight: FontWeight.w900),
             ),
             Text(
-              'Comunicação Olympus',
+              'Comunicação ${branding.teamName}',
               style: TextStyle(
-                color: Color(0xFFD5E4F2),
+                color: onPrimary.withOpacity(0.78),
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
               ),
@@ -2634,8 +2638,7 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
           Positioned.fill(
             child: OlympusBrandBackgroundImage(
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) =>
-                  const ColoredBox(color: _olympusBlue),
+              errorBuilder: (_, __, ___) => ColoredBox(color: primary),
             ),
           ),
           Positioned.fill(
@@ -2645,15 +2648,15 @@ class _AdminCreateMessagePageState extends State<AdminCreateMessagePage> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    const Color(0xFF07182B).withOpacity(0.84),
-                    _olympusBlue.withOpacity(0.92),
+                    Color.lerp(primary, Colors.black, 0.68)!.withOpacity(0.84),
+                    primary.withOpacity(0.92),
                   ],
                 ),
               ),
             ),
           ),
           _loading
-              ? const Center(
+              ? Center(
                   child: CircularProgressIndicator(color: _olympusGold),
                 )
               : ListView(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/technical_staff_service.dart';
+import '../theme/olympus_theme.dart';
 
 class AdminTechnicalStaffPage extends StatefulWidget {
   const AdminTechnicalStaffPage({super.key, this.initialUserId});
@@ -13,9 +14,10 @@ class AdminTechnicalStaffPage extends StatefulWidget {
 }
 
 class _AdminTechnicalStaffPageState extends State<AdminTechnicalStaffPage> {
-  static const _blue = Color(0xFF1E3A5F);
-  static const _gold = Color(0xFFD4AF37);
-  static const _background = Color(0xFFF4F7FB);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get _blue => _branding.primaryColor;
+  Color get _gold => _branding.secondaryColor;
+  Color get _background => _branding.backgroundColor;
 
   final TechnicalStaffService _service = TechnicalStaffService();
   List<Map<String, dynamic>> _profiles = const [];
@@ -223,12 +225,16 @@ class _AdminTechnicalStaffPageState extends State<AdminTechnicalStaffPage> {
 
   @override
   Widget build(BuildContext context) {
+    final branding = OlympusBrandingController.instance.branding;
+    final primary = branding.primaryColor;
+    final secondary = branding.secondaryColor;
+    final onPrimary = Theme.of(context).colorScheme.onPrimary;
     final active = _assignments.where((item) => item.isActive).toList();
     return Scaffold(
-      backgroundColor: _background,
+      backgroundColor: branding.backgroundColor,
       appBar: AppBar(
-        backgroundColor: _blue,
-        foregroundColor: Colors.white,
+        backgroundColor: primary,
+        foregroundColor: onPrimary,
         title: const Text('Equipe Técnica'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded)),
@@ -236,8 +242,8 @@ class _AdminTechnicalStaffPageState extends State<AdminTechnicalStaffPage> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _loading ? null : () => _openEditor(),
-        backgroundColor: _gold,
-        foregroundColor: _blue,
+        backgroundColor: secondary,
+        foregroundColor: primary,
         icon: const Icon(Icons.person_add_alt_1_rounded),
         label: const Text(
           'Liberar profissional',
@@ -261,7 +267,7 @@ class _AdminTechnicalStaffPageState extends State<AdminTechnicalStaffPage> {
                         ),
                         child: Row(
                           children: [
-                            const CircleAvatar(
+                            CircleAvatar(
                               backgroundColor: Color(0x33D4AF37),
                               child: Icon(Icons.account_tree_rounded,
                                   color: _gold),
@@ -298,7 +304,7 @@ class _AdminTechnicalStaffPageState extends State<AdminTechnicalStaffPage> {
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: _gold.withOpacity(0.35)),
                         ),
-                        child: const Row(
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Icon(Icons.touch_app_rounded, color: _blue),
@@ -316,7 +322,7 @@ class _AdminTechnicalStaffPageState extends State<AdminTechnicalStaffPage> {
                         ),
                       ),
                       const SizedBox(height: 18),
-                      const Text(
+                      Text(
                         'Cadeia de comando',
                         style: TextStyle(
                           color: _blue,
@@ -371,7 +377,7 @@ class _AdminTechnicalStaffPageState extends State<AdminTechnicalStaffPage> {
                 children: [
                   Text(
                     _name(item.userId),
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _blue,
                       fontSize: 15.5,
                       fontWeight: FontWeight.w900,
@@ -489,8 +495,9 @@ class _CoordinatorTeamResult {
 }
 
 class _CoordinatorTeamEditorState extends State<_CoordinatorTeamEditor> {
-  static const _blue = Color(0xFF1E3A5F);
-  static const _gold = Color(0xFFD4AF37);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get _blue => _branding.primaryColor;
+  Color get _gold => _branding.secondaryColor;
   late final Set<String> _selected;
 
   @override
@@ -572,7 +579,7 @@ class _CoordinatorTeamEditorState extends State<_CoordinatorTeamEditor> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Definir equipe do coordenador',
                   style: TextStyle(
                     color: _blue,
@@ -610,7 +617,7 @@ class _CoordinatorTeamEditorState extends State<_CoordinatorTeamEditor> {
                         return Card(
                           elevation: 0,
                           child: ListTile(
-                            leading: const CircleAvatar(
+                            leading: CircleAvatar(
                               backgroundColor: Color(0x1FD4AF37),
                               child: Icon(
                                 Icons.person_add_alt_1_rounded,
@@ -619,7 +626,7 @@ class _CoordinatorTeamEditorState extends State<_CoordinatorTeamEditor> {
                             ),
                             title: Text(
                               _name(userId),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _blue,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -647,7 +654,7 @@ class _CoordinatorTeamEditorState extends State<_CoordinatorTeamEditor> {
                           checkColor: _blue,
                           title: Text(
                             _name(item.userId),
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: _blue,
                               fontWeight: FontWeight.w800,
                             ),
@@ -729,6 +736,8 @@ class _TechnicalStaffEditor extends StatefulWidget {
 }
 
 class _TechnicalStaffEditorState extends State<_TechnicalStaffEditor> {
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get _primary => _branding.primaryColor;
   String? _userId;
   String _role = TechnicalStaffRole.headCoach;
   String? _supervisorUserId;
@@ -820,10 +829,10 @@ class _TechnicalStaffEditorState extends State<_TechnicalStaffEditor> {
               ),
             ),
             const SizedBox(height: 18),
-            const Text(
+            Text(
               'Liberar profissional',
               style: TextStyle(
-                color: Color(0xFF1E3A5F),
+                color: _primary,
                 fontSize: 21,
                 fontWeight: FontWeight.w900,
               ),
@@ -1000,16 +1009,17 @@ class _PermissionChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = OlympusBrandingController.instance.branding.primaryColor;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: danger ? Colors.red.shade50 : const Color(0xFFEAF2FB),
+        color: danger ? Colors.red.shade50 : primary.withOpacity(0.08),
         borderRadius: BorderRadius.circular(99),
       ),
       child: Text(
         label,
         style: TextStyle(
-          color: danger ? Colors.red.shade700 : const Color(0xFF1E3A5F),
+          color: danger ? Colors.red.shade700 : primary,
           fontSize: 11,
           fontWeight: FontWeight.w700,
         ),

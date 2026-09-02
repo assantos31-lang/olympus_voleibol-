@@ -73,9 +73,6 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   bool _canViewConvocados = false;
   bool _canExportDadosJogo = false;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const String _geocodeAccessKey = 'pk.5a7a05184e41c916429dceb50cf02718';
   static const String _eventsEmbedFk = 'convocations_event_id_fkey';
 
@@ -905,7 +902,7 @@ enable_ride_logistics
                 const SizedBox(width: 7),
                 Text(
                   _getResumoTipoLabel(tipo),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontSize: 12,
                     fontWeight: FontWeight.w900,
@@ -1075,7 +1072,7 @@ enable_ride_logistics
           constraints: const BoxConstraints(maxWidth: 520),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               colors: [
                 olympusBlue,
                 olympusLightBlue,
@@ -1156,7 +1153,7 @@ enable_ride_logistics
                                 ),
                               ],
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.edit_note_rounded,
                               color: olympusBlue,
                               size: 25,
@@ -1227,7 +1224,7 @@ enable_ride_logistics
                                   ),
                                   child: Text(
                                     tipoEvento.toUpperCase(),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: olympusGold,
                                       fontSize: 11,
                                       fontWeight: FontWeight.w900,
@@ -1444,7 +1441,7 @@ enable_ride_logistics
               constraints: const BoxConstraints(maxWidth: 520),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(24),
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   colors: [
                     olympusBlue,
                     olympusLightBlue,
@@ -1525,7 +1522,7 @@ enable_ride_logistics
                                     ),
                                   ],
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.rate_review_rounded,
                                   color: olympusBlue,
                                   size: 24,
@@ -1586,7 +1583,7 @@ enable_ride_logistics
                               maxLines: 4,
                               minLines: 3,
                               textCapitalization: TextCapitalization.sentences,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: olympusBlue,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -1852,7 +1849,7 @@ enable_ride_logistics
                         children: [
                           Text(
                             'Convocados: ${(evento['event_name'] ?? '').toString()}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                               color: olympusBlue,
@@ -2284,7 +2281,7 @@ enable_ride_logistics
           }
           return Colors.white.withOpacity(0.16);
         }),
-        labelStyle: const TextStyle(
+        labelStyle: TextStyle(
           color: olympusBlue,
           fontSize: 12,
           fontWeight: FontWeight.w800,
@@ -2451,7 +2448,7 @@ enable_ride_logistics
                       color: olympusGold.withOpacity(0.60),
                       width: 1.3,
                     ),
-                    gradient: const LinearGradient(
+                    gradient: LinearGradient(
                       colors: [
                         olympusBlue,
                         olympusLightBlue,
@@ -2521,7 +2518,7 @@ enable_ride_logistics
                                         end: Alignment.bottomRight,
                                       ),
                                     ),
-                                    child: const Icon(
+                                    child: Icon(
                                       Icons.directions_car_filled_rounded,
                                       color: olympusBlue,
                                       size: 22,
@@ -2802,6 +2799,8 @@ enable_ride_logistics
 
   List<String> _getMesesDisponiveis() {
     final meses = <String>{};
+    meses.add(_getMesAtual());
+    if (_filtroMes.isNotEmpty) meses.add(_filtroMes);
     for (final e in _eventos) {
       final data = (e['event_date'] ?? '').toString();
       if (data.length >= 7) meses.add(data.substring(3));
@@ -2818,7 +2817,6 @@ enable_ride_logistics
       final bm = int.tryParse(bp[0]) ?? 0;
       return am.compareTo(bm);
     });
-    if (list.isEmpty) return <String>[];
     return list;
   }
 
@@ -2870,8 +2868,8 @@ enable_ride_logistics
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  const Color(0xFF102845).withOpacity(0.55),
-                  const Color(0xFF1E3A5F).withOpacity(0.30),
+                  olympusBlue.withOpacity(0.55),
+                  olympusBlue.withOpacity(0.30),
                   Colors.black.withOpacity(0.60),
                 ],
               ),
@@ -2883,14 +2881,16 @@ enable_ride_logistics
   }
 
   Widget _buildAccessDeniedScreen() {
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text(
           'Agenda',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: olympusBlue,
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: colors.primary,
+        foregroundColor: colors.onPrimary,
+        iconTheme: IconThemeData(color: colors.onPrimary),
         elevation: 2,
       ),
       body: Stack(
@@ -2971,7 +2971,7 @@ enable_ride_logistics
           Positioned.fill(
             child: _buildPremiumAgendaBackground(),
           ),
-          const Center(
+          Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -2997,6 +2997,8 @@ enable_ride_logistics
 
   @override
   Widget build(BuildContext context) {
+    final branding = OlympusBrandingController.instance.branding;
+    final colors = Theme.of(context).colorScheme;
     if (_checkingPermission) {
       return _buildPermissionCheckingScreen();
     }
@@ -3014,8 +3016,9 @@ enable_ride_logistics
             fontWeight: FontWeight.bold,
           ),
         ),
-        backgroundColor: olympusBlue,
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: colors.primary,
+        foregroundColor: colors.onPrimary,
+        iconTheme: IconThemeData(color: colors.onPrimary),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -3034,11 +3037,15 @@ enable_ride_logistics
             children: [
               Container(
                 padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      olympusBlue,
-                      olympusLightBlue,
+                      colors.primary,
+                      Color.lerp(
+                        colors.primary,
+                        branding.backgroundColor,
+                        0.18,
+                      )!,
                     ],
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
@@ -3103,7 +3110,7 @@ enable_ride_logistics
               _buildResumoPorTipoSection(),
               Expanded(
                 child: _loading
-                    ? const Center(
+                    ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -4131,7 +4138,7 @@ enable_ride_logistics
               shape: BoxShape.circle,
               border: Border.all(color: olympusBlue.withOpacity(0.22)),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.star_rounded,
               color: olympusBlue,
               size: 24,
@@ -4142,7 +4149,7 @@ enable_ride_logistics
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Próximo evento',
                   style: TextStyle(
                     color: olympusBlue,
@@ -4154,7 +4161,7 @@ enable_ride_logistics
                 const SizedBox(height: 3),
                 Text(
                   nomeEvento.isNotEmpty ? nomeEvento : eventType.toUpperCase(),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
@@ -4324,7 +4331,7 @@ enable_ride_logistics
                 ),
                 child: Text(
                   count.toString(),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontSize: 10,
                     fontWeight: FontWeight.w900,

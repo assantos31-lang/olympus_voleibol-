@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/chat_message.dart';
 import '../models/chat_poll.dart';
 import '../models/chat_room.dart';
+import 'organization_context_service.dart';
 import 'organization_storage_service.dart';
 
 class ChatRoomListItem {
@@ -3067,7 +3068,7 @@ class ChatService {
       final senderName =
           senderProfile?['full_name']?.toString().trim().isNotEmpty == true
               ? senderProfile!['full_name'].toString().trim()
-              : 'Olympus Chat';
+              : '${OrganizationContextService.instance.currentName} Chat';
 
       final tokenRows = await supabase
           .from('user_push_tokens')

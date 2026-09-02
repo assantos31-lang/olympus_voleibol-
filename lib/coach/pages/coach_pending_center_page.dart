@@ -23,9 +23,6 @@ class CoachPendingCenterPage extends StatelessWidget {
   final VoidCallback onOpenPlanning;
   final VoidCallback onOpenMessages;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
-  static const Color olympusGold = Color(0xFFD4AF37);
 
   int get _total =>
       pendingEvaluationsCount + unplannedTrainingsCount + unreadMessagesCount;
@@ -211,7 +208,7 @@ class CoachPendingCenterPage extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.notifications_active_outlined,
                           color: olympusGold,
                           size: 30,

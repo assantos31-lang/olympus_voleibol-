@@ -15,6 +15,7 @@ import '../services/auth_service.dart';
 import '../services/permission_service.dart';
 import '../services/role_service.dart';
 import '../services/organization_context_service.dart';
+import '../services/organization_storage_service.dart';
 import '../widgets/role_manager_widget.dart';
 import 'admin_technical_staff_page.dart';
 
@@ -38,9 +39,11 @@ class _ProfilesPageState extends State<ProfilesPage> {
   final TextEditingController _profilesSearchController =
       TextEditingController();
   String _profilesSearchQuery = '';
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get olympusBlue => _branding.primaryColor;
+  Color get olympusGold => _branding.secondaryColor;
+  Color get olympusLightBlue =>
+      Color.lerp(_branding.primaryColor, _branding.surfaceColor, 0.20)!;
 
   @override
   void initState() {
@@ -358,7 +361,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
-          title: const Row(
+          title: Row(
             children: [
               CircleAvatar(
                 backgroundColor: Color(0xFFE8F0F8),
@@ -376,7 +379,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
               children: [
                 Text(
                   (profile['full_name'] ?? 'Atleta').toString(),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontWeight: FontWeight.w800,
                   ),
@@ -488,7 +491,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
               children: [
                 Text(
                   name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w900,
                     color: olympusBlue,
                   ),
@@ -701,15 +704,16 @@ class _ProfilesPageState extends State<ProfilesPage> {
     required String email,
     required String password,
   }) async {
+    final clubName = _branding.teamName;
     final message = email.trim().isEmpty
-        ? 'Olá, $userName!\n\nSua senha temporária de acesso ao Olympus Voleibol é:\n$password\n\nNo primeiro acesso, o aplicativo solicitará obrigatoriamente uma nova senha.'
-        : 'Olá, $userName!\n\nE-mail: $email\nSenha temporária de acesso ao Olympus Voleibol: $password\n\nNo primeiro acesso, o aplicativo solicitará obrigatoriamente uma nova senha.';
+        ? 'Olá, $userName!\n\nSua senha temporária de acesso ao $clubName é:\n$password\n\nNo primeiro acesso, o aplicativo solicitará obrigatoriamente uma nova senha.'
+        : 'Olá, $userName!\n\nE-mail: $email\nSenha temporária de acesso ao $clubName: $password\n\nNo primeiro acesso, o aplicativo solicitará obrigatoriamente uma nova senha.';
 
     await Clipboard.setData(ClipboardData(text: message));
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text('Mensagem com a nova senha copiada!'),
         backgroundColor: olympusBlue,
       ),
@@ -721,7 +725,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text('Senha copiada!'),
         backgroundColor: olympusBlue,
       ),
@@ -880,7 +884,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   children: [
                     Text(
                       userName,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: olympusBlue,
                       ),
@@ -958,7 +962,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         ),
                         child: SelectableText(
                           generatedPassword,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 1.1,
@@ -1287,8 +1291,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                 height: 42,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1E3A5F), Color(0xFF2C5F8D)],
+                  gradient: LinearGradient(
+                    colors: [olympusBlue, olympusLightBlue],
                   ),
                 ),
                 child: const Icon(Icons.lock_outline, color: Colors.white),
@@ -1320,13 +1324,13 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       onExpansionChanged: (value) {
                         setDialogState(() => rolesExpanded = value);
                       },
-                      leading: const CircleAvatar(
+                      leading: CircleAvatar(
                         backgroundColor: Color(0xFFE8F0F8),
                         child: Icon(Icons.badge_outlined, color: olympusBlue),
                       ),
                       title: Text(
                         userName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: olympusBlue,
                           fontWeight: FontWeight.w900,
                         ),
@@ -1528,11 +1532,11 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           horizontal: 12,
                           vertical: 3,
                         ),
-                        secondary: const Icon(
+                        secondary: Icon(
                           Icons.notifications_active_outlined,
                           color: olympusBlue,
                         ),
-                        title: const Text(
+                        title: Text(
                           'Avisar aceite ou recusa',
                           style: TextStyle(
                             color: olympusBlue,
@@ -2219,7 +2223,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
             const Text('E-mail:'),
             Text(
               email,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: olympusBlue,
               ),
@@ -2240,7 +2244,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   Expanded(
                     child: Text(
                       password,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         fontFamily: 'monospace',
@@ -2249,14 +2253,14 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.copy, color: olympusGold),
+                    icon: Icon(Icons.copy, color: olympusGold),
                     tooltip: 'Copiar e-mail e senha',
                     onPressed: () {
                       Clipboard.setData(
                         ClipboardData(text: 'E-mail: $email\nSenha: $password'),
                       );
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
+                        SnackBar(
                           content: Text('E-mail e senha copiados!'),
                           duration: Duration(seconds: 2),
                           backgroundColor: olympusBlue,
@@ -2314,10 +2318,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   enabled: !isSubmitting,
                   decoration: InputDecoration(
                     labelText: 'Nome Completo',
-                    prefixIcon: const Icon(Icons.person, color: olympusGold),
+                    prefixIcon: Icon(Icons.person, color: olympusGold),
                     border: const OutlineInputBorder(),
                     focusedBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(
+                      borderSide: BorderSide(
                         color: olympusGold,
                         width: 2,
                       ),
@@ -2332,10 +2336,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   keyboardType: TextInputType.emailAddress,
                   decoration: InputDecoration(
                     labelText: 'E-mail',
-                    prefixIcon: const Icon(Icons.email, color: olympusGold),
+                    prefixIcon: Icon(Icons.email, color: olympusGold),
                     border: const OutlineInputBorder(),
                     focusedBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(
+                      borderSide: BorderSide(
                         color: olympusGold,
                         width: 2,
                       ),
@@ -2350,10 +2354,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   keyboardType: TextInputType.phone,
                   decoration: InputDecoration(
                     labelText: 'Telefone',
-                    prefixIcon: const Icon(Icons.phone, color: olympusGold),
+                    prefixIcon: Icon(Icons.phone, color: olympusGold),
                     border: const OutlineInputBorder(),
                     focusedBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(
+                      borderSide: BorderSide(
                         color: olympusGold,
                         width: 2,
                       ),
@@ -2366,10 +2370,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   value: selectedType,
                   decoration: InputDecoration(
                     labelText: 'Tipo de Usuário',
-                    prefixIcon: const Icon(Icons.badge, color: olympusGold),
+                    prefixIcon: Icon(Icons.badge, color: olympusGold),
                     border: const OutlineInputBorder(),
                     focusedBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(
+                      borderSide: BorderSide(
                         color: olympusGold,
                         width: 2,
                       ),
@@ -2488,7 +2492,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       }
                     },
               icon: isSubmitting
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
@@ -2614,7 +2618,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   borderSide: BorderSide(color: Colors.white.withOpacity(0.12)),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: olympusGold, width: 1.8),
+                  borderSide: BorderSide(color: olympusGold, width: 1.8),
                   borderRadius: BorderRadius.circular(14),
                 ),
               ),
@@ -2719,7 +2723,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                 ),
               ),
               const SizedBox(height: 18),
-              const Row(
+              Row(
                 children: [
                   Icon(Icons.tune_rounded, color: olympusBlue),
                   SizedBox(width: 10),
@@ -2831,7 +2835,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
             decoration: InputDecoration(
               hintText: 'Buscar por nome, telefone ou CPF',
               hintStyle: TextStyle(color: Colors.white.withOpacity(0.60)),
-              prefixIcon: const Icon(Icons.search_rounded, color: olympusGold),
+              prefixIcon: Icon(Icons.search_rounded, color: olympusGold),
               suffixIcon: _profilesSearchQuery.isEmpty
                   ? null
                   : IconButton(
@@ -2858,7 +2862,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: olympusGold, width: 1.5),
+                borderSide: BorderSide(color: olympusGold, width: 1.5),
               ),
             ),
           ),
@@ -2934,7 +2938,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
               ),
               Text(
                 '$resultsCount perfil${resultsCount == 1 ? '' : 'is'}',
-                style: const TextStyle(
+                style: TextStyle(
                   color: olympusGold,
                   fontWeight: FontWeight.w900,
                   fontSize: 12,
@@ -3136,16 +3140,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
     final coachTeamGender = (profile['coach_team_gender'] ?? '').toString();
     final isActive = _isProfileActive(profile);
 
-    Color cardColor;
-    if (gender == 'Masculino') {
-      cardColor = Colors.blue;
-    } else if (gender == 'Feminino') {
-      cardColor = Colors.purple;
-    } else {
-      cardColor = Colors.white;
-    }
-
-    if (!isActive) cardColor = Colors.grey;
+    final cardColor = isActive ? olympusBlue : Colors.grey;
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
@@ -3290,7 +3285,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     PopupMenuButton<String>(
                       icon: Icon(Icons.more_vert_rounded, color: olympusGold),
                       tooltip: 'Ações do perfil',
-                      color: const Color(0xFF102D4F),
+                      color: Color.lerp(olympusBlue, Colors.black, 0.28),
                       surfaceTintColor: Colors.transparent,
                       elevation: 14,
                       offset: const Offset(-8, 8),
@@ -3588,6 +3583,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final branding = OlympusBrandingController.instance.branding;
+    final primary = branding.primaryColor;
+    final secondary = branding.secondaryColor;
+    final onPrimary = Theme.of(context).colorScheme.onPrimary;
     final filteredProfiles = _getFilteredProfiles();
 
     if (_isCheckingAccess) {
@@ -3600,9 +3599,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Perfis - Olympus Voleibol',
-              style: TextStyle(fontWeight: FontWeight.bold),
+            Text(
+              'Perfis - ${branding.teamName}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             FutureBuilder<String?>(
               future: _getCurrentUserType(),
@@ -3612,7 +3611,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     '👤 ${_getUserTypeLabel(snapshot.data)}',
                     style: TextStyle(
                       fontSize: 12,
-                      color: olympusGold.withOpacity(0.9),
+                      color: secondary.withOpacity(0.9),
                     ),
                   );
                 }
@@ -3622,8 +3621,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
           ],
         ),
         centerTitle: false,
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
+        backgroundColor: primary,
+        foregroundColor: onPrimary,
         elevation: 2,
         actions: [
           IconButton(
@@ -3655,7 +3654,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
           isLoading
               ? Center(
                   child: CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(olympusGold),
+                    valueColor: AlwaysStoppedAnimation<Color>(secondary),
                   ),
                 )
               : _buildGlassContentShell(
@@ -3684,8 +3683,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
         onPressed: () => showProfileDialog(),
         icon: const Icon(Icons.person_add),
         label: const Text('Novo Perfil'),
-        backgroundColor: olympusGold,
-        foregroundColor: olympusBlue,
+        backgroundColor: secondary,
+        foregroundColor: primary,
         elevation: 4,
       ),
     );
@@ -3788,9 +3787,11 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
   bool _isFetchingCep = false;
   bool _isUploading = false;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get olympusBlue => _branding.primaryColor;
+  Color get olympusGold => _branding.secondaryColor;
+  Color get olympusLightBlue =>
+      Color.lerp(_branding.primaryColor, _branding.surfaceColor, 0.20)!;
 
   final Map<String, List<Map<String, String>>> _positions = {
     'Masculino': [
@@ -3884,7 +3885,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
             _stateController.text = data['uf'] ?? '';
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text('✅ Endereço preenchido automaticamente!'),
               duration: Duration(seconds: 2),
               backgroundColor: olympusBlue,
@@ -3920,8 +3921,17 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
     if (_selectedImage == null) return null;
     if (mounted) setState(() => _isUploading = true);
     try {
-      final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${_fullNameController.text.replaceAll(RegExp(r"\D"), "")}.jpg';
+      final sessionUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (sessionUserId == null) {
+        throw StateError(
+            'Sessão expirada. Entre novamente para salvar a foto.');
+      }
+      final profileOwnerId =
+          (widget.profile?['id'] ?? sessionUserId).toString().trim();
+      await OrganizationContextService.instance.initialize(force: true);
+      final fileName = OrganizationStorageService.scopedPath(
+        'avatars/$profileOwnerId/${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
       final supabase = Supabase.instance.client;
       final sourceBytes = await _selectedImage!.readAsBytes();
       final decoded = img.decodeImage(sourceBytes);
@@ -3981,7 +3991,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
       lastDate: DateTime.now(),
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(
+          colorScheme: ColorScheme.light(
             primary: olympusGold,
             onPrimary: Colors.white,
           ),
@@ -4036,7 +4046,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
         if (MediaQuery.of(context).size.width >= 600)
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [olympusBlue, olympusLightBlue],
                 begin: Alignment.centerLeft,
@@ -4089,8 +4099,8 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                   Center(
                     child: TextButton.icon(
                       onPressed: _pickImage,
-                      icon: const Icon(Icons.photo_camera, color: olympusGold),
-                      label: const Text(
+                      icon: Icon(Icons.photo_camera, color: olympusGold),
+                      label: Text(
                         'Selecionar Foto',
                         style: TextStyle(color: olympusBlue),
                       ),
@@ -4222,19 +4232,19 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                     decoration: InputDecoration(
                       labelText: 'Data de Nascimento',
                       border: const OutlineInputBorder(),
-                      prefixIcon: const Icon(
+                      prefixIcon: Icon(
                         Icons.calendar_today,
                         color: olympusGold,
                       ),
                       suffixIcon: IconButton(
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.calendar_today,
                           color: olympusGold,
                         ),
                         onPressed: _selectDate,
                       ),
                       focusedBorder: OutlineInputBorder(
-                        borderSide: const BorderSide(
+                        borderSide: BorderSide(
                           color: olympusGold,
                           width: 2,
                         ),
@@ -4269,13 +4279,13 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.location_on,
                         color: olympusGold,
                         size: 20,
                       ),
                       const SizedBox(width: 8),
-                      const Text(
+                      Text(
                         'Endereço',
                         style: TextStyle(
                           fontSize: 16,
@@ -4291,12 +4301,12 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                     decoration: InputDecoration(
                       labelText: 'CEP *',
                       border: const OutlineInputBorder(),
-                      prefixIcon: const Icon(
+                      prefixIcon: Icon(
                         Icons.location_on,
                         color: olympusGold,
                       ),
                       suffixIcon: _isFetchingCep
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(
@@ -4308,7 +4318,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                             )
                           : null,
                       focusedBorder: OutlineInputBorder(
-                        borderSide: const BorderSide(
+                        borderSide: BorderSide(
                           color: olympusGold,
                           width: 2,
                         ),
@@ -4442,7 +4452,7 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
                   ),
                 ),
                 child: _isLoading || _isUploading
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(

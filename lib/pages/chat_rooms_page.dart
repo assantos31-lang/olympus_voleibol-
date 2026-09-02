@@ -32,9 +32,10 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
   bool _openedPendingPollRoom = false;
   final Set<String> _pinnedRoomIds = <String>{};
 
-  static const Color _gold = Color(0xFFD4B06A);
-  static const Color _navy = Color(0xFF0E2A57);
-  static const Color _navyDark = Color(0xFF0A1730);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get _gold => _branding.secondaryColor;
+  Color get _navy => _branding.primaryColor;
+  Color get _navyDark => _branding.premiumCardColor;
 
   @override
   void initState() {
@@ -382,7 +383,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
               titlePadding: const EdgeInsets.fromLTRB(22, 20, 22, 8),
               contentPadding: const EdgeInsets.fromLTRB(18, 4, 18, 0),
               actionsPadding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
-              title: const Row(
+              title: Row(
                 children: [
                   CircleAvatar(
                     backgroundColor: _navy,
@@ -427,7 +428,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                 ? FileImage(selectedImage!)
                                 : null,
                             child: selectedImage == null
-                                ? const Icon(
+                                ? Icon(
                                     Icons.add_a_photo_rounded,
                                     color: _navy,
                                   )
@@ -456,7 +457,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                           selectedUserIds.isEmpty
                               ? 'Selecionar participantes'
                               : '${selectedUserIds.length} participante(s) selecionado(s)',
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _navy,
                             fontWeight: FontWeight.w800,
                           ),
@@ -555,7 +556,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                                 fullName,
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   color: _navy,
                                                   fontWeight: FontWeight.w800,
                                                 ),
@@ -728,7 +729,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                 errorWidget: (_, __, ___) => Center(
                   child: Text(
                     initial,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _gold,
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
@@ -739,7 +740,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
             : Center(
                 child: Text(
                   initial,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _gold,
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
@@ -1099,7 +1100,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
         ),
         child: Text(
           item.unreadCount > 99 ? '99+' : item.unreadCount.toString(),
-          style: const TextStyle(
+          style: TextStyle(
             color: _navyDark,
             fontWeight: FontWeight.w800,
             fontSize: 11.5,
@@ -1109,11 +1110,11 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
     }
 
     if (room.isLocked) {
-      return const Icon(Icons.lock_outline_rounded, color: _gold, size: 22);
+      return Icon(Icons.lock_outline_rounded, color: _gold, size: 22);
     }
 
     if (room.adminOnly) {
-      return const Icon(Icons.campaign_outlined, color: _gold, size: 22);
+      return Icon(Icons.campaign_outlined, color: _gold, size: 22);
     }
 
     return null;
@@ -1132,19 +1133,19 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
 
   Widget _buildCenterRoomIcon(ChatRoomListItem item, int index) {
     if (item.room.adminOnly) {
-      return const Icon(Icons.shield_outlined, color: _gold, size: 36);
+      return Icon(Icons.shield_outlined, color: _gold, size: 36);
     }
     if (item.room.isLocked) {
-      return const Icon(Icons.lock_outline_rounded, color: _gold, size: 34);
+      return Icon(Icons.lock_outline_rounded, color: _gold, size: 34);
     }
     if (index.isOdd) {
-      return const Icon(
+      return Icon(
         Icons.volunteer_activism_outlined,
         color: _gold,
         size: 36,
       );
     }
-    return const Icon(Icons.sports_volleyball_outlined, color: _gold, size: 40);
+    return Icon(Icons.sports_volleyball_outlined, color: _gold, size: 40);
   }
 
   Widget _buildSearchBar() {
@@ -1154,7 +1155,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: _gold.withValues(alpha: 0.28)),
-          color: const Color(0xFF132F52).withValues(alpha: 0.94),
+          color: _navyDark.withValues(alpha: 0.94),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.16),
@@ -1170,13 +1171,13 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
           decoration: InputDecoration(
             hintText: 'Pesquisar conversas',
             hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.65)),
-            prefixIcon: const Icon(Icons.search, color: _gold),
+            prefixIcon: Icon(Icons.search, color: _gold),
             suffixIcon: _searchQuery.isNotEmpty
                 ? IconButton(
                     onPressed: () {
                       _searchController.clear();
                     },
-                    icon: const Icon(Icons.close_rounded, color: _gold),
+                    icon: Icon(Icons.close_rounded, color: _gold),
                   )
                 : null,
             border: InputBorder.none,
@@ -1224,8 +1225,13 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
               ),
               gradient: LinearGradient(
                 colors: hasUnread
-                    ? const [Color(0xFF193E68), Color(0xFF102B4B)]
-                    : const [Color(0xE8122E50), Color(0xE80B213D)],
+                    ? [_navy, _navyDark]
+                    : [
+                        Color.lerp(_navyDark, Colors.white, 0.06)!
+                            .withValues(alpha: 0.92),
+                        Color.lerp(_navyDark, Colors.black, 0.12)!
+                            .withValues(alpha: 0.92),
+                      ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -1263,10 +1269,10 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                               ),
                             ),
                             if (isPinned) ...[
-                              const SizedBox(height: 4),
+                              SizedBox(height: 4),
                               Row(
                                 mainAxisSize: MainAxisSize.min,
-                                children: const [
+                                children: [
                                   Icon(
                                     Icons.push_pin_rounded,
                                     size: 13,
@@ -1389,8 +1395,8 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
       padding: const EdgeInsets.fromLTRB(16, 15, 14, 15),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF173D69), Color(0xFF0B2545)],
+        gradient: LinearGradient(
+          colors: [_navy, _navyDark],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1413,7 +1419,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
               borderRadius: BorderRadius.circular(15),
               border: Border.all(color: _gold.withValues(alpha: 0.36)),
             ),
-            child: const Icon(Icons.forum_rounded, color: _gold, size: 25),
+            child: Icon(Icons.forum_rounded, color: _gold, size: 25),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1452,7 +1458,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.push_pin_rounded, color: _gold, size: 14),
+                  Icon(Icons.push_pin_rounded, color: _gold, size: 14),
                   const SizedBox(width: 4),
                   Text(
                     '$pinnedTotal',
@@ -1559,7 +1565,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
         titleSpacing: 4,
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
-          icon: const Icon(
+          icon: Icon(
             Icons.arrow_back_ios_new_rounded,
             color: _gold,
             size: 28,
@@ -1609,7 +1615,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                 heroTag: 'create_group',
                 onPressed: _showCreateGroupDialog,
                 backgroundColor: _gold,
-                child: const Icon(Icons.groups_rounded, color: _navy),
+                child: Icon(Icons.groups_rounded, color: _navy),
               ),
               const SizedBox(height: 12),
             ],
@@ -1625,7 +1631,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
         ),
       ),
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -1657,7 +1663,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                         if (snapshot.connectionState ==
                                 ConnectionState.waiting &&
                             !snapshot.hasData) {
-                          return const Center(
+                          return Center(
                             child: CircularProgressIndicator(color: _gold),
                           );
                         }
@@ -1677,7 +1683,7 @@ class _ChatRoomsPageState extends State<ChatRoomsPage> {
                                       color: _gold.withValues(alpha: 0.16),
                                       shape: BoxShape.circle,
                                     ),
-                                    child: const Icon(
+                                    child: Icon(
                                       Icons.wifi_off_rounded,
                                       color: _gold,
                                       size: 34,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -65,9 +66,6 @@ class CoachChampionshipAthleteEvaluationPage extends StatefulWidget {
 
 class _CoachChampionshipAthleteEvaluationPageState
     extends State<CoachChampionshipAthleteEvaluationPage> {
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusText = Color(0xFF17324D);
   static const Color olympusMuted = Color(0xFF53657B);
@@ -1014,7 +1012,7 @@ class _CoachChampionshipAthleteEvaluationPageState
                         Expanded(
                           child: Text(
                             title,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: olympusBlue,
                               fontSize: 18,
                               fontWeight: FontWeight.w900,
@@ -1277,7 +1275,7 @@ class _CoachChampionshipAthleteEvaluationPageState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Set da avaliação',
             style: TextStyle(
               color: olympusBlue,
@@ -1329,7 +1327,7 @@ class _CoachChampionshipAthleteEvaluationPageState
     return Container(
       padding: EdgeInsets.all(isMobile ? 16 : 18),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           colors: [olympusBlue, olympusLightBlue],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -1346,7 +1344,7 @@ class _CoachChampionshipAthleteEvaluationPageState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.groups_rounded, color: olympusGold, size: 28),
+          Icon(Icons.groups_rounded, color: olympusGold, size: 28),
           const SizedBox(height: 12),
           Text(
             'Avaliação por fundamento',
@@ -1488,7 +1486,7 @@ class _CoachChampionshipAthleteEvaluationPageState
                   },
                   selectedColor: olympusBlue.withOpacity(0.14),
                   checkmarkColor: olympusBlue,
-                  labelStyle: const TextStyle(
+                  labelStyle: TextStyle(
                     color: olympusBlue,
                     fontWeight: FontWeight.w800,
                   ),
@@ -1728,7 +1726,7 @@ class _CoachChampionshipAthleteEvaluationPageState
           child: avatarUrl.trim().isEmpty
               ? Text(
                   nome.isNotEmpty ? nome[0].toUpperCase() : '?',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: olympusBlue,
                     fontWeight: FontWeight.w900,
                   ),
@@ -1770,7 +1768,7 @@ class _CoachChampionshipAthleteEvaluationPageState
                 Expanded(
                   child: Text(
                     'Consolidado: +$positivosTotal ações • $errosTotal erros',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: olympusBlue,
                       fontSize: 12,
                       fontWeight: FontWeight.w900,
@@ -1788,7 +1786,7 @@ class _CoachChampionshipAthleteEvaluationPageState
                   ),
                   child: Text(
                     'Set $_setSelecionado',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: olympusBlue,
                       fontSize: 11,
                       fontWeight: FontWeight.w900,

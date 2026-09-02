@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 
 import '../services/coach_evaluation_service.dart';
 
@@ -17,8 +18,6 @@ class AdminCoachEvaluationsPage extends StatefulWidget {
 }
 
 class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusMuted = Color(0xFF53657B);
   static const Color olympusBorder = Color(0xFFE4EDF5);
@@ -196,7 +195,7 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Técnicos habilitados para avaliação mensal',
             style: TextStyle(
               color: olympusBlue,
@@ -275,7 +274,7 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
                   activeThumbColor: olympusSuccess,
                   title: Text(
                     coachName,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: olympusBlue,
                       fontWeight: FontWeight.w900,
                     ),
@@ -552,7 +551,7 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: olympusBlue,
               fontWeight: FontWeight.w900,
             ),
@@ -673,7 +672,7 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
                     color: olympusGold.withOpacity(0.14),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: const Text(
+                  child: Text(
                     'Anônimo para treinador',
                     style: TextStyle(
                       color: olympusGold,
@@ -705,7 +704,7 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
           const SizedBox(height: 10),
           Text(
             coachName,
-            style: const TextStyle(
+            style: TextStyle(
               color: olympusBlue,
               fontSize: 16,
               fontWeight: FontWeight.w900,
@@ -764,7 +763,7 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
             contentPadding: EdgeInsets.zero,
             value: visibleToCoach,
             onChanged: (value) => _setVisibleToCoach(row, value),
-            title: const Text(
+            title: Text(
               'Liberar visualização para o treinador',
               style: TextStyle(
                 color: olympusBlue,
@@ -896,7 +895,7 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
             child: SwitchListTile(
               value: _monthlyEnabled,
               onChanged: _savingEnabled ? null : _toggleMonthlyEnabled,
-              title: const Text(
+              title: Text(
                 'Habilitar avaliação mensal',
                 style: TextStyle(
                   color: olympusBlue,
@@ -943,7 +942,7 @@ class _AdminCoachEvaluationsPageState extends State<AdminCoachEvaluationsPage> {
             ),
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Mês de referência',
             style: TextStyle(
               color: olympusBlue,

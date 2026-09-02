@@ -96,9 +96,11 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         .toInt();
   }
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get olympusBlue => _branding.primaryColor;
+  Color get olympusGold => _branding.secondaryColor;
+  Color get olympusLightBlue =>
+      Color.lerp(_branding.primaryColor, Colors.white, 0.16)!;
 
   @override
   void initState() {
@@ -826,6 +828,21 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
           table: 'training_plan_blocks',
           callback: (_) => _scheduleDashboardIntelligenceRefresh(),
         )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'training_plans',
+          callback: (_) => _scheduleDashboardIntelligenceRefresh(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'technical_staff_assignments',
+          callback: (_) {
+            _loadTechnicalStaffAccess();
+            _scheduleDashboardIntelligenceRefresh();
+          },
+        )
         .subscribe();
 
     _coachEvaluationsRealtimeChannel ??= supabase
@@ -1101,7 +1118,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                   fit: BoxFit.cover,
                   alignment: Alignment.center,
                   errorBuilder: (context, error, stackTrace) {
-                    return Container(color: const Color(0xFF102845));
+                    return Container(
+                        color: Color.lerp(olympusBlue, Colors.black, 0.24)!);
                   },
                 ),
           Container(
@@ -1197,10 +1215,10 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       height: 88,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           colors: [
-            Color(0xFFF0D771),
-            Color(0xFFB48A23),
+            Color.lerp(olympusGold, Colors.white, 0.30)!,
+            Color.lerp(olympusGold, Colors.black, 0.20)!,
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -1221,7 +1239,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       padding: const EdgeInsets.all(3),
       child: ClipOval(
         child: Container(
-          color: const Color(0xFF113457),
+          color: Color.lerp(olympusBlue, Colors.black, 0.12)!,
           child: avatarUrl != null
               ? CachedNetworkImage(
                   imageUrl: avatarUrl,
@@ -1243,8 +1261,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
     return Center(
       child: Text(
         _coachInitials(),
-        style: const TextStyle(
-          color: Color(0xFFFFF2B8),
+        style: TextStyle(
+          color: Color.lerp(olympusGold, Colors.white, 0.62)!,
           fontSize: 28,
           fontWeight: FontWeight.w900,
           letterSpacing: 0.8,
@@ -1268,7 +1286,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: const Color(0xFFFFF2B8), size: 14),
+          Icon(icon,
+              color: Color.lerp(olympusGold, Colors.white, 0.62)!, size: 14),
           const SizedBox(width: 5),
           Text(
             value,
@@ -1574,7 +1593,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
               gradient: LinearGradient(
                 colors: [
                   const Color(0xFFFFF4C7).withOpacity(0.34),
-                  const Color(0xFFD4AF37).withOpacity(0.20),
+                  olympusGold.withOpacity(0.20),
                   Colors.white.withOpacity(0.12),
                 ],
                 begin: Alignment.topLeft,
@@ -1609,9 +1628,9 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                           color: olympusGold.withOpacity(0.30),
                         ),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.auto_awesome_rounded,
-                        color: Color(0xFFFFF2B8),
+                        color: Color.lerp(olympusGold, Colors.white, 0.62)!,
                         size: 22,
                       ),
                     ),
@@ -1764,7 +1783,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
               child: Container(
                 padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF102D4D).withOpacity(0.72),
+                  color: Color.lerp(olympusBlue, Colors.black, 0.28)!
+                      .withOpacity(0.82),
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(color: Colors.white.withOpacity(0.22)),
                 ),
@@ -1772,7 +1792,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                   children: [
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.stacked_bar_chart_rounded,
                           color: olympusGold,
                           size: 21,
@@ -2058,7 +2078,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                   _buildCompactDashboardCard(
                     icon: Icons.analytics_outlined,
                     title: 'Planejamento',
-                    color: const Color(0xFFD4AF37),
+                    color: olympusGold,
                     onTap: _navigateToTrainingPlanningDashboard,
                     badgeCount: _unplannedTrainingsCount > 0
                         ? _unplannedTrainingsCount
@@ -2107,7 +2127,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
             decoration: BoxDecoration(
-              color: const Color(0xFF081D33).withOpacity(0.90),
+              color: Color.lerp(olympusBlue, Colors.black, 0.34)!
+                  .withOpacity(0.90),
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: Colors.white.withOpacity(0.12)),
             ),
@@ -2349,7 +2370,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                   hasPending
                       ? Icons.pending_actions_rounded
                       : Icons.add_task_rounded,
-                  color: const Color(0xFF0A2947),
+                  color: Color.lerp(olympusBlue, Colors.black, 0.26)!,
                 ),
               ),
               const SizedBox(width: 13),
@@ -2361,8 +2382,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                       hasPending
                           ? 'Revisar pendências'
                           : 'Preparar próximo treino',
-                      style: const TextStyle(
-                        color: Color(0xFF0A2947),
+                      style: TextStyle(
+                        color: Color.lerp(olympusBlue, Colors.black, 0.26)!,
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
                       ),
@@ -2380,7 +2401,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                   ],
                 ),
               ),
-              const Icon(Icons.arrow_forward_rounded, color: Color(0xFF0A2947)),
+              Icon(Icons.arrow_forward_rounded,
+                  color: Color.lerp(olympusBlue, Colors.black, 0.26)!),
             ],
           ),
         ),
@@ -2415,13 +2437,13 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF102D4F).withOpacity(0.90),
+        color: Color.lerp(olympusBlue, Colors.black, 0.20)!.withOpacity(0.90),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: Colors.white.withOpacity(0.13)),
       ),
       child: Column(
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(15, 14, 15, 7),
             child: Row(
               children: [
@@ -2435,7 +2457,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                 ),
                 Spacer(),
                 Text(
-                  'OLYMPUS',
+                  _branding.teamName.toUpperCase(),
                   style: TextStyle(
                     color: olympusGold,
                     fontSize: 10,
@@ -2596,9 +2618,9 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                   color: olympusGold.withOpacity(0.18),
                   border: Border.all(color: olympusGold.withOpacity(0.24)),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.assignment_turned_in_rounded,
-                  color: Color(0xFFFFF2B8),
+                  color: Color.lerp(olympusGold, Colors.white, 0.62)!,
                   size: 19,
                 ),
               ),
@@ -2681,7 +2703,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
             ),
             child: Icon(
               _nextCommitmentIcon,
-              color: const Color(0xFFFFF2B8),
+              color: Color.lerp(olympusGold, Colors.white, 0.62)!,
               size: 19,
             ),
           ),
@@ -2744,11 +2766,11 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
             spreadRadius: 1,
           ),
         ],
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           colors: [
-            Color(0xFF0D223B),
-            Color(0xFF123861),
-            Color(0xFF235E94),
+            Color.lerp(olympusBlue, Colors.black, 0.36)!,
+            Color.lerp(olympusBlue, Colors.black, 0.08)!,
+            Color.lerp(olympusBlue, Colors.white, 0.18)!,
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -2785,15 +2807,18 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                   gradient: LinearGradient(
                     colors: hasBackgroundPhoto
                         ? [
-                            const Color(0xFF071B31).withOpacity(0.78),
-                            const Color(0xFF123861).withOpacity(0.62),
-                            const Color(0xFF235E94).withOpacity(0.42),
+                            Color.lerp(olympusBlue, Colors.black, 0.54)!
+                                .withOpacity(0.78),
+                            Color.lerp(olympusBlue, Colors.black, 0.08)!
+                                .withOpacity(0.62),
+                            Color.lerp(olympusBlue, Colors.white, 0.18)!
+                                .withOpacity(0.42),
                             Colors.black.withOpacity(0.22),
                           ]
-                        : const [
-                            Color(0xFF0D223B),
-                            Color(0xFF123861),
-                            Color(0xFF235E94),
+                        : [
+                            Color.lerp(olympusBlue, Colors.black, 0.36)!,
+                            Color.lerp(olympusBlue, Colors.black, 0.08)!,
+                            Color.lerp(olympusBlue, Colors.white, 0.18)!,
                           ],
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
@@ -2927,7 +2952,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                                     _buildGlassPill(
                                       icon: Icons.verified_user_outlined,
                                       label: _coachRoleLabel,
-                                      color: const Color(0xFFFFF2B8),
+                                      color: Color.lerp(
+                                          olympusGold, Colors.white, 0.62)!,
                                     ),
                                   ],
                                 ),
@@ -2939,7 +2965,8 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
                                     _buildGlassPill(
                                       icon: _coachTeamIcon(),
                                       label: _coachTeamLabel(),
-                                      color: const Color(0xFFFFF2B8),
+                                      color: Color.lerp(
+                                          olympusGold, Colors.white, 0.62)!,
                                     ),
                                     _buildGlassPill(
                                       icon: Icons.groups_rounded,
@@ -3245,7 +3272,7 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
             ),
           ],
         ),
-        child: const Column(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(

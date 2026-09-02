@@ -17,9 +17,6 @@ class CoachMessagesPage extends StatefulWidget {
 
 class _CoachMessagesPageState extends State<CoachMessagesPage> {
   final SupabaseClient supabase = Supabase.instance.client;
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
 
   bool _loading = true;
   bool _refreshing = false;

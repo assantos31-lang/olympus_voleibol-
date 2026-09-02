@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../theme/olympus_theme.dart';
 import 'agenda_page.dart';
 import 'admin_financial_page.dart';
 
@@ -430,14 +431,14 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
         ],
       ),
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF0C2340),
-              Color(0xFF123A63),
-              Color(0xFF071A30),
+              Color.lerp(olympusBlue, Colors.black, 0.30)!,
+              olympusBlue,
+              Color.lerp(olympusBlue, Colors.black, 0.42)!,
             ],
           ),
         ),

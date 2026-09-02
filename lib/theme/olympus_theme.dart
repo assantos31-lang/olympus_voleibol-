@@ -7,6 +7,20 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/organization_context_service.dart';
 
+/// Compatibilidade para telas antigas: estes nomes deixam de representar uma
+/// paleta fixa e passam a acompanhar o clube ativo em tempo real.
+Color get olympusBlue =>
+    OlympusBrandingController.instance.branding.primaryColor;
+Color get olympusGold =>
+    OlympusBrandingController.instance.branding.secondaryColor;
+Color get olympusCard =>
+    OlympusBrandingController.instance.branding.premiumCardColor;
+Color get olympusLightBlue => Color.lerp(
+      OlympusBrandingController.instance.branding.primaryColor,
+      Colors.white,
+      0.16,
+    )!;
+
 @immutable
 class OlympusBranding {
   const OlympusBranding({
@@ -44,6 +58,19 @@ class OlympusBranding {
       colorFromHex(backgroundHex, const Color(0xFFF4F7FB));
   Color get surfaceColor => colorFromHex(surfaceHex, const Color(0xFFFFFDF8));
   Color get textColor => colorFromHex(textHex, const Color(0xFF172338));
+
+  /// Cor usada pelos cards de destaque das telas com fundo institucional.
+  /// Tons claros recebem parte da cor principal para preservar contraste,
+  /// mas continuam refletindo a escolha de "Cartões" do administrador.
+  Color get premiumCardColor {
+    final surface = surfaceColor;
+    if (ThemeData.estimateBrightnessForColor(surface) == Brightness.dark) {
+      return surface;
+    }
+    return Color.lerp(surface, primaryColor, 0.72)!;
+  }
+
+  Color get onPremiumCardColor => _readableOnColor(premiumCardColor);
 
   static Color colorFromHex(String value, Color fallback) {
     final normalized = value.trim().replaceFirst('#', '');
@@ -397,11 +424,24 @@ class OlympusBrandingController extends ChangeNotifier {
           .maybeSingle();
       final value = row?['value'];
       if (value is Map) {
-        final next = OlympusBranding.fromMap(Map<String, dynamic>.from(value));
+        final settings = Map<String, dynamic>.from(value);
+        final savedName = (settings['team_name'] ?? '').toString().trim();
+        if (savedName.isEmpty && organization != null) {
+          settings['team_name'] = organization.name;
+        }
+        final next = OlympusBranding.fromMap(settings);
         _setBranding(next);
         await _saveCache(organizationId, next);
-      } else if (organization != null && organization.branding.isNotEmpty) {
-        final next = OlympusBranding.fromMap(organization.branding);
+      } else if (organization != null) {
+        final organizationBranding = <String, dynamic>{
+          ...organization.branding,
+        };
+        final savedName =
+            (organizationBranding['team_name'] ?? '').toString().trim();
+        if (savedName.isEmpty) {
+          organizationBranding['team_name'] = organization.name;
+        }
+        final next = OlympusBranding.fromMap(organizationBranding);
         _setBranding(next);
         await _saveCache(organizationId, next);
       }

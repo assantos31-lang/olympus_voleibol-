@@ -50,10 +50,11 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
   int _overdueCount = 0;
   int _newBillsCount = 0;
 
-  // Cores do logo Olympus Voleibol
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
+  OlympusBranding get _branding => OlympusBrandingController.instance.branding;
+  Color get olympusBlue => _branding.primaryColor;
+  Color get olympusGold => _branding.secondaryColor;
+  Color get olympusLightBlue =>
+      Color.lerp(_branding.primaryColor, Colors.white, 0.16)!;
 
   @override
   void initState() {
@@ -676,7 +677,9 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
           filter: ImageFilter.blur(sigmaX: 0.55, sigmaY: 0.55),
           child: Container(color: Colors.transparent),
         ),
-        Container(color: const Color(0xFF07182B).withOpacity(0.50)),
+        Container(
+            color:
+                Color.lerp(olympusBlue, Colors.black, 0.58)!.withOpacity(0.50)),
         DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -722,10 +725,11 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
         child: Container(
           padding: padding,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.88),
+            color: _branding.surfaceColor.withOpacity(0.88),
             borderRadius: BorderRadius.circular(radius),
             border: Border.all(
-              color: borderColor ?? Colors.white.withOpacity(0.48),
+              color: borderColor ??
+                  _branding.primaryColor.withOpacity(0.18),
               width: 1.1,
             ),
             boxShadow: [
@@ -1013,7 +1017,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                 size: 20,
               ),
               const SizedBox(width: 8),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Atenção no financeiro',
                   style: TextStyle(
@@ -1211,7 +1215,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: olympusGold.withOpacity(0.28)),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.tune_rounded,
                 color: olympusBlue,
                 size: 18,
@@ -1222,7 +1226,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Filtro inteligente',
                     style: TextStyle(
                       color: olympusBlue,
@@ -1442,17 +1446,19 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
           decoration: BoxDecoration(
             gradient: selected
                 ? LinearGradient(
-                    colors: [Color(0xFFD4AF37), Color(0xFFE7C75D)],
+                    colors: [olympusGold, Color(0xFFE7C75D)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   )
                 : null,
-            color: selected ? null : Colors.white.withOpacity(0.78),
+            color: selected
+                ? null
+                : _branding.surfaceColor.withOpacity(0.82),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: selected
                   ? olympusGold.withOpacity(0.70)
-                  : Colors.white.withOpacity(0.58),
+                  : _branding.primaryColor.withOpacity(0.16),
             ),
             boxShadow: selected
                 ? [
@@ -1515,7 +1521,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
               Icon(Icons.timeline_rounded, color: olympusBlue, size: 18),
               SizedBox(width: 6),
@@ -1563,7 +1569,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                       const SizedBox(height: 5),
                       Text(
                         label,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: olympusBlue,
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
@@ -1715,7 +1721,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                       ),
                     _buildAthleteUpgradeHeader(),
                     if (_loadingRecords && _records.isNotEmpty)
-                      const LinearProgressIndicator(
+                      LinearProgressIndicator(
                         minHeight: 3,
                         color: olympusGold,
                       ),
@@ -1724,7 +1730,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
               ),
             ],
             body: _isLoading
-                ? const Center(
+                ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -1767,7 +1773,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                 color: olympusBlue,
                               ),
                               const SizedBox(height: 16),
-                              const Text(
+                              Text(
                                 'Nenhum registro encontrado',
                                 style:
                                     TextStyle(color: olympusBlue, fontSize: 16),
@@ -2088,7 +2094,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
               Icon(Icons.bar_chart_rounded, color: olympusBlue, size: 18),
               SizedBox(width: 6),
@@ -2165,7 +2171,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                             total.toStringAsFixed(0),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: olympusBlue,
                               fontSize: 8,
                               fontWeight: FontWeight.w900,
@@ -2763,7 +2769,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                     color: olympusBlue.withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
-                                  child: const Icon(
+                                  child: Icon(
                                     Icons.pix,
                                     size: 18,
                                     color: olympusBlue,
@@ -2816,7 +2822,7 @@ class _AthleteFinancialPageState extends State<AthleteFinancialPage> {
                                         );
                                       }
                                     },
-                                    icon: const Icon(
+                                    icon: Icon(
                                       Icons.copy_rounded,
                                       color: olympusBlue,
                                       size: 20,

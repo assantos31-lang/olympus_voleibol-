@@ -49,6 +49,28 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
     Color(0xFFFFFFFF),
   ];
 
+  static const List<Color> _backgroundPresets = [
+    Color(0xFFF4F7FB),
+    Color(0xFFFFFDF8),
+    Color(0xFFF2F0EA),
+    Color(0xFFE8EEF5),
+    Color(0xFFEAF4EF),
+    Color(0xFF172338),
+    Color(0xFF102845),
+    Color(0xFF101A16),
+  ];
+
+  static const List<Color> _surfacePresets = [
+    Color(0xFFFFFDF8),
+    Color(0xFFF4F7FB),
+    Color(0xFF1E3A5F),
+    Color(0xFF0A2463),
+    Color(0xFF163A2B),
+    Color(0xFF5A1738),
+    Color(0xFF3D246C),
+    Color(0xFF1F2937),
+  ];
+
   // Criada uma unica vez e exibida sob demanda. O GridView monta apenas as
   // cores visiveis, mantendo o painel leve mesmo com uma paleta ampla.
   static final List<Color> _completePalette = List<Color>.unmodifiable([
@@ -157,7 +179,7 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
     _updateDraft(
       _draft.copyWith(
         teamName: _teamNameController.text.trim().isEmpty
-            ? 'Olympus Voleibol'
+            ? OrganizationContextService.instance.currentName
             : _teamNameController.text.trim(),
         primaryHex: _primaryController.text.toUpperCase(),
         secondaryHex: _secondaryController.text.toUpperCase(),
@@ -282,7 +304,9 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
       await OlympusBrandingController.instance.save(_draft);
       _saved = true;
       if (!mounted) return;
-      _showSnack('Identidade visual publicada para todo o app.');
+      _showSnack(
+        'Cores publicadas para Admin, Treinadores e Atletas deste clube.',
+      );
       Navigator.pop(context, true);
     } catch (error) {
       _showSnack('Erro ao salvar identidade visual: $error');
@@ -294,7 +318,9 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
   }
 
   void _restoreDefaults() {
-    const defaults = OlympusBranding();
+    final defaults = const OlympusBranding().copyWith(
+      teamName: OrganizationContextService.instance.currentName,
+    );
     _teamNameController.text = defaults.teamName;
     _primaryController.text = defaults.primaryHex;
     _secondaryController.text = defaults.secondaryHex;
@@ -316,10 +342,10 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Identidade visual'),
+        title: const Text('Cores e identidade do clube'),
         actions: [
           IconButton(
-            tooltip: 'Restaurar padrão Olympus',
+            tooltip: 'Restaurar cores padrão',
             onPressed: _restoreDefaults,
             icon: const Icon(Icons.restart_alt_rounded),
           ),
@@ -346,7 +372,7 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
                     onChanged: (value) => _updateDraft(
                       _draft.copyWith(
                         teamName: value.trim().isEmpty
-                            ? 'Olympus Voleibol'
+                            ? OrganizationContextService.instance.currentName
                             : value.trim(),
                       ),
                     ),
@@ -384,7 +410,7 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
               icon: Icons.palette_rounded,
               title: 'Cores do aplicativo',
               subtitle:
-                  'Escolha entre mais de 150 tons ou informe qualquer cor em hexadecimal.',
+                  'Aplicadas aos perfis de Admin, Treinador e Atleta deste clube.',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -407,6 +433,31 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
                       final hex = OlympusBranding.colorToHex(color);
                       _secondaryController.text = hex;
                       _updateDraft(_draft.copyWith(secondaryHex: hex));
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  _colorSelector(
+                    title: 'Cor dos cartões',
+                    subtitle:
+                        'Define os cards de painéis, Estatísticas, Chat e Financeiro.',
+                    colors: _surfacePresets,
+                    selected: _draft.surfaceColor,
+                    onSelected: (color) {
+                      final hex = OlympusBranding.colorToHex(color);
+                      _surfaceController.text = hex;
+                      _updateDraft(_draft.copyWith(surfaceHex: hex));
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  _colorSelector(
+                    title: 'Cor do fundo',
+                    subtitle: 'Cor exibida quando não houver imagem de fundo.',
+                    colors: _backgroundPresets,
+                    selected: _draft.backgroundColor,
+                    onSelected: (color) {
+                      final hex = OlympusBranding.colorToHex(color);
+                      _backgroundController.text = hex;
+                      _updateDraft(_draft.copyWith(backgroundHex: hex));
                     },
                   ),
                   const SizedBox(height: 16),
@@ -763,6 +814,7 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
 
   Widget _colorSelector({
     required String title,
+    String? subtitle,
     required List<Color> colors,
     required Color selected,
     required ValueChanged<Color> onSelected,
@@ -771,6 +823,10 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        if (subtitle != null) ...[
+          const SizedBox(height: 3),
+          Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+        ],
         const SizedBox(height: 9),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),

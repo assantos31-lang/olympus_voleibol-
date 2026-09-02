@@ -17,9 +17,6 @@ class CoachEvaluationsHubPage extends StatelessWidget {
   final int pendingEvaluationsCount;
   final int receivedEvaluationsCount;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
-  static const Color olympusGold = Color(0xFFD4AF37);
 
   void _openAthleteEvaluations(BuildContext context) {
     Navigator.push(
@@ -42,7 +39,8 @@ class CoachEvaluationsHubPage extends StatelessWidget {
     );
   }
 
-  Widget _background() {
+  Widget _background(BuildContext context) {
+    final branding = OlympusBrandingController.instance.branding;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -60,8 +58,13 @@ class CoachEvaluationsHubPage extends StatelessWidget {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                olympusBlue.withOpacity(0.62),
-                olympusLightBlue.withOpacity(0.24),
+                branding.primaryColor.withOpacity(0.62),
+                Color.lerp(
+                  branding.primaryColor,
+                  branding.backgroundColor,
+                  0.18,
+                )!
+                    .withOpacity(0.24),
                 Colors.black.withOpacity(0.64),
               ],
             ),
@@ -218,19 +221,20 @@ class CoachEvaluationsHubPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       extendBody: true,
       backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Avaliações'),
-        backgroundColor: olympusBlue,
-        foregroundColor: Colors.white,
+        backgroundColor: colors.primary,
+        foregroundColor: colors.onPrimary,
       ),
       body: SizedBox.expand(
         child: Stack(
           fit: StackFit.expand,
           children: [
-            _background(),
+            _background(context),
             SafeArea(
               child: ListView(
                 padding: const EdgeInsets.only(top: 14, bottom: 28),

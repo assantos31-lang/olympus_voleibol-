@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AdminTrainingPlansListPage extends StatefulWidget {
@@ -13,9 +14,6 @@ class _AdminTrainingPlansListPageState
     extends State<AdminTrainingPlansListPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusText = Color(0xFF17324D);
   static const Color olympusMuted = Color(0xFF53657B);
@@ -579,13 +577,13 @@ class _AdminTrainingPlansListPageState
                                 color: olympusBlue.withOpacity(0.10),
                                 borderRadius: BorderRadius.circular(14),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.tune_rounded,
                                 color: olympusBlue,
                               ),
                             ),
                             const SizedBox(width: 12),
-                            const Expanded(
+                            Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -737,7 +735,7 @@ class _AdminTrainingPlansListPageState
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: olympusBlue,
             fontSize: 12,
             fontWeight: FontWeight.w900,
@@ -779,7 +777,7 @@ class _AdminTrainingPlansListPageState
 
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [olympusBlue, olympusLightBlue],
           begin: Alignment.topCenter,
@@ -1292,7 +1290,7 @@ class _AdminTrainingPlansListPageState
                     Expanded(
                       child: Text(
                         coachName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: olympusBlue,
                           fontSize: 14,
                           fontWeight: FontWeight.w900,
@@ -1337,7 +1335,7 @@ class _AdminTrainingPlansListPageState
                     children: [
                       Text(
                         coachName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: olympusBlue,
                           fontSize: 14,
                           fontWeight: FontWeight.w900,
@@ -1402,7 +1400,7 @@ class _AdminTrainingPlansListPageState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Observações',
                     style: TextStyle(
                       color: olympusBlue,
@@ -1438,7 +1436,7 @@ class _AdminTrainingPlansListPageState
       child: avatarUrl.trim().isEmpty
           ? Text(
               coachName.isNotEmpty ? coachName[0].toUpperCase() : 'T',
-              style: const TextStyle(
+              style: TextStyle(
                 color: olympusBlue,
                 fontWeight: FontWeight.w900,
               ),
@@ -1477,7 +1475,7 @@ class _AdminTrainingPlansListPageState
             child: Center(
               child: Text(
                 '${index + 1}',
-                style: const TextStyle(
+                style: TextStyle(
                   color: olympusBlue,
                   fontWeight: FontWeight.w900,
                   fontSize: 12,
@@ -1589,7 +1587,7 @@ class _AdminTrainingPlansListPageState
                     child: Container(
                       width: 9,
                       height: 9,
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         color: olympusGold,
                         shape: BoxShape.circle,
                       ),

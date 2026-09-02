@@ -17,7 +17,6 @@ import 'admin_checkin_ranking_page.dart';
 import 'admin_competitions_page.dart';
 import 'admin_financial_page.dart';
 import 'admin_messages_page.dart';
-import 'admin_notifications_page.dart';
 import 'admin_training_plans_page.dart' show AdminTrainingPlansPage;
 import 'admin_technical_staff_page.dart';
 import 'chat_rooms_page.dart';
@@ -497,13 +496,13 @@ class _AdminHomePageState extends State<AdminHomePage>
     final avatarUrl = _resolveBirthdayAvatarUrl(birthday['avatar_url']);
     final fallback = Container(
       color: highlighted
-          ? const Color(0xFFFFE8A6)
-          : const Color(0xFF102D4F).withOpacity(0.08),
+          ? _branding.secondaryColor.withOpacity(0.18)
+          : _branding.primaryColor.withOpacity(0.08),
       alignment: Alignment.center,
       child: Text(
         name.isEmpty ? '?' : name[0].toUpperCase(),
-        style: const TextStyle(
-          color: Color(0xFF102D4F),
+        style: TextStyle(
+          color: _branding.primaryColor,
           fontWeight: FontWeight.w900,
         ),
       ),
@@ -517,8 +516,8 @@ class _AdminHomePageState extends State<AdminHomePage>
         shape: BoxShape.circle,
         border: Border.all(
           color: highlighted
-              ? const Color(0xFFD4AF37)
-              : const Color(0xFF102D4F).withOpacity(0.16),
+              ? _branding.secondaryColor
+              : _branding.primaryColor.withOpacity(0.16),
           width: highlighted ? 1.6 : 1,
         ),
       ),
@@ -1130,8 +1129,8 @@ class _AdminHomePageState extends State<AdminHomePage>
       ),
       (
         permission: 'admin_users',
-        label: 'Identidade',
-        subtitle: 'Cores, marca e fundos',
+        label: 'Cores do clube',
+        subtitle: 'Todos os perfis e telas',
         icon: Icons.palette_rounded,
         color: const Color(0xFFFFC857),
         badge: 0,
@@ -1573,11 +1572,13 @@ class _AdminHomePageState extends State<AdminHomePage>
       margin: const EdgeInsets.only(bottom: 9),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: highlighted ? const Color(0xFFFFF8DF) : Colors.white,
+        color: highlighted
+            ? _branding.secondaryColor.withOpacity(0.12)
+            : _branding.surfaceColor,
         borderRadius: BorderRadius.circular(17),
         border: Border.all(
           color: highlighted
-              ? const Color(0xFFD4AF37).withOpacity(0.58)
+              ? _branding.secondaryColor.withOpacity(0.58)
               : const Color(0xFFE3EAF2),
           width: highlighted ? 1.4 : 1,
         ),
@@ -1601,8 +1602,8 @@ class _AdminHomePageState extends State<AdminHomePage>
                   name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF102D4F),
+                  style: TextStyle(
+                    color: _branding.primaryColor,
                     fontWeight: FontWeight.w900,
                     fontSize: 14,
                   ),
@@ -1623,14 +1624,16 @@ class _AdminHomePageState extends State<AdminHomePage>
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
               decoration: BoxDecoration(
                 color: highlighted
-                    ? const Color(0xFFD4AF37)
-                    : const Color(0xFF102D4F).withOpacity(0.08),
+                    ? _branding.secondaryColor
+                    : _branding.primaryColor.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
                 _formatBirthDate(date),
                 style: TextStyle(
-                  color: highlighted ? Colors.white : const Color(0xFF102D4F),
+                  color: highlighted
+                      ? Theme.of(context).colorScheme.onSecondary
+                      : _branding.primaryColor,
                   fontWeight: FontWeight.w900,
                   fontSize: 13,
                 ),
@@ -1659,12 +1662,12 @@ class _AdminHomePageState extends State<AdminHomePage>
             padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
             decoration: BoxDecoration(
               color: highlighted
-                  ? const Color(0xFF102D4F)
-                  : const Color(0xFFEAF0F6),
+                  ? _branding.primaryColor
+                  : _branding.primaryColor.withOpacity(0.08),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: highlighted
-                    ? const Color(0xFFD4AF37)
+                    ? _branding.secondaryColor
                     : const Color(0xFFD9E3ED),
               ),
             ),
@@ -1673,8 +1676,8 @@ class _AdminHomePageState extends State<AdminHomePage>
                 Icon(
                   highlighted ? Icons.celebration_rounded : Icons.cake_outlined,
                   color: highlighted
-                      ? const Color(0xFFD4AF37)
-                      : const Color(0xFF102D4F),
+                      ? _branding.secondaryColor
+                      : _branding.primaryColor,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -1682,8 +1685,9 @@ class _AdminHomePageState extends State<AdminHomePage>
                   child: Text(
                     _monthLabel(month),
                     style: TextStyle(
-                      color:
-                          highlighted ? Colors.white : const Color(0xFF102D4F),
+                      color: highlighted
+                          ? Theme.of(context).colorScheme.onPrimary
+                          : _branding.primaryColor,
                       fontSize: 16,
                       fontWeight: FontWeight.w900,
                     ),
@@ -1696,13 +1700,13 @@ class _AdminHomePageState extends State<AdminHomePage>
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFD4AF37),
+                      color: _branding.secondaryColor,
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: const Text(
+                    child: Text(
                       'Mês atual',
                       style: TextStyle(
-                        color: Color(0xFF102D4F),
+                        color: Theme.of(context).colorScheme.onSecondary,
                         fontSize: 10,
                         fontWeight: FontWeight.w900,
                       ),
@@ -1753,8 +1757,8 @@ class _AdminHomePageState extends State<AdminHomePage>
         maxChildSize: 0.94,
         expand: false,
         builder: (context, controller) => Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFFF6F9FC),
+          decoration: BoxDecoration(
+            color: _branding.backgroundColor,
             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: Column(
@@ -1772,19 +1776,23 @@ class _AdminHomePageState extends State<AdminHomePage>
                 padding: const EdgeInsets.fromLTRB(18, 16, 10, 10),
                 child: Row(
                   children: [
-                    const CircleAvatar(
-                      backgroundColor: Color(0xFFFFE8A6),
-                      child: Icon(Icons.cake_rounded, color: Color(0xFF8A6500)),
+                    CircleAvatar(
+                      backgroundColor:
+                          _branding.secondaryColor.withOpacity(0.18),
+                      child: Icon(
+                        Icons.cake_rounded,
+                        color: _branding.secondaryColor,
+                      ),
                     ),
                     const SizedBox(width: 11),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
+                          Text(
                             'Aniversariantes',
                             style: TextStyle(
-                              color: Color(0xFF102D4F),
+                              color: _branding.primaryColor,
                               fontSize: 18,
                               fontWeight: FontWeight.w900,
                             ),
@@ -2069,19 +2077,6 @@ class _AdminHomePageState extends State<AdminHomePage>
       VoidCallback onTap,
     })>[
       (
-        permission: 'admin_agenda',
-        label: 'Notificações',
-        subtitle: 'Respostas às convocações e preferências de avisos',
-        icon: Icons.notifications_active_rounded,
-        color: const Color(0xFFFF8FA3),
-        onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const AdminNotificationsPage(),
-              ),
-            ),
-      ),
-      (
         permission: 'admin_users',
         label: 'Equipe técnica',
         subtitle: 'Coordenadores, treinadores, assistentes e estagiários',
@@ -2096,8 +2091,8 @@ class _AdminHomePageState extends State<AdminHomePage>
       ),
       (
         permission: 'admin_users',
-        label: 'Identidade visual',
-        subtitle: 'Cores, logotipo e imagens de fundo',
+        label: 'Cores do clube',
+        subtitle: 'Admin, treinadores e atletas',
         icon: Icons.palette_rounded,
         color: const Color(0xFFFFC857),
         onTap: () => Navigator.push(
@@ -2767,7 +2762,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                               const SizedBox(height: 18),
                               _buildFuturisticButton(
                                 context: context,
-                                label: 'Identidade visual',
+                                label: 'Cores do clube',
                                 icon: Icons.palette_rounded,
                                 accentColor: const Color(0xFFFFC857),
                                 onTap: () {

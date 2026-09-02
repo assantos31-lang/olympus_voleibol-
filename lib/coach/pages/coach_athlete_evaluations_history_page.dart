@@ -25,8 +25,6 @@ class _AthleteEvaluationsHistoryPageState
     extends State<AthleteEvaluationsHistoryPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusPurple = Color(0xFF7C3AED);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusMuted = Color(0xFF53657B);
@@ -212,7 +210,7 @@ class _AthleteEvaluationsHistoryPageState
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text(
+                    Text(
                       'Editar avaliação',
                       style: TextStyle(
                         color: olympusBlue,
@@ -430,7 +428,7 @@ class _AthleteEvaluationsHistoryPageState
               ),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.sports_volleyball_rounded,
                     color: olympusBlue,
                     size: 17,
@@ -443,7 +441,7 @@ class _AthleteEvaluationsHistoryPageState
                         if (eventDate.isNotEmpty)
                           '$eventDate${eventTime.isEmpty ? '' : ' • $eventTime'}',
                       ].join(' — '),
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: olympusBlue,
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
@@ -469,7 +467,7 @@ class _AthleteEvaluationsHistoryPageState
             const SizedBox(height: 5),
             Text(
               'Fundamento: $fundamento',
-              style: const TextStyle(
+              style: TextStyle(
                 color: olympusBlue,
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
@@ -605,7 +603,7 @@ class _AthleteEvaluationsHistoryPageState
                               children: [
                                 Text(
                                   widget.athlete.athleteName,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: olympusBlue,
                                     fontSize: 18,
                                     fontWeight: FontWeight.w900,

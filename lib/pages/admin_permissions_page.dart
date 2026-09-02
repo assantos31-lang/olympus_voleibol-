@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/permission_service.dart';
 
@@ -19,8 +20,6 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
 
   final Map<String, bool> _savingFilters = {};
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
 
   @override
   void initState() {
@@ -123,7 +122,7 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text(
+                        Text(
                           'Filtros visíveis',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
@@ -152,7 +151,7 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
                           icon: Icons.filter_alt_outlined,
                         ),
                         const Divider(height: 24),
-                        const Text(
+                        Text(
                           'Tipos de evento permitidos',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
@@ -206,7 +205,7 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
                           }),
                         ),
                         const Divider(height: 24),
-                        const Text(
+                        Text(
                           'Status de convocação visíveis',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
@@ -408,7 +407,7 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
             color: olympusBlue.withOpacity(0.1),
             child: Row(
               children: [
-                const Icon(Icons.pageview, color: olympusBlue),
+                Icon(Icons.pageview, color: olympusBlue),
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButton<String>(

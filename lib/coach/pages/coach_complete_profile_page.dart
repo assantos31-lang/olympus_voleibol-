@@ -12,6 +12,9 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../services/organization_context_service.dart';
+import '../../services/organization_storage_service.dart';
+
 class CoachCompleteProfilePage extends StatefulWidget {
   const CoachCompleteProfilePage({super.key, this.isEditing = false});
 
@@ -27,9 +30,6 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
   final ImagePicker _picker = ImagePicker();
   final _formKey = GlobalKey<FormState>();
 
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
-  static const Color olympusLightBlue = Color(0xFF2C5F8D);
   static const Color olympusDark = Color(0xFF0B1420);
 
   final TextEditingController _nameController = TextEditingController();
@@ -308,7 +308,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
+            colorScheme: ColorScheme.light(
               primary: olympusBlue,
               onPrimary: Colors.white,
               onSurface: olympusDark,
@@ -371,8 +371,10 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
           : ext == 'webp'
               ? 'image/webp'
               : 'image/jpeg';
-      final path =
-          'coaches/$userId/avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await OrganizationContextService.instance.initialize(force: true);
+      final path = OrganizationStorageService.scopedPath(
+        'avatars/$userId/avatar_${DateTime.now().millisecondsSinceEpoch}.$ext',
+      );
 
       await supabase.storage.from('avatars').uploadBinary(
             path,
@@ -442,6 +444,9 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
           data: {
             'full_name': _nameController.text.trim(),
             'avatar_url': avatarUrl.trim(),
+            // Libera o roteador principal depois que todos os dados obrigatórios
+            // do técnico foram persistidos. Sem esta flag o cadastro reaparecia.
+            'must_complete_profile': false,
           },
         ),
       );
@@ -486,6 +491,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
   }
 
   Widget _buildBackground() {
+    final branding = OlympusBrandingController.instance.branding;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -503,9 +509,15 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                olympusBlue.withOpacity(0.64),
-                olympusLightBlue.withOpacity(0.24),
-                olympusDark.withOpacity(0.86),
+                branding.primaryColor.withOpacity(0.64),
+                Color.lerp(
+                  branding.primaryColor,
+                  branding.backgroundColor,
+                  0.18,
+                )!
+                    .withOpacity(0.24),
+                Color.lerp(branding.primaryColor, Colors.black, 0.68)!
+                    .withOpacity(0.86),
               ],
             ),
           ),
@@ -576,7 +588,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
             child: InkWell(
               customBorder: const CircleBorder(),
               onTap: _saving ? null : _pickImage,
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.all(10),
                 child: Icon(
                   Icons.photo_camera_rounded,
@@ -670,7 +682,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(18),
-        borderSide: const BorderSide(color: olympusGold, width: 1.8),
+        borderSide: BorderSide(color: olympusGold, width: 1.8),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(18),
@@ -800,7 +812,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
                     suffixIcon: IconButton(
                       tooltip: 'Selecionar data',
                       onPressed: _saving ? null : _selectBirthDate,
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.calendar_month_rounded,
                         color: olympusGold,
                       ),
@@ -851,7 +863,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
                     icon: Icons.location_searching_rounded,
                     hint: '00000-000',
                     suffixIcon: _loadingCep
-                        ? const Padding(
+                        ? Padding(
                             padding: EdgeInsets.all(14),
                             child: SizedBox(
                               width: 18,
@@ -869,7 +881,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
                                 : () => _lookupCep(
                                       _onlyNumbers(_cepController.text),
                                     ),
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.search_rounded,
                               color: olympusGold,
                             ),
@@ -1024,7 +1036,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
                   child: ElevatedButton.icon(
                     onPressed: _saving || _uploadingImage ? null : _saveProfile,
                     icon: _saving || _uploadingImage
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
@@ -1067,16 +1079,17 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
   @override
   Widget build(BuildContext context) {
     final isCompact = MediaQuery.of(context).size.width < 390;
+    final colors = Theme.of(context).colorScheme;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      backgroundColor: olympusDark,
+      backgroundColor: colors.primary,
       appBar: widget.isEditing
           ? AppBar(
               title: const Text('Editar dados'),
-              backgroundColor: Colors.transparent,
+              backgroundColor: colors.primary.withOpacity(0.92),
               elevation: 0,
-              foregroundColor: Colors.white,
+              foregroundColor: colors.onPrimary,
             )
           : null,
       body: Stack(
@@ -1084,7 +1097,7 @@ class _CoachCompleteProfilePageState extends State<CoachCompleteProfilePage> {
           _buildBackground(),
           SafeArea(
             child: _loading
-                ? const Center(
+                ? Center(
                     child: CircularProgressIndicator(color: olympusGold),
                   )
                 : Center(

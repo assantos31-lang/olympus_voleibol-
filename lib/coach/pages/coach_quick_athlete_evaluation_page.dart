@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/permission_service.dart';
@@ -18,8 +19,6 @@ class CoachQuickAthleteEvaluationPage extends StatefulWidget {
 
 class _CoachQuickAthleteEvaluationPageState
     extends State<CoachQuickAthleteEvaluationPage> {
-  static const Color olympusBlue = Color(0xFF1E3A5F);
-  static const Color olympusGold = Color(0xFFD4AF37);
   static const Color olympusBg = Color(0xFFF4F7FB);
   static const Color olympusCard = Colors.white;
   static const Color olympusText = Color(0xFF17324D);
@@ -411,7 +410,7 @@ class _CoachQuickAthleteEvaluationPageState
                         const SizedBox(height: 16),
                         Text(
                           _getSlotTitle(slotKey),
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: olympusBlue,
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -655,7 +654,7 @@ class _CoachQuickAthleteEvaluationPageState
                         child: avatarUrl.trim().isEmpty
                             ? Text(
                                 nome.isNotEmpty ? nome[0].toUpperCase() : '?',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: olympusBlue,
                                 ),
