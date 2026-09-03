@@ -1081,7 +1081,7 @@ event_time
       final previousYear = now.month == 1 ? now.year - 1 : now.year;
 
       final response = await supabase.rpc(
-        'get_monthly_gender_ranking',
+        'get_monthly_gender_ranking_v2',
         params: {
           'p_gender': gender,
           'p_reference_month': now.month,
