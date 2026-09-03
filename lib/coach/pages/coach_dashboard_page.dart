@@ -9,7 +9,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../pages/admin_competitions_page.dart';
 import '../../pages/chat_rooms_page.dart';
 import '../../services/chat_service.dart';
-import '../../services/awards_service.dart';
 import '../../services/permission_service.dart';
 import '../../services/technical_staff_service.dart';
 import '../../theme/olympus_theme.dart';
@@ -47,7 +46,6 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
   bool _canAccessChat = true;
   bool _canViewTechnicalTeam = false;
   bool _canCreateTechnicalTraining = true;
-  bool _hasPublishedAwards = false;
   DateTime? _lastCompetitionsViewedAt;
   RealtimeChannel? _competitionsRealtimeChannel;
   RealtimeChannel? _messageParticipantsRealtimeChannel;
@@ -210,19 +208,11 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         _loadChatUnreadCount(),
         _loadUnreadReceivedEvaluationsCount(),
         _loadDashboardIntelligence(),
-        _loadAwardsAvailability(),
       ]).timeout(const Duration(seconds: 22));
     } catch (e) {
       debugPrint('Indicadores do dashboard carregados parcialmente: $e');
     } finally {
       _loadingSecondaryDashboardData = false;
-    }
-  }
-
-  Future<void> _loadAwardsAvailability() async {
-    final available = await AwardsService().hasPublishedAwards();
-    if (mounted && available != _hasPublishedAwards) {
-      setState(() => _hasPublishedAwards = available);
     }
   }
 
@@ -2444,17 +2434,16 @@ class _CoachDashboardPageState extends State<CoachDashboardPage>
         color: const Color(0xFFB69CFF),
         onTap: _navigateToSmartDashboard,
       ),
-      if (_hasPublishedAwards)
-        (
-          label: 'Premiações',
-          subtitle: 'Conquistas e destaques da equipe',
-          icon: Icons.workspace_premium_rounded,
-          color: olympusGold,
-          onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AwardsPage()),
-              ),
-        ),
+      (
+        label: 'Premiações',
+        subtitle: 'Conquistas e destaques da equipe',
+        icon: Icons.workspace_premium_rounded,
+        color: olympusGold,
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AwardsPage()),
+            ),
+      ),
     ];
 
     return Container(
