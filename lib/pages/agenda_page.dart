@@ -50,6 +50,7 @@ class _AgendaPageState extends State<AgendaPage> {
   final Map<String, DateTime> _convocadosDetailsCacheTime = {};
   static const Duration _convocadosDetailsCacheTtl = Duration(seconds: 45);
   static const int _eventQueryBatchSize = 100;
+  static const int _postgrestPageSize = 1000;
   bool _loading = true;
   bool _loadingEvents = false;
   bool _openingAgendaPage = false;
@@ -161,6 +162,38 @@ class _AgendaPageState extends State<AgendaPage> {
           : eventIds.length;
       yield eventIds.sublist(start, end);
     }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchRowsByEventIds({
+    required String table,
+    required String columns,
+    required List<String> eventIds,
+  }) async {
+    final rows = <Map<String, dynamic>>[];
+    for (final batch in _eventIdBatches(eventIds)) {
+      var offset = 0;
+      while (true) {
+        final response = await _supabase
+            .from(table)
+            .select(columns)
+            .inFilter('event_id', batch)
+            .order('id', ascending: true)
+            .range(offset, offset + _postgrestPageSize - 1);
+        final page = List<Map<String, dynamic>>.from(response as List);
+        rows.addAll(page);
+        if (page.length < _postgrestPageSize) break;
+        offset += _postgrestPageSize;
+      }
+    }
+    return rows;
+  }
+
+  bool _isAthleteConvocationRole(dynamic value) {
+    final role = (value ?? 'athlete').toString().trim().toLowerCase();
+    return role != 'coach' &&
+        role != 'treinador' &&
+        role != 'tecnico' &&
+        role != 'técnico';
   }
 
   @override
@@ -319,28 +352,25 @@ class _AgendaPageState extends State<AgendaPage> {
             'total_recusados': 0,
           },
       };
-      for (final batch in _eventIdBatches(ids)) {
-        final resp = await _supabase
-            .from('convocations')
-            .select('event_id, status, event_role')
-            .inFilter('event_id', batch);
-        for (final row in resp) {
-          final eventId = row['event_id']?.toString();
-          if (eventId == null || !map.containsKey(eventId)) continue;
-          final role =
-              (row['event_role'] ?? 'athlete').toString().trim().toLowerCase();
-          if (role == 'coach') continue;
-          final status =
-              (row['status'] ?? 'pending').toString().trim().toLowerCase();
-          final data = map[eventId]!;
-          data['total_convocados'] = (data['total_convocados'] ?? 0) + 1;
-          if (status == 'accepted') {
-            data['total_aceitos'] = (data['total_aceitos'] ?? 0) + 1;
-          } else if (status == 'rejected') {
-            data['total_recusados'] = (data['total_recusados'] ?? 0) + 1;
-          } else {
-            data['total_pendentes'] = (data['total_pendentes'] ?? 0) + 1;
-          }
+      final rows = await _fetchRowsByEventIds(
+        table: 'convocations',
+        columns: 'id, event_id, status, event_role',
+        eventIds: ids,
+      );
+      for (final row in rows) {
+        final eventId = row['event_id']?.toString();
+        if (eventId == null || !map.containsKey(eventId)) continue;
+        if (!_isAthleteConvocationRole(row['event_role'])) continue;
+        final status =
+            (row['status'] ?? 'pending').toString().trim().toLowerCase();
+        final data = map[eventId]!;
+        data['total_convocados'] = (data['total_convocados'] ?? 0) + 1;
+        if (status == 'accepted') {
+          data['total_aceitos'] = (data['total_aceitos'] ?? 0) + 1;
+        } else if (status == 'rejected') {
+          data['total_recusados'] = (data['total_recusados'] ?? 0) + 1;
+        } else {
+          data['total_pendentes'] = (data['total_pendentes'] ?? 0) + 1;
         }
       }
       if (mounted) {
@@ -367,18 +397,18 @@ class _AgendaPageState extends State<AgendaPage> {
         quantidades[eventId] = {'athletes': 0, 'technicians': 0};
       }
       if (eventIds.isNotEmpty) {
-        for (final batch in _eventIdBatches(eventIds)) {
-          final response = await _supabase
-              .from('convocations')
-              .select('event_id, event_role')
-              .inFilter('event_id', batch);
-          for (final row in List<Map<String, dynamic>>.from(response as List)) {
-            final eventId = (row['event_id'] ?? '').toString();
-            if (!quantidades.containsKey(eventId)) continue;
-            final role = (row['event_role'] ?? 'athlete').toString();
-            final key = role == 'coach' ? 'technicians' : 'athletes';
-            quantidades[eventId]![key] = (quantidades[eventId]![key] ?? 0) + 1;
-          }
+        final rows = await _fetchRowsByEventIds(
+          table: 'convocations',
+          columns: 'id, event_id, event_role',
+          eventIds: eventIds,
+        );
+        for (final row in rows) {
+          final eventId = (row['event_id'] ?? '').toString();
+          if (!quantidades.containsKey(eventId)) continue;
+          final key = _isAthleteConvocationRole(row['event_role'])
+              ? 'athletes'
+              : 'technicians';
+          quantidades[eventId]![key] = (quantidades[eventId]![key] ?? 0) + 1;
         }
       }
       if (mounted) {
@@ -404,41 +434,37 @@ class _AgendaPageState extends State<AgendaPage> {
       final acceptedAthletesByEvent = <String, Set<String>>{};
       final checkedInByEvent = <String, int>{};
       if (eventIds.isNotEmpty) {
-        for (final batch in _eventIdBatches(eventIds)) {
-          final convocations = await _supabase
-              .from('convocations')
-              .select('event_id, user_id, status, event_role')
-              .inFilter('event_id', batch);
-          for (final row
-              in List<Map<String, dynamic>>.from(convocations as List)) {
-            final role = (row['event_role'] ?? 'athlete')
-                .toString()
-                .trim()
-                .toLowerCase();
-            final status =
-                (row['status'] ?? '').toString().trim().toLowerCase();
-            final eventId = (row['event_id'] ?? '').toString();
-            final userId = (row['user_id'] ?? '').toString();
-            if (role == 'coach' || status != 'accepted' || userId.isEmpty) {
-              continue;
-            }
-            acceptedAthletesByEvent
-                .putIfAbsent(eventId, () => <String>{})
-                .add(userId);
+        final convocations = await _fetchRowsByEventIds(
+          table: 'convocations',
+          columns: 'id, event_id, user_id, status, event_role',
+          eventIds: eventIds,
+        );
+        for (final row in convocations) {
+          final status = (row['status'] ?? '').toString().trim().toLowerCase();
+          final eventId = (row['event_id'] ?? '').toString();
+          final userId = (row['user_id'] ?? '').toString();
+          if (!_isAthleteConvocationRole(row['event_role']) ||
+              status != 'accepted' ||
+              userId.isEmpty) {
+            continue;
           }
-          final response = await _supabase
-              .from('checkins')
-              .select('event_id, user_id')
-              .inFilter('event_id', batch);
-          for (final row in List<Map<String, dynamic>>.from(response as List)) {
-            final eventId = (row['event_id'] ?? '').toString();
-            final userId = (row['user_id'] ?? '').toString();
-            if (!(acceptedAthletesByEvent[eventId] ?? const <String>{})
-                .contains(userId)) {
-              continue;
-            }
-            checkedInByEvent[eventId] = (checkedInByEvent[eventId] ?? 0) + 1;
+          acceptedAthletesByEvent
+              .putIfAbsent(eventId, () => <String>{})
+              .add(userId);
+        }
+        final checkins = await _fetchRowsByEventIds(
+          table: 'checkins',
+          columns: 'id, event_id, user_id',
+          eventIds: eventIds,
+        );
+        for (final row in checkins) {
+          final eventId = (row['event_id'] ?? '').toString();
+          final userId = (row['user_id'] ?? '').toString();
+          if (!(acceptedAthletesByEvent[eventId] ?? const <String>{})
+              .contains(userId)) {
+            continue;
           }
+          checkedInByEvent[eventId] = (checkedInByEvent[eventId] ?? 0) + 1;
         }
       }
       for (final eventId in eventIds) {
@@ -1750,12 +1776,10 @@ class _AgendaPageState extends State<AgendaPage> {
             .map((item) => Map<String, dynamic>.from(item))
             .toList();
       } else {
-        final convocationsResponse = await _supabase
-            .from('convocations')
-            .select('user_id, status, justification, event_role')
-            .eq('event_id', eventId);
-        final convocations = List<Map<String, dynamic>>.from(
-          convocationsResponse as List,
+        final convocations = await _fetchRowsByEventIds(
+          table: 'convocations',
+          columns: 'id, event_id, user_id, status, justification, event_role',
+          eventIds: [eventId],
         );
         final userIds = convocations
             .map((row) => (row['user_id'] ?? '').toString())
@@ -1797,14 +1821,7 @@ class _AgendaPageState extends State<AgendaPage> {
         _convocadosDetailsCacheTime[eventId] = DateTime.now();
       }
       final athleteParticipants = participantes.where((participant) {
-        final role = (participant['event_role'] ?? 'athlete')
-            .toString()
-            .trim()
-            .toLowerCase();
-        return role != 'coach' &&
-            role != 'treinador' &&
-            role != 'tecnico' &&
-            role != 'técnico';
+        return _isAthleteConvocationRole(participant['event_role']);
       }).toList();
       final accepted = athleteParticipants.where((participant) {
         return (participant['status'] ?? 'pending')
