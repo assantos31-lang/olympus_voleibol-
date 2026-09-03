@@ -960,31 +960,44 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
     required String value,
     required ValueChanged<String?> onChanged,
   }) {
+    final branding = OlympusBrandingController.instance.branding;
+    final cardColor = branding.surfaceColor;
+    final textColor = branding.textColor;
+    final accentColor = branding.secondaryColor;
+
     return DropdownButtonFormField<String>(
-      dropdownColor: Colors.grey.shade900,
+      dropdownColor: cardColor,
       value: options.contains(value) ? value : 'Todos',
       isDense: true,
-      style: const TextStyle(color: Colors.white, fontSize: 16),
-      decoration: const InputDecoration(
+      style: TextStyle(color: textColor, fontSize: 16),
+      decoration: InputDecoration(
         labelText: 'Mês',
-        labelStyle: TextStyle(color: Colors.white),
-        border: OutlineInputBorder(),
+        labelStyle: TextStyle(color: textColor),
+        floatingLabelStyle: TextStyle(color: accentColor),
+        filled: true,
+        fillColor: cardColor,
+        border: OutlineInputBorder(
+          borderSide: BorderSide(color: accentColor.withValues(alpha: 0.55)),
+        ),
         enabledBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: Colors.white70),
+          borderSide: BorderSide(color: accentColor.withValues(alpha: 0.55)),
         ),
         focusedBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: Colors.white),
+          borderSide: BorderSide(color: accentColor, width: 1.5),
         ),
-        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
+        ),
       ),
-      iconEnabledColor: Colors.white,
+      iconEnabledColor: textColor,
       items: options
           .map(
             (item) => DropdownMenuItem<String>(
               value: item,
               child: Text(
                 _monthLabel(item),
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: textColor),
               ),
             ),
           )
