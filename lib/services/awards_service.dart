@@ -27,16 +27,20 @@ class AwardsService {
     }
   }
 
-  Future<List<AwardDefinition>> loadDefinitions() async {
+  Future<List<AwardDefinition>> loadDefinitions({
+    required bool canManage,
+  }) async {
     final organization =
         await OrganizationContextService.instance.initialize(force: true);
     if (organization == null) return const [];
-    final rows = await _client
+    dynamic query = _client
         .from('award_definitions')
         .select()
-        .eq('organization_id', organization.id)
-        .order('sort_order')
-        .order('created_at');
+        .eq('organization_id', organization.id);
+    if (!canManage) {
+      query = query.eq('is_visible', true);
+    }
+    final rows = await query.order('sort_order').order('created_at');
     return List<Map<String, dynamic>>.from(rows)
         .map(AwardDefinition.fromMap)
         .toList();
@@ -47,7 +51,7 @@ class AwardsService {
         await OrganizationContextService.instance.initialize(force: true);
     if (organization == null) return const [];
 
-    final definitions = await loadDefinitions();
+    final definitions = await loadDefinitions(canManage: canManage);
     final byId = {for (final item in definitions) item.id: item};
     dynamic query = _client
         .from('award_editions')
@@ -76,23 +80,26 @@ class AwardsService {
           .add(AwardWinner.fromMap(row));
     }
 
-    return rows.map((row) {
-      final definition = byId[row['award_definition_id'].toString()];
-      if (definition == null) return null;
-      final rawDate = (row['delivery_date'] ?? '').toString();
-      return AwardEdition(
-        id: row['id'].toString(),
-        definition: definition,
-        year: (row['period_year'] as num).toInt(),
-        month: (row['period_month'] as num).toInt(),
-        caption: (row['caption'] ?? '').toString(),
-        deliveryDate: rawDate.isEmpty ? null : DateTime.tryParse(rawDate),
-        deliveryPhotoUrl: (row['delivery_photo_url'] ?? '').toString(),
-        isPublished: row['is_published'] == true,
-        isVisible: row['is_visible'] != false,
-        winners: winnersByEdition[row['id'].toString()] ?? const [],
-      );
-    }).whereType<AwardEdition>().toList();
+    return rows
+        .map((row) {
+          final definition = byId[row['award_definition_id'].toString()];
+          if (definition == null) return null;
+          final rawDate = (row['delivery_date'] ?? '').toString();
+          return AwardEdition(
+            id: row['id'].toString(),
+            definition: definition,
+            year: (row['period_year'] as num).toInt(),
+            month: (row['period_month'] as num).toInt(),
+            caption: (row['caption'] ?? '').toString(),
+            deliveryDate: rawDate.isEmpty ? null : DateTime.tryParse(rawDate),
+            deliveryPhotoUrl: (row['delivery_photo_url'] ?? '').toString(),
+            isPublished: row['is_published'] == true,
+            isVisible: row['is_visible'] != false,
+            winners: winnersByEdition[row['id'].toString()] ?? const [],
+          );
+        })
+        .whereType<AwardEdition>()
+        .toList();
   }
 
   Future<List<Map<String, dynamic>>> loadEligibleProfiles() async {

@@ -9,7 +9,7 @@ import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme/olympus_theme.dart';
-import '../utils/dense_ranking.dart';
+import '../utils/checkin_ranking.dart';
 
 class AdminCheckinRankingPage extends StatefulWidget {
   const AdminCheckinRankingPage({super.key});
@@ -74,6 +74,41 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
     final parsed = DateTime.tryParse(raw);
     if (parsed == null) return null;
     return DateTime(parsed.year, parsed.month, parsed.day);
+  }
+
+  DateTime? _parseEventStart(Map<String, dynamic> event) {
+    final startAt = (event['event_start_at'] ?? '').toString().trim();
+    if (startAt.isNotEmpty) {
+      final parsed = DateTime.tryParse(startAt);
+      if (parsed != null) return parsed.toLocal();
+    }
+
+    final date = _parseEventDate(event);
+    if (date == null) return null;
+    final rawTime = (event['event_time'] ?? '').toString().trim();
+    final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(rawTime);
+    if (match == null) return null;
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+      int.parse(match.group(1)!),
+      int.parse(match.group(2)!),
+    );
+  }
+
+  DateTime? _parseCheckinTime(Map<String, dynamic> row) {
+    for (final field in const ['checked_in_at', 'created_at']) {
+      final raw = (row[field] ?? '').toString().trim();
+      final parsed = DateTime.tryParse(raw);
+      if (parsed != null) return parsed.toLocal();
+    }
+    return null;
+  }
+
+  bool _isTrainingEvent(dynamic value) {
+    final type = (value ?? '').toString().trim().toLowerCase();
+    return type.isEmpty || type == 'training' || type.contains('treino');
   }
 
   bool _isWithinSelectedPeriod(DateTime date) {
@@ -143,37 +178,60 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
     });
 
     try {
-      final eventRowsRaw = await _supabase
-          .from('events')
-          .select('id, event_name, event_date, event_start_at');
+      final eventRowsRaw = await _supabase.from('events').select(
+            'id, event_name, event_date, event_time, event_start_at, event_type',
+          );
       final eventRows = List<Map<String, dynamic>>.from(eventRowsRaw as List);
       final eventDates = <String, DateTime>{};
+      final eventStarts = <String, DateTime>{};
       for (final event in eventRows) {
+        if (!_isTrainingEvent(event['event_type'])) continue;
         final id = (event['id'] ?? '').toString();
         final date = _parseEventDate(event);
         if (id.isNotEmpty && date != null && _isWithinSelectedPeriod(date)) {
           eventDates[id] = date;
+          final start = _parseEventStart(event);
+          if (start != null) eventStarts[id] = start;
         }
       }
 
-      if (eventDates.isEmpty) {
+      if (eventStarts.isEmpty) {
         _setLoaded(const [], cacheKey);
         return;
       }
 
       final checkinRowsRaw = await _supabase
           .from('checkins')
-          .select('user_id, event_id, check_in_status')
-          .inFilter('event_id', eventDates.keys.toList());
+          .select(
+            'user_id, event_id, check_in_status, checked_in_at, created_at',
+          )
+          .inFilter('event_id', eventStarts.keys.toList());
       final checkinRows = List<Map<String, dynamic>>.from(
         checkinRowsRaw as List,
       ).where((row) => _isDone(row['check_in_status'])).toList();
 
-      final userIds = checkinRows
-          .map((row) => (row['user_id'] ?? '').toString())
-          .where((id) => id.isNotEmpty)
-          .toSet()
+      final validRecords = checkinRows
+          .map((row) {
+            final checkedInAt = _parseCheckinTime(row);
+            if (checkedInAt == null) return null;
+            final record = CheckinRankingRecord(
+              userId: (row['user_id'] ?? '').toString(),
+              eventId: (row['event_id'] ?? '').toString(),
+              checkedInAt: checkedInAt,
+            );
+            final start = eventStarts[record.eventId];
+            return start != null && isValidCheckinForRanking(start, checkedInAt)
+                ? record
+                : null;
+          })
+          .whereType<CheckinRankingRecord>()
           .toList();
+      final scores = calculateCheckinRankingScores(
+        eventStarts: eventStarts,
+        records: validRecords,
+      );
+
+      final userIds = scores.keys.toList();
       if (userIds.isEmpty) {
         _setLoaded(const [], cacheKey);
         return;
@@ -207,10 +265,8 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
           (profile['id'] ?? '').toString(): profile,
       };
 
-      final eventsByUser = <String, Set<String>>{};
-      for (final row in checkinRows) {
-        final userId = (row['user_id'] ?? '').toString();
-        final eventId = (row['event_id'] ?? '').toString();
+      final eligibleUserIds = <String>{};
+      for (final userId in userIds) {
         final profile = profilesById[userId];
         if (profile == null || profile['is_active'] == false) continue;
         final type = (profile['user_type'] ?? '').toString().toLowerCase();
@@ -219,34 +275,44 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
             !athleteRoleIds.contains(userId)) {
           continue;
         }
-        if (eventDates.containsKey(eventId)) {
-          eventsByUser.putIfAbsent(userId, () => <String>{}).add(eventId);
-        }
+        eligibleUserIds.add(userId);
       }
 
       final entries = <_RankingEntry>[];
-      for (final userEvents in eventsByUser.entries) {
-        final profile = profilesById[userEvents.key]!;
+      for (final userId in eligibleUserIds) {
+        final profile = profilesById[userId]!;
+        final score = scores[userId]!;
+        final userEvents = validRecords
+            .where((record) => record.userId == userId)
+            .map((record) => record.eventId)
+            .where(eventDates.containsKey)
+            .toSet();
         final datesByDay = <String, DateTime>{
-          for (final eventId in userEvents.value)
+          for (final eventId in userEvents)
             _dateKey(eventDates[eventId]!): eventDates[eventId]!,
         };
         final dates = datesByDay.values.toList()..sort();
         entries.add(
           _RankingEntry(
-            userId: userEvents.key,
+            userId: userId,
             name: (profile['full_name'] ?? 'Atleta sem nome').toString(),
             avatarUrl: (profile['avatar_url'] ?? '').toString().trim(),
             gender: _normalizeGender(profile['gender']),
             courtPosition: (profile['court_position'] ?? '').toString().trim(),
-            checkinCount: userEvents.value.length,
+            score: score,
             days: dates,
           ),
         );
       }
       entries.sort((a, b) {
-        final count = b.checkinCount.compareTo(a.checkinCount);
-        return count != 0 ? count : a.name.compareTo(b.name);
+        return compareCheckinRanking(
+          a: a.score,
+          aName: a.name,
+          aId: a.userId,
+          b: b.score,
+          bName: b.name,
+          bId: b.userId,
+        );
       });
       _setLoaded(entries, cacheKey);
     } catch (error) {
@@ -272,12 +338,9 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
     final filtered = _allEntries
         .where((entry) => _gender == 'todos' || entry.gender == _gender)
         .toList();
-    final positions = buildDenseRankingPositions(
-      filtered.map((entry) => entry.checkinCount),
-    );
     return List.generate(
       filtered.length,
-      (index) => _PositionedRankingEntry(positions[index], filtered[index]),
+      (index) => _PositionedRankingEntry(index + 1, filtered[index]),
     );
   }
 
@@ -428,7 +491,9 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
                 'Atleta',
                 'Gênero',
                 'Posição em quadra',
+                'Pontos',
                 'Check-ins',
+                'Primeiras chegadas',
                 'Dias',
               ],
               data: rows
@@ -440,7 +505,9 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
                       item.entry.courtPosition.isEmpty
                           ? '-'
                           : item.entry.courtPosition,
+                      '${item.entry.score.totalPoints}',
                       '${item.entry.checkinCount}',
+                      '${item.entry.score.firstCheckins}',
                       item.entry.days.map(_dayFormat.format).join(', '),
                     ],
                   )
@@ -704,6 +771,16 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
                     height: 1.35,
                   ),
                 ),
+                const SizedBox(height: 5),
+                Text(
+                  '${entry.checkinCount} treino(s) válido(s) • '
+                  '${entry.score.firstCheckins} primeira(s) chegada(s)',
+                  style: TextStyle(
+                    color: branding.textColor.withValues(alpha: .64),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ],
             ),
           ),
@@ -716,7 +793,7 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
             child: Column(
               children: [
                 Text(
-                  '${entry.checkinCount}',
+                  '${entry.score.totalPoints}',
                   style: TextStyle(
                     color: branding.primaryColor,
                     fontSize: 18,
@@ -724,7 +801,7 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
                   ),
                 ),
                 Text(
-                  'check-ins',
+                  'pontos',
                   style: TextStyle(
                     color: branding.primaryColor,
                     fontSize: 9,
@@ -810,7 +887,7 @@ class _RankingEntry {
     required this.avatarUrl,
     required this.gender,
     required this.courtPosition,
-    required this.checkinCount,
+    required this.score,
     required this.days,
   });
 
@@ -819,7 +896,8 @@ class _RankingEntry {
   final String avatarUrl;
   final String gender;
   final String courtPosition;
-  final int checkinCount;
+  final CheckinRankingScore score;
+  int get checkinCount => score.presenceCount;
   final List<DateTime> days;
 }
 

@@ -2164,7 +2164,9 @@ class _AdminHomePageState extends State<AdminHomePage>
         color: const Color(0xFFFFD166),
         onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const AwardsPage()),
+              MaterialPageRoute(
+                builder: (_) => const AwardsPage(canManage: true),
+              ),
             ),
       ),
     ].where((module) => _canOpen(module.permission)).toList();

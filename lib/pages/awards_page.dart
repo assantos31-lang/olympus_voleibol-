@@ -11,11 +11,14 @@ import '../models/award_models.dart';
 import '../services/awards_service.dart';
 import '../services/organization_context_service.dart';
 import '../services/organization_storage_service.dart';
-import '../services/role_service.dart';
 import '../theme/olympus_theme.dart';
 
 class AwardsPage extends StatefulWidget {
-  const AwardsPage({super.key});
+  const AwardsPage({super.key, this.canManage = false});
+
+  /// A permissao desta tela acompanha o perfil atualmente selecionado.
+  /// O padrao seguro e somente leitura; apenas a Area Admin informa `true`.
+  final bool canManage;
 
   @override
   State<AwardsPage> createState() => _AwardsPageState();
@@ -54,9 +57,9 @@ class _AwardsPageState extends State<AwardsPage> {
       });
     }
     try {
-      final canManage = await RoleService().isCurrentUserAdmin();
+      final canManage = widget.canManage;
       final results = await Future.wait<dynamic>([
-        _service.loadDefinitions(),
+        _service.loadDefinitions(canManage: canManage),
         _service.loadEditions(canManage: canManage),
       ]);
       if (!mounted) return;
@@ -78,8 +81,8 @@ class _AwardsPageState extends State<AwardsPage> {
   }
 
   List<AwardEdition> get _visiblePeriodEditions => _editions
-      .where((item) =>
-          item.year == _selectedYear && item.month == _selectedMonth)
+      .where(
+          (item) => item.year == _selectedYear && item.month == _selectedMonth)
       .toList();
 
   List<int> get _availableYears {
@@ -89,7 +92,8 @@ class _AwardsPageState extends State<AwardsPage> {
     return years;
   }
 
-  Future<ImageSource?> _chooseImageSource() => showModalBottomSheet<ImageSource>(
+  Future<ImageSource?> _chooseImageSource() =>
+      showModalBottomSheet<ImageSource>(
         context: context,
         builder: (context) => SafeArea(
           child: Column(
@@ -470,13 +474,16 @@ class _AwardsPageState extends State<AwardsPage> {
                       if (action == 'delete') await _deleteDefinition(item);
                     },
                     itemBuilder: (_) => [
-                      const PopupMenuItem(value: 'edition', child: Text('Nova entrega')),
-                      const PopupMenuItem(value: 'edit', child: Text('Editar tipo')),
+                      const PopupMenuItem(
+                          value: 'edition', child: Text('Nova entrega')),
+                      const PopupMenuItem(
+                          value: 'edit', child: Text('Editar tipo')),
                       PopupMenuItem(
                         value: 'visibility',
                         child: Text(item.isVisible ? 'Ocultar' : 'Mostrar'),
                       ),
-                      const PopupMenuItem(value: 'delete', child: Text('Excluir')),
+                      const PopupMenuItem(
+                          value: 'delete', child: Text('Excluir')),
                     ],
                   ),
                 ),
@@ -492,18 +499,242 @@ class _AwardsPageState extends State<AwardsPage> {
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (item.deliveryPhotoUrl.isNotEmpty)
-            GestureDetector(
-              onTap: () => _viewPhoto(item.deliveryPhotoUrl),
-              child: Container(
+      child: InkWell(
+        onTap: () => _openEditionDetails(item),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (item.deliveryPhotoUrl.isNotEmpty)
+              GestureDetector(
+                onTap: () => _viewPhoto(item.deliveryPhotoUrl),
+                child: Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 440),
+                  color: branding.primaryColor.withValues(alpha: 0.10),
+                  child: CachedNetworkImage(
+                    imageUrl: item.deliveryPhotoUrl,
+                    fit: BoxFit.contain,
+                    placeholder: (_, __) => const AspectRatio(
+                      aspectRatio: 4 / 3,
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                    errorWidget: (_, __, ___) => const AspectRatio(
+                      aspectRatio: 4 / 3,
+                      child: Center(child: Icon(Icons.broken_image_rounded)),
+                    ),
+                  ),
+                ),
+              )
+            else if (item.definition.coverImageUrl.isNotEmpty)
+              Container(
                 width: double.infinity,
-                constraints: const BoxConstraints(maxHeight: 440),
+                constraints: const BoxConstraints(maxHeight: 300),
                 color: branding.primaryColor.withValues(alpha: 0.10),
                 child: CachedNetworkImage(
-                  imageUrl: item.deliveryPhotoUrl,
+                  imageUrl: item.definition.coverImageUrl,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.definition.title,
+                              style: TextStyle(
+                                color: branding.textColor,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              awardSourceLabel(item.definition.sourceType),
+                              style: TextStyle(
+                                color: branding.primaryColor,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_canManage)
+                        PopupMenuButton<String>(
+                          onSelected: (action) {
+                            if (action == 'edit') {
+                              _openEditionForm(edition: item);
+                            } else if (action == 'delete') {
+                              _deleteEdition(item);
+                            }
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(value: 'edit', child: Text('Editar')),
+                            PopupMenuItem(
+                                value: 'delete', child: Text('Excluir')),
+                          ],
+                        ),
+                    ],
+                  ),
+                  if (_canManage) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      children: [
+                        _StatusChip(
+                          icon: item.isPublished
+                              ? Icons.public_rounded
+                              : Icons.edit_note_rounded,
+                          label: item.isPublished ? 'Publicado' : 'Rascunho',
+                        ),
+                        if (!item.isVisible)
+                          const _StatusChip(
+                            icon: Icons.visibility_off_rounded,
+                            label: 'Oculto',
+                          ),
+                      ],
+                    ),
+                  ],
+                  if (item.winners.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    ...item.winners.map(
+                      (winner) => Padding(
+                        padding: const EdgeInsets.only(bottom: 9),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 22,
+                              backgroundColor: branding.secondaryColor
+                                  .withValues(alpha: 0.16),
+                              backgroundImage: winner.avatarUrl.isEmpty
+                                  ? null
+                                  : CachedNetworkImageProvider(
+                                      winner.avatarUrl),
+                              child: winner.avatarUrl.isEmpty
+                                  ? Text(
+                                      winner.name.isEmpty
+                                          ? '?'
+                                          : winner.name[0].toUpperCase(),
+                                      style: TextStyle(
+                                        color: branding.primaryColor,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(width: 11),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    winner.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  if (winner.resultLabel.isNotEmpty)
+                                    Text(winner.resultLabel),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              '${winner.position}º',
+                              style: TextStyle(
+                                color: branding.secondaryColor,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (item.caption.isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    Text(item.caption),
+                  ],
+                  if (item.deliveryDate != null) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.celebration_rounded,
+                          size: 17,
+                          color: branding.secondaryColor,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Entrega em ${_dateFormat.format(item.deliveryDate!)}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openEditionDetails(AwardEdition item) {
+    final branding = _branding;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.82,
+        maxChildSize: 0.95,
+        builder: (context, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade400,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              item.definition.title,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${DateFormat.MMMM('pt_BR').format(item.period)} de ${item.year}',
+              style: TextStyle(
+                color: branding.primaryColor,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (item.deliveryPhotoUrl.isNotEmpty ||
+                item.definition.coverImageUrl.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: CachedNetworkImage(
+                  imageUrl: item.deliveryPhotoUrl.isNotEmpty
+                      ? item.deliveryPhotoUrl
+                      : item.definition.coverImageUrl,
                   fit: BoxFit.contain,
                   placeholder: (_, __) => const AspectRatio(
                     aspectRatio: 4 / 3,
@@ -515,164 +746,62 @@ class _AwardsPageState extends State<AwardsPage> {
                   ),
                 ),
               ),
-            )
-          else if (item.definition.coverImageUrl.isNotEmpty)
-            Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(maxHeight: 300),
-              color: branding.primaryColor.withValues(alpha: 0.10),
-              child: CachedNetworkImage(
-                imageUrl: item.definition.coverImageUrl,
-                fit: BoxFit.contain,
+            ],
+            if (item.definition.description.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(item.definition.description),
+            ],
+            if (item.caption.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(item.caption),
+            ],
+            if (item.winners.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              const Text(
+                'Vencedores',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
               ),
-            ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.definition.title,
-                            style: TextStyle(
-                              color: branding.textColor,
-                              fontSize: 19,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            awardSourceLabel(item.definition.sourceType),
-                            style: TextStyle(
-                              color: branding.primaryColor,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
+              const SizedBox(height: 8),
+              ...item.winners.map(
+                (winner) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    backgroundImage: winner.avatarUrl.isEmpty
+                        ? null
+                        : CachedNetworkImageProvider(winner.avatarUrl),
+                    child: winner.avatarUrl.isEmpty
+                        ? Text(winner.name.isEmpty
+                            ? '?'
+                            : winner.name[0].toUpperCase())
+                        : null,
+                  ),
+                  title: Text(
+                    winner.name,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  subtitle: winner.resultLabel.isEmpty
+                      ? null
+                      : Text(winner.resultLabel),
+                  trailing: Text(
+                    '${winner.position}º',
+                    style: TextStyle(
+                      color: branding.secondaryColor,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
                     ),
-                    if (_canManage)
-                      PopupMenuButton<String>(
-                        onSelected: (action) {
-                          if (action == 'edit') {
-                            _openEditionForm(edition: item);
-                          } else if (action == 'delete') {
-                            _deleteEdition(item);
-                          }
-                        },
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(value: 'edit', child: Text('Editar')),
-                          PopupMenuItem(value: 'delete', child: Text('Excluir')),
-                        ],
-                      ),
-                  ],
+                  ),
                 ),
-                if (_canManage) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 7,
-                    runSpacing: 7,
-                    children: [
-                      _StatusChip(
-                        icon: item.isPublished
-                            ? Icons.public_rounded
-                            : Icons.edit_note_rounded,
-                        label: item.isPublished ? 'Publicado' : 'Rascunho',
-                      ),
-                      if (!item.isVisible)
-                        const _StatusChip(
-                          icon: Icons.visibility_off_rounded,
-                          label: 'Oculto',
-                        ),
-                    ],
-                  ),
-                ],
-                if (item.winners.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  ...item.winners.map(
-                    (winner) => Padding(
-                      padding: const EdgeInsets.only(bottom: 9),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 22,
-                            backgroundColor:
-                                branding.secondaryColor.withValues(alpha: 0.16),
-                            backgroundImage: winner.avatarUrl.isEmpty
-                                ? null
-                                : CachedNetworkImageProvider(winner.avatarUrl),
-                            child: winner.avatarUrl.isEmpty
-                                ? Text(
-                                    winner.name.isEmpty
-                                        ? '?'
-                                        : winner.name[0].toUpperCase(),
-                                    style: TextStyle(
-                                      color: branding.primaryColor,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  )
-                                : null,
-                          ),
-                          const SizedBox(width: 11),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  winner.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                if (winner.resultLabel.isNotEmpty)
-                                  Text(winner.resultLabel),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            '${winner.position}º',
-                            style: TextStyle(
-                              color: branding.secondaryColor,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-                if (item.caption.isNotEmpty) ...[
-                  const SizedBox(height: 5),
-                  Text(item.caption),
-                ],
-                if (item.deliveryDate != null) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.celebration_rounded,
-                        size: 17,
-                        color: branding.secondaryColor,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Entrega em ${_dateFormat.format(item.deliveryDate!)}',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
+              ),
+            ],
+            if (item.deliveryDate != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Entrega em ${_dateFormat.format(item.deliveryDate!)}',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -934,7 +1063,8 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
     try {
       final profiles = await _service.loadEligibleProfiles();
       for (final winner in widget.edition?.winners ?? const <AwardWinner>[]) {
-        final match = profiles.where((p) => p['id'].toString() == winner.profileId);
+        final match =
+            profiles.where((p) => p['id'].toString() == winner.profileId);
         _selected.add(match.isEmpty
             ? {
                 'id': winner.profileId.isEmpty ? null : winner.profileId,
@@ -985,7 +1115,9 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
         limit: _definition.winnerCount,
       ),
     );
-    if (result != null) setState(() => _selected..replaceRange(0, _selected.length, result));
+    if (result != null) {
+      setState(() => _selected..replaceRange(0, _selected.length, result));
+    }
   }
 
   Future<void> _save() async {
@@ -1102,7 +1234,8 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
                       6,
                       (index) {
                         final year = DateTime.now().year - 2 + index;
-                        return DropdownMenuItem(value: year, child: Text('$year'));
+                        return DropdownMenuItem(
+                            value: year, child: Text('$year'));
                       },
                     ),
                     onChanged: (value) => setState(() => _year = value!),
@@ -1142,7 +1275,9 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
                         onPressed: _chooseWinners,
                         icon: const Icon(Icons.people_alt_rounded),
                         label: Text(
-                          _selected.isEmpty ? 'Escolher vencedores' : 'Alterar vencedores',
+                          _selected.isEmpty
+                              ? 'Escolher vencedores'
+                              : 'Alterar vencedores',
                         ),
                       ),
                     ],
@@ -1241,8 +1376,8 @@ class _WinnerPickerDialogState extends State<_WinnerPickerDialog> {
     super.dispose();
   }
 
-  bool _contains(Map<String, dynamic> profile) =>
-      _selected.any((item) => item['id'].toString() == profile['id'].toString());
+  bool _contains(Map<String, dynamic> profile) => _selected
+      .any((item) => item['id'].toString() == profile['id'].toString());
 
   @override
   Widget build(BuildContext context) {
@@ -1293,7 +1428,8 @@ class _WinnerPickerDialogState extends State<_WinnerPickerDialog> {
                           _selected.add(profile);
                         } else {
                           _selected.removeWhere((item) =>
-                              item['id'].toString() == profile['id'].toString());
+                              item['id'].toString() ==
+                              profile['id'].toString());
                         }
                       });
                     },
@@ -1347,7 +1483,8 @@ class _ImageSelector extends StatelessWidget {
             Container(
               width: double.infinity,
               constraints: const BoxConstraints(maxHeight: 320),
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+              color:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
               child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain),
             ),
           Padding(
@@ -1360,8 +1497,10 @@ class _ImageSelector extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-                      Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+                      Text(title,
+                          style: const TextStyle(fontWeight: FontWeight.w900)),
+                      Text(subtitle,
+                          style: Theme.of(context).textTheme.bodySmall),
                     ],
                   ),
                 ),
