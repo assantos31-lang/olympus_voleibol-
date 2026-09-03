@@ -9,6 +9,7 @@ import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme/olympus_theme.dart';
+import '../utils/dense_ranking.dart';
 
 class AdminCheckinRankingPage extends StatefulWidget {
   const AdminCheckinRankingPage({super.key});
@@ -271,16 +272,13 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
     final filtered = _allEntries
         .where((entry) => _gender == 'todos' || entry.gender == _gender)
         .toList();
-    var lastCount = -1;
-    var position = 0;
-    return filtered.indexed.map((indexed) {
-      final entry = indexed.$2;
-      if (entry.checkinCount != lastCount) {
-        position = indexed.$1 + 1;
-        lastCount = entry.checkinCount;
-      }
-      return _PositionedRankingEntry(position, entry);
-    }).toList();
+    final positions = buildDenseRankingPositions(
+      filtered.map((entry) => entry.checkinCount),
+    );
+    return List.generate(
+      filtered.length,
+      (index) => _PositionedRankingEntry(positions[index], filtered[index]),
+    );
   }
 
   void _applyQuickPeriod(String value) {
