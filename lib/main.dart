@@ -39,6 +39,7 @@ import 'services/badge_service.dart';
 import 'services/chat_service.dart';
 import 'services/organization_context_service.dart';
 import 'services/push_token_service.dart';
+import 'services/role_service.dart';
 import 'theme/olympus_theme.dart';
 import 'widgets/financial_access_gate.dart';
 
@@ -993,6 +994,7 @@ class AdminOnlyProfilesRoute extends StatefulWidget {
 
 class _AdminOnlyProfilesRouteState extends State<AdminOnlyProfilesRoute> {
   final supabase = Supabase.instance.client;
+  final RoleService _roleService = RoleService();
   bool _isLoading = true;
   bool _isAdmin = false;
 
@@ -1017,17 +1019,14 @@ class _AdminOnlyProfilesRouteState extends State<AdminOnlyProfilesRoute> {
         return;
       }
 
-      final profile = await supabase
-          .from('profiles')
-          .select('user_type')
-          .eq('id', user.id)
-          .maybeSingle();
+      // A conta pode ter Atleta como papel primario e Admin como papel
+      // adicional. A rota precisa validar todos os papeis ativos, e nao apenas
+      // profiles.user_type, para respeitar a troca de perfil do dashboard.
+      final isAdmin = await _roleService.isCurrentUserAdmin();
 
       if (!mounted) return;
 
-      final userType = (profile?['user_type'] ?? '').toString();
-
-      if (userType != 'admin') {
+      if (!isAdmin) {
         Navigator.pushNamedAndRemoveUntil(
           context,
           '/dashboard',
