@@ -8,6 +8,7 @@ import 'package:printing/printing.dart';
 import '../pages/add_event_page.dart';
 import '../services/permission_service.dart'; // ✅ NOVO
 import '../services/role_service.dart';
+import '../utils/event_rows_paginator.dart';
 import '../services/olympus_memory_cache.dart';
 import '../theme/olympus_theme.dart';
 import '../widgets/event_address_link.dart';
@@ -153,39 +154,25 @@ class _AgendaPageState extends State<AgendaPage> {
         .subscribe();
   }
 
-  Iterable<List<String>> _eventIdBatches(List<String> eventIds) sync* {
-    for (var start = 0;
-        start < eventIds.length;
-        start += _eventQueryBatchSize) {
-      final end = (start + _eventQueryBatchSize < eventIds.length)
-          ? start + _eventQueryBatchSize
-          : eventIds.length;
-      yield eventIds.sublist(start, end);
-    }
-  }
-
   Future<List<Map<String, dynamic>>> _fetchRowsByEventIds({
     required String table,
     required String columns,
     required List<String> eventIds,
   }) async {
-    final rows = <Map<String, dynamic>>[];
-    for (final batch in _eventIdBatches(eventIds)) {
-      var offset = 0;
-      while (true) {
+    return fetchAllEventRows(
+      eventIds: eventIds,
+      batchSize: _eventQueryBatchSize,
+      pageSize: _postgrestPageSize,
+      fetchPage: (batch, from, to) async {
         final response = await _supabase
             .from(table)
             .select(columns)
             .inFilter('event_id', batch)
             .order('id', ascending: true)
-            .range(offset, offset + _postgrestPageSize - 1);
-        final page = List<Map<String, dynamic>>.from(response as List);
-        rows.addAll(page);
-        if (page.length < _postgrestPageSize) break;
-        offset += _postgrestPageSize;
-      }
-    }
-    return rows;
+            .range(from, to);
+        return List<Map<String, dynamic>>.from(response as List);
+      },
+    );
   }
 
   bool _isAthleteConvocationRole(dynamic value) {
