@@ -3195,10 +3195,11 @@ class _ProfilesPageState extends State<ProfilesPage> {
                             : CachedNetworkImage(
                                 imageUrl: avatarUrl,
                                 fit: BoxFit.cover,
+                                alignment: Alignment.topCenter,
                                 width: 50,
                                 height: 50,
-                                memCacheWidth: 180,
-                                memCacheHeight: 180,
+                                memCacheWidth: 240,
+                                filterQuality: FilterQuality.high,
                                 fadeInDuration: const Duration(
                                   milliseconds: 120,
                                 ),
@@ -3940,20 +3941,22 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
       }
 
       final oriented = img.bakeOrientation(decoded);
-      final squareSize = min(oriented.width, oriented.height);
-      final cropped = img.copyCrop(
-        oriented,
-        x: (oriented.width - squareSize) ~/ 2,
-        y: (oriented.height - squareSize) ~/ 2,
-        width: squareSize,
-        height: squareSize,
-      );
-      final normalized = img.copyResize(
-        cropped,
-        width: 800,
-        height: 800,
-        interpolation: img.Interpolation.cubic,
-      );
+      const maxSide = 1600;
+      final normalized = oriented.width >= oriented.height
+          ? oriented.width > maxSide
+              ? img.copyResize(
+                  oriented,
+                  width: maxSide,
+                  interpolation: img.Interpolation.cubic,
+                )
+              : oriented
+          : oriented.height > maxSide
+              ? img.copyResize(
+                  oriented,
+                  height: maxSide,
+                  interpolation: img.Interpolation.cubic,
+                )
+              : oriented;
       final fileBytes = Uint8List.fromList(
         img.encodeJpg(normalized, quality: 88),
       );
@@ -4502,9 +4505,9 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
             return Image.memory(
               snapshot.data!,
               fit: BoxFit.cover,
-              cacheWidth: 512,
-              cacheHeight: 512,
-              filterQuality: FilterQuality.medium,
+              alignment: Alignment.topCenter,
+              cacheWidth: 800,
+              filterQuality: FilterQuality.high,
             );
           }
           return const Icon(Icons.person, size: 60, color: Colors.grey);
@@ -4516,8 +4519,10 @@ class _ProfileFormDialogState extends State<ProfileFormDialog> {
       return CachedNetworkImage(
         imageUrl: widget.profile!['avatar_url'].toString(),
         fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
         memCacheWidth: 320,
         maxWidthDiskCache: 640,
+        filterQuality: FilterQuality.high,
         fadeInDuration: const Duration(milliseconds: 120),
         errorWidget: (c, o, s) =>
             const Icon(Icons.person, size: 60, color: Colors.grey),
