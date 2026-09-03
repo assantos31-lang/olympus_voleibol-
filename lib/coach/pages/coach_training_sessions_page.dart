@@ -199,6 +199,8 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
 
     if (raw.contains('treino')) return 'treino';
     if (raw.contains('campeonato')) return 'campeonato';
+    if (raw.contains('amistoso')) return 'amistoso';
+    if (raw == 'jogo' || raw.contains('partida')) return 'amistoso';
     if (raw.contains('liga')) return 'liga';
 
     return raw;
@@ -206,7 +208,18 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
 
   bool _isTipoEventoSuportado(dynamic value) {
     final tipo = _normalizarTipoEvento(value);
-    return tipo == 'treino' || tipo == 'campeonato' || tipo == 'liga';
+    return tipo == 'treino' ||
+        tipo == 'campeonato' ||
+        tipo == 'amistoso' ||
+        tipo == 'liga';
+  }
+
+  bool _isCoachEventRole(dynamic value) {
+    final role = (value ?? '').toString().trim().toLowerCase();
+    return role == 'coach' ||
+        role == 'treinador' ||
+        role == 'tecnico' ||
+        role == 'técnico';
   }
 
   String _labelTipoEvento(dynamic value) {
@@ -498,12 +511,12 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
       // único embed grande de convocations + events.
       final response = await _supabase
           .from('convocations')
-          .select('id, event_id, status, justification')
+          .select('id, event_id, status, justification, event_role')
           .eq('user_id', user.id)
-          .eq('event_role', 'coach')
           .timeout(const Duration(seconds: 15));
 
       final ownEventIds = List<Map<String, dynamic>>.from(response)
+          .where((row) => _isCoachEventRole(row['event_role']))
           .map((row) => (row['event_id'] ?? '').toString())
           .where((id) => id.isNotEmpty)
           .toSet()
@@ -560,6 +573,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
 
       final ownConvocationByEventId = <String, Map<String, dynamic>>{};
       for (final item in List<Map<String, dynamic>>.from(response)) {
+        if (!_isCoachEventRole(item['event_role'])) continue;
         final eventId = (item['event_id'] ?? '').toString();
         if (eventId.isNotEmpty) ownConvocationByEventId[eventId] = item;
       }

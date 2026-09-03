@@ -612,7 +612,10 @@ enable_ride_logistics
       final scopedResponse = widget.coachMode
           ? response.where((item) {
               final role = (item['event_role'] ?? '').toString().toLowerCase();
-              return role == 'coach';
+              return role == 'coach' ||
+                  role == 'treinador' ||
+                  role == 'tecnico' ||
+                  role == 'técnico';
             }).toList()
           : response;
       if (scopedResponse.isEmpty) {

@@ -311,7 +311,7 @@ class _AdminTechnicalStaffPageState extends State<AdminTechnicalStaffPage> {
                             SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                'Para montar a hierarquia, localize o coordenador e toque em “Definir equipe”.',
+                                'A hierarquia é opcional. Se quiser usá-la depois, defina um coordenador e toque em “Definir equipe”.',
                                 style: TextStyle(
                                   color: _blue,
                                   fontWeight: FontWeight.w700,
@@ -893,18 +893,27 @@ class _TechnicalStaffEditorState extends State<_TechnicalStaffEditor> {
                 value: _possibleSupervisors
                         .any((item) => item.userId == _supervisorUserId)
                     ? _supervisorUserId
-                    : null,
+                    : '',
                 decoration: const InputDecoration(
-                  labelText: 'Superior direto',
+                  labelText: 'Superior direto (opcional)',
+                  helperText:
+                      'Pode ficar sem superior enquanto não houver coordenador.',
                   border: OutlineInputBorder(),
                 ),
-                items: _possibleSupervisors
-                    .map((item) => DropdownMenuItem(
-                          value: item.userId,
-                          child: Text(_profileName(item.userId)),
-                        ))
-                    .toList(),
-                onChanged: (value) => setState(() => _supervisorUserId = value),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: '',
+                    child: Text('Sem superior direto'),
+                  ),
+                  ..._possibleSupervisors.map((item) => DropdownMenuItem(
+                        value: item.userId,
+                        child: Text(_profileName(item.userId)),
+                      )),
+                ],
+                onChanged: (value) => setState(
+                  () => _supervisorUserId =
+                      value == null || value.isEmpty ? null : value,
+                ),
               ),
             if (needsSupervisor) const SizedBox(height: 12),
             DropdownButtonFormField<String>(
@@ -974,8 +983,7 @@ class _TechnicalStaffEditorState extends State<_TechnicalStaffEditor> {
               width: double.infinity,
               height: 52,
               child: FilledButton.icon(
-                onPressed: _userId == null ||
-                        (needsSupervisor && _supervisorUserId == null)
+                onPressed: _userId == null
                     ? null
                     : () => Navigator.pop(
                           context,

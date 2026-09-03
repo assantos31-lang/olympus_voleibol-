@@ -2184,8 +2184,6 @@ event_time
       final List<Map<String, dynamic>> annualTrainingEvents = [];
       final Set<String> trainingEventIds = <String>{};
 
-      int rejectedPresence = 0;
-
       for (final item in response) {
         final event = item['events'];
         if (event == null) continue;
@@ -2193,10 +2191,6 @@ event_time
         final status = (item['status'] ?? '').toString().toLowerCase().trim();
         final justification =
             (item['justification'] ?? '').toString().toLowerCase().trim();
-
-        if (status == 'rejected') {
-          rejectedPresence++;
-        }
 
         final eventMap = Map<String, dynamic>.from(event);
         final eventType =
@@ -2234,6 +2228,14 @@ event_time
         return status == 'pending' &&
             _isPendingConvocationStillActionable(event);
       }).length;
+      final confirmedTrainingCount = trainingEvents.where((event) {
+        final status = (event['status'] ?? '').toString().toLowerCase().trim();
+        return status == 'accepted';
+      }).length;
+      final rejectedPresence = trainingEvents.where((event) {
+        final status = (event['status'] ?? '').toString().toLowerCase().trim();
+        return status == 'rejected';
+      }).length;
 
       final checkins = trainingEventIds.isEmpty
           ? <dynamic>[]
@@ -2267,7 +2269,6 @@ event_time
       int monthlyPresence = 0;
       int monthlyAbsence = 0;
       int acceptedButAbsent = 0;
-      int confirmedPresence = 0;
 
       trainingEvents.sort(
         (a, b) => (a['event_datetime'] as DateTime).compareTo(
@@ -2297,14 +2298,15 @@ event_time
 
         if (hasValidCheckin) {
           monthlyPresence++;
-          confirmedPresence++;
           continue;
         }
 
         final isConvokedWithoutCheckin = !hasValidCheckin;
 
         if (isConvokedWithoutCheckin) {
-          acceptedButAbsent++;
+          if (status == 'accepted') {
+            acceptedButAbsent++;
+          }
           monthlyAbsence++;
         }
       }
@@ -2370,7 +2372,7 @@ event_time
 
       if (mounted) {
         setState(() {
-          _confirmedPresenceCount = confirmedPresence;
+          _confirmedPresenceCount = confirmedTrainingCount;
           _acceptedButAbsentCount = acceptedButAbsent;
           _rejectedPresenceCount = rejectedPresence;
           _pendingTrainingCount = pendingTrainingOpenCount;
@@ -4094,7 +4096,7 @@ event_time
               Expanded(
                 child: _buildPresenceMetric(
                   icon: Icons.check_circle,
-                  label: 'Check-in realizado',
+                  label: 'Confirmado',
                   value: _confirmedPresenceCount,
                   color: Colors.green,
                 ),
