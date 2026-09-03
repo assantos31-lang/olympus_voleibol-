@@ -19,6 +19,7 @@ import 'admin_financial_page.dart';
 import 'admin_messages_page.dart';
 import 'admin_training_plans_page.dart' show AdminTrainingPlansPage;
 import 'admin_technical_staff_page.dart';
+import 'awards_page.dart';
 import 'chat_rooms_page.dart';
 import 'platform_master_page.dart';
 
@@ -2153,6 +2154,17 @@ class _AdminHomePageState extends State<AdminHomePage>
               MaterialPageRoute(
                 builder: (_) => const AdminCheckinRankingPage(),
               ),
+            ),
+      ),
+      (
+        permission: 'admin_statistics',
+        label: 'Premiações',
+        subtitle: 'Tipos, vencedores e fotos das entregas',
+        icon: Icons.workspace_premium_rounded,
+        color: const Color(0xFFFFD166),
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AwardsPage()),
             ),
       ),
     ].where((module) => _canOpen(module.permission)).toList();

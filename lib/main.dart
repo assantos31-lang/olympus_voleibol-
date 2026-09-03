@@ -25,6 +25,7 @@ import 'pages/athlete_financial_page.dart';
 import 'pages/athlete_statistics_page.dart';
 import 'pages/athlete_coach_evaluation_page.dart';
 import 'pages/athlete_messages_page.dart';
+import 'pages/awards_page.dart';
 import 'pages/chat_rooms_page.dart';
 import 'pages/complete_profile_page.dart';
 import 'coach/pages/coach_received_evaluations_page.dart';
@@ -708,6 +709,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             '/complete-profile': (context) => const CompleteProfilePage(),
             '/dashboard': (context) => const DashboardRouterPage(),
             '/admin-home': (context) => const AdminHomePage(),
+            '/awards': (context) => const AwardsPage(),
             '/admin-athletes-statistics': (context) =>
                 const AdminAthletesStatisticsListPage(),
             '/admin-checkin-ranking': (context) =>

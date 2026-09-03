@@ -15,6 +15,7 @@ import '../services/auth_service.dart';
 import '../services/chat_service.dart';
 import '../services/permission_service.dart';
 import '../services/organization_storage_service.dart';
+import '../services/awards_service.dart';
 import '../theme/olympus_theme.dart';
 import 'athlete_agenda_page.dart';
 import 'athlete_financial_page.dart';
@@ -24,6 +25,7 @@ import 'athlete_coach_evaluation_page.dart';
 import 'chat_rooms_page.dart';
 import 'admin_competitions_page.dart';
 import 'admin_birthdays_page.dart';
+import 'awards_page.dart';
 
 class AthleteDashboardPage extends StatefulWidget {
   const AthleteDashboardPage({super.key});
@@ -97,6 +99,7 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
   bool _showingLevelUpDialog = false;
   bool _canAccessBirthdays = false;
   bool _canAccessChat = true;
+  bool _hasPublishedAwards = false;
 
   Color get olympusBlue => _branding.primaryColor;
   Color get olympusGold => _branding.secondaryColor;
@@ -186,9 +189,17 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
         _loadTodayBirthdays(),
         _loadBirthdaysPermission(),
         _loadChatPermission(),
+        _loadAwardsAvailability(),
       ]);
     } finally {
       _refreshingDashboard = false;
+    }
+  }
+
+  Future<void> _loadAwardsAvailability() async {
+    final available = await AwardsService().hasPublishedAwards();
+    if (mounted && available != _hasPublishedAwards) {
+      setState(() => _hasPublishedAwards = available);
     }
   }
 
@@ -5017,6 +5028,18 @@ event_time
         badge: _competitionNewCount,
         onTap: _navigateToCompetitions,
       ),
+      if (_hasPublishedAwards)
+        (
+          label: 'Premiações',
+          subtitle: 'Conquistas e destaques da equipe',
+          icon: Icons.workspace_premium_rounded,
+          color: olympusGold,
+          badge: 0,
+          onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AwardsPage()),
+              ),
+        ),
       if (_canAccessBirthdays)
         (
           label: 'Aniversariantes',
