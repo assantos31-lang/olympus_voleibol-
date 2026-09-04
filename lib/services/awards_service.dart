@@ -103,12 +103,43 @@ class AwardsService {
   }
 
   Future<List<Map<String, dynamic>>> loadEligibleProfiles() async {
+    final organization =
+        await OrganizationContextService.instance.initialize(force: true);
+    if (organization == null) return const [];
+
     final rows = await _client
         .from('profiles')
         .select('id, full_name, avatar_url, user_type, is_active')
+        .eq('organization_id', organization.id)
         .eq('is_active', true)
         .order('full_name');
-    return List<Map<String, dynamic>>.from(rows);
+    final profiles = List<Map<String, dynamic>>.from(rows);
+    if (profiles.isEmpty) return const [];
+
+    final athleteRoleIds = <String>{};
+    try {
+      final roleRows = await _client
+          .from('user_roles')
+          .select('user_id, role, is_active')
+          .eq('organization_id', organization.id)
+          .eq('is_active', true);
+      athleteRoleIds.addAll(
+        List<Map<String, dynamic>>.from(roleRows).where((row) {
+          final role = (row['role'] ?? '').toString().trim().toLowerCase();
+          return role == 'athlete' || role == 'atleta';
+        }).map((row) => (row['user_id'] ?? '').toString()),
+      );
+    } catch (_) {
+      // Perfis antigos podem ter apenas profiles.user_type.
+    }
+
+    return profiles.where((profile) {
+      final id = (profile['id'] ?? '').toString();
+      final type = (profile['user_type'] ?? '').toString().trim().toLowerCase();
+      return type == 'athlete' ||
+          type == 'atleta' ||
+          athleteRoleIds.contains(id);
+    }).toList();
   }
 
   Future<AwardDefinition> saveDefinition({

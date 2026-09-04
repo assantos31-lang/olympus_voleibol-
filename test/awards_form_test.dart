@@ -32,6 +32,20 @@ void main() {
         findsOneWidget);
     expect(
         find.byKey(const Key('award-winner-count-selector')), findsOneWidget);
+    final titleField = tester.widget<TextField>(
+      find.descendant(
+        of: find.byKey(const Key('award-title-field')),
+        matching: find.byType(TextField),
+      ),
+    );
+    final descriptionField = tester.widget<TextField>(
+      find.descendant(
+        of: find.byKey(const Key('award-description-field')),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(titleField.decoration?.labelText, isNull);
+    expect(descriptionField.decoration?.labelText, isNull);
 
     Text count = tester.widget(
       find.byKey(const Key('award-winner-count-value')),

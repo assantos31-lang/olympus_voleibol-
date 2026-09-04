@@ -30,5 +30,34 @@ void main() {
       expect(definition.isVisible, isFalse);
       expect(definition.sortOrder, 2);
     });
+
+    test('resolves a reloaded definition by id', () {
+      const reloaded = AwardDefinition(
+        id: 'award-1',
+        title: 'Premiação recarregada',
+        description: '',
+        sourceType: 'manual',
+        winnerCount: 1,
+        isVisible: true,
+        sortOrder: 0,
+      );
+      const returnedAfterSave = AwardDefinition(
+        id: 'award-1',
+        title: 'Premiação salva',
+        description: '',
+        sourceType: 'manual',
+        winnerCount: 1,
+        isVisible: true,
+        sortOrder: 0,
+      );
+
+      expect(
+        resolveAwardDefinitionById(
+          definitions: const [reloaded],
+          preferred: returnedAfterSave,
+        ),
+        same(reloaded),
+      );
+    });
   });
 }

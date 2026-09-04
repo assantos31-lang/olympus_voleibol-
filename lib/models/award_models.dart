@@ -31,6 +31,20 @@ class AwardDefinition {
       );
 }
 
+AwardDefinition resolveAwardDefinitionById({
+  required List<AwardDefinition> definitions,
+  AwardDefinition? preferred,
+}) {
+  if (definitions.isEmpty) {
+    throw StateError('Nenhum tipo de premiação disponível.');
+  }
+  if (preferred == null) return definitions.first;
+  return definitions.firstWhere(
+    (item) => item.id == preferred.id,
+    orElse: () => definitions.first,
+  );
+}
+
 class AwardWinner {
   const AwardWinner({
     required this.id,

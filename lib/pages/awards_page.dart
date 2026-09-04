@@ -1002,7 +1002,7 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
                                 dropdownColor: branding.surfaceColor,
                                 style: TextStyle(color: branding.textColor),
                                 decoration:
-                                    const InputDecoration(labelText: 'Mês'),
+                                    const InputDecoration(hintText: 'Mês'),
                                 items: List.generate(
                                   12,
                                   (index) => DropdownMenuItem(
@@ -1024,7 +1024,7 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
                                 dropdownColor: branding.surfaceColor,
                                 style: TextStyle(color: branding.textColor),
                                 decoration:
-                                    const InputDecoration(labelText: 'Ano'),
+                                    const InputDecoration(hintText: 'Ano'),
                                 items: List.generate(
                                   6,
                                   (index) {
@@ -1048,11 +1048,16 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
                 ),
                 const SizedBox(height: 12),
               ],
+              _AwardFieldLabel(
+                text: 'Nome da premiação',
+                color: branding.textColor,
+              ),
+              const SizedBox(height: 6),
               TextFormField(
+                key: const Key('award-title-field'),
                 controller: _title,
                 style: TextStyle(color: branding.textColor),
                 decoration: const InputDecoration(
-                  labelText: 'Nome da premiação',
                   hintText: 'Ex.: Ranking do mês',
                 ),
                 validator: (value) => (value ?? '').trim().length < 2
@@ -1060,22 +1065,32 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
                     : null,
               ),
               const SizedBox(height: 12),
+              _AwardFieldLabel(
+                text: 'Descrição',
+                color: branding.textColor,
+              ),
+              const SizedBox(height: 6),
               TextFormField(
+                key: const Key('award-description-field'),
                 controller: _description,
                 style: TextStyle(color: branding.textColor),
                 maxLines: 3,
                 decoration: const InputDecoration(
-                  labelText: 'Descrição',
                   hintText: 'Explique como essa premiação funciona.',
                 ),
               ),
               const SizedBox(height: 12),
+              _AwardFieldLabel(
+                text: 'Tipo de resultado',
+                color: branding.textColor,
+              ),
+              const SizedBox(height: 6),
               DropdownButtonFormField<String>(
+                key: const Key('award-source-field'),
                 initialValue: _sourceType,
                 dropdownColor: branding.surfaceColor,
                 style: TextStyle(color: branding.textColor),
-                decoration:
-                    const InputDecoration(labelText: 'Tipo de resultado'),
+                decoration: const InputDecoration(),
                 items: const [
                   'checkin_ranking',
                   'training_highlight',
@@ -1211,6 +1226,28 @@ class _WinnerCountSelector extends StatelessWidget {
   }
 }
 
+class _AwardFieldLabel extends StatelessWidget {
+  const _AwardFieldLabel({required this.text, required this.color});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
 class _AwardDefinitionFormResult {
   const _AwardDefinitionFormResult({
     required this.definition,
@@ -1266,9 +1303,10 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
   void initState() {
     super.initState();
     final edition = widget.edition;
-    _definition = edition?.definition ??
-        widget.initialDefinition ??
-        widget.definitions.first;
+    _definition = resolveAwardDefinitionById(
+      definitions: widget.definitions,
+      preferred: edition?.definition ?? widget.initialDefinition,
+    );
     _year = edition?.year ?? widget.initialYear;
     _month = edition?.month ?? widget.initialMonth;
     _caption = TextEditingController(text: edition?.caption ?? '');
@@ -1294,7 +1332,23 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
               }
             : {...match.first, 'result_label': winner.resultLabel});
       }
-      if (mounted) setState(() => _profiles = profiles);
+      if (mounted) {
+        setState(() => _profiles = profiles);
+        if (widget.edition == null && _selected.isEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (_profiles.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Nenhum atleta ativo encontrado.'),
+                ),
+              );
+              return;
+            }
+            _chooseWinners();
+          });
+        }
+      }
     } finally {
       if (mounted) setState(() => _loadingProfiles = false);
     }
@@ -1398,6 +1452,7 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
   @override
   Widget build(BuildContext context) {
     final months = DateFormat.MMMM('pt_BR').dateSymbols.MONTHS;
+    final branding = OlympusBrandingController.instance.branding;
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.edition == null ? 'Nova entrega' : 'Editar entrega'),
@@ -1407,9 +1462,13 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            _AwardFieldLabel(text: 'Premiação', color: branding.textColor),
+            const SizedBox(height: 6),
             DropdownButtonFormField<AwardDefinition>(
               initialValue: _definition,
-              decoration: const InputDecoration(labelText: 'Premiação'),
+              dropdownColor: branding.surfaceColor,
+              style: TextStyle(color: branding.textColor),
+              decoration: const InputDecoration(),
               items: widget.definitions
                   .map((item) => DropdownMenuItem(
                         value: item,
@@ -1432,33 +1491,51 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
             Row(
               children: [
                 Expanded(
-                  child: DropdownButtonFormField<int>(
-                    initialValue: _month,
-                    decoration: const InputDecoration(labelText: 'Mês'),
-                    items: List.generate(
-                      12,
-                      (index) => DropdownMenuItem(
-                        value: index + 1,
-                        child: Text(months[index]),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _AwardFieldLabel(text: 'Mês', color: branding.textColor),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<int>(
+                        initialValue: _month,
+                        dropdownColor: branding.surfaceColor,
+                        style: TextStyle(color: branding.textColor),
+                        decoration: const InputDecoration(),
+                        items: List.generate(
+                          12,
+                          (index) => DropdownMenuItem(
+                            value: index + 1,
+                            child: Text(months[index]),
+                          ),
+                        ),
+                        onChanged: (value) => setState(() => _month = value!),
                       ),
-                    ),
-                    onChanged: (value) => setState(() => _month = value!),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: DropdownButtonFormField<int>(
-                    initialValue: _year,
-                    decoration: const InputDecoration(labelText: 'Ano'),
-                    items: List.generate(
-                      6,
-                      (index) {
-                        final year = DateTime.now().year - 2 + index;
-                        return DropdownMenuItem(
-                            value: year, child: Text('$year'));
-                      },
-                    ),
-                    onChanged: (value) => setState(() => _year = value!),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _AwardFieldLabel(text: 'Ano', color: branding.textColor),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<int>(
+                        initialValue: _year,
+                        dropdownColor: branding.surfaceColor,
+                        style: TextStyle(color: branding.textColor),
+                        decoration: const InputDecoration(),
+                        items: List.generate(
+                          6,
+                          (index) {
+                            final year = DateTime.now().year - 2 + index;
+                            return DropdownMenuItem(
+                                value: year, child: Text('$year'));
+                          },
+                        ),
+                        onChanged: (value) => setState(() => _year = value!),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -1466,6 +1543,7 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
             const SizedBox(height: 14),
             Card(
               margin: EdgeInsets.zero,
+              color: branding.surfaceColor,
               child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: Column(
@@ -1515,11 +1593,13 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
               onRemove: () => setState(() => _photoUrl = ''),
             ),
             const SizedBox(height: 12),
+            _AwardFieldLabel(text: 'Legenda', color: branding.textColor),
+            const SizedBox(height: 6),
             TextFormField(
               controller: _caption,
+              style: TextStyle(color: branding.textColor),
               maxLines: 3,
               decoration: const InputDecoration(
-                labelText: 'Legenda',
                 hintText: 'Conte como foi a entrega da premiação.',
               ),
             ),
@@ -1538,17 +1618,35 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
               onTap: _pickDate,
             ),
             const SizedBox(height: 8),
-            SwitchListTile(
-              value: _visible,
-              onChanged: (value) => setState(() => _visible = value),
-              title: const Text('Mostrar esta entrega'),
+            Card(
+              margin: EdgeInsets.zero,
+              color: branding.surfaceColor,
+              child: SwitchListTile(
+                value: _visible,
+                onChanged: (value) => setState(() => _visible = value),
+                title: Text(
+                  'Mostrar esta entrega',
+                  style: TextStyle(color: branding.textColor),
+                ),
+              ),
             ),
-            SwitchListTile(
-              value: _published,
-              onChanged: (value) => setState(() => _published = value),
-              title: const Text('Publicar no mural'),
-              subtitle: const Text(
-                'A publicação exige pelo menos um vencedor e a foto da entrega.',
+            const SizedBox(height: 8),
+            Card(
+              margin: EdgeInsets.zero,
+              color: branding.surfaceColor,
+              child: SwitchListTile(
+                value: _published,
+                onChanged: (value) => setState(() => _published = value),
+                title: Text(
+                  'Publicar no mural',
+                  style: TextStyle(color: branding.textColor),
+                ),
+                subtitle: Text(
+                  'A publicação exige pelo menos um vencedor e a foto da entrega.',
+                  style: TextStyle(
+                    color: branding.textColor.withValues(alpha: 0.72),
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 18),
