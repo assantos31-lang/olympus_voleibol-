@@ -133,13 +133,14 @@ class AwardsService {
       // Perfis antigos podem ter apenas profiles.user_type.
     }
 
-    return profiles.where((profile) {
+    final athletes = profiles.where((profile) {
       final id = (profile['id'] ?? '').toString();
       final type = (profile['user_type'] ?? '').toString().trim().toLowerCase();
       return type == 'athlete' ||
           type == 'atleta' ||
           athleteRoleIds.contains(id);
-    }).toList();
+    });
+    return sortAwardProfilesAlphabetically(athletes);
   }
 
   Future<AwardDefinition> saveDefinition({

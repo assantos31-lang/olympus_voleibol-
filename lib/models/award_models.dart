@@ -45,6 +45,33 @@ AwardDefinition resolveAwardDefinitionById({
   );
 }
 
+String awardAlphabeticalKey(String value) {
+  const accents = 'áàâãäéèêëíìîïóòôõöúùûüç';
+  const plain = 'aaaaaeeeeiiiiooooouuuuc';
+  var normalized = value.trim().toLowerCase();
+  for (var index = 0; index < accents.length; index++) {
+    normalized = normalized.replaceAll(accents[index], plain[index]);
+  }
+  return normalized;
+}
+
+List<Map<String, dynamic>> sortAwardProfilesAlphabetically(
+  Iterable<Map<String, dynamic>> profiles,
+) {
+  final ordered =
+      profiles.map((profile) => Map<String, dynamic>.from(profile)).toList();
+  ordered.sort((a, b) {
+    final byName = awardAlphabeticalKey(
+      (a['full_name'] ?? '').toString(),
+    ).compareTo(
+      awardAlphabeticalKey((b['full_name'] ?? '').toString()),
+    );
+    if (byName != 0) return byName;
+    return (a['id'] ?? '').toString().compareTo((b['id'] ?? '').toString());
+  });
+  return ordered;
+}
+
 class AwardWinner {
   const AwardWinner({
     required this.id,

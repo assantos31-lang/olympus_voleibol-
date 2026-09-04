@@ -59,5 +59,19 @@ void main() {
         same(reloaded),
       );
     });
+
+    test('orders athlete names alphabetically ignoring accents', () {
+      final ordered = sortAwardProfilesAlphabetically([
+        {'id': '3', 'full_name': 'Érica'},
+        {'id': '2', 'full_name': 'bruno'},
+        {'id': '1', 'full_name': 'Ana'},
+        {'id': '4', 'full_name': 'Ágata'},
+      ]);
+
+      expect(
+        ordered.map((item) => item['full_name']),
+        ['Ágata', 'Ana', 'bruno', 'Érica'],
+      );
+    });
   });
 }

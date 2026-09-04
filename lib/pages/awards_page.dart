@@ -175,9 +175,6 @@ class _AwardsPageState extends State<AwardsPage> {
     _selectedYear = saved.year;
     _selectedMonth = saved.month;
     await _load();
-    if (definition == null && mounted) {
-      await _openEditionForm(definition: saved.definition);
-    }
   }
 
   Future<void> _openEditionForm({
@@ -841,6 +838,7 @@ class AwardDefinitionFormPage extends StatefulWidget {
     required this.uploadImage,
     required this.initialYear,
     required this.initialMonth,
+    this.loadProfiles,
     this.definition,
   });
 
@@ -848,6 +846,7 @@ class AwardDefinitionFormPage extends StatefulWidget {
   final int initialYear;
   final int initialMonth;
   final Future<String?> Function() uploadImage;
+  final Future<List<Map<String, dynamic>>> Function()? loadProfiles;
 
   @override
   State<AwardDefinitionFormPage> createState() =>
@@ -856,6 +855,7 @@ class AwardDefinitionFormPage extends StatefulWidget {
 
 class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
   final _formKey = GlobalKey<FormState>();
+  final AwardsService _service = AwardsService();
   late final TextEditingController _title;
   late final TextEditingController _description;
   late String _sourceType;
@@ -866,6 +866,10 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
   late String _coverUrl;
   bool _saving = false;
   bool _uploading = false;
+  bool _loadingProfiles = true;
+  List<Map<String, dynamic>> _profiles = const [];
+  final List<Map<String, dynamic>> _selected = [];
+  AwardDefinition? _persistedDefinition;
 
   @override
   void initState() {
@@ -879,6 +883,35 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
     _month = widget.initialMonth;
     _visible = item?.isVisible ?? true;
     _coverUrl = item?.coverImageUrl ?? '';
+    if (item == null) {
+      _loadProfiles();
+    } else {
+      _loadingProfiles = false;
+    }
+  }
+
+  Future<void> _loadProfiles() async {
+    try {
+      final profiles = widget.loadProfiles == null
+          ? await _service.loadEligibleProfiles()
+          : await widget.loadProfiles!();
+      if (mounted) setState(() => _profiles = profiles);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível carregar os atletas.')),
+      );
+    } finally {
+      if (mounted) setState(() => _loadingProfiles = false);
+    }
+  }
+
+  void _updateWinners(List<Map<String, dynamic>> winners) {
+    setState(() {
+      _selected
+        ..clear()
+        ..addAll(winners);
+    });
   }
 
   @override
@@ -900,10 +933,22 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate() || _saving || _uploading) return;
+    if (widget.definition == null && _selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Escolha o atleta vencedor.')),
+      );
+      return;
+    }
+    if (widget.definition == null && _coverUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Adicione a foto da premiação.')),
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
-      final saved = await AwardsService().saveDefinition(
-        id: widget.definition?.id,
+      final saved = await _service.saveDefinition(
+        id: widget.definition?.id ?? _persistedDefinition?.id,
         title: _title.text,
         description: _description.text,
         sourceType: _sourceType,
@@ -911,6 +956,20 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
         isVisible: _visible,
         coverImageUrl: _coverUrl,
       );
+      _persistedDefinition = saved;
+      if (widget.definition == null) {
+        await _service.saveEdition(
+          definition: saved,
+          year: _year,
+          month: _month,
+          caption: _description.text,
+          deliveryDate: null,
+          deliveryPhotoUrl: _coverUrl,
+          isPublished: true,
+          isVisible: _visible,
+          winners: _selected,
+        );
+      }
       if (mounted) {
         Navigator.pop(
           context,
@@ -1107,13 +1166,32 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
               const SizedBox(height: 12),
               _WinnerCountSelector(
                 value: _winnerCount,
-                onChanged: (value) => setState(() => _winnerCount = value),
+                onChanged: (value) => setState(() {
+                  _winnerCount = value;
+                  if (_selected.length > value) {
+                    _selected.removeRange(value, _selected.length);
+                  }
+                }),
               ),
+              if (widget.definition == null) ...[
+                const SizedBox(height: 14),
+                _InlineWinnerPicker(
+                  profiles: _profiles,
+                  selected: _selected,
+                  limit: _winnerCount,
+                  loading: _loadingProfiles,
+                  onChanged: _updateWinners,
+                ),
+              ],
               const SizedBox(height: 14),
               _ImageSelector(
                 url: _coverUrl,
-                title: 'Imagem da premiação (opcional)',
-                subtitle: 'Capa usada quando a entrega ainda não tem foto.',
+                title: widget.definition == null
+                    ? 'Foto da premiação'
+                    : 'Imagem da premiação (opcional)',
+                subtitle: widget.definition == null
+                    ? 'Esta foto será publicada no mural dos atletas.'
+                    : 'Capa usada quando a entrega ainda não tem foto.',
                 uploading: _uploading,
                 onPick: _upload,
                 onRemove: () => setState(() => _coverUrl = ''),
@@ -1151,7 +1229,7 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
                       )
                     : const Icon(Icons.save_rounded),
                 label: Text(widget.definition == null
-                    ? 'Salvar e cadastrar entrega'
+                    ? 'Salvar e publicar premiação'
                     : 'Salvar alterações'),
               ),
             ],
@@ -1219,6 +1297,116 @@ class _WinnerCountSelector extends StatelessWidget {
               onPressed: value < 20 ? () => onChanged(value + 1) : null,
               icon: const Icon(Icons.add_rounded),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InlineWinnerPicker extends StatelessWidget {
+  const _InlineWinnerPicker({
+    required this.profiles,
+    required this.selected,
+    required this.limit,
+    required this.loading,
+    required this.onChanged,
+  });
+
+  final List<Map<String, dynamic>> profiles;
+  final List<Map<String, dynamic>> selected;
+  final int limit;
+  final bool loading;
+  final ValueChanged<List<Map<String, dynamic>>> onChanged;
+
+  bool _isSelected(Map<String, dynamic> profile) => selected.any(
+        (item) => item['id'].toString() == profile['id'].toString(),
+      );
+
+  void _toggle(
+    BuildContext context,
+    Map<String, dynamic> profile,
+    bool checked,
+  ) {
+    final updated =
+        selected.map((item) => Map<String, dynamic>.from(item)).toList();
+    final id = profile['id'].toString();
+    if (!checked) {
+      updated.removeWhere((item) => item['id'].toString() == id);
+      onChanged(updated);
+      return;
+    }
+    if (limit == 1) {
+      onChanged([Map<String, dynamic>.from(profile)]);
+      return;
+    }
+    if (updated.length >= limit) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Escolha no máximo $limit atletas.')),
+      );
+      return;
+    }
+    updated.add(Map<String, dynamic>.from(profile));
+    onChanged(updated);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final branding = OlympusBrandingController.instance.branding;
+    final ordered = sortAwardProfilesAlphabetically(profiles);
+    return Card(
+      key: const Key('award-inline-winner-picker'),
+      margin: EdgeInsets.zero,
+      color: branding.surfaceColor,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                limit == 1
+                    ? 'Escolha o atleta vencedor'
+                    : 'Escolha até $limit atletas vencedores',
+                style: TextStyle(
+                  color: branding.textColor,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            if (loading)
+              const Padding(
+                padding: EdgeInsets.all(18),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (ordered.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Nenhum atleta ativo encontrado.',
+                  style: TextStyle(color: branding.textColor),
+                ),
+              )
+            else
+              ...ordered.map(
+                (profile) => CheckboxListTile(
+                  key: Key('award-winner-${profile['id']}'),
+                  value: _isSelected(profile),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: Text(
+                    (profile['full_name'] ?? '').toString(),
+                    style: TextStyle(
+                      color: branding.textColor,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  onChanged: (value) =>
+                      _toggle(context, profile, value == true),
+                ),
+              ),
           ],
         ),
       ),
@@ -1332,23 +1520,7 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
               }
             : {...match.first, 'result_label': winner.resultLabel});
       }
-      if (mounted) {
-        setState(() => _profiles = profiles);
-        if (widget.edition == null && _selected.isEmpty) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            if (_profiles.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Nenhum atleta ativo encontrado.'),
-                ),
-              );
-              return;
-            }
-            _chooseWinners();
-          });
-        }
-      }
+      if (mounted) setState(() => _profiles = profiles);
     } finally {
       if (mounted) setState(() => _loadingProfiles = false);
     }
@@ -1380,18 +1552,12 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
     }
   }
 
-  Future<void> _chooseWinners() async {
-    final result = await showDialog<List<Map<String, dynamic>>>(
-      context: context,
-      builder: (_) => _WinnerPickerDialog(
-        profiles: _profiles,
-        initial: _selected,
-        limit: _definition.winnerCount,
-      ),
-    );
-    if (result != null) {
-      setState(() => _selected..replaceRange(0, _selected.length, result));
-    }
+  void _updateWinners(List<Map<String, dynamic>> winners) {
+    setState(() {
+      _selected
+        ..clear()
+        ..addAll(winners);
+    });
   }
 
   Future<void> _save() async {
@@ -1541,47 +1707,12 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
               ],
             ),
             const SizedBox(height: 14),
-            Card(
-              margin: EdgeInsets.zero,
-              color: branding.surfaceColor,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Vencedores (${_selected.length}/${_definition.winnerCount})',
-                      style: const TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 8),
-                    if (_loadingProfiles)
-                      const Center(child: CircularProgressIndicator())
-                    else ...[
-                      ..._selected.indexed.map(
-                        (entry) => ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: CircleAvatar(
-                            child: Text('${entry.$1 + 1}º'),
-                          ),
-                          title: Text(
-                            (entry.$2['full_name'] ?? '').toString(),
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _chooseWinners,
-                        icon: const Icon(Icons.people_alt_rounded),
-                        label: Text(
-                          _selected.isEmpty
-                              ? 'Escolher vencedores'
-                              : 'Alterar vencedores',
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+            _InlineWinnerPicker(
+              profiles: _profiles,
+              selected: _selected,
+              limit: _definition.winnerCount,
+              loading: _loadingProfiles,
+              onChanged: _updateWinners,
             ),
             const SizedBox(height: 14),
             _ImageSelector(
@@ -1664,110 +1795,6 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _WinnerPickerDialog extends StatefulWidget {
-  const _WinnerPickerDialog({
-    required this.profiles,
-    required this.initial,
-    required this.limit,
-  });
-
-  final List<Map<String, dynamic>> profiles;
-  final List<Map<String, dynamic>> initial;
-  final int limit;
-
-  @override
-  State<_WinnerPickerDialog> createState() => _WinnerPickerDialogState();
-}
-
-class _WinnerPickerDialogState extends State<_WinnerPickerDialog> {
-  final TextEditingController _search = TextEditingController();
-  late final List<Map<String, dynamic>> _selected =
-      widget.initial.map((item) => Map<String, dynamic>.from(item)).toList();
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
-
-  bool _contains(Map<String, dynamic> profile) => _selected
-      .any((item) => item['id'].toString() == profile['id'].toString());
-
-  @override
-  Widget build(BuildContext context) {
-    final query = _search.text.trim().toLowerCase();
-    final filtered = widget.profiles.where((profile) {
-      final name = (profile['full_name'] ?? '').toString().toLowerCase();
-      return query.isEmpty || name.contains(query);
-    }).toList();
-    return AlertDialog(
-      title: Text('Escolher até ${widget.limit} vencedor(es)'),
-      content: SizedBox(
-        width: 480,
-        height: 520,
-        child: Column(
-          children: [
-            TextField(
-              controller: _search,
-              decoration: const InputDecoration(
-                hintText: 'Buscar perfil',
-                prefixIcon: Icon(Icons.search_rounded),
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: ListView.builder(
-                itemCount: filtered.length,
-                itemBuilder: (_, index) {
-                  final profile = filtered[index];
-                  final selected = _contains(profile);
-                  return CheckboxListTile(
-                    value: selected,
-                    title: Text((profile['full_name'] ?? '').toString()),
-                    subtitle: Text((profile['user_type'] ?? '').toString()),
-                    onChanged: (value) {
-                      if (value == true && _selected.length >= widget.limit) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Limite de ${widget.limit} vencedor(es).',
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      setState(() {
-                        if (value == true) {
-                          _selected.add(profile);
-                        } else {
-                          _selected.removeWhere((item) =>
-                              item['id'].toString() ==
-                              profile['id'].toString());
-                        }
-                      });
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, _selected),
-          child: const Text('Confirmar'),
-        ),
-      ],
     );
   }
 }

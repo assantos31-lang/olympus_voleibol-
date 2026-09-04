@@ -23,9 +23,14 @@ void main() {
           initialYear: 2026,
           initialMonth: 9,
           uploadImage: () async => null,
+          loadProfiles: () async => const [
+            {'id': '2', 'full_name': 'Bruna'},
+            {'id': '1', 'full_name': 'Amanda'},
+          ],
         ),
       ),
     );
+    await tester.pumpAndSettle();
 
     expect(find.text('Mês da premiação'), findsOneWidget);
     expect(find.text('A premiação será exibida aos atletas neste período.'),
@@ -46,6 +51,11 @@ void main() {
     );
     expect(titleField.decoration?.labelText, isNull);
     expect(descriptionField.decoration?.labelText, isNull);
+    expect(find.byKey(const Key('award-inline-winner-picker')), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('Amanda')).dy,
+      lessThan(tester.getTopLeft(find.text('Bruna')).dy),
+    );
 
     Text count = tester.widget(
       find.byKey(const Key('award-winner-count-value')),
@@ -69,6 +79,7 @@ void main() {
           initialYear: 2026,
           initialMonth: 9,
           uploadImage: () async => null,
+          loadProfiles: () async => const [],
         ),
       ),
     );
