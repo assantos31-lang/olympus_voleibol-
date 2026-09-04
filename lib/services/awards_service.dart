@@ -111,7 +111,7 @@ class AwardsService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
-  Future<void> saveDefinition({
+  Future<AwardDefinition> saveDefinition({
     String? id,
     required String title,
     required String description,
@@ -133,12 +133,27 @@ class AwardsService {
       'cover_image_url': coverImageUrl.trim().isEmpty ? null : coverImageUrl,
       'updated_at': DateTime.now().toIso8601String(),
     };
+    late final Map<String, dynamic> saved;
     if (id == null) {
       payload['created_by'] = _client.auth.currentUser?.id;
-      await _client.from('award_definitions').insert(payload);
+      saved = Map<String, dynamic>.from(
+        await _client
+            .from('award_definitions')
+            .insert(payload)
+            .select()
+            .single(),
+      );
     } else {
-      await _client.from('award_definitions').update(payload).eq('id', id);
+      saved = Map<String, dynamic>.from(
+        await _client
+            .from('award_definitions')
+            .update(payload)
+            .eq('id', id)
+            .select()
+            .single(),
+      );
     }
+    return AwardDefinition.fromMap(saved);
   }
 
   Future<void> deleteDefinition(String id) async {

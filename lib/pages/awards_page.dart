@@ -160,16 +160,24 @@ class _AwardsPageState extends State<AwardsPage> {
   }
 
   Future<void> _openDefinitionForm([AwardDefinition? definition]) async {
-    final saved = await Navigator.push<bool>(
+    final saved = await Navigator.push<_AwardDefinitionFormResult>(
       context,
       MaterialPageRoute(
         builder: (_) => AwardDefinitionFormPage(
           definition: definition,
+          initialYear: _selectedYear,
+          initialMonth: _selectedMonth,
           uploadImage: () => _pickAndUploadImage('covers'),
         ),
       ),
     );
-    if (saved == true) await _load();
+    if (saved == null) return;
+    _selectedYear = saved.year;
+    _selectedMonth = saved.month;
+    await _load();
+    if (definition == null && mounted) {
+      await _openEditionForm(definition: saved.definition);
+    }
   }
 
   Future<void> _openEditionForm({
@@ -348,7 +356,7 @@ class _AwardsPageState extends State<AwardsPage> {
               _EmptyPanel(
                 icon: Icons.emoji_events_outlined,
                 title: _canManage
-                    ? 'Nenhuma entrega cadastrada neste mês.'
+                    ? 'Nenhuma entrega publicada neste mês. Cadastre os vencedores e a foto para exibir aos atletas.'
                     : 'Nenhuma premiação publicada neste mês.',
                 buttonLabel: _canManage ? 'Cadastrar entrega' : null,
                 onPressed: _canManage ? () => _openEditionForm() : null,
@@ -831,10 +839,14 @@ class AwardDefinitionFormPage extends StatefulWidget {
   const AwardDefinitionFormPage({
     super.key,
     required this.uploadImage,
+    required this.initialYear,
+    required this.initialMonth,
     this.definition,
   });
 
   final AwardDefinition? definition;
+  final int initialYear;
+  final int initialMonth;
   final Future<String?> Function() uploadImage;
 
   @override
@@ -848,6 +860,8 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
   late final TextEditingController _description;
   late String _sourceType;
   late int _winnerCount;
+  late int _year;
+  late int _month;
   late bool _visible;
   late String _coverUrl;
   bool _saving = false;
@@ -861,6 +875,8 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
     _description = TextEditingController(text: item?.description ?? '');
     _sourceType = item?.sourceType ?? 'manual';
     _winnerCount = item?.winnerCount ?? 1;
+    _year = widget.initialYear;
+    _month = widget.initialMonth;
     _visible = item?.isVisible ?? true;
     _coverUrl = item?.coverImageUrl ?? '';
   }
@@ -886,7 +902,7 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
     if (!_formKey.currentState!.validate() || _saving || _uploading) return;
     setState(() => _saving = true);
     try {
-      await AwardsService().saveDefinition(
+      final saved = await AwardsService().saveDefinition(
         id: widget.definition?.id,
         title: _title.text,
         description: _description.text,
@@ -895,7 +911,16 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
         isVisible: _visible,
         coverImageUrl: _coverUrl,
       );
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) {
+        Navigator.pop(
+          context,
+          _AwardDefinitionFormResult(
+            definition: saved,
+            year: _year,
+            month: _month,
+          ),
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -907,100 +932,295 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
 
   @override
   Widget build(BuildContext context) {
+    final branding = OlympusBrandingController.instance.branding;
+    final baseTheme = Theme.of(context);
+    final months = DateFormat.MMMM('pt_BR').dateSymbols.MONTHS;
+    final formTheme = baseTheme.copyWith(
+      textTheme: baseTheme.textTheme.apply(
+        bodyColor: branding.textColor,
+        displayColor: branding.textColor,
+      ),
+      inputDecorationTheme: baseTheme.inputDecorationTheme.copyWith(
+        fillColor: branding.surfaceColor,
+        labelStyle: TextStyle(
+          color: branding.textColor.withValues(alpha: 0.76),
+        ),
+        floatingLabelStyle: TextStyle(
+          color: branding.primaryColor,
+          fontWeight: FontWeight.w700,
+        ),
+        hintStyle: TextStyle(
+          color: branding.textColor.withValues(alpha: 0.58),
+        ),
+      ),
+    );
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.definition == null
             ? 'Novo tipo de premiação'
             : 'Editar premiação'),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextFormField(
-              controller: _title,
-              decoration: const InputDecoration(
-                labelText: 'Nome da premiação',
-                hintText: 'Ex.: Ranking do mês',
+      body: Theme(
+        data: formTheme,
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (widget.definition == null) ...[
+                Card(
+                  margin: EdgeInsets.zero,
+                  color: branding.surfaceColor,
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Mês da premiação',
+                          style: TextStyle(
+                            color: branding.textColor,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'A premiação será exibida aos atletas neste período.',
+                          style: TextStyle(
+                            color: branding.textColor.withValues(alpha: 0.72),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: DropdownButtonFormField<int>(
+                                key: const Key('award-definition-month'),
+                                initialValue: _month,
+                                dropdownColor: branding.surfaceColor,
+                                style: TextStyle(color: branding.textColor),
+                                decoration:
+                                    const InputDecoration(labelText: 'Mês'),
+                                items: List.generate(
+                                  12,
+                                  (index) => DropdownMenuItem(
+                                    value: index + 1,
+                                    child: Text(
+                                      '${months[index][0].toUpperCase()}${months[index].substring(1)}',
+                                    ),
+                                  ),
+                                ),
+                                onChanged: (value) =>
+                                    setState(() => _month = value!),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: DropdownButtonFormField<int>(
+                                key: const Key('award-definition-year'),
+                                initialValue: _year,
+                                dropdownColor: branding.surfaceColor,
+                                style: TextStyle(color: branding.textColor),
+                                decoration:
+                                    const InputDecoration(labelText: 'Ano'),
+                                items: List.generate(
+                                  6,
+                                  (index) {
+                                    final year =
+                                        DateTime.now().year - 2 + index;
+                                    return DropdownMenuItem(
+                                      value: year,
+                                      child: Text('$year'),
+                                    );
+                                  },
+                                ),
+                                onChanged: (value) =>
+                                    setState(() => _year = value!),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              TextFormField(
+                controller: _title,
+                style: TextStyle(color: branding.textColor),
+                decoration: const InputDecoration(
+                  labelText: 'Nome da premiação',
+                  hintText: 'Ex.: Ranking do mês',
+                ),
+                validator: (value) => (value ?? '').trim().length < 2
+                    ? 'Informe o nome da premiação.'
+                    : null,
               ),
-              validator: (value) => (value ?? '').trim().length < 2
-                  ? 'Informe o nome da premiação.'
-                  : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _description,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Descrição',
-                hintText: 'Explique como essa premiação funciona.',
-              ),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _sourceType,
-              decoration: const InputDecoration(labelText: 'Tipo de resultado'),
-              items: const [
-                'checkin_ranking',
-                'training_highlight',
-                'monthly_evaluation',
-                'manual',
-              ]
-                  .map((value) => DropdownMenuItem(
-                        value: value,
-                        child: Text(awardSourceLabel(value)),
-                      ))
-                  .toList(),
-              onChanged: (value) => setState(() => _sourceType = value!),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<int>(
-              initialValue: _winnerCount,
-              decoration:
-                  const InputDecoration(labelText: 'Quantidade de vencedores'),
-              items: List.generate(
-                20,
-                (index) => DropdownMenuItem(
-                  value: index + 1,
-                  child: Text('${index + 1}'),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _description,
+                style: TextStyle(color: branding.textColor),
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Descrição',
+                  hintText: 'Explique como essa premiação funciona.',
                 ),
               ),
-              onChanged: (value) => setState(() => _winnerCount = value!),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _sourceType,
+                dropdownColor: branding.surfaceColor,
+                style: TextStyle(color: branding.textColor),
+                decoration:
+                    const InputDecoration(labelText: 'Tipo de resultado'),
+                items: const [
+                  'checkin_ranking',
+                  'training_highlight',
+                  'monthly_evaluation',
+                  'manual',
+                ]
+                    .map((value) => DropdownMenuItem(
+                          value: value,
+                          child: Text(awardSourceLabel(value)),
+                        ))
+                    .toList(),
+                onChanged: (value) => setState(() => _sourceType = value!),
+              ),
+              const SizedBox(height: 12),
+              _WinnerCountSelector(
+                value: _winnerCount,
+                onChanged: (value) => setState(() => _winnerCount = value),
+              ),
+              const SizedBox(height: 14),
+              _ImageSelector(
+                url: _coverUrl,
+                title: 'Imagem da premiação (opcional)',
+                subtitle: 'Capa usada quando a entrega ainda não tem foto.',
+                uploading: _uploading,
+                onPick: _upload,
+                onRemove: () => setState(() => _coverUrl = ''),
+              ),
+              const SizedBox(height: 12),
+              Card(
+                margin: EdgeInsets.zero,
+                color: branding.surfaceColor,
+                child: SwitchListTile(
+                  value: _visible,
+                  onChanged: (value) => setState(() => _visible = value),
+                  title: Text(
+                    'Mostrar este tipo',
+                    style: TextStyle(
+                      color: branding.textColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Pode ser alterado depois sem excluir.',
+                    style: TextStyle(
+                      color: branding.textColor.withValues(alpha: 0.72),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: _saving ? null : _save,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_rounded),
+                label: Text(widget.definition == null
+                    ? 'Salvar e cadastrar entrega'
+                    : 'Salvar alterações'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WinnerCountSelector extends StatelessWidget {
+  const _WinnerCountSelector({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final branding = OlympusBrandingController.instance.branding;
+    return Card(
+      key: const Key('award-winner-count-selector'),
+      margin: EdgeInsets.zero,
+      color: branding.surfaceColor,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Quantidade de vencedores',
+                    style: TextStyle(
+                      color: branding.textColor.withValues(alpha: 0.72),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$value',
+                    key: const Key('award-winner-count-value'),
+                    style: TextStyle(
+                      color: branding.textColor,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 14),
-            _ImageSelector(
-              url: _coverUrl,
-              title: 'Imagem da premiação (opcional)',
-              subtitle: 'Capa usada quando a entrega ainda não tem foto.',
-              uploading: _uploading,
-              onPick: _upload,
-              onRemove: () => setState(() => _coverUrl = ''),
+            IconButton(
+              key: const Key('award-winner-count-minus'),
+              tooltip: 'Diminuir quantidade',
+              onPressed: value > 1 ? () => onChanged(value - 1) : null,
+              icon: const Icon(Icons.remove_circle_outline_rounded),
             ),
-            const SizedBox(height: 12),
-            SwitchListTile(
-              value: _visible,
-              onChanged: (value) => setState(() => _visible = value),
-              title: const Text('Mostrar este tipo'),
-              subtitle: const Text('Pode ser alterado depois sem excluir.'),
-            ),
-            const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: _saving ? null : _save,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save_rounded),
-              label: const Text('Salvar tipo de premiação'),
+            IconButton.filled(
+              key: const Key('award-winner-count-plus'),
+              tooltip: 'Aumentar quantidade',
+              onPressed: value < 20 ? () => onChanged(value + 1) : null,
+              icon: const Icon(Icons.add_rounded),
             ),
           ],
         ),
       ),
     );
   }
+}
+
+class _AwardDefinitionFormResult {
+  const _AwardDefinitionFormResult({
+    required this.definition,
+    required this.year,
+    required this.month,
+  });
+
+  final AwardDefinition definition;
+  final int year;
+  final int month;
 }
 
 class AwardEditionFormPage extends StatefulWidget {
@@ -1054,7 +1274,7 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
     _caption = TextEditingController(text: edition?.caption ?? '');
     _deliveryDate = edition?.deliveryDate;
     _photoUrl = edition?.deliveryPhotoUrl ?? '';
-    _published = edition?.isPublished ?? false;
+    _published = edition?.isPublished ?? true;
     _visible = edition?.isVisible ?? true;
     _loadProfiles();
   }
