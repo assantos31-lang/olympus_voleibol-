@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -31,12 +32,17 @@ class _AwardsPageState extends State<AwardsPage> {
   final ImagePicker _picker = ImagePicker();
 
   bool _loading = true;
+  bool _loadingData = false;
+  bool _realtimeReloadPending = false;
   bool _canManage = false;
   String? _error;
   List<AwardDefinition> _definitions = const [];
   List<AwardEdition> _editions = const [];
   late int _selectedYear;
   late int _selectedMonth;
+  RealtimeChannel? _realtimeChannel;
+  Timer? _realtimeDebounce;
+  String? _realtimeOrganizationId;
 
   OlympusBranding get _branding => OlympusBrandingController.instance.branding;
 
@@ -49,8 +55,13 @@ class _AwardsPageState extends State<AwardsPage> {
     _load();
   }
 
-  Future<void> _load() async {
-    if (mounted) {
+  Future<void> _load({bool showLoading = true}) async {
+    if (_loadingData) {
+      if (!showLoading) _realtimeReloadPending = true;
+      return;
+    }
+    _loadingData = true;
+    if (mounted && showLoading) {
       setState(() {
         _loading = true;
         _error = null;
@@ -69,15 +80,67 @@ class _AwardsPageState extends State<AwardsPage> {
         _editions = results[1] as List<AwardEdition>;
         _loading = false;
       });
+      unawaited(_ensureRealtime());
     } catch (error) {
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = error.toString().contains('award_')
-            ? 'O módulo de premiações ainda não foi ativado no banco de dados.'
-            : 'Não foi possível carregar as premiações.';
-      });
+      if (showLoading) {
+        setState(() {
+          _loading = false;
+          _error = error.toString().contains('award_')
+              ? 'O módulo de premiações ainda não foi ativado no banco de dados.'
+              : 'Não foi possível carregar as premiações.';
+        });
+      }
+    } finally {
+      _loadingData = false;
+      if (_realtimeReloadPending && mounted) {
+        _realtimeReloadPending = false;
+        _scheduleRealtimeReload();
+      }
     }
+  }
+
+  Future<void> _ensureRealtime() async {
+    final organization =
+        await OrganizationContextService.instance.initialize(force: true);
+    if (!mounted || organization == null) return;
+    if (_realtimeChannel != null &&
+        _realtimeOrganizationId == organization.id) {
+      return;
+    }
+    final previous = _realtimeChannel;
+    _realtimeChannel = null;
+    if (previous != null) await _supabase.removeChannel(previous);
+
+    final channel = _supabase.channel(
+      'awards-live-${organization.id}-${_supabase.auth.currentUser?.id ?? 'guest'}',
+    );
+    for (final table in awardRealtimeTables) {
+      channel.onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: table,
+        callback: (_) => _scheduleRealtimeReload(),
+      );
+    }
+    _realtimeOrganizationId = organization.id;
+    _realtimeChannel = channel..subscribe();
+  }
+
+  void _scheduleRealtimeReload() {
+    _realtimeDebounce?.cancel();
+    _realtimeDebounce = Timer(
+      const Duration(milliseconds: 250),
+      () => unawaited(_load(showLoading: false)),
+    );
+  }
+
+  @override
+  void dispose() {
+    _realtimeDebounce?.cancel();
+    final channel = _realtimeChannel;
+    if (channel != null) unawaited(_supabase.removeChannel(channel));
+    super.dispose();
   }
 
   List<AwardEdition> get _visiblePeriodEditions => _editions

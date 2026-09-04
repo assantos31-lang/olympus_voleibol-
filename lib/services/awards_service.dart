@@ -3,6 +3,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/award_models.dart';
 import 'organization_context_service.dart';
 
+const awardRealtimeTables = <String>[
+  'award_definitions',
+  'award_editions',
+  'award_winners',
+];
+
 class AwardsService {
   AwardsService({SupabaseClient? client})
       : _client = client ?? Supabase.instance.client;
