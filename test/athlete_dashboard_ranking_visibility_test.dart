@@ -18,20 +18,37 @@ void main() {
   testWidgets('ranking e regras permanecem visíveis mesmo sem dados',
       (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(home: AthleteDashboardPage()),
+      const MaterialApp(
+        home: AthleteDashboardPage(
+          initialProfileForTest: {'gender': 'Feminino'},
+          initialGenderRankingForTest: [],
+        ),
+      ),
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
 
-    expect(find.text('Ranking do mês'), findsOneWidget);
-    expect(find.text('Ver regras'), findsOneWidget);
-    expect(find.text('Ver ranking'), findsOneWidget);
+    final rankingCard = find.byKey(
+      const Key('athlete-monthly-ranking-card'),
+    );
+    expect(rankingCard, findsOneWidget);
+    expect(find.text('Ranking do mês • Feminino'), findsOneWidget);
+    expect(
+      find.byKey(const Key('athlete-ranking-rules-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('athlete-ranking-list-button')),
+      findsOneWidget,
+    );
 
-    await tester.ensureVisible(find.text('Ver regras'));
+    await tester.ensureVisible(rankingCard);
     await tester.pump();
-    await tester.tap(find.text('Ver regras'));
+    await tester.tap(find.byKey(const Key('athlete-ranking-rules-button')));
     await tester.pump();
-    expect(find.text('Regras do ranking'), findsOneWidget);
+    expect(
+      find.byKey(const Key('athlete-ranking-rules-card')),
+      findsOneWidget,
+    );
     expect(
       find.text(
         '• O ranking ordena por pontos, depois por treinos válidos, depois por chegadas em 1º e por fim por nome.',
@@ -39,12 +56,67 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.ensureVisible(find.text('Ver ranking'));
+    await tester.ensureVisible(rankingCard);
     await tester.pump();
-    await tester.tap(find.text('Ver ranking'));
+    await tester.tap(find.byKey(const Key('athlete-ranking-list-button')));
     await tester.pump();
     expect(
-      find.text('Nenhum check-in válido encontrado para o mês atual.'),
+      find.byKey(const Key('athlete-ranking-empty-state')),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('ranking renderiza atletas e mantém as regras acessíveis',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AthleteDashboardPage(
+          initialProfileForTest: {'gender': 'Feminino'},
+          initialGenderRankingForTest: [
+            {
+              'id': '2',
+              'first_name': 'Bruna',
+              'total_points': 8,
+              'presence_count': 4,
+              'first_checkins': 1,
+            },
+            {
+              'id': '1',
+              'first_name': 'Amanda',
+              'total_points': 10,
+              'presence_count': 5,
+              'first_checkins': 2,
+            },
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final rankingCard = find.byKey(
+      const Key('athlete-monthly-ranking-card'),
+    );
+    expect(rankingCard, findsOneWidget);
+    await tester.ensureVisible(rankingCard);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('athlete-ranking-list-button')));
+    await tester.pump();
+
+    expect(find.text('Amanda'), findsOneWidget);
+    expect(find.text('Bruna'), findsOneWidget);
+    expect(
+        find.text('10 pts • 5 treinos • 2 primeiras chegadas'), findsOneWidget);
+    expect(find.text('8 pts • 4 treinos • 1 primeira chegada'), findsOneWidget);
+
+    await tester.ensureVisible(rankingCard);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('athlete-ranking-rules-button')));
+    await tester.pump();
+    expect(
+      find.byKey(const Key('athlete-ranking-rules-card')),
       findsOneWidget,
     );
 

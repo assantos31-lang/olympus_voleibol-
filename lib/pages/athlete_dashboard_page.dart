@@ -28,7 +28,14 @@ import 'admin_birthdays_page.dart';
 import 'awards_page.dart';
 
 class AthleteDashboardPage extends StatefulWidget {
-  const AthleteDashboardPage({super.key});
+  const AthleteDashboardPage({
+    super.key,
+    @visibleForTesting this.initialProfileForTest,
+    @visibleForTesting this.initialGenderRankingForTest,
+  });
+
+  final Map<String, dynamic>? initialProfileForTest;
+  final List<Map<String, dynamic>>? initialGenderRankingForTest;
 
   @override
   State<AthleteDashboardPage> createState() => _AthleteDashboardPageState();
@@ -155,8 +162,16 @@ class _AthleteDashboardPageState extends State<AthleteDashboardPage>
         curve: Curves.easeInOut,
       ),
     );
-    _refreshDashboard();
-    _listenChatUnreadCount();
+    final initialRanking = widget.initialGenderRankingForTest;
+    if (initialRanking == null) {
+      _refreshDashboard();
+      _listenChatUnreadCount();
+    } else {
+      _profile = widget.initialProfileForTest ?? const {'gender': 'Feminino'};
+      _fullGenderRanking = orderMonthlyRanking(initialRanking);
+      _genderRanking = _fullGenderRanking.take(5).toList();
+      _isLoading = false;
+    }
   }
 
   void _listenChatUnreadCount() {
@@ -1196,9 +1211,11 @@ event_time
             ),
           ),
           const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
+          SizedBox(
+            width: 110,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
               Text(
                 _getRankingScoreSummary(athlete),
                 maxLines: 2,
@@ -1220,7 +1237,8 @@ event_time
                   color: _getRankingMovementColor(athlete['movement']),
                 ),
               ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -1496,6 +1514,7 @@ event_time
         : <Map<String, dynamic>>[];
 
     return Container(
+      key: const Key('athlete-monthly-ranking-card'),
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
       decoration: BoxDecoration(
@@ -1522,57 +1541,67 @@ event_time
             ),
           ),
           const SizedBox(height: 10),
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  _currentUserRankingPosition != null
-                      ? 'Sua posição atual: ${_currentUserRankingPosition}º ${_getRankingMovementLabel(_currentUserRankingMovement)}'
-                      : 'Sua posição atual: -',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: olympusBlue.withOpacity(0.75),
-                  ),
+              Text(
+                _currentUserRankingPosition != null
+                    ? 'Sua posição atual: ${_currentUserRankingPosition}º ${_getRankingMovementLabel(_currentUserRankingMovement)}'
+                    : 'Sua posição atual: -',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: olympusBlue.withOpacity(0.75),
                 ),
               ),
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _isRankingRulesExpanded = !_isRankingRulesExpanded;
-                  });
-                },
-                style: TextButton.styleFrom(
-                  foregroundColor: olympusBlue,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                ),
-                child: Text(
-                  _isRankingRulesExpanded ? 'Ocultar regras' : 'Ver regras',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _isRankingExpanded = !_isRankingExpanded;
-                    if (!_isRankingExpanded) {
-                      _isFullRankingExpanded = false;
-                    }
-                  });
-                },
-                style: TextButton.styleFrom(
-                  foregroundColor: olympusGold,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                ),
-                child: Text(
-                  _isRankingExpanded ? 'Ocultar' : 'Ver ranking',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Wrap(
+                  children: [
+                    TextButton(
+                      key: const Key('athlete-ranking-rules-button'),
+                      onPressed: () {
+                        setState(() {
+                          _isRankingRulesExpanded = !_isRankingRulesExpanded;
+                        });
+                      },
+                      style: TextButton.styleFrom(
+                        foregroundColor: olympusBlue,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                      ),
+                      child: Text(
+                        _isRankingRulesExpanded
+                            ? 'Ocultar regras'
+                            : 'Ver regras',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    TextButton(
+                      key: const Key('athlete-ranking-list-button'),
+                      onPressed: () {
+                        setState(() {
+                          _isRankingExpanded = !_isRankingExpanded;
+                          if (!_isRankingExpanded) {
+                            _isFullRankingExpanded = false;
+                          }
+                        });
+                      },
+                      style: TextButton.styleFrom(
+                        foregroundColor: olympusGold,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                      ),
+                      child: Text(
+                        _isRankingExpanded ? 'Ocultar' : 'Ver ranking',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1592,6 +1621,7 @@ event_time
                 border: Border.all(color: olympusBlue.withOpacity(0.08)),
               ),
               child: Text(
+                key: const Key('athlete-ranking-empty-state'),
                 'Nenhum check-in válido encontrado para o mês atual.',
                 style: TextStyle(
                   fontSize: 11,
@@ -1814,6 +1844,7 @@ event_time
 
   Widget _buildRankingRulesCard() {
     return Container(
+      key: const Key('athlete-ranking-rules-card'),
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
