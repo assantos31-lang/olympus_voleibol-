@@ -88,5 +88,60 @@ void main() {
         ['Ágata', 'Ana', 'bruno', 'Érica'],
       );
     });
+
+    test('keeps legacy photo as the gallery cover', () {
+      const definition = AwardDefinition(
+        id: 'award-1',
+        title: 'Destaque',
+        description: '',
+        sourceType: 'manual',
+        winnerCount: 1,
+        isVisible: true,
+        sortOrder: 0,
+      );
+      const edition = AwardEdition(
+        id: 'edition-1',
+        definition: definition,
+        year: 2026,
+        month: 9,
+        caption: '',
+        deliveryPhotoUrl: 'https://example.com/legacy.jpg',
+        isPublished: true,
+        isVisible: true,
+        winners: [],
+      );
+
+      expect(edition.primaryImageUrl, 'https://example.com/legacy.jpg');
+      expect(edition.galleryImageUrls, ['https://example.com/legacy.jpg']);
+    });
+
+    test('places the selected gallery cover first', () {
+      const definition = AwardDefinition(
+        id: 'award-1',
+        title: 'Destaque',
+        description: '',
+        sourceType: 'manual',
+        winnerCount: 1,
+        isVisible: true,
+        sortOrder: 0,
+      );
+      const edition = AwardEdition(
+        id: 'edition-1',
+        definition: definition,
+        year: 2026,
+        month: 9,
+        caption: '',
+        isPublished: true,
+        isVisible: true,
+        winners: [],
+        images: [
+          AwardImage(id: '1', url: 'second.jpg', sortOrder: 0, isCover: false),
+          AwardImage(id: '2', url: 'cover.jpg', sortOrder: 1, isCover: true),
+        ],
+      );
+
+      expect(edition.galleryImageUrls, ['cover.jpg', 'second.jpg']);
+      expect(edition.primaryImageUrl, 'cover.jpg');
+    });
   });
 }

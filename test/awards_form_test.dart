@@ -34,7 +34,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Mês da premiação'), findsOneWidget);
+    expect(find.text('Período da premiação'), findsOneWidget);
+    expect(find.byKey(const Key('award-shared-form-layout')), findsOneWidget);
     expect(find.text('A premiação será exibida aos atletas neste período.'),
         findsOneWidget);
     expect(
@@ -87,6 +88,53 @@ void main() {
     expect(count.data, '2');
   });
 
+  testWidgets('formulário permite várias fotos, capa, ordem e remoção',
+      (tester) async {
+    final uploads = <String>[
+      'https://example.com/primeira.jpg',
+      'https://example.com/segunda.jpg',
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AwardDefinitionFormPage(
+          initialYear: 2026,
+          initialMonth: 9,
+          uploadImage: () async => uploads.removeAt(0),
+          loadProfiles: () async => const [
+            {'id': '1', 'full_name': 'Amanda'},
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nenhuma foto adicionada.'), findsNothing);
+    await tester.drag(find.byType(ListView), const Offset(0, -1400));
+    await tester.pumpAndSettle();
+    expect(find.text('Nenhuma foto adicionada.'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('award-add-image')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('award-add-image')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('award-image-0')), findsOneWidget);
+    expect(find.byKey(const Key('award-image-1')), findsOneWidget);
+    expect(find.text('2 foto(s) • A estrela indica a capa'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('award-cover-1')));
+    await tester.pumpAndSettle();
+    final coverButton = tester.widget<IconButton>(
+      find.byKey(const Key('award-cover-0')),
+    );
+    expect(coverButton.onPressed, isNull);
+
+    await tester.tap(find.byKey(const Key('award-remove-image-1')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('award-image-1')), findsNothing);
+    expect(find.text('1 foto(s) • A estrela indica a capa'), findsOneWidget);
+  });
+
   testWidgets('entrega usa apenas o controle publicar no mural',
       (tester) async {
     const definition = AwardDefinition(
@@ -115,10 +163,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const Key('award-shared-form-layout')), findsOneWidget);
+    expect(
+        find.byKey(const Key('award-shared-period-selector')), findsOneWidget);
     final title = tester.widget<Text>(find.text('Premiação'));
     expect(
       title.style?.color,
-      OlympusBrandingController.instance.branding.secondaryColor,
+      OlympusBrandingController.instance.branding.fieldTitleColor,
     );
     await tester.tap(find.byKey(const Key('award-edition-definition')));
     await tester.pumpAndSettle();
@@ -130,7 +181,71 @@ void main() {
     expect(find.text('Mostrar esta entrega'), findsNothing);
     expect(find.widgetWithText(SwitchListTile, 'Publicar no mural'),
         findsOneWidget);
+    expect(
+      find.text(
+        'A publicação exige pelo menos um vencedor; as fotos são opcionais.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Nenhuma foto adicionada.'), findsOneWidget);
     expect(find.byKey(const Key('award-winner-slot-0-')), findsOneWidget);
+  });
+
+  testWidgets('galeria navega no celular e mantém a capa primeiro',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AwardGalleryPage(
+          urls: [
+            'https://example.com/capa.jpg',
+            'https://example.com/outra.jpg',
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('award-gallery')), findsOneWidget);
+    expect(find.text('1 de 2'), findsOneWidget);
+    await tester.drag(find.byType(PageView), const Offset(-320, 0));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('2 de 2'), findsOneWidget);
+  });
+
+  testWidgets('galeria navega no desktop pelos controles', (tester) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AwardGalleryPage(
+          urls: [
+            'https://example.com/capa.jpg',
+            'https://example.com/outra.jpg',
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('1 de 2'), findsOneWidget);
+    tester
+        .widget<IconButton>(find.byKey(const Key('award-gallery-next')))
+        .onPressed!();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('2 de 2'), findsOneWidget);
+    tester
+        .widget<IconButton>(find.byKey(const Key('award-gallery-previous')))
+        .onPressed!();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('1 de 2'), findsOneWidget);
   });
 
   testWidgets('controle de visibilidade permanece dentro de cartão',

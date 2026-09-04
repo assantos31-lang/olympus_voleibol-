@@ -14,6 +14,29 @@ import '../services/organization_context_service.dart';
 import '../services/organization_storage_service.dart';
 import '../theme/olympus_theme.dart';
 
+ThemeData _awardFormTheme(BuildContext context, OlympusBranding branding) {
+  final baseTheme = Theme.of(context);
+  return baseTheme.copyWith(
+    textTheme: baseTheme.textTheme.apply(
+      bodyColor: branding.textColor,
+      displayColor: branding.textColor,
+    ),
+    inputDecorationTheme: baseTheme.inputDecorationTheme.copyWith(
+      fillColor: branding.surfaceColor,
+      labelStyle: TextStyle(
+        color: branding.textColor.withValues(alpha: 0.76),
+      ),
+      floatingLabelStyle: TextStyle(
+        color: branding.primaryColor,
+        fontWeight: FontWeight.w700,
+      ),
+      hintStyle: TextStyle(
+        color: branding.textColor.withValues(alpha: 0.58),
+      ),
+    ),
+  );
+}
+
 class AwardsPage extends StatefulWidget {
   const AwardsPage({super.key, this.canManage = false});
 
@@ -580,6 +603,8 @@ class _AwardsPageState extends State<AwardsPage> {
 
   Widget _buildEditionCard(AwardEdition item) {
     final branding = _branding;
+    final images = item.galleryImageUrls;
+    final primaryImage = item.primaryImageUrl;
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
       clipBehavior: Clip.antiAlias,
@@ -588,35 +613,40 @@ class _AwardsPageState extends State<AwardsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (item.deliveryPhotoUrl.isNotEmpty)
+            if (primaryImage.isNotEmpty)
               GestureDetector(
-                onTap: () => _viewPhoto(item.deliveryPhotoUrl),
+                onTap: () => _viewGallery(images),
                 child: Container(
                   width: double.infinity,
                   constraints: const BoxConstraints(maxHeight: 440),
                   color: branding.primaryColor.withValues(alpha: 0.10),
-                  child: CachedNetworkImage(
-                    imageUrl: item.deliveryPhotoUrl,
-                    fit: BoxFit.contain,
-                    placeholder: (_, __) => const AspectRatio(
-                      aspectRatio: 4 / 3,
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-                    errorWidget: (_, __, ___) => const AspectRatio(
-                      aspectRatio: 4 / 3,
-                      child: Center(child: Icon(Icons.broken_image_rounded)),
-                    ),
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      CachedNetworkImage(
+                        imageUrl: primaryImage,
+                        width: double.infinity,
+                        fit: BoxFit.contain,
+                        placeholder: (_, __) => const AspectRatio(
+                          aspectRatio: 4 / 3,
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                        errorWidget: (_, __, ___) => const AspectRatio(
+                          aspectRatio: 4 / 3,
+                          child:
+                              Center(child: Icon(Icons.broken_image_rounded)),
+                        ),
+                      ),
+                      if (images.length > 1)
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Chip(
+                            avatar: const Icon(Icons.photo_library_rounded),
+                            label: Text('${images.length} fotos'),
+                          ),
+                        ),
+                    ],
                   ),
-                ),
-              )
-            else if (item.definition.coverImageUrl.isNotEmpty)
-              Container(
-                width: double.infinity,
-                constraints: const BoxConstraints(maxHeight: 300),
-                color: branding.primaryColor.withValues(alpha: 0.10),
-                child: CachedNetworkImage(
-                  imageUrl: item.definition.coverImageUrl,
-                  fit: BoxFit.contain,
                 ),
               ),
             Padding(
@@ -810,24 +840,38 @@ class _AwardsPageState extends State<AwardsPage> {
                 fontWeight: FontWeight.w700,
               ),
             ),
-            if (item.deliveryPhotoUrl.isNotEmpty ||
-                item.definition.coverImageUrl.isNotEmpty) ...[
+            if (item.primaryImageUrl.isNotEmpty) ...[
               const SizedBox(height: 16),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: CachedNetworkImage(
-                  imageUrl: item.deliveryPhotoUrl.isNotEmpty
-                      ? item.deliveryPhotoUrl
-                      : item.definition.coverImageUrl,
-                  fit: BoxFit.contain,
-                  placeholder: (_, __) => const AspectRatio(
-                    aspectRatio: 4 / 3,
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                  errorWidget: (_, __, ___) => const AspectRatio(
-                    aspectRatio: 4 / 3,
-                    child: Center(child: Icon(Icons.broken_image_rounded)),
-                  ),
+              GestureDetector(
+                onTap: () => _viewGallery(item.galleryImageUrls),
+                child: Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: CachedNetworkImage(
+                        imageUrl: item.primaryImageUrl,
+                        fit: BoxFit.contain,
+                        placeholder: (_, __) => const AspectRatio(
+                          aspectRatio: 4 / 3,
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                        errorWidget: (_, __, ___) => const AspectRatio(
+                          aspectRatio: 4 / 3,
+                          child:
+                              Center(child: Icon(Icons.broken_image_rounded)),
+                        ),
+                      ),
+                    ),
+                    if (item.galleryImageUrls.length > 1)
+                      Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Chip(
+                          avatar: const Icon(Icons.photo_library_rounded),
+                          label: Text('${item.galleryImageUrls.length} fotos'),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
@@ -890,22 +934,12 @@ class _AwardsPageState extends State<AwardsPage> {
     );
   }
 
-  void _viewPhoto(String url) {
+  void _viewGallery(List<String> urls) {
+    if (urls.isEmpty) return;
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-          ),
-          body: Center(
-            child: InteractiveViewer(
-              child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain),
-            ),
-          ),
-        ),
+        builder: (_) => AwardGalleryPage(urls: urls),
       ),
     );
   }
@@ -944,6 +978,7 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
   late int _month;
   late bool _visible;
   late String _coverUrl;
+  late List<String> _imageUrls;
   bool _saving = false;
   bool _uploading = false;
   bool _loadingProfiles = true;
@@ -965,6 +1000,7 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
     _month = widget.initialMonth;
     _visible = item?.isVisible ?? true;
     _coverUrl = item?.coverImageUrl ?? '';
+    _imageUrls = _coverUrl.isEmpty ? [] : [_coverUrl];
     if (item == null) {
       _loadProfiles();
     } else {
@@ -1008,10 +1044,40 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
     setState(() => _uploading = true);
     try {
       final url = await widget.uploadImage();
-      if (url != null && mounted) setState(() => _coverUrl = url);
+      if (url != null && mounted) {
+        setState(() {
+          if (!_imageUrls.contains(url)) _imageUrls.add(url);
+          if (_coverUrl.isEmpty) _coverUrl = url;
+        });
+      }
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
+  }
+
+  void _removeImage(String url) {
+    setState(() {
+      _imageUrls.remove(url);
+      if (_coverUrl == url) {
+        _coverUrl = _imageUrls.isEmpty ? '' : _imageUrls.first;
+      }
+    });
+  }
+
+  void _setCover(String url) => setState(() {
+        _imageUrls
+          ..remove(url)
+          ..insert(0, url);
+        _coverUrl = url;
+      });
+
+  void _moveImage(int index, int delta) {
+    final target = index + delta;
+    if (index == 0 || target <= 0 || target >= _imageUrls.length) return;
+    setState(() {
+      final image = _imageUrls.removeAt(index);
+      _imageUrls.insert(target, image);
+    });
   }
 
   Future<void> _save() async {
@@ -1019,12 +1085,6 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
     if (widget.definition == null && _selected.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Escolha o atleta vencedor.')),
-      );
-      return;
-    }
-    if (widget.definition == null && _coverUrl.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Adicione a foto da premiação.')),
       );
       return;
     }
@@ -1049,6 +1109,7 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
           caption: _description.text,
           deliveryDate: null,
           deliveryPhotoUrl: _coverUrl,
+          imageUrls: _imageUrls,
           isPublished: true,
           isVisible: _visible,
           winners: _selected,
@@ -1076,27 +1137,6 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
   @override
   Widget build(BuildContext context) {
     final branding = OlympusBrandingController.instance.branding;
-    final baseTheme = Theme.of(context);
-    final months = DateFormat.MMMM('pt_BR').dateSymbols.MONTHS;
-    final formTheme = baseTheme.copyWith(
-      textTheme: baseTheme.textTheme.apply(
-        bodyColor: branding.textColor,
-        displayColor: branding.textColor,
-      ),
-      inputDecorationTheme: baseTheme.inputDecorationTheme.copyWith(
-        fillColor: branding.surfaceColor,
-        labelStyle: TextStyle(
-          color: branding.textColor.withValues(alpha: 0.76),
-        ),
-        floatingLabelStyle: TextStyle(
-          color: branding.primaryColor,
-          fontWeight: FontWeight.w700,
-        ),
-        hintStyle: TextStyle(
-          color: branding.textColor.withValues(alpha: 0.58),
-        ),
-      ),
-    );
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.definition == null
@@ -1104,96 +1144,25 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
             : 'Editar premiação'),
       ),
       body: Theme(
-        data: formTheme,
+        key: const Key('award-shared-form-layout'),
+        data: _awardFormTheme(context, branding),
         child: Form(
           key: _formKey,
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
               if (widget.definition == null) ...[
-                Card(
-                  margin: EdgeInsets.zero,
-                  color: branding.surfaceColor,
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Mês da premiação',
-                          style: TextStyle(
-                            color: branding.textColor,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'A premiação será exibida aos atletas neste período.',
-                          style: TextStyle(
-                            color: branding.textColor.withValues(alpha: 0.72),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: DropdownButtonFormField<int>(
-                                key: const Key('award-definition-month'),
-                                initialValue: _month,
-                                dropdownColor: branding.surfaceColor,
-                                style: TextStyle(color: branding.textColor),
-                                decoration:
-                                    const InputDecoration(hintText: 'Mês'),
-                                items: List.generate(
-                                  12,
-                                  (index) => DropdownMenuItem(
-                                    value: index + 1,
-                                    child: Text(
-                                      '${months[index][0].toUpperCase()}${months[index].substring(1)}',
-                                    ),
-                                  ),
-                                ),
-                                onChanged: (value) =>
-                                    setState(() => _month = value!),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: DropdownButtonFormField<int>(
-                                key: const Key('award-definition-year'),
-                                initialValue: _year,
-                                dropdownColor: branding.surfaceColor,
-                                style: TextStyle(color: branding.textColor),
-                                decoration:
-                                    const InputDecoration(hintText: 'Ano'),
-                                items: List.generate(
-                                  6,
-                                  (index) {
-                                    final year =
-                                        DateTime.now().year - 2 + index;
-                                    return DropdownMenuItem(
-                                      value: year,
-                                      child: Text('$year'),
-                                    );
-                                  },
-                                ),
-                                onChanged: (value) =>
-                                    setState(() => _year = value!),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+                _AwardPeriodSelector(
+                  month: _month,
+                  year: _year,
+                  onMonthChanged: (value) => setState(() => _month = value),
+                  onYearChanged: (value) => setState(() => _year = value),
                 ),
                 const SizedBox(height: 12),
               ],
               _AwardFieldLabel(
                 text: 'Nome da premiação',
-                color: branding.textColor,
+                color: branding.fieldTitleColor,
               ),
               const SizedBox(height: 6),
               TextFormField(
@@ -1210,7 +1179,7 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
               const SizedBox(height: 12),
               _AwardFieldLabel(
                 text: 'Descrição',
-                color: branding.textColor,
+                color: branding.fieldTitleColor,
               ),
               const SizedBox(height: 6),
               TextFormField(
@@ -1225,7 +1194,7 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
               const SizedBox(height: 12),
               _AwardFieldLabel(
                 text: 'Tipo de resultado',
-                color: branding.textColor,
+                color: branding.fieldTitleColor,
               ),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
@@ -1251,7 +1220,7 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
                 const SizedBox(height: 12),
                 _AwardFieldLabel(
                   text: 'Tipo de prêmio',
-                  color: branding.secondaryColor,
+                  color: branding.fieldTitleColor,
                 ),
                 const SizedBox(height: 6),
                 TextFormField(
@@ -1294,17 +1263,20 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
                 ),
               ],
               const SizedBox(height: 14),
-              _ImageSelector(
-                url: _coverUrl,
+              _AwardImageEditor(
+                urls: _imageUrls,
+                coverUrl: _coverUrl,
                 title: widget.definition == null
-                    ? 'Foto da premiação'
+                    ? 'Fotos da premiação'
                     : 'Imagem da premiação (opcional)',
                 subtitle: widget.definition == null
-                    ? 'Esta foto será publicada no mural dos atletas.'
+                    ? 'Adicione fotos e escolha a capa do mural.'
                     : 'Capa usada quando a entrega ainda não tem foto.',
                 uploading: _uploading,
-                onPick: _upload,
-                onRemove: () => setState(() => _coverUrl = ''),
+                onAdd: _upload,
+                onRemove: _removeImage,
+                onSetCover: _setCover,
+                onMove: _moveImage,
               ),
               const SizedBox(height: 12),
               Card(
@@ -1406,6 +1378,104 @@ class _WinnerCountSelector extends StatelessWidget {
               tooltip: 'Aumentar quantidade',
               onPressed: value < 20 ? () => onChanged(value + 1) : null,
               icon: const Icon(Icons.add_rounded),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AwardPeriodSelector extends StatelessWidget {
+  const _AwardPeriodSelector({
+    required this.month,
+    required this.year,
+    required this.onMonthChanged,
+    required this.onYearChanged,
+  });
+
+  final int month;
+  final int year;
+  final ValueChanged<int> onMonthChanged;
+  final ValueChanged<int> onYearChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final branding = OlympusBrandingController.instance.branding;
+    final months = DateFormat.MMMM('pt_BR').dateSymbols.MONTHS;
+    return Card(
+      key: const Key('award-shared-period-selector'),
+      margin: EdgeInsets.zero,
+      color: branding.surfaceColor,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Período da premiação',
+              style: TextStyle(
+                color: branding.textColor,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'A premiação será exibida aos atletas neste período.',
+              style: TextStyle(
+                color: branding.textColor.withValues(alpha: 0.72),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: DropdownButtonFormField<int>(
+                    key: const Key('award-definition-month'),
+                    initialValue: month,
+                    dropdownColor: branding.surfaceColor,
+                    style: TextStyle(color: branding.textColor),
+                    decoration: const InputDecoration(hintText: 'Mês'),
+                    items: List.generate(
+                      12,
+                      (index) => DropdownMenuItem(
+                        value: index + 1,
+                        child: Text(
+                          '${months[index][0].toUpperCase()}${months[index].substring(1)}',
+                        ),
+                      ),
+                    ),
+                    onChanged: (value) {
+                      if (value != null) onMonthChanged(value);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: DropdownButtonFormField<int>(
+                    key: const Key('award-definition-year'),
+                    initialValue: year,
+                    dropdownColor: branding.surfaceColor,
+                    style: TextStyle(color: branding.textColor),
+                    decoration: const InputDecoration(hintText: 'Ano'),
+                    items: List.generate(
+                      6,
+                      (index) {
+                        final itemYear = DateTime.now().year - 2 + index;
+                        return DropdownMenuItem(
+                          value: itemYear,
+                          child: Text('$itemYear'),
+                        );
+                      },
+                    ),
+                    onChanged: (value) {
+                      if (value != null) onYearChanged(value);
+                    },
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1615,7 +1685,8 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
   late int _month;
   late final TextEditingController _caption;
   late DateTime? _deliveryDate;
-  late String _photoUrl;
+  late String _coverUrl;
+  late List<String> _imageUrls;
   late bool _published;
   bool _loadingProfiles = true;
   bool _saving = false;
@@ -1635,7 +1706,8 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
     _month = edition?.month ?? widget.initialMonth;
     _caption = TextEditingController(text: edition?.caption ?? '');
     _deliveryDate = edition?.deliveryDate;
-    _photoUrl = edition?.deliveryPhotoUrl ?? '';
+    _imageUrls = edition?.galleryImageUrls.toList() ?? <String>[];
+    _coverUrl = _imageUrls.isEmpty ? '' : _imageUrls.first;
     _published = edition == null || (edition.isPublished && edition.isVisible);
     _loadProfiles();
   }
@@ -1683,10 +1755,40 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
     setState(() => _uploading = true);
     try {
       final url = await widget.uploadImage();
-      if (url != null && mounted) setState(() => _photoUrl = url);
+      if (url != null && mounted) {
+        setState(() {
+          if (!_imageUrls.contains(url)) _imageUrls.add(url);
+          if (_coverUrl.isEmpty) _coverUrl = url;
+        });
+      }
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
+  }
+
+  void _removeImage(String url) {
+    setState(() {
+      _imageUrls.remove(url);
+      if (_coverUrl == url) {
+        _coverUrl = _imageUrls.isEmpty ? '' : _imageUrls.first;
+      }
+    });
+  }
+
+  void _setCover(String url) => setState(() {
+        _imageUrls
+          ..remove(url)
+          ..insert(0, url);
+        _coverUrl = url;
+      });
+
+  void _moveImage(int index, int delta) {
+    final target = index + delta;
+    if (index == 0 || target <= 0 || target >= _imageUrls.length) return;
+    setState(() {
+      final image = _imageUrls.removeAt(index);
+      _imageUrls.insert(target, image);
+    });
   }
 
   void _updateWinners(List<Map<String, dynamic>> winners) {
@@ -1715,14 +1817,6 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
       );
       return;
     }
-    if (_published && _photoUrl.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Adicione a foto da entrega antes de publicar.'),
-        ),
-      );
-      return;
-    }
     setState(() => _saving = true);
     try {
       await _service.saveEdition(
@@ -1732,7 +1826,8 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
         month: _month,
         caption: _caption.text,
         deliveryDate: _deliveryDate,
-        deliveryPhotoUrl: _photoUrl,
+        deliveryPhotoUrl: _coverUrl,
+        imageUrls: _imageUrls,
         isPublished: _published,
         isVisible: _published,
         winners: _selected,
@@ -1754,9 +1849,8 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
 
   @override
   Widget build(BuildContext context) {
-    final months = DateFormat.MMMM('pt_BR').dateSymbols.MONTHS;
     final branding = OlympusBrandingController.instance.branding;
-    final fieldTitleColor = branding.secondaryColor;
+    final fieldTitleColor = branding.fieldTitleColor;
     const createAwardId = '__create_award__';
     const createAwardOption = AwardDefinition(
       id: createAwardId,
@@ -1771,208 +1865,175 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
       appBar: AppBar(
         title: Text(widget.edition == null ? 'Nova entrega' : 'Editar entrega'),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _AwardFieldLabel(text: 'Premiação', color: fieldTitleColor),
-            const SizedBox(height: 6),
-            DropdownButtonFormField<AwardDefinition>(
-              key: const Key('award-edition-definition'),
-              initialValue: _definition,
-              dropdownColor: branding.surfaceColor,
-              style: TextStyle(color: branding.textColor),
-              decoration: const InputDecoration(),
-              items: [
-                if (widget.edition == null && widget.createAward != null)
-                  createAwardOption,
-                ...widget.definitions,
-              ]
-                  .map((item) => DropdownMenuItem<AwardDefinition>(
-                        value: item,
-                        child: Text(
-                          item.title,
-                          style: item.id == createAwardId
-                              ? TextStyle(
-                                  color: branding.secondaryColor,
-                                  fontWeight: FontWeight.w900,
-                                )
-                              : null,
-                        ),
-                      ))
-                  .toList(),
-              onChanged: widget.edition != null
-                  ? null
-                  : (value) async {
-                      if (value == null) return;
-                      if (value.id == createAwardId) {
-                        final created = await widget.createAward!.call();
-                        if (created && context.mounted) {
-                          Navigator.pop(context, true);
-                        }
-                        return;
-                      }
-                      setState(() {
-                        _definition = value;
-                        if (_selected.length > value.winnerCount) {
-                          _selected.removeRange(
-                            value.winnerCount,
-                            _selected.length,
-                          );
-                        }
-                      });
-                    },
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _AwardFieldLabel(text: 'Mês', color: fieldTitleColor),
-                      const SizedBox(height: 6),
-                      DropdownButtonFormField<int>(
-                        initialValue: _month,
-                        dropdownColor: branding.surfaceColor,
-                        style: TextStyle(color: branding.textColor),
-                        decoration: const InputDecoration(),
-                        items: List.generate(
-                          12,
-                          (index) => DropdownMenuItem(
-                            value: index + 1,
-                            child: Text(months[index]),
+      body: Theme(
+        key: const Key('award-shared-form-layout'),
+        data: _awardFormTheme(context, branding),
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _AwardFieldLabel(text: 'Premiação', color: fieldTitleColor),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<AwardDefinition>(
+                key: const Key('award-edition-definition'),
+                initialValue: _definition,
+                dropdownColor: branding.surfaceColor,
+                style: TextStyle(color: branding.textColor),
+                decoration: const InputDecoration(),
+                items: [
+                  if (widget.edition == null && widget.createAward != null)
+                    createAwardOption,
+                  ...widget.definitions,
+                ]
+                    .map((item) => DropdownMenuItem<AwardDefinition>(
+                          value: item,
+                          child: Text(
+                            item.title,
+                            style: item.id == createAwardId
+                                ? TextStyle(
+                                    color: branding.secondaryColor,
+                                    fontWeight: FontWeight.w900,
+                                  )
+                                : null,
                           ),
-                        ),
-                        onChanged: (value) => setState(() => _month = value!),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _AwardFieldLabel(text: 'Ano', color: fieldTitleColor),
-                      const SizedBox(height: 6),
-                      DropdownButtonFormField<int>(
-                        initialValue: _year,
-                        dropdownColor: branding.surfaceColor,
-                        style: TextStyle(color: branding.textColor),
-                        decoration: const InputDecoration(),
-                        items: List.generate(
-                          6,
-                          (index) {
-                            final year = DateTime.now().year - 2 + index;
-                            return DropdownMenuItem(
-                                value: year, child: Text('$year'));
-                          },
-                        ),
-                        onChanged: (value) => setState(() => _year = value!),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            _InlineWinnerPicker(
-              profiles: _profiles,
-              selected: _selected,
-              limit: _definition.winnerCount,
-              loading: _loadingProfiles,
-              onChanged: _updateWinners,
-            ),
-            const SizedBox(height: 14),
-            _ImageSelector(
-              url: _photoUrl,
-              title: 'Foto da entrega',
-              subtitle: 'Esta é a foto publicada no mural.',
-              uploading: _uploading,
-              onPick: _upload,
-              onRemove: () => setState(() => _photoUrl = ''),
-            ),
-            const SizedBox(height: 12),
-            _AwardFieldLabel(text: 'Legenda', color: branding.textColor),
-            const SizedBox(height: 6),
-            TextFormField(
-              controller: _caption,
-              style: TextStyle(color: branding.textColor),
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'Conte como foi a entrega da premiação.',
+                        ))
+                    .toList(),
+                onChanged: widget.edition != null
+                    ? null
+                    : (value) async {
+                        if (value == null) return;
+                        if (value.id == createAwardId) {
+                          final created = await widget.createAward!.call();
+                          if (created && context.mounted) {
+                            Navigator.pop(context, true);
+                          }
+                          return;
+                        }
+                        setState(() {
+                          _definition = value;
+                          if (_selected.length > value.winnerCount) {
+                            _selected.removeRange(
+                              value.winnerCount,
+                              _selected.length,
+                            );
+                          }
+                        });
+                      },
               ),
-            ),
-            const SizedBox(height: 12),
-            ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-              tileColor: Theme.of(context).colorScheme.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
+              const SizedBox(height: 12),
+              _AwardPeriodSelector(
+                month: _month,
+                year: _year,
+                onMonthChanged: (value) => setState(() => _month = value),
+                onYearChanged: (value) => setState(() => _year = value),
               ),
-              leading: const Icon(Icons.event_rounded),
-              title: Text(_deliveryDate == null
-                  ? 'Data da entrega'
-                  : DateFormat('dd/MM/yyyy').format(_deliveryDate!)),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: _pickDate,
-            ),
-            const SizedBox(height: 8),
-            Card(
-              margin: EdgeInsets.zero,
-              color: branding.surfaceColor,
-              child: SwitchListTile(
-                value: _published,
-                onChanged: (value) => setState(() => _published = value),
-                title: Text(
-                  'Publicar no mural',
-                  style: TextStyle(color: branding.textColor),
-                ),
-                subtitle: Text(
-                  'A publicação exige pelo menos um vencedor e a foto da entrega.',
-                  style: TextStyle(
-                    color: branding.textColor.withValues(alpha: 0.72),
-                  ),
+              const SizedBox(height: 14),
+              _InlineWinnerPicker(
+                profiles: _profiles,
+                selected: _selected,
+                limit: _definition.winnerCount,
+                loading: _loadingProfiles,
+                onChanged: _updateWinners,
+              ),
+              const SizedBox(height: 14),
+              _AwardImageEditor(
+                urls: _imageUrls,
+                coverUrl: _coverUrl,
+                title: 'Fotos da entrega',
+                subtitle: 'A capa aparece no card; as demais ficam na galeria.',
+                uploading: _uploading,
+                onAdd: _upload,
+                onRemove: _removeImage,
+                onSetCover: _setCover,
+                onMove: _moveImage,
+              ),
+              const SizedBox(height: 12),
+              _AwardFieldLabel(text: 'Legenda', color: fieldTitleColor),
+              const SizedBox(height: 6),
+              TextFormField(
+                controller: _caption,
+                style: TextStyle(color: branding.textColor),
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'Conte como foi a entrega da premiação.',
                 ),
               ),
-            ),
-            const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: _saving ? null : _save,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save_rounded),
-              label: const Text('Salvar entrega'),
-            ),
-          ],
+              const SizedBox(height: 12),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                tileColor: Theme.of(context).colorScheme.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                leading: const Icon(Icons.event_rounded),
+                title: Text(_deliveryDate == null
+                    ? 'Data da entrega'
+                    : DateFormat('dd/MM/yyyy').format(_deliveryDate!)),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: _pickDate,
+              ),
+              const SizedBox(height: 8),
+              Card(
+                margin: EdgeInsets.zero,
+                color: branding.surfaceColor,
+                child: SwitchListTile(
+                  value: _published,
+                  onChanged: (value) => setState(() => _published = value),
+                  title: Text(
+                    'Publicar no mural',
+                    style: TextStyle(color: branding.textColor),
+                  ),
+                  subtitle: Text(
+                    'A publicação exige pelo menos um vencedor; as fotos são opcionais.',
+                    style: TextStyle(
+                      color: branding.textColor.withValues(alpha: 0.72),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: _saving ? null : _save,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_rounded),
+                label: const Text('Salvar entrega'),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _ImageSelector extends StatelessWidget {
-  const _ImageSelector({
-    required this.url,
+class _AwardImageEditor extends StatelessWidget {
+  const _AwardImageEditor({
+    required this.urls,
+    required this.coverUrl,
     required this.title,
     required this.subtitle,
     required this.uploading,
-    required this.onPick,
+    required this.onAdd,
     required this.onRemove,
+    required this.onSetCover,
+    required this.onMove,
   });
 
-  final String url;
+  final List<String> urls;
+  final String coverUrl;
   final String title;
   final String subtitle;
   final bool uploading;
-  final VoidCallback onPick;
-  final VoidCallback onRemove;
+  final VoidCallback onAdd;
+  final ValueChanged<String> onRemove;
+  final ValueChanged<String> onSetCover;
+  final void Function(int index, int delta) onMove;
 
   @override
   Widget build(BuildContext context) {
@@ -1982,47 +2043,144 @@ class _ImageSelector extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (url.isNotEmpty)
-            Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(maxHeight: 320),
-              color:
-                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-              child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain),
-            ),
           Padding(
             padding: const EdgeInsets.all(14),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.add_a_photo_rounded),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title,
-                          style: const TextStyle(fontWeight: FontWeight.w900)),
-                      Text(subtitle,
-                          style: Theme.of(context).textTheme.bodySmall),
-                    ],
-                  ),
+                Row(
+                  children: [
+                    const Icon(Icons.photo_library_rounded),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          Text(
+                            subtitle,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    TextButton.icon(
+                      key: const Key('award-add-image'),
+                      onPressed: uploading ? null : onAdd,
+                      icon: uploading
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.add_photo_alternate_rounded),
+                      label: const Text('Adicionar'),
+                    ),
+                  ],
                 ),
-                if (url.isNotEmpty)
-                  IconButton(
-                    tooltip: 'Remover foto',
-                    onPressed: onRemove,
-                    icon: const Icon(Icons.delete_outline_rounded),
+                if (urls.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: Text('Nenhuma foto adicionada.'),
+                  )
+                else ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 158,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: urls.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 10),
+                      itemBuilder: (context, index) {
+                        final url = urls[index];
+                        final isCover = url == coverUrl;
+                        return SizedBox(
+                          key: Key('award-image-$index'),
+                          width: 132,
+                          child: Card(
+                            margin: EdgeInsets.zero,
+                            clipBehavior: Clip.antiAlias,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                CachedNetworkImage(
+                                  imageUrl: url,
+                                  fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => const Center(
+                                    child: Icon(Icons.broken_image_rounded),
+                                  ),
+                                ),
+                                Positioned(
+                                  left: 6,
+                                  top: 6,
+                                  child: IconButton.filledTonal(
+                                    key: Key('award-cover-$index'),
+                                    tooltip: isCover
+                                        ? 'Foto de destaque'
+                                        : 'Definir como destaque',
+                                    onPressed:
+                                        isCover ? null : () => onSetCover(url),
+                                    icon: Icon(
+                                      isCover
+                                          ? Icons.star_rounded
+                                          : Icons.star_border_rounded,
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  right: 6,
+                                  top: 6,
+                                  child: IconButton.filledTonal(
+                                    key: Key('award-remove-image-$index'),
+                                    tooltip: 'Remover foto',
+                                    onPressed: () => onRemove(url),
+                                    icon: const Icon(
+                                        Icons.delete_outline_rounded),
+                                  ),
+                                ),
+                                Positioned(
+                                  left: 4,
+                                  right: 4,
+                                  bottom: 4,
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      IconButton.filledTonal(
+                                        tooltip: 'Mover para a esquerda',
+                                        onPressed: index <= 1
+                                            ? null
+                                            : () => onMove(index, -1),
+                                        icon: const Icon(
+                                            Icons.chevron_left_rounded),
+                                      ),
+                                      IconButton.filledTonal(
+                                        tooltip: 'Mover para a direita',
+                                        onPressed: index == 0 ||
+                                                index == urls.length - 1
+                                            ? null
+                                            : () => onMove(index, 1),
+                                        icon: const Icon(
+                                            Icons.chevron_right_rounded),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                TextButton(
-                  onPressed: uploading ? null : onPick,
-                  child: uploading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(url.isEmpty ? 'Adicionar' : 'Trocar'),
-                ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${urls.length} foto(s) • A estrela indica a capa',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ],
             ),
           ),
@@ -2030,6 +2188,95 @@ class _ImageSelector extends StatelessWidget {
       ),
     );
   }
+}
+
+class AwardGalleryPage extends StatefulWidget {
+  const AwardGalleryPage({super.key, required this.urls});
+
+  final List<String> urls;
+
+  @override
+  State<AwardGalleryPage> createState() => _AwardGalleryPageState();
+}
+
+class _AwardGalleryPageState extends State<AwardGalleryPage> {
+  late final PageController _controller;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _goTo(int index) {
+    if (index < 0 || index >= widget.urls.length) return;
+    setState(() => _index = index);
+    _controller.jumpToPage(index);
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        key: const Key('award-gallery'),
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          title: Text('${_index + 1} de ${widget.urls.length}'),
+        ),
+        body: Stack(
+          alignment: Alignment.center,
+          children: [
+            PageView.builder(
+              controller: _controller,
+              itemCount: widget.urls.length,
+              onPageChanged: (value) => setState(() => _index = value),
+              itemBuilder: (_, index) => InteractiveViewer(
+                minScale: 1,
+                maxScale: 5,
+                child: Center(
+                  child: CachedNetworkImage(
+                    imageUrl: widget.urls[index],
+                    fit: BoxFit.contain,
+                    placeholder: (_, __) => const CircularProgressIndicator(),
+                    errorWidget: (_, __, ___) => const Icon(
+                      Icons.broken_image_rounded,
+                      color: Colors.white,
+                      size: 54,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (widget.urls.length > 1 && _index > 0)
+              Positioned(
+                left: 12,
+                child: IconButton.filled(
+                  key: const Key('award-gallery-previous'),
+                  tooltip: 'Foto anterior',
+                  onPressed: () => _goTo(_index - 1),
+                  icon: const Icon(Icons.chevron_left_rounded),
+                ),
+              ),
+            if (widget.urls.length > 1 && _index < widget.urls.length - 1)
+              Positioned(
+                right: 12,
+                child: IconButton.filled(
+                  key: const Key('award-gallery-next'),
+                  tooltip: 'Próxima foto',
+                  onPressed: () => _goTo(_index + 1),
+                  icon: const Icon(Icons.chevron_right_rounded),
+                ),
+              ),
+          ],
+        ),
+      );
 }
 
 class _StatusChip extends StatelessWidget {

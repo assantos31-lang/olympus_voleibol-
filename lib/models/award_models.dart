@@ -107,6 +107,27 @@ class AwardWinner {
       );
 }
 
+class AwardImage {
+  const AwardImage({
+    required this.id,
+    required this.url,
+    required this.sortOrder,
+    required this.isCover,
+  });
+
+  final String id;
+  final String url;
+  final int sortOrder;
+  final bool isCover;
+
+  factory AwardImage.fromMap(Map<String, dynamic> map) => AwardImage(
+        id: (map['id'] ?? '').toString(),
+        url: (map['image_url'] ?? '').toString(),
+        sortOrder: (map['sort_order'] as num?)?.toInt() ?? 0,
+        isCover: map['is_cover'] == true,
+      );
+}
+
 class AwardEdition {
   const AwardEdition({
     required this.id,
@@ -119,6 +140,7 @@ class AwardEdition {
     required this.winners,
     this.deliveryDate,
     this.deliveryPhotoUrl = '',
+    this.images = const [],
   });
 
   final String id;
@@ -131,6 +153,29 @@ class AwardEdition {
   final bool isPublished;
   final bool isVisible;
   final List<AwardWinner> winners;
+  final List<AwardImage> images;
+
+  List<String> get galleryImageUrls {
+    final ordered = [...images]..sort((a, b) {
+        if (a.isCover != b.isCover) return a.isCover ? -1 : 1;
+        return a.sortOrder.compareTo(b.sortOrder);
+      });
+    final urls = <String>[];
+    for (final image in ordered) {
+      if (image.url.isNotEmpty && !urls.contains(image.url)) {
+        urls.add(image.url);
+      }
+    }
+    if (deliveryPhotoUrl.isNotEmpty && !urls.contains(deliveryPhotoUrl)) {
+      urls.insert(0, deliveryPhotoUrl);
+    }
+    if (urls.isEmpty && definition.coverImageUrl.isNotEmpty) {
+      urls.add(definition.coverImageUrl);
+    }
+    return urls;
+  }
+
+  String get primaryImageUrl => galleryImageUrls.firstOrNull ?? '';
 
   DateTime get period => DateTime(year, month);
 }

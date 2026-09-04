@@ -7,6 +7,7 @@ const awardRealtimeTables = <String>[
   'award_definitions',
   'award_editions',
   'award_winners',
+  'award_images',
 ];
 
 class AwardsService {
@@ -85,6 +86,17 @@ class AwardsService {
           .putIfAbsent(row['award_edition_id'].toString(), () => [])
           .add(AwardWinner.fromMap(row));
     }
+    final imageRows = await _client
+        .from('award_images')
+        .select()
+        .inFilter('award_edition_id', editionIds)
+        .order('sort_order');
+    final imagesByEdition = <String, List<AwardImage>>{};
+    for (final row in List<Map<String, dynamic>>.from(imageRows)) {
+      imagesByEdition
+          .putIfAbsent(row['award_edition_id'].toString(), () => [])
+          .add(AwardImage.fromMap(row));
+    }
 
     return rows
         .map((row) {
@@ -102,6 +114,7 @@ class AwardsService {
             isPublished: row['is_published'] == true,
             isVisible: row['is_visible'] != false,
             winners: winnersByEdition[row['id'].toString()] ?? const [],
+            images: imagesByEdition[row['id'].toString()] ?? const [],
           );
         })
         .whereType<AwardEdition>()
@@ -205,12 +218,29 @@ class AwardsService {
         .maybeSingle();
     final editions = await _client
         .from('award_editions')
-        .select('delivery_photo_url')
+        .select('id, delivery_photo_url')
         .eq('award_definition_id', id);
+    final editionIds = List<Map<String, dynamic>>.from(editions)
+        .map((row) => row['id'].toString())
+        .toList();
+    final galleryRows = editionIds.isEmpty
+        ? <Map<String, dynamic>>[]
+        : List<Map<String, dynamic>>.from(
+            await _client
+                .from('award_images')
+                .select('image_url')
+                .inFilter('award_edition_id', editionIds),
+          );
     await _client.from('award_definitions').delete().eq('id', id);
-    await _removeImageUrl((definition?['cover_image_url'] ?? '').toString());
+    final removedUrls = <String>{
+      (definition?['cover_image_url'] ?? '').toString(),
+      ...galleryRows.map((row) => (row['image_url'] ?? '').toString()),
+    };
     for (final row in List<Map<String, dynamic>>.from(editions)) {
-      await _removeImageUrl((row['delivery_photo_url'] ?? '').toString());
+      removedUrls.add((row['delivery_photo_url'] ?? '').toString());
+    }
+    for (final url in removedUrls) {
+      await _removeImageUrlIfUnused(url);
     }
   }
 
@@ -229,6 +259,7 @@ class AwardsService {
     required String caption,
     required DateTime? deliveryDate,
     required String deliveryPhotoUrl,
+    List<String> imageUrls = const [],
     required bool isPublished,
     required bool isVisible,
     required List<Map<String, dynamic>> winners,
@@ -255,6 +286,25 @@ class AwardsService {
     };
 
     String editionId;
+    final previousImageUrls = <String>{};
+    if (id != null) {
+      final oldImages = await _client
+          .from('award_images')
+          .select('image_url')
+          .eq('award_edition_id', id);
+      previousImageUrls.addAll(
+        List<Map<String, dynamic>>.from(oldImages as List)
+            .map((row) => (row['image_url'] ?? '').toString())
+            .where((url) => url.isNotEmpty),
+      );
+      final oldEdition = await _client
+          .from('award_editions')
+          .select('delivery_photo_url')
+          .eq('id', id)
+          .maybeSingle();
+      final legacyUrl = (oldEdition?['delivery_photo_url'] ?? '').toString();
+      if (legacyUrl.isNotEmpty) previousImageUrls.add(legacyUrl);
+    }
     if (id == null) {
       payload['created_by'] = _client.auth.currentUser?.id;
       final created = await _client
@@ -286,6 +336,37 @@ class AwardsService {
           },
       ]);
     }
+    await _client
+        .from('award_images')
+        .delete()
+        .eq('award_edition_id', editionId);
+    final normalizedImages = <String>[];
+    for (final url in imageUrls) {
+      final clean = url.trim();
+      if (clean.isNotEmpty && !normalizedImages.contains(clean)) {
+        normalizedImages.add(clean);
+      }
+    }
+    if (normalizedImages.isEmpty && deliveryPhotoUrl.trim().isNotEmpty) {
+      normalizedImages.add(deliveryPhotoUrl.trim());
+    }
+    if (normalizedImages.isNotEmpty) {
+      await _client.from('award_images').insert([
+        for (final entry in normalizedImages.indexed)
+          {
+            'organization_id': organization.id,
+            'award_edition_id': editionId,
+            'image_url': entry.$2,
+            'sort_order': entry.$1,
+            'is_cover': entry.$1 == 0,
+            'created_by': _client.auth.currentUser?.id,
+          },
+      ]);
+    }
+    final retained = normalizedImages.toSet();
+    for (final removedUrl in previousImageUrls.difference(retained)) {
+      await _removeImageUrlIfUnused(removedUrl);
+    }
   }
 
   Future<void> deleteEdition(String id) async {
@@ -294,8 +375,43 @@ class AwardsService {
         .select('delivery_photo_url')
         .eq('id', id)
         .maybeSingle();
+    final imageRows = await _client
+        .from('award_images')
+        .select('image_url')
+        .eq('award_edition_id', id);
     await _client.from('award_editions').delete().eq('id', id);
-    await _removeImageUrl((edition?['delivery_photo_url'] ?? '').toString());
+    final urls = {
+      (edition?['delivery_photo_url'] ?? '').toString(),
+      ...List<Map<String, dynamic>>.from(imageRows as List)
+          .map((row) => (row['image_url'] ?? '').toString()),
+    };
+    for (final url in urls) {
+      await _removeImageUrlIfUnused(url);
+    }
+  }
+
+  Future<void> _removeImageUrlIfUnused(String url) async {
+    final cleanUrl = url.trim();
+    if (cleanUrl.isEmpty) return;
+    final definitionReferences = await _client
+        .from('award_definitions')
+        .select('id')
+        .eq('cover_image_url', cleanUrl)
+        .limit(1);
+    if ((definitionReferences as List).isNotEmpty) return;
+    final editionReferences = await _client
+        .from('award_editions')
+        .select('id')
+        .eq('delivery_photo_url', cleanUrl)
+        .limit(1);
+    if ((editionReferences as List).isNotEmpty) return;
+    final galleryReferences = await _client
+        .from('award_images')
+        .select('id')
+        .eq('image_url', cleanUrl)
+        .limit(1);
+    if ((galleryReferences as List).isNotEmpty) return;
+    await _removeImageUrl(cleanUrl);
   }
 
   Future<void> _removeImageUrl(String url) async {

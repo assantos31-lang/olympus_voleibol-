@@ -9,6 +9,7 @@ void main() {
         'award_definitions',
         'award_editions',
         'award_winners',
+        'award_images',
       ],
     );
   });

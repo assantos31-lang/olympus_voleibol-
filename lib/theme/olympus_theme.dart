@@ -30,6 +30,7 @@ class OlympusBranding {
     this.backgroundHex = '#F4F7FB',
     this.surfaceHex = '#FFFDF8',
     this.textHex = '#172338',
+    this.fieldTitleHex = '#FFFFFF',
     this.logoUrl = '',
     this.backgroundImageUrl = '',
     this.backgroundAsset = 'assets/images/monte_olimpo_v2.png',
@@ -44,6 +45,7 @@ class OlympusBranding {
   final String backgroundHex;
   final String surfaceHex;
   final String textHex;
+  final String fieldTitleHex;
   final String logoUrl;
   final String backgroundImageUrl;
   final String backgroundAsset;
@@ -58,6 +60,8 @@ class OlympusBranding {
       colorFromHex(backgroundHex, const Color(0xFFF4F7FB));
   Color get surfaceColor => colorFromHex(surfaceHex, const Color(0xFFFFFDF8));
   Color get textColor => colorFromHex(textHex, const Color(0xFF172338));
+  Color get fieldTitleColor =>
+      colorFromHex(fieldTitleHex, const Color(0xFFFFFFFF));
 
   /// Cor usada pelos cards de destaque das telas com fundo institucional.
   /// Tons claros recebem parte da cor principal para preservar contraste,
@@ -93,6 +97,7 @@ class OlympusBranding {
       backgroundHex: (map['background_color'] ?? '#F4F7FB').toString(),
       surfaceHex: (map['surface_color'] ?? '#FFFDF8').toString(),
       textHex: (map['text_color'] ?? '#172338').toString(),
+      fieldTitleHex: (map['field_title_color'] ?? '#FFFFFF').toString(),
       logoUrl: (map['logo_url'] ?? '').toString().trim(),
       backgroundImageUrl: (map['background_image_url'] ?? '').toString().trim(),
       backgroundAsset:
@@ -116,6 +121,7 @@ class OlympusBranding {
         'background_color': backgroundHex,
         'surface_color': surfaceHex,
         'text_color': textHex,
+        'field_title_color': fieldTitleHex,
         'logo_url': logoUrl,
         'background_image_url': backgroundImageUrl,
         'background_asset': backgroundAsset,
@@ -131,6 +137,7 @@ class OlympusBranding {
     String? backgroundHex,
     String? surfaceHex,
     String? textHex,
+    String? fieldTitleHex,
     String? logoUrl,
     String? backgroundImageUrl,
     String? backgroundAsset,
@@ -145,6 +152,7 @@ class OlympusBranding {
       backgroundHex: backgroundHex ?? this.backgroundHex,
       surfaceHex: surfaceHex ?? this.surfaceHex,
       textHex: textHex ?? this.textHex,
+      fieldTitleHex: fieldTitleHex ?? this.fieldTitleHex,
       logoUrl: logoUrl ?? this.logoUrl,
       backgroundImageUrl: backgroundImageUrl ?? this.backgroundImageUrl,
       backgroundAsset: backgroundAsset ?? this.backgroundAsset,

@@ -115,6 +115,7 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
   late final TextEditingController _backgroundController;
   late final TextEditingController _surfaceController;
   late final TextEditingController _textController;
+  late final TextEditingController _fieldTitleController;
   late final TextEditingController _logoController;
   late final TextEditingController _backgroundImageController;
   bool _saving = false;
@@ -133,6 +134,7 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
     _backgroundController = TextEditingController(text: _draft.backgroundHex);
     _surfaceController = TextEditingController(text: _draft.surfaceHex);
     _textController = TextEditingController(text: _draft.textHex);
+    _fieldTitleController = TextEditingController(text: _draft.fieldTitleHex);
     _logoController = TextEditingController(text: _draft.logoUrl);
     _backgroundImageController = TextEditingController(
       text: _draft.backgroundImageUrl,
@@ -150,6 +152,7 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
     _backgroundController.dispose();
     _surfaceController.dispose();
     _textController.dispose();
+    _fieldTitleController.dispose();
     _logoController.dispose();
     _backgroundImageController.dispose();
     super.dispose();
@@ -171,6 +174,7 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
       _backgroundController.text,
       _surfaceController.text,
       _textController.text,
+      _fieldTitleController.text,
     ];
     if (values.any((value) => !_isValidHex(value))) {
       _showSnack('Use cores no formato #RRGGBB.');
@@ -186,6 +190,7 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
         backgroundHex: _backgroundController.text.toUpperCase(),
         surfaceHex: _surfaceController.text.toUpperCase(),
         textHex: _textController.text.toUpperCase(),
+        fieldTitleHex: _fieldTitleController.text.toUpperCase(),
         logoUrl: _logoController.text.trim(),
         backgroundImageUrl: _backgroundImageController.text.trim(),
       ),
@@ -297,7 +302,10 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
     if (!_isValidHex(_primaryController.text) ||
         !_isValidHex(_secondaryController.text) ||
         !_isValidHex(_backgroundController.text) ||
-        !_isValidHex(_surfaceController.text)) return;
+        !_isValidHex(_surfaceController.text)) {
+      return;
+    }
+    if (!_isValidHex(_fieldTitleController.text)) return;
 
     setState(() => _saving = true);
     try {
@@ -327,6 +335,7 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
     _backgroundController.text = defaults.backgroundHex;
     _surfaceController.text = defaults.surfaceHex;
     _textController.text = defaults.textHex;
+    _fieldTitleController.text = defaults.fieldTitleHex;
     _logoController.text = defaults.logoUrl;
     _backgroundImageController.text = defaults.backgroundImageUrl;
     _updateDraft(defaults);
@@ -472,6 +481,19 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
                     },
                   ),
                   const SizedBox(height: 16),
+                  _colorSelector(
+                    title: 'Títulos sobre o fundo',
+                    subtitle:
+                        'Usada nos títulos posicionados acima dos cartões.',
+                    colors: _textPresets,
+                    selected: _draft.fieldTitleColor,
+                    onSelected: (color) {
+                      final hex = OlympusBranding.colorToHex(color);
+                      _fieldTitleController.text = hex;
+                      _updateDraft(_draft.copyWith(fieldTitleHex: hex));
+                    },
+                  ),
+                  const SizedBox(height: 16),
                   Row(
                     children: [
                       Expanded(
@@ -485,6 +507,8 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
                   ),
                   const SizedBox(height: 10),
                   _hexField(_textController, 'Textos'),
+                  const SizedBox(height: 10),
+                  _hexField(_fieldTitleController, 'Títulos sobre o fundo'),
                   const SizedBox(height: 10),
                   Row(
                     children: [
@@ -713,6 +737,18 @@ class _AdminBrandingPageState extends State<AdminBrandingPage> {
                 ),
                 Icon(Icons.notifications_rounded, color: _draft.secondaryColor),
               ],
+            ),
+          ),
+          Container(
+            width: double.infinity,
+            color: _draft.backgroundColor,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+            child: Text(
+              'Título acima do cartão',
+              style: TextStyle(
+                color: _draft.fieldTitleColor,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
           Padding(
