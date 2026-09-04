@@ -258,6 +258,22 @@ class _AwardsPageState extends State<AwardsPage> {
           initialYear: _selectedYear,
           initialMonth: _selectedMonth,
           uploadImage: () => _pickAndUploadImage('deliveries'),
+          createAward: () async {
+            final created = await Navigator.push<_AwardDefinitionFormResult>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AwardDefinitionFormPage(
+                  initialYear: _selectedYear,
+                  initialMonth: _selectedMonth,
+                  uploadImage: () => _pickAndUploadImage('covers'),
+                ),
+              ),
+            );
+            if (created == null) return false;
+            _selectedYear = created.year;
+            _selectedMonth = created.month;
+            return true;
+          },
         ),
       ),
     );
@@ -524,7 +540,7 @@ class _AwardsPageState extends State<AwardsPage> {
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                   subtitle: Text(
-                    '${awardSourceLabel(item.sourceType)} • ${item.winnerCount} vencedor(es)',
+                    '${item.sourceLabel} • ${item.winnerCount} vencedor(es)',
                   ),
                   trailing: PopupMenuButton<String>(
                     onSelected: (action) async {
@@ -625,7 +641,7 @@ class _AwardsPageState extends State<AwardsPage> {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              awardSourceLabel(item.definition.sourceType),
+                              item.definition.sourceLabel,
                               style: TextStyle(
                                 color: branding.primaryColor,
                                 fontWeight: FontWeight.w700,
@@ -921,6 +937,7 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
   final AwardsService _service = AwardsService();
   late final TextEditingController _title;
   late final TextEditingController _description;
+  late final TextEditingController _customSourceLabel;
   late String _sourceType;
   late int _winnerCount;
   late int _year;
@@ -940,6 +957,8 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
     final item = widget.definition;
     _title = TextEditingController(text: item?.title ?? '');
     _description = TextEditingController(text: item?.description ?? '');
+    _customSourceLabel =
+        TextEditingController(text: item?.customSourceLabel ?? '');
     _sourceType = item?.sourceType ?? 'manual';
     _winnerCount = item?.winnerCount ?? 1;
     _year = widget.initialYear;
@@ -981,6 +1000,7 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
   void dispose() {
     _title.dispose();
     _description.dispose();
+    _customSourceLabel.dispose();
     super.dispose();
   }
 
@@ -1015,6 +1035,7 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
         title: _title.text,
         description: _description.text,
         sourceType: _sourceType,
+        customSourceLabel: _customSourceLabel.text,
         winnerCount: _winnerCount,
         isVisible: _visible,
         coverImageUrl: _coverUrl,
@@ -1226,6 +1247,32 @@ class _AwardDefinitionFormPageState extends State<AwardDefinitionFormPage> {
                     .toList(),
                 onChanged: (value) => setState(() => _sourceType = value!),
               ),
+              if (_sourceType == 'manual') ...[
+                const SizedBox(height: 12),
+                _AwardFieldLabel(
+                  text: 'Tipo de prêmio',
+                  color: branding.secondaryColor,
+                ),
+                const SizedBox(height: 6),
+                TextFormField(
+                  key: const Key('award-custom-source-label'),
+                  controller: _customSourceLabel,
+                  style: TextStyle(color: branding.textColor),
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    hintText: 'Ex.: Melhor saque ou Espírito de equipe',
+                  ),
+                  validator: (value) {
+                    if (_sourceType != 'manual') return null;
+                    final text = (value ?? '').trim();
+                    if (text.length < 2) return 'Informe o tipo de prêmio.';
+                    if (text.length > 100) {
+                      return 'Use no máximo 100 caracteres.';
+                    }
+                    return null;
+                  },
+                ),
+              ],
               const SizedBox(height: 12),
               _WinnerCountSelector(
                 value: _winnerCount,
@@ -1382,34 +1429,26 @@ class _InlineWinnerPicker extends StatelessWidget {
   final bool loading;
   final ValueChanged<List<Map<String, dynamic>>> onChanged;
 
-  bool _isSelected(Map<String, dynamic> profile) => selected.any(
-        (item) => item['id'].toString() == profile['id'].toString(),
-      );
-
-  void _toggle(
-    BuildContext context,
-    Map<String, dynamic> profile,
-    bool checked,
-  ) {
+  void _select(int index, String? profileId) {
+    if (profileId == null) return;
+    final ordered = sortAwardProfilesAlphabetically([
+      ...profiles,
+      ...selected.where(
+        (current) => !profiles.any(
+          (profile) => profile['id'].toString() == current['id'].toString(),
+        ),
+      ),
+    ]);
+    final profile = ordered.firstWhere(
+      (item) => item['id'].toString() == profileId,
+    );
     final updated =
         selected.map((item) => Map<String, dynamic>.from(item)).toList();
-    final id = profile['id'].toString();
-    if (!checked) {
-      updated.removeWhere((item) => item['id'].toString() == id);
-      onChanged(updated);
-      return;
+    if (index < updated.length) {
+      updated[index] = Map<String, dynamic>.from(profile);
+    } else {
+      updated.add(Map<String, dynamic>.from(profile));
     }
-    if (limit == 1) {
-      onChanged([Map<String, dynamic>.from(profile)]);
-      return;
-    }
-    if (updated.length >= limit) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Escolha no máximo $limit atletas.')),
-      );
-      return;
-    }
-    updated.add(Map<String, dynamic>.from(profile));
     onChanged(updated);
   }
 
@@ -1422,24 +1461,21 @@ class _InlineWinnerPicker extends StatelessWidget {
       margin: EdgeInsets.zero,
       color: branding.surfaceColor,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                limit == 1
-                    ? 'Escolha o atleta vencedor'
-                    : 'Escolha até $limit atletas vencedores',
-                style: TextStyle(
-                  color: branding.textColor,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                ),
+            Text(
+              limit == 1
+                  ? 'Escolha o atleta vencedor'
+                  : 'Escolha os $limit atletas vencedores',
+              style: TextStyle(
+                color: branding.textColor,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 10),
             if (loading)
               const Padding(
                 padding: EdgeInsets.all(18),
@@ -1454,22 +1490,56 @@ class _InlineWinnerPicker extends StatelessWidget {
                 ),
               )
             else
-              ...ordered.map(
-                (profile) => CheckboxListTile(
-                  key: Key('award-winner-${profile['id']}'),
-                  value: _isSelected(profile),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: Text(
-                    (profile['full_name'] ?? '').toString(),
+              ...List.generate(limit, (index) {
+                final current =
+                    index < selected.length ? selected[index] : null;
+                final currentId = current?['id']?.toString() ?? '';
+                final selectedElsewhere = selected.indexed
+                    .where((entry) => entry.$1 != index)
+                    .map((entry) => entry.$2['id'].toString())
+                    .toSet();
+                final available = ordered
+                    .where((profile) =>
+                        !selectedElsewhere.contains(profile['id'].toString()))
+                    .toList();
+                if (current != null &&
+                    !available.any(
+                      (profile) => profile['id'].toString() == currentId,
+                    )) {
+                  available.add(current);
+                }
+                return Padding(
+                  padding: EdgeInsets.only(top: index == 0 ? 0 : 10),
+                  child: DropdownButtonFormField<String>(
+                    key: Key('award-winner-slot-$index-$currentId'),
+                    initialValue: currentId.isEmpty ? null : currentId,
+                    isExpanded: true,
+                    menuMaxHeight: 360,
+                    dropdownColor: branding.surfaceColor,
                     style: TextStyle(
                       color: branding.textColor,
                       fontWeight: FontWeight.w700,
                     ),
+                    decoration: InputDecoration(
+                      labelText:
+                          limit == 1 ? 'Atleta' : '${index + 1}º vencedor',
+                      hintText: 'Selecione um atleta',
+                    ),
+                    items: available
+                        .map(
+                          (profile) => DropdownMenuItem<String>(
+                            value: profile['id'].toString(),
+                            child: Text(
+                              (profile['full_name'] ?? '').toString(),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) => _select(index, value),
                   ),
-                  onChanged: (value) =>
-                      _toggle(context, profile, value == true),
-                ),
-              ),
+                );
+              }),
           ],
         ),
       ),
@@ -1518,6 +1588,8 @@ class AwardEditionFormPage extends StatefulWidget {
     required this.initialYear,
     required this.initialMonth,
     required this.uploadImage,
+    this.loadProfiles,
+    this.createAward,
     this.initialDefinition,
     this.edition,
   });
@@ -1528,6 +1600,8 @@ class AwardEditionFormPage extends StatefulWidget {
   final int initialYear;
   final int initialMonth;
   final Future<String?> Function() uploadImage;
+  final Future<List<Map<String, dynamic>>> Function()? loadProfiles;
+  final Future<bool> Function()? createAward;
 
   @override
   State<AwardEditionFormPage> createState() => _AwardEditionFormPageState();
@@ -1543,7 +1617,6 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
   late DateTime? _deliveryDate;
   late String _photoUrl;
   late bool _published;
-  late bool _visible;
   bool _loadingProfiles = true;
   bool _saving = false;
   bool _uploading = false;
@@ -1563,14 +1636,15 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
     _caption = TextEditingController(text: edition?.caption ?? '');
     _deliveryDate = edition?.deliveryDate;
     _photoUrl = edition?.deliveryPhotoUrl ?? '';
-    _published = edition?.isPublished ?? true;
-    _visible = edition?.isVisible ?? true;
+    _published = edition == null || (edition.isPublished && edition.isVisible);
     _loadProfiles();
   }
 
   Future<void> _loadProfiles() async {
     try {
-      final profiles = await _service.loadEligibleProfiles();
+      final profiles = widget.loadProfiles == null
+          ? await _service.loadEligibleProfiles()
+          : await widget.loadProfiles!();
       for (final winner in widget.edition?.winners ?? const <AwardWinner>[]) {
         final match =
             profiles.where((p) => p['id'].toString() == winner.profileId);
@@ -1660,7 +1734,7 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
         deliveryDate: _deliveryDate,
         deliveryPhotoUrl: _photoUrl,
         isPublished: _published,
-        isVisible: _visible,
+        isVisible: _published,
         winners: _selected,
       );
       if (mounted) Navigator.pop(context, true);
@@ -1682,6 +1756,17 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
   Widget build(BuildContext context) {
     final months = DateFormat.MMMM('pt_BR').dateSymbols.MONTHS;
     final branding = OlympusBrandingController.instance.branding;
+    final fieldTitleColor = branding.secondaryColor;
+    const createAwardId = '__create_award__';
+    const createAwardOption = AwardDefinition(
+      id: createAwardId,
+      title: '＋ Criar nova premiação',
+      description: '',
+      sourceType: 'manual',
+      winnerCount: 1,
+      isVisible: true,
+      sortOrder: -1,
+    );
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.edition == null ? 'Nova entrega' : 'Editar entrega'),
@@ -1691,30 +1776,53 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _AwardFieldLabel(text: 'Premiação', color: branding.textColor),
+            _AwardFieldLabel(text: 'Premiação', color: fieldTitleColor),
             const SizedBox(height: 6),
             DropdownButtonFormField<AwardDefinition>(
+              key: const Key('award-edition-definition'),
               initialValue: _definition,
               dropdownColor: branding.surfaceColor,
               style: TextStyle(color: branding.textColor),
               decoration: const InputDecoration(),
-              items: widget.definitions
-                  .map((item) => DropdownMenuItem(
+              items: [
+                if (widget.edition == null && widget.createAward != null)
+                  createAwardOption,
+                ...widget.definitions,
+              ]
+                  .map((item) => DropdownMenuItem<AwardDefinition>(
                         value: item,
-                        child: Text(item.title),
+                        child: Text(
+                          item.title,
+                          style: item.id == createAwardId
+                              ? TextStyle(
+                                  color: branding.secondaryColor,
+                                  fontWeight: FontWeight.w900,
+                                )
+                              : null,
+                        ),
                       ))
                   .toList(),
               onChanged: widget.edition != null
                   ? null
-                  : (value) => setState(() {
-                        _definition = value!;
+                  : (value) async {
+                      if (value == null) return;
+                      if (value.id == createAwardId) {
+                        final created = await widget.createAward!.call();
+                        if (created && context.mounted) {
+                          Navigator.pop(context, true);
+                        }
+                        return;
+                      }
+                      setState(() {
+                        _definition = value;
                         if (_selected.length > value.winnerCount) {
                           _selected.removeRange(
                             value.winnerCount,
                             _selected.length,
                           );
                         }
-                      }),
+                      });
+                    },
             ),
             const SizedBox(height: 12),
             Row(
@@ -1723,7 +1831,7 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _AwardFieldLabel(text: 'Mês', color: branding.textColor),
+                      _AwardFieldLabel(text: 'Mês', color: fieldTitleColor),
                       const SizedBox(height: 6),
                       DropdownButtonFormField<int>(
                         initialValue: _month,
@@ -1747,7 +1855,7 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _AwardFieldLabel(text: 'Ano', color: branding.textColor),
+                      _AwardFieldLabel(text: 'Ano', color: fieldTitleColor),
                       const SizedBox(height: 6),
                       DropdownButtonFormField<int>(
                         initialValue: _year,
@@ -1810,19 +1918,6 @@ class _AwardEditionFormPageState extends State<AwardEditionFormPage> {
                   : DateFormat('dd/MM/yyyy').format(_deliveryDate!)),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: _pickDate,
-            ),
-            const SizedBox(height: 8),
-            Card(
-              margin: EdgeInsets.zero,
-              color: branding.surfaceColor,
-              child: SwitchListTile(
-                value: _visible,
-                onChanged: (value) => setState(() => _visible = value),
-                title: Text(
-                  'Mostrar esta entrega',
-                  style: TextStyle(color: branding.textColor),
-                ),
-              ),
             ),
             const SizedBox(height: 8),
             Card(

@@ -154,6 +154,7 @@ class AwardsService {
     required String title,
     required String description,
     required String sourceType,
+    required String customSourceLabel,
     required int winnerCount,
     required bool isVisible,
     String coverImageUrl = '',
@@ -166,6 +167,8 @@ class AwardsService {
       'title': title.trim(),
       'description': description.trim(),
       'source_type': sourceType,
+      'custom_source_label':
+          sourceType == 'manual' ? customSourceLabel.trim() : '',
       'winner_count': winnerCount,
       'is_visible': isVisible,
       'cover_image_url': coverImageUrl.trim().isEmpty ? null : coverImageUrl,

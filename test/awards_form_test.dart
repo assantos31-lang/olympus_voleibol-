@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:olympus_voleibol/models/award_models.dart';
 import 'package:olympus_voleibol/pages/awards_page.dart';
+import 'package:olympus_voleibol/theme/olympus_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -51,11 +53,25 @@ void main() {
     );
     expect(titleField.decoration?.labelText, isNull);
     expect(descriptionField.decoration?.labelText, isNull);
+    expect(find.text('Tipo de prêmio'), findsOneWidget);
+    expect(find.byKey(const Key('award-custom-source-label')), findsOneWidget);
+
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('award-inline-winner-picker')), findsOneWidget);
+    expect(find.byKey(const Key('award-winner-slot-0-')), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const Key('award-winner-slot-0-')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('award-winner-slot-0-')));
+    await tester.pumpAndSettle();
     expect(
-      tester.getTopLeft(find.text('Amanda')).dy,
-      lessThan(tester.getTopLeft(find.text('Bruna')).dy),
+      tester.getTopLeft(find.text('Amanda').last).dy,
+      lessThan(tester.getTopLeft(find.text('Bruna').last).dy),
     );
+    await tester.tap(find.text('Amanda').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('award-winner-slot-0-1')), findsOneWidget);
 
     Text count = tester.widget(
       find.byKey(const Key('award-winner-count-value')),
@@ -69,6 +85,52 @@ void main() {
       find.byKey(const Key('award-winner-count-value')),
     );
     expect(count.data, '2');
+  });
+
+  testWidgets('entrega usa apenas o controle publicar no mural',
+      (tester) async {
+    const definition = AwardDefinition(
+      id: 'award-1',
+      title: 'Ranking do mês',
+      description: '',
+      sourceType: 'manual',
+      winnerCount: 1,
+      isVisible: true,
+      sortOrder: 0,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AwardEditionFormPage(
+          definitions: const [definition],
+          initialDefinition: definition,
+          initialYear: 2026,
+          initialMonth: 9,
+          uploadImage: () async => null,
+          createAward: () async => true,
+          loadProfiles: () async => const [
+            {'id': '1', 'full_name': 'Amanda'},
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final title = tester.widget<Text>(find.text('Premiação'));
+    expect(
+      title.style?.color,
+      OlympusBrandingController.instance.branding.secondaryColor,
+    );
+    await tester.tap(find.byKey(const Key('award-edition-definition')));
+    await tester.pumpAndSettle();
+    expect(find.text('＋ Criar nova premiação').last, findsOneWidget);
+    await tester.tap(find.text('Ranking do mês').last);
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, -1100));
+    await tester.pumpAndSettle();
+    expect(find.text('Mostrar esta entrega'), findsNothing);
+    expect(find.widgetWithText(SwitchListTile, 'Publicar no mural'),
+        findsOneWidget);
+    expect(find.byKey(const Key('award-winner-slot-0-')), findsOneWidget);
   });
 
   testWidgets('controle de visibilidade permanece dentro de cartão',

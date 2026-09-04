@@ -15,6 +15,21 @@ void main() {
       expect(awardSourceLabel('manual'), 'Escolha manual');
     });
 
+    test('uses the custom prize type for manual awards', () {
+      final definition = AwardDefinition.fromMap({
+        'id': 'award-1',
+        'title': 'Destaque do mês',
+        'description': '',
+        'source_type': 'manual',
+        'custom_source_label': 'Melhor saque',
+        'winner_count': 1,
+        'is_visible': true,
+        'sort_order': 0,
+      });
+
+      expect(definition.sourceLabel, 'Melhor saque');
+    });
+
     test('parses definition limits and visibility', () {
       final definition = AwardDefinition.fromMap({
         'id': 'award-1',

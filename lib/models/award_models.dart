@@ -8,6 +8,7 @@ class AwardDefinition {
     required this.isVisible,
     required this.sortOrder,
     this.coverImageUrl = '',
+    this.customSourceLabel = '',
   });
 
   final String id;
@@ -18,6 +19,12 @@ class AwardDefinition {
   final bool isVisible;
   final int sortOrder;
   final String coverImageUrl;
+  final String customSourceLabel;
+
+  String get sourceLabel =>
+      sourceType == 'manual' && customSourceLabel.trim().isNotEmpty
+          ? customSourceLabel.trim()
+          : awardSourceLabel(sourceType);
 
   factory AwardDefinition.fromMap(Map<String, dynamic> map) => AwardDefinition(
         id: (map['id'] ?? '').toString(),
@@ -28,6 +35,7 @@ class AwardDefinition {
         isVisible: map['is_visible'] != false,
         sortOrder: (map['sort_order'] as num?)?.toInt() ?? 0,
         coverImageUrl: (map['cover_image_url'] ?? '').toString(),
+        customSourceLabel: (map['custom_source_label'] ?? '').toString(),
       );
 }
 
