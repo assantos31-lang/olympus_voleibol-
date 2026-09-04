@@ -1486,10 +1486,6 @@ event_time
   }
 
   Widget _buildGenderRankingCard() {
-    if (_genderRanking.isEmpty && _monthlyHistory.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
     final userId = supabase.auth.currentUser?.id;
     final currentUserInTop = _genderRanking.any(
       (athlete) => (athlete['id'] ?? '').toString() == userId,
@@ -1584,6 +1580,26 @@ event_time
           if (_isRankingRulesExpanded) ...[
             const SizedBox(height: 8),
             _buildRankingRulesCard(),
+          ],
+          if (_isRankingExpanded && _genderRanking.isEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: olympusBlue.withOpacity(0.04),
+                border: Border.all(color: olympusBlue.withOpacity(0.08)),
+              ),
+              child: Text(
+                'Nenhum check-in válido encontrado para o mês atual.',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: olympusBlue.withOpacity(0.78),
+                ),
+              ),
+            ),
           ],
           if (_isRankingExpanded && _genderRanking.isNotEmpty) ...[
             const SizedBox(height: 8),
