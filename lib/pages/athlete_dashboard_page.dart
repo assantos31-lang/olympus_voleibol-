@@ -1073,6 +1073,12 @@ event_time
     return '$totalPoints pts • $presenceCount treinos • $firstCheckinsLabel';
   }
 
+  String _getRankingCheckInTime(Map<String, dynamic> athlete) {
+    final checkedInAt = _parseCheckInDateTime(athlete['earliest_checkin_at']);
+    if (checkedInAt == null) return '';
+    return DateFormat('HH:mm').format(checkedInAt);
+  }
+
   Future<void> _loadGenderRanking(Map<String, dynamic>? profile) async {
     try {
       final user = supabase.auth.currentUser;
@@ -1096,7 +1102,7 @@ event_time
       final previousYear = now.month == 1 ? now.year - 1 : now.year;
 
       final response = await supabase.rpc(
-        'get_monthly_gender_ranking_v2',
+        'get_monthly_gender_ranking_v3',
         params: {
           'p_gender': gender,
           'p_reference_month': now.month,
@@ -1151,6 +1157,7 @@ event_time
     final position = ((athlete['ranking_position'] ?? 0) as num).toInt();
     final avatarUrl = (athlete['avatar_url'] ?? '').toString().trim();
     final firstName = (athlete['first_name'] ?? 'Atleta').toString();
+    final checkInTime = _getRankingCheckInTime(athlete);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1228,6 +1235,17 @@ event_time
                   height: 1.2,
                 ),
               ),
+              if (checkInTime.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  'Check-in: $checkInTime',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: olympusBlue.withOpacity(0.68),
+                  ),
+                ),
+              ],
               const SizedBox(height: 3),
               Text(
                 _getRankingMovementLabel(athlete['movement']),
@@ -1911,7 +1929,17 @@ event_time
           ),
           const SizedBox(height: 6),
           Text(
-            '• O ranking ordena por pontos, depois por treinos válidos, depois por chegadas em 1º e por fim por nome.',
+            '• O Ranking do Mês é ordenado prioritariamente pela pontuação acumulada. Em caso de empate na pontuação, fica à frente o atleta que realizou o check-in primeiro.',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: olympusBlue.withOpacity(0.78),
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '• Em empate absoluto de pontuação e horário, o ID do atleta garante uma ordem estável.',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,

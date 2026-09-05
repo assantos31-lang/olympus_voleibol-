@@ -51,7 +51,7 @@ void main() {
     );
     expect(
       find.text(
-        '• O ranking ordena por pontos, depois por treinos válidos, depois por chegadas em 1º e por fim por nome.',
+        '• O Ranking do Mês é ordenado prioritariamente pela pontuação acumulada. Em caso de empate na pontuação, fica à frente o atleta que realizou o check-in primeiro.',
       ),
       findsOneWidget,
     );
@@ -82,6 +82,7 @@ void main() {
               'total_points': 8,
               'presence_count': 4,
               'first_checkins': 1,
+              'earliest_checkin_at': '2026-09-02T18:10:00',
             },
             {
               'id': '1',
@@ -89,6 +90,7 @@ void main() {
               'total_points': 10,
               'presence_count': 5,
               'first_checkins': 2,
+              'earliest_checkin_at': '2026-09-02T18:05:00',
             },
           ],
         ),
@@ -110,6 +112,8 @@ void main() {
     expect(
         find.text('10 pts • 5 treinos • 2 primeiras chegadas'), findsOneWidget);
     expect(find.text('8 pts • 4 treinos • 1 primeira chegada'), findsOneWidget);
+    expect(find.text('Check-in: 18:05'), findsOneWidget);
+    expect(find.text('Check-in: 18:10'), findsOneWidget);
 
     await tester.ensureVisible(rankingCard);
     await tester.pump();

@@ -9,6 +9,7 @@ import '../pages/add_event_page.dart';
 import '../services/permission_service.dart'; // ✅ NOVO
 import '../services/role_service.dart';
 import '../utils/event_rows_paginator.dart';
+import '../utils/manual_checkin.dart';
 import '../services/olympus_memory_cache.dart';
 import '../theme/olympus_theme.dart';
 import '../widgets/event_address_link.dart';
@@ -181,6 +182,10 @@ class _AgendaPageState extends State<AgendaPage> {
         role != 'treinador' &&
         role != 'tecnico' &&
         role != 'técnico';
+  }
+
+  bool _isCompletedCheckin(dynamic value) {
+    return isCompletedCheckin(value);
   }
 
   @override
@@ -441,10 +446,11 @@ class _AgendaPageState extends State<AgendaPage> {
         }
         final checkins = await _fetchRowsByEventIds(
           table: 'checkins',
-          columns: 'id, event_id, user_id',
+          columns: 'id, event_id, user_id, check_in_status',
           eventIds: eventIds,
         );
         for (final row in checkins) {
+          if (!_isCompletedCheckin(row['check_in_status'])) continue;
           final eventId = (row['event_id'] ?? '').toString();
           final userId = (row['user_id'] ?? '').toString();
           if (!(acceptedAthletesByEvent[eventId] ?? const <String>{})
@@ -2066,16 +2072,12 @@ class _AgendaPageState extends State<AgendaPage> {
       // ✅ 2. Buscar quem REALMENTE fez check-in (tabela checkins)
       final checkinsResponse = await _supabase
           .from('checkins')
-          .select('user_id')
+          .select('user_id, check_in_status')
           .eq('event_id', eventId);
       // ✅ 3. Criar set de user_ids que fizeram check-in
-      final Set<String> userIdsComCheckin = {};
-      for (var checkin in checkinsResponse) {
-        final userId = checkin['user_id']?.toString();
-        if (userId != null) {
-          userIdsComCheckin.add(userId);
-        }
-      }
+      final userIdsComCheckin = completedCheckinUserIds(
+        List<Map<String, dynamic>>.from(checkinsResponse),
+      );
       List<Map<String, dynamic>> quemFezCheckin = [];
       List<Map<String, dynamic>> quemNaoFezCheckin = [];
       // ✅ 4. Separar quem fez e quem não fez check-in
@@ -3090,13 +3092,12 @@ class _AgendaPageState extends State<AgendaPage> {
 
       final checkinsResponse = await _supabase
           .from('checkins')
-          .select('user_id')
+          .select('user_id, check_in_status')
           .eq('event_id', eventId);
 
-      final Set<String> userIdsComCheckin = checkinsResponse
-          .map<String>((row) => row['user_id']?.toString() ?? '')
-          .where((id) => id.isNotEmpty)
-          .toSet();
+      final userIdsComCheckin = completedCheckinUserIds(
+        List<Map<String, dynamic>>.from(checkinsResponse),
+      );
 
       final participantesSemCheckin = <Map<String, dynamic>>[];
 
@@ -3714,18 +3715,15 @@ class _AgendaPageState extends State<AgendaPage> {
                                       });
 
                                       try {
-                                        await _supabase
-                                            .from('checkins')
-                                            .upsert({
-                                          'event_id': eventId,
-                                          'user_id': selectedUserId,
-                                          // IMPORTANTE: a tela de Estatísticas só considera presença
-                                          // quando check_in_status tem um valor reconhecido como realizado.
-                                          'check_in_status': 'realizado',
-                                          // Horário histórico escolhido pelo admin.
-                                          'created_at': selectedDateTime
-                                              .toIso8601String(),
-                                        }, onConflict: 'event_id,user_id');
+                                        await _supabase.from('checkins').upsert(
+                                              buildManualCheckinPayload(
+                                                eventId: eventId,
+                                                userId: selectedUserId!,
+                                                effectiveCheckInAt:
+                                                    selectedDateTime,
+                                              ),
+                                              onConflict: 'event_id,user_id',
+                                            );
 
                                         if (mounted) {
                                           Navigator.pop(dialogContext);

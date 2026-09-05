@@ -2,147 +2,88 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:olympus_voleibol/utils/checkin_ranking.dart';
 
 void main() {
-  final start = DateTime(2026, 9, 2, 20, 30);
+  final start = DateTime(2026, 9, 5, 19);
 
-  test('aplica janela, pontuacao e bonus do primeiro check-in', () {
+  test('mantem a formula atual, a janela e o bonus do primeiro check-in', () {
     final scores = calculateCheckinRankingScores(
       eventStarts: {'t1': start},
       records: [
         CheckinRankingRecord(
-          userId: 'ana',
+          userId: 'normal',
           eventId: 't1',
-          checkedInAt: start.subtract(const Duration(minutes: 5)),
+          checkedInAt: DateTime(2026, 9, 5, 18, 55),
         ),
         CheckinRankingRecord(
-          userId: 'bia',
+          userId: 'atrasado',
           eventId: 't1',
-          checkedInAt: start.add(const Duration(minutes: 10)),
-        ),
-        CheckinRankingRecord(
-          userId: 'carla',
-          eventId: 't1',
-          checkedInAt: start.add(const Duration(minutes: 11)),
-        ),
-        CheckinRankingRecord(
-          userId: 'fora',
-          eventId: 't1',
-          checkedInAt: start.add(const Duration(minutes: 31)),
-        ),
-        CheckinRankingRecord(
-          userId: 'cedo_demais',
-          eventId: 't1',
-          checkedInAt: start.subtract(const Duration(minutes: 11)),
+          checkedInAt: DateTime(2026, 9, 5, 19, 15),
         ),
         CheckinRankingRecord(
           userId: 'limite',
           eventId: 't1',
-          checkedInAt: start.add(const Duration(minutes: 30)),
+          checkedInAt: DateTime(2026, 9, 5, 19, 30),
+        ),
+        CheckinRankingRecord(
+          userId: 'fora',
+          eventId: 't1',
+          checkedInAt: DateTime(2026, 9, 5, 19, 31),
         ),
       ],
     );
 
-    expect(scores['ana']!.totalPoints, 3);
-    expect(scores['ana']!.firstCheckins, 1);
-    expect(scores['bia']!.totalPoints, 2);
-    expect(scores['carla']!.totalPoints, 1);
+    expect(scores['normal']!.totalPoints, 3);
+    expect(scores['normal']!.firstCheckins, 1);
+    expect(scores['atrasado']!.totalPoints, 1);
     expect(scores['limite']!.totalPoints, 1);
     expect(scores.containsKey('fora'), isFalse);
-    expect(scores.containsKey('cedo_demais'), isFalse);
   });
 
-  test('desempata por pontos, treinos, primeiras chegadas e nome', () {
-    const highPoints = CheckinRankingScore(
-      totalPoints: 8,
-      presenceCount: 2,
+  test('mais pontos continuam acima mesmo com check-in posterior', () {
+    final laterWithMorePoints = CheckinRankingScore(
+      totalPoints: 100,
+      presenceCount: 1,
       firstCheckins: 0,
+      earliestCheckInAt: DateTime(2026, 9, 5, 18, 10),
     );
-    const moreTrainings = CheckinRankingScore(
-      totalPoints: 7,
-      presenceCount: 4,
+    final earlierWithFewerPoints = CheckinRankingScore(
+      totalPoints: 80,
+      presenceCount: 1,
       firstCheckins: 0,
-    );
-    const fewerTrainings = CheckinRankingScore(
-      totalPoints: 7,
-      presenceCount: 3,
-      firstCheckins: 2,
-    );
-    const moreFirsts = CheckinRankingScore(
-      totalPoints: 7,
-      presenceCount: 3,
-      firstCheckins: 3,
+      earliestCheckInAt: DateTime(2026, 9, 5, 17, 50),
     );
 
     expect(
       compareCheckinRanking(
-        a: highPoints,
-        aName: 'Zara',
-        aId: '1',
-        b: moreTrainings,
-        bName: 'Ana',
-        bId: '2',
-      ),
-      lessThan(0),
-    );
-    expect(
-      compareCheckinRanking(
-        a: moreTrainings,
-        aName: 'Zara',
-        aId: '2',
-        b: moreFirsts,
-        bName: 'Ana',
-        bId: '3',
-      ),
-      lessThan(0),
-    );
-    expect(
-      compareCheckinRanking(
-        a: moreFirsts,
-        aName: 'Zara',
-        aId: '3',
-        b: fewerTrainings,
-        bName: 'Ana',
-        bId: '4',
-      ),
-      lessThan(0),
-    );
-    expect(
-      compareCheckinRanking(
-        a: fewerTrainings,
-        aName: 'Ana',
-        aId: '4',
-        b: fewerTrainings,
-        bName: 'Zara',
-        bId: '5',
+        a: laterWithMorePoints,
+        aId: 'a',
+        b: earlierWithFewerPoints,
+        bId: 'b',
       ),
       lessThan(0),
     );
   });
 
-  test('sete atletas empatados recebem posicoes unicas pelo nome', () {
-    final scores = calculateCheckinRankingScores(
-      eventStarts: {'t1': start},
-      records: List.generate(
-        7,
-        (index) => CheckinRankingRecord(
-          userId: 'id-$index',
-          eventId: 't1',
-          checkedInAt: start.add(Duration(minutes: index + 1)),
-        ),
-      ),
+  test('mesma pontuacao desempata pelo check-in mais cedo e depois pelo id', () {
+    final earlier = CheckinRankingScore(
+      totalPoints: 100,
+      presenceCount: 1,
+      firstCheckins: 0,
+      earliestCheckInAt: DateTime(2026, 9, 5, 18, 5),
     );
-    final athletes = scores.entries.toList()
-      ..sort((a, b) => compareCheckinRanking(
-            a: a.value,
-            aName: 'Atleta ${a.key}',
-            aId: a.key,
-            b: b.value,
-            bName: 'Atleta ${b.key}',
-            bId: b.key,
-          ));
+    final later = CheckinRankingScore(
+      totalPoints: 100,
+      presenceCount: 99,
+      firstCheckins: 99,
+      earliestCheckInAt: DateTime(2026, 9, 5, 18, 10),
+    );
 
-    expect(List.generate(athletes.length, (index) => index + 1),
-        [1, 2, 3, 4, 5, 6, 7]);
     expect(
-        athletes.where((item) => item.value.firstCheckins == 1), hasLength(1));
+      compareCheckinRanking(a: earlier, aId: 'z', b: later, bId: 'a'),
+      lessThan(0),
+    );
+    expect(
+      compareCheckinRanking(a: earlier, aId: 'a', b: earlier, bId: 'b'),
+      lessThan(0),
+    );
   });
 }

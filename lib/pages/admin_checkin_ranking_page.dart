@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme/olympus_theme.dart';
 import '../utils/checkin_ranking.dart';
+import '../utils/manual_checkin.dart';
 
 class AdminCheckinRankingPage extends StatefulWidget {
   const AdminCheckinRankingPage({super.key});
@@ -26,6 +27,7 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
   bool _loading = true;
   bool _exporting = false;
   String? _error;
+  RealtimeChannel? _checkinsRealtimeChannel;
   String _gender = 'todos';
   String _period = 'mes_atual';
   late DateTime _startDate;
@@ -41,7 +43,33 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
     final now = DateTime.now();
     _startDate = DateTime(now.year, now.month);
     _endDate = DateTime(now.year, now.month + 1, 0);
-    _loadRanking();
+    _loadRanking(force: true);
+    _listenForCheckinChanges();
+  }
+
+  void _listenForCheckinChanges() {
+    if (_checkinsRealtimeChannel != null) return;
+    _checkinsRealtimeChannel = _supabase
+        .channel(
+          'admin_checkin_ranking_${_supabase.auth.currentUser?.id ?? 'guest'}',
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'checkins',
+          callback: (_) {
+            _cache.clear();
+            if (mounted) _loadRanking(force: true);
+          },
+        )
+        .subscribe();
+  }
+
+  @override
+  void dispose() {
+    final channel = _checkinsRealtimeChannel;
+    if (channel != null) _supabase.removeChannel(channel);
+    super.dispose();
   }
 
   OlympusBranding get _branding => OlympusBrandingController.instance.branding;
@@ -98,12 +126,7 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
   }
 
   DateTime? _parseCheckinTime(Map<String, dynamic> row) {
-    for (final field in const ['checked_in_at', 'created_at']) {
-      final raw = (row[field] ?? '').toString().trim();
-      final parsed = DateTime.tryParse(raw);
-      if (parsed != null) return parsed.toLocal();
-    }
-    return null;
+    return effectiveCheckInTime(row);
   }
 
   bool _isTrainingEvent(dynamic value) {
@@ -307,10 +330,8 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
       entries.sort((a, b) {
         return compareCheckinRanking(
           a: a.score,
-          aName: a.name,
           aId: a.userId,
           b: b.score,
-          bName: b.name,
           bId: b.userId,
         );
       });

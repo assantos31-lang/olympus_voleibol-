@@ -15,11 +15,13 @@ class CheckinRankingScore {
     required this.totalPoints,
     required this.presenceCount,
     required this.firstCheckins,
+    required this.earliestCheckInAt,
   });
 
   final int totalPoints;
   final int presenceCount;
   final int firstCheckins;
+  final DateTime earliestCheckInAt;
 }
 
 bool isValidCheckinForRanking(DateTime eventStart, DateTime checkedInAt) {
@@ -58,6 +60,7 @@ Map<String, CheckinRankingScore> calculateCheckinRankingScores({
   final points = <String, int>{};
   final presences = <String, int>{};
   final firsts = <String, int>{};
+  final earliestByUser = <String, DateTime>{};
 
   for (final event in earliestByEventAndUser.entries) {
     if (event.value.isEmpty) continue;
@@ -74,6 +77,10 @@ Map<String, CheckinRankingScore> calculateCheckinRankingScores({
       points.update(checkin.key, (value) => value + basePoints,
           ifAbsent: () => basePoints);
       presences.update(checkin.key, (value) => value + 1, ifAbsent: () => 1);
+      final previous = earliestByUser[checkin.key];
+      if (previous == null || checkin.value.isBefore(previous)) {
+        earliestByUser[checkin.key] = checkin.value;
+      }
     }
 
     final firstUserId = ordered.first.key;
@@ -87,24 +94,19 @@ Map<String, CheckinRankingScore> calculateCheckinRankingScores({
         totalPoints: points[userId] ?? 0,
         presenceCount: presences[userId] ?? 0,
         firstCheckins: firsts[userId] ?? 0,
+        earliestCheckInAt: earliestByUser[userId]!,
       ),
   };
 }
 
 int compareCheckinRanking({
   required CheckinRankingScore a,
-  required String aName,
   required String aId,
   required CheckinRankingScore b,
-  required String bName,
   required String bId,
 }) {
   final points = b.totalPoints.compareTo(a.totalPoints);
   if (points != 0) return points;
-  final presences = b.presenceCount.compareTo(a.presenceCount);
-  if (presences != 0) return presences;
-  final firsts = b.firstCheckins.compareTo(a.firstCheckins);
-  if (firsts != 0) return firsts;
-  final name = aName.trim().toLowerCase().compareTo(bName.trim().toLowerCase());
-  return name != 0 ? name : aId.compareTo(bId);
+  final checkIn = a.earliestCheckInAt.compareTo(b.earliestCheckInAt);
+  return checkIn != 0 ? checkIn : aId.compareTo(bId);
 }

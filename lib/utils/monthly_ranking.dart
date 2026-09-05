@@ -1,10 +1,16 @@
 int _asInt(dynamic value) => (value as num?)?.toInt() ?? 0;
 
-/// Aplica exatamente os desempates exibidos na regra do aplicativo:
-/// pontos, treinos validos, primeiras chegadas e nome.
+DateTime? _asDateTime(dynamic value) {
+  if (value == null) return null;
+  final parsed = DateTime.tryParse(value.toString().trim());
+  return parsed?.toUtc();
+}
+
+/// Ordena pela pontuacao acumulada e usa o primeiro check-in real do mes
+/// somente para desempatar atletas com a mesma pontuacao.
 ///
-/// Como o nome e o ultimo desempate, cada atleta recebe uma posicao ordinal
-/// unica. Assim, atletas empatados em pontos nao ficam todos em 1º.
+/// O id e o ultimo criterio para garantir uma ordem deterministica em empate
+/// absoluto. Cada atleta recebe uma posicao ordinal unica.
 List<Map<String, dynamic>> orderMonthlyRanking(
   Iterable<Map<String, dynamic>> rows,
 ) {
@@ -15,26 +21,17 @@ List<Map<String, dynamic>> orderMonthlyRanking(
       );
       if (points != 0) return points;
 
-      final trainings = _asInt(b['presence_count']).compareTo(
-        _asInt(a['presence_count']),
-      );
-      if (trainings != 0) return trainings;
+      final aCheckIn = _asDateTime(a['earliest_checkin_at']);
+      final bCheckIn = _asDateTime(b['earliest_checkin_at']);
+      if (aCheckIn != null && bCheckIn != null) {
+        final checkIn = aCheckIn.compareTo(bCheckIn);
+        if (checkIn != 0) return checkIn;
+      } else if (aCheckIn != null) {
+        return -1;
+      } else if (bCheckIn != null) {
+        return 1;
+      }
 
-      final firstArrivals = _asInt(b['first_checkins']).compareTo(
-        _asInt(a['first_checkins']),
-      );
-      if (firstArrivals != 0) return firstArrivals;
-
-      final aName = (a['first_name'] ?? a['full_name'] ?? '')
-          .toString()
-          .trim()
-          .toLowerCase();
-      final bName = (b['first_name'] ?? b['full_name'] ?? '')
-          .toString()
-          .trim()
-          .toLowerCase();
-      final name = aName.compareTo(bName);
-      if (name != 0) return name;
       return (a['id'] ?? '').toString().compareTo((b['id'] ?? '').toString());
     });
 
