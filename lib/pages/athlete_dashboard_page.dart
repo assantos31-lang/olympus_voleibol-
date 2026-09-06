@@ -5162,42 +5162,48 @@ event_time
                     indent: 65,
                     color: Colors.white.withOpacity(0.09),
                   ),
-                ListTile(
-                  onTap: item.onTap,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 3,
-                  ),
-                  leading: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: item.color.withOpacity(0.14),
-                      borderRadius: BorderRadius.circular(12),
+                Material(
+                  type: MaterialType.transparency,
+                  child: ListTile(
+                    onTap: item.onTap,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 3,
                     ),
-                    child: Icon(item.icon, color: item.color, size: 21),
-                  ),
-                  title: Text(
-                    item.label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13.5,
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: item.color.withOpacity(0.14),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(item.icon, color: item.color, size: 21),
                     ),
+                    title: Text(
+                      item.label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                    subtitle: Text(
+                      item.subtitle,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 11,
+                      ),
+                    ),
+                    trailing: item.badge > 0
+                        ? Badge(
+                            label: Text('${item.badge}'),
+                            backgroundColor: Colors.redAccent,
+                          )
+                        : const Icon(
+                            Icons.chevron_right_rounded,
+                            color: Colors.white38,
+                          ),
                   ),
-                  subtitle: Text(
-                    item.subtitle,
-                    style: const TextStyle(color: Colors.white54, fontSize: 11),
-                  ),
-                  trailing: item.badge > 0
-                      ? Badge(
-                          label: Text('${item.badge}'),
-                          backgroundColor: Colors.redAccent,
-                        )
-                      : const Icon(
-                          Icons.chevron_right_rounded,
-                          color: Colors.white38,
-                        ),
                 ),
               ],
             );
