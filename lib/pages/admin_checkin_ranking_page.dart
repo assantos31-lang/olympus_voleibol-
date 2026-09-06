@@ -10,7 +10,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme/olympus_theme.dart';
 import '../utils/checkin_ranking.dart';
-import '../utils/manual_checkin.dart';
 
 class AdminCheckinRankingPage extends StatefulWidget {
   const AdminCheckinRankingPage({super.key});
@@ -78,87 +77,24 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
       '${value.month.toString().padLeft(2, '0')}-'
       '${value.day.toString().padLeft(2, '0')}';
 
-  DateTime? _parseEventDate(Map<String, dynamic> event) {
-    final startAt = (event['event_start_at'] ?? '').toString().trim();
-    if (startAt.isNotEmpty) {
-      final parsed = DateTime.tryParse(startAt);
-      if (parsed != null) {
-        final local = parsed.toLocal();
-        return DateTime(local.year, local.month, local.day);
-      }
-    }
+  int _asInt(dynamic value) => value is num
+      ? value.toInt()
+      : int.tryParse((value ?? '').toString()) ?? 0;
 
-    final raw = (event['event_date'] ?? '').toString().trim();
-    if (raw.isEmpty) return null;
-    final brazilian = RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{4})$').firstMatch(raw);
-    if (brazilian != null) {
-      final day = int.tryParse(brazilian.group(1)!);
-      final month = int.tryParse(brazilian.group(2)!);
-      final year = int.tryParse(brazilian.group(3)!);
-      if (day != null && month != null && year != null) {
-        return DateTime(year, month, day);
-      }
-    }
-    final parsed = DateTime.tryParse(raw);
-    if (parsed == null) return null;
-    return DateTime(parsed.year, parsed.month, parsed.day);
+  DateTime? _parseTimestamp(dynamic value) {
+    final parsed = DateTime.tryParse((value ?? '').toString());
+    return parsed?.toLocal();
   }
 
-  DateTime? _parseEventStart(Map<String, dynamic> event) {
-    final startAt = (event['event_start_at'] ?? '').toString().trim();
-    if (startAt.isNotEmpty) {
-      final parsed = DateTime.tryParse(startAt);
-      if (parsed != null) return parsed.toLocal();
-    }
-
-    final date = _parseEventDate(event);
-    if (date == null) return null;
-    final rawTime = (event['event_time'] ?? '').toString().trim();
-    final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(rawTime);
-    if (match == null) return null;
-    return DateTime(
-      date.year,
-      date.month,
-      date.day,
-      int.parse(match.group(1)!),
-      int.parse(match.group(2)!),
-    );
-  }
-
-  DateTime? _parseCheckinTime(Map<String, dynamic> row) {
-    return effectiveCheckInTime(row);
-  }
-
-  bool _isTrainingEvent(dynamic value) {
-    final type = (value ?? '').toString().trim().toLowerCase();
-    return type.isEmpty || type == 'training' || type.contains('treino');
-  }
-
-  bool _isWithinSelectedPeriod(DateTime date) {
-    final normalized = DateTime(date.year, date.month, date.day);
-    return !normalized.isBefore(_startDate) && !normalized.isAfter(_endDate);
-  }
-
-  bool _isDone(dynamic value) {
-    final raw = (value ?? '').toString().trim().toLowerCase();
-    if (raw.isEmpty || raw == 'pending' || raw == 'pendente') return false;
-    return const {
-      'realizado',
-      'realizado com sucesso',
-      'checked_in',
-      'checkin_realizado',
-      'check-in realizado',
-      'presente',
-      'presence',
-      'ok',
-      'success',
-      'completed',
-      'done',
-      'manual',
-      'late',
-      'atrasado',
-      'checkin_atrasado',
-    }.contains(raw);
+  List<DateTime> _parseTrainingDays(dynamic value) {
+    if (value is! List) return const [];
+    final days = value
+        .map((item) => DateTime.tryParse(item.toString()))
+        .whereType<DateTime>()
+        .map((date) => DateTime(date.year, date.month, date.day))
+        .toList();
+    days.sort();
+    return days;
   }
 
   String _normalizeGender(dynamic value) {
@@ -201,129 +137,35 @@ class _AdminCheckinRankingPageState extends State<AdminCheckinRankingPage> {
     });
 
     try {
-      final eventRowsRaw = await _supabase.from('events').select(
-            'id, event_name, event_date, event_time, event_start_at, event_type',
-          );
-      final eventRows = List<Map<String, dynamic>>.from(eventRowsRaw as List);
-      final eventDates = <String, DateTime>{};
-      final eventStarts = <String, DateTime>{};
-      for (final event in eventRows) {
-        if (!_isTrainingEvent(event['event_type'])) continue;
-        final id = (event['id'] ?? '').toString();
-        final date = _parseEventDate(event);
-        if (id.isNotEmpty && date != null && _isWithinSelectedPeriod(date)) {
-          eventDates[id] = date;
-          final start = _parseEventStart(event);
-          if (start != null) eventStarts[id] = start;
-        }
-      }
-
-      if (eventStarts.isEmpty) {
-        _setLoaded(const [], cacheKey);
-        return;
-      }
-
-      final checkinRowsRaw = await _supabase
-          .from('checkins')
-          .select(
-            'user_id, event_id, check_in_status, checked_in_at, created_at',
-          )
-          .inFilter('event_id', eventStarts.keys.toList());
-      final checkinRows = List<Map<String, dynamic>>.from(
-        checkinRowsRaw as List,
-      ).where((row) => _isDone(row['check_in_status'])).toList();
-
-      final validRecords = checkinRows
-          .map((row) {
-            final checkedInAt = _parseCheckinTime(row);
-            if (checkedInAt == null) return null;
-            final record = CheckinRankingRecord(
-              userId: (row['user_id'] ?? '').toString(),
-              eventId: (row['event_id'] ?? '').toString(),
-              checkedInAt: checkedInAt,
-            );
-            final start = eventStarts[record.eventId];
-            return start != null && isValidCheckinForRanking(start, checkedInAt)
-                ? record
-                : null;
-          })
-          .whereType<CheckinRankingRecord>()
-          .toList();
-      final scores = calculateCheckinRankingScores(
-        eventStarts: eventStarts,
-        records: validRecords,
+      final rankingRowsRaw = await _supabase.rpc(
+        'get_admin_checkin_ranking_v1',
+        params: {
+          'p_start_date': _dateKey(_startDate),
+          'p_end_date': _dateKey(_endDate),
+        },
       );
-
-      final userIds = scores.keys.toList();
-      if (userIds.isEmpty) {
-        _setLoaded(const [], cacheKey);
-        return;
-      }
-
-      final results = await Future.wait<dynamic>([
-        _supabase
-            .from('profiles')
-            .select(
-              'id, full_name, avatar_url, gender, court_position, user_type, is_active',
-            )
-            .inFilter('id', userIds),
-        _supabase
-            .from('user_roles')
-            .select('user_id, role, is_active')
-            .inFilter('user_id', userIds)
-            .eq('is_active', true),
-      ]);
-
-      final profiles = List<Map<String, dynamic>>.from(results[0] as List);
-      final roles = List<Map<String, dynamic>>.from(results[1] as List);
-      final athleteRoleIds = roles
-          .where((row) {
-            final role = (row['role'] ?? '').toString().toLowerCase();
-            return role == 'athlete' || role == 'atleta';
-          })
-          .map((row) => (row['user_id'] ?? '').toString())
-          .toSet();
-      final profilesById = <String, Map<String, dynamic>>{
-        for (final profile in profiles)
-          (profile['id'] ?? '').toString(): profile,
-      };
-
-      final eligibleUserIds = <String>{};
-      for (final userId in userIds) {
-        final profile = profilesById[userId];
-        if (profile == null || profile['is_active'] == false) continue;
-        final type = (profile['user_type'] ?? '').toString().toLowerCase();
-        if (type != 'athlete' &&
-            type != 'atleta' &&
-            !athleteRoleIds.contains(userId)) {
-          continue;
-        }
-        eligibleUserIds.add(userId);
-      }
-
+      final rankingRows = List<Map<String, dynamic>>.from(
+        rankingRowsRaw as List,
+      );
       final entries = <_RankingEntry>[];
-      for (final userId in eligibleUserIds) {
-        final profile = profilesById[userId]!;
-        final score = scores[userId]!;
-        final userEvents = validRecords
-            .where((record) => record.userId == userId)
-            .map((record) => record.eventId)
-            .where(eventDates.containsKey)
-            .toSet();
-        final datesByDay = <String, DateTime>{
-          for (final eventId in userEvents)
-            _dateKey(eventDates[eventId]!): eventDates[eventId]!,
-        };
-        final dates = datesByDay.values.toList()..sort();
+      for (final row in rankingRows) {
+        final userId = (row['id'] ?? '').toString();
+        final earliest = _parseTimestamp(row['earliest_checkin_at']);
+        if (userId.isEmpty || earliest == null) continue;
         entries.add(
           _RankingEntry(
             userId: userId,
-            name: (profile['full_name'] ?? 'Atleta sem nome').toString(),
-            avatarUrl: (profile['avatar_url'] ?? '').toString().trim(),
-            gender: _normalizeGender(profile['gender']),
-            courtPosition: (profile['court_position'] ?? '').toString().trim(),
-            score: score,
-            days: dates,
+            name: (row['name'] ?? 'Atleta sem nome').toString(),
+            avatarUrl: (row['avatar_url'] ?? '').toString().trim(),
+            gender: _normalizeGender(row['gender']),
+            courtPosition: (row['court_position'] ?? '').toString().trim(),
+            score: CheckinRankingScore(
+              totalPoints: _asInt(row['total_points']),
+              presenceCount: _asInt(row['presence_count']),
+              firstCheckins: _asInt(row['first_checkins']),
+              earliestCheckInAt: earliest,
+            ),
+            days: _parseTrainingDays(row['training_days']),
           ),
         );
       }
