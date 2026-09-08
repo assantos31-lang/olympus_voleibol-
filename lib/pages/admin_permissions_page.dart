@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/permission_service.dart';
@@ -22,6 +23,7 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
   List<Map<String, dynamic>> _users = [];
   bool _loading = true;
   String _selectedPage = 'agenda';
+  String _selectedGender = 'Todos';
 
   final Map<String, bool> _savingFilters = {};
   bool _deadlineEnabled = false;
@@ -180,6 +182,78 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
       _users = users;
       _loading = false;
     });
+  }
+
+  String _normalizedGender(dynamic value) {
+    final normalized = (value ?? '').toString().trim().toLowerCase();
+    if (normalized == 'feminino' || normalized == 'female') return 'Feminino';
+    if (normalized == 'masculino' || normalized == 'male') return 'Masculino';
+    return '';
+  }
+
+  List<Map<String, dynamic>> get _filteredUsers {
+    final users = _selectedGender == 'Todos'
+        ? List<Map<String, dynamic>>.from(_users)
+        : _users
+            .where(
+              (user) => _normalizedGender(user['gender']) == _selectedGender,
+            )
+            .toList();
+    users.sort((a, b) => (a['full_name'] ?? '')
+        .toString()
+        .toLowerCase()
+        .compareTo((b['full_name'] ?? '').toString().toLowerCase()));
+    return users;
+  }
+
+  String? _resolveAvatarUrl(dynamic rawValue) {
+    final value = (rawValue ?? '').toString().trim();
+    if (value.isEmpty) return null;
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    return _supabase.storage.from('avatars').getPublicUrl(value);
+  }
+
+  Widget _buildUserAvatar(Map<String, dynamic> user, String fullName) {
+    final avatarUrl = _resolveAvatarUrl(user['avatar_url']);
+    final fallback = Container(
+      color: olympusGold,
+      alignment: Alignment.center,
+      child: Text(
+        fullName.trim().isEmpty ? '?' : fullName.trim()[0].toUpperCase(),
+        style: TextStyle(
+          color: olympusBlue,
+          fontWeight: FontWeight.bold,
+          fontSize: 18,
+        ),
+      ),
+    );
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: olympusGold.withValues(alpha: 0.65),
+          width: 2,
+        ),
+      ),
+      child: ClipOval(
+        child: avatarUrl == null
+            ? fallback
+            : CachedNetworkImage(
+                imageUrl: avatarUrl,
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+                memCacheWidth: 240,
+                placeholder: (_, __) => Container(
+                  color: olympusBlue.withValues(alpha: 0.08),
+                ),
+                errorWidget: (_, __, ___) => fallback,
+              ),
+      ),
+    );
   }
 
   Future<void> _abrirPermissoesAgenda(Map<String, dynamic> user) async {
@@ -549,118 +623,166 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
           Container(
             padding: const EdgeInsets.all(16),
             color: olympusBlue.withOpacity(0.1),
-            child: Row(
+            child: Column(
               children: [
-                Icon(Icons.pageview, color: olympusBlue),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButton<String>(
-                    value: _selectedPage,
-                    isExpanded: true,
-                    items: const [
-                      DropdownMenuItem(value: 'agenda', child: Text('Agenda')),
-                      DropdownMenuItem(
-                        value: 'birthdays',
-                        child: Text('Aniversariantes'),
+                Row(
+                  children: [
+                    Icon(Icons.pageview, color: olympusBlue),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButton<String>(
+                        value: _selectedPage,
+                        isExpanded: true,
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'agenda',
+                            child: Text('Agenda'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'birthdays',
+                            child: Text('Aniversariantes'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'ranking',
+                            child: Text('Visível no ranking'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'avaliacoes',
+                            child: Text('Visível nas avaliações'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _selectedPage = value);
+                            _loadUsers();
+                          }
+                        },
                       ),
-                      DropdownMenuItem(
-                        value: 'ranking',
-                        child: Text('Visível no ranking'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'avaliacoes',
-                        child: Text('Visível nas avaliações'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _selectedPage = value);
-                        _loadUsers();
-                      }
-                    },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedGender,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Filtrar por gênero',
+                    prefixIcon: Icon(Icons.transgender),
+                    border: OutlineInputBorder(),
+                    filled: true,
+                    fillColor: Colors.white,
                   ),
+                  items: const [
+                    DropdownMenuItem(value: 'Todos', child: Text('Todos')),
+                    DropdownMenuItem(
+                      value: 'Feminino',
+                      child: Text('Feminino'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Masculino',
+                      child: Text('Masculino'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() => _selectedGender = value);
+                    }
+                  },
                 ),
               ],
             ),
           ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _users.isEmpty
-                    ? const Center(
-                        child: Text('Nenhum usuário encontrado'),
-                      )
-                    : ListView.builder(
-                        itemCount: _users.length,
-                        padding: const EdgeInsets.all(16),
-                        itemBuilder: (context, index) {
-                          final user = _users[index];
-                          final canAccess = user['can_access'] as bool;
-                          final fullName = user['full_name'] ?? 'Sem nome';
-                          final email = user['email'] ?? '';
-                          final userType = user['user_type'] ?? 'member';
-
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            elevation: 2,
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: olympusGold,
-                                foregroundColor: olympusBlue,
-                                child: Text(
-                                  fullName[0].toUpperCase(),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              title: Text(
-                                fullName,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              subtitle: Text(
-                                '$email • ${_getUserTypeLabel(userType)}',
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                  fontSize: 12,
-                                ),
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (_selectedPage == 'agenda')
-                                    IconButton(
-                                      tooltip: 'Configurar agenda',
-                                      onPressed: _savingFilters[user['id']] ==
-                                              true
-                                          ? null
-                                          : () => _abrirPermissoesAgenda(user),
-                                      icon: _savingFilters[user['id']] == true
-                                          ? const SizedBox(
-                                              width: 18,
-                                              height: 18,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                              ),
-                                            )
-                                          : const Icon(Icons.tune),
-                                      color: olympusBlue,
-                                    ),
-                                  Switch(
-                                    value: canAccess,
-                                    onChanged: (value) {
-                                      _togglePermission(user['id'], canAccess);
-                                    },
-                                    activeColor: olympusGold,
-                                  ),
-                                ],
-                              ),
+          Builder(
+            builder: (context) {
+              final filteredUsers = _filteredUsers;
+              return Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : filteredUsers.isEmpty
+                        ? Center(
+                            child: Text(
+                              _users.isEmpty
+                                  ? 'Nenhum usuário encontrado'
+                                  : 'Nenhum usuário deste gênero',
                             ),
-                          );
-                        },
-                      ),
+                          )
+                        : ListView.builder(
+                            itemCount: filteredUsers.length,
+                            padding: const EdgeInsets.all(16),
+                            itemBuilder: (context, index) {
+                              final user = filteredUsers[index];
+                              final canAccess = user['can_access'] as bool;
+                              final fullName =
+                                  (user['full_name'] ?? 'Sem nome').toString();
+                              final email = user['email'] ?? '';
+                              final userType = user['user_type'] ?? 'member';
+                              final gender = _normalizedGender(user['gender']);
+
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                elevation: 2,
+                                child: ListTile(
+                                  leading: _buildUserAvatar(user, fullName),
+                                  title: Text(
+                                    fullName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    [
+                                      email,
+                                      _getUserTypeLabel(userType),
+                                      if (gender.isNotEmpty) gender,
+                                    ].join(' • '),
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (_selectedPage == 'agenda')
+                                        IconButton(
+                                          tooltip: 'Configurar agenda',
+                                          onPressed:
+                                              _savingFilters[user['id']] == true
+                                                  ? null
+                                                  : () =>
+                                                      _abrirPermissoesAgenda(
+                                                          user),
+                                          icon:
+                                              _savingFilters[user['id']] == true
+                                                  ? const SizedBox(
+                                                      width: 18,
+                                                      height: 18,
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                      ),
+                                                    )
+                                                  : const Icon(Icons.tune),
+                                          color: olympusBlue,
+                                        ),
+                                      Switch(
+                                        value: canAccess,
+                                        onChanged: (value) {
+                                          _togglePermission(
+                                            user['id'],
+                                            canAccess,
+                                          );
+                                        },
+                                        activeThumbColor: olympusGold,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+              );
+            },
           ),
         ],
       ),

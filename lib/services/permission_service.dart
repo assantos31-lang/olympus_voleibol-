@@ -160,7 +160,7 @@ class PermissionService {
     try {
       final profilesResponse = await _supabase
           .from('profiles')
-          .select('id, email, full_name, user_type, avatar_url')
+          .select('id, email, full_name, user_type, avatar_url, gender')
           .eq('is_active', true);
 
       final permissionsResponse = await _supabase
@@ -185,6 +185,7 @@ class PermissionService {
           'full_name': profile['full_name'],
           'user_type': profile['user_type'],
           'avatar_url': profile['avatar_url'],
+          'gender': profile['gender'],
           'can_access': hasAccess,
         });
       }
