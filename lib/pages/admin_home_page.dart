@@ -17,6 +17,7 @@ import 'admin_checkin_ranking_page.dart';
 import 'admin_competitions_page.dart';
 import 'admin_financial_page.dart';
 import 'admin_messages_page.dart';
+import 'admin_permissions_page.dart';
 import 'admin_training_plans_page.dart' show AdminTrainingPlansPage;
 import 'admin_technical_staff_page.dart';
 import 'awards_page.dart';
@@ -2099,6 +2100,19 @@ class _AdminHomePageState extends State<AdminHomePage>
         onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const AdminBrandingPage()),
+            ),
+      ),
+      (
+        permission: 'admin_users',
+        label: 'Permissões e prazos',
+        subtitle: 'Confirmação de treinos e acessos dos usuários',
+        icon: Icons.rule_folder_rounded,
+        color: const Color(0xFF8FD3FF),
+        onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const AdminPermissionsPage(),
+              ),
             ),
       ),
       (
