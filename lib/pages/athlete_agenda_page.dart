@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'dart:convert';
 import 'dart:math' show sin, cos, sqrt, asin;
@@ -10,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../coach/pages/training_plan_readonly_sheet.dart';
 import '../services/permission_service.dart';
+import '../services/training_confirmation_deadline_service.dart';
 import '../widgets/event_address_link.dart';
 
 class AthleteAgendaPage extends StatefulWidget {
@@ -31,6 +33,8 @@ class AthleteAgendaPage extends StatefulWidget {
 class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
   final PermissionService _permissionService = PermissionService();
+  final TrainingConfirmationDeadlineService _deadlineService =
+      TrainingConfirmationDeadlineService();
 
   List<Map<String, dynamic>> _eventos = [];
   List<Map<String, dynamic>> _eventosFiltrados = [];
@@ -72,6 +76,10 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   List<String> _allowedEventTypes = ['treino', 'amistoso', 'campeonato'];
   bool _canViewConvocados = false;
   bool _canExportDadosJogo = false;
+  TrainingConfirmationDeadlineSettings _deadlineSettings =
+      const TrainingConfirmationDeadlineSettings.disabled();
+  RealtimeChannel? _deadlineSettingsChannel;
+  Timer? _deadlineRefreshTimer;
 
   static const String _geocodeAccessKey = 'pk.5a7a05184e41c916429dceb50cf02718';
   static const String _eventsEmbedFk = 'convocations_event_id_fkey';
@@ -79,7 +87,19 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   @override
   void initState() {
     super.initState();
+    _deadlineRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted && _deadlineSettings.enabled) setState(() {});
+    });
     _checkPermission();
+  }
+
+  @override
+  void dispose() {
+    _deadlineRefreshTimer?.cancel();
+    if (_deadlineSettingsChannel != null) {
+      _supabase.removeChannel(_deadlineSettingsChannel!);
+    }
+    super.dispose();
   }
 
   Future<void> _checkPermission() async {
@@ -101,6 +121,7 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
           _allowedEventTypes = ['treino', 'amistoso', 'campeonato'];
         }
       });
+      await _loadDeadlineSettings();
       _setMesAtual();
       _buscarEventos();
       return;
@@ -124,7 +145,12 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
     final user = _supabase.auth.currentUser;
     if (user == null) return;
 
-    final filters = await _permissionService.getAgendaFilters(user.id);
+    final results = await Future.wait<dynamic>([
+      _permissionService.getAgendaFilters(user.id),
+      _deadlineService.load(),
+    ]);
+    final filters = Map<String, dynamic>.from(results[0] as Map);
+    final deadlineSettings = results[1] as TrainingConfirmationDeadlineSettings;
 
     if (!mounted) return;
     setState(() {
@@ -135,10 +161,40 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
           : ['treino', 'amistoso', 'campeonato'];
       _canViewConvocados = filters['ver_convocados'] == true;
       _canExportDadosJogo = filters['exportar_dados_jogo'] == true;
+      _deadlineSettings = deadlineSettings;
     });
+    _listenForDeadlineSettings();
 
     _setMesAtual();
     _buscarEventos();
+  }
+
+  Future<void> _loadDeadlineSettings() async {
+    try {
+      final settings = await _deadlineService.load();
+      if (mounted) setState(() => _deadlineSettings = settings);
+      _listenForDeadlineSettings();
+    } catch (error) {
+      debugPrint('Erro ao carregar prazo de confirmação: $error');
+    }
+  }
+
+  void _listenForDeadlineSettings() {
+    if (_deadlineSettingsChannel != null) return;
+    _deadlineSettingsChannel = _supabase
+        .channel('athlete-training-confirmation-deadline')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'organization_settings',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'key',
+            value: TrainingConfirmationDeadlineService.settingsKey,
+          ),
+          callback: (_) => _loadDeadlineSettings(),
+        )
+        .subscribe();
   }
 
   void _setMesAtual() {
@@ -713,6 +769,7 @@ enable_ride_logistics
   }
 
   Future<void> _refreshEventos() async {
+    await _loadDeadlineSettings();
     await _buscarEventos();
   }
 
@@ -970,6 +1027,13 @@ enable_ride_logistics
       );
       final now = DateTime.now();
       if (eventDateTime.isBefore(now)) return false;
+      if (_deadlineSettings.enabled && tipo == 'treino') {
+        final deadline = trainingConfirmationDeadline(
+          evento,
+          _deadlineSettings,
+        );
+        return deadline != null && now.isBefore(deadline);
+      }
       int horasLimite;
       switch (tipo) {
         case 'treino':
@@ -992,6 +1056,12 @@ enable_ride_logistics
 
   String _getPrazoInfo(Map<String, dynamic> evento) {
     final tipo = (evento['event_type'] ?? '').toString().toLowerCase().trim();
+    if (_deadlineSettings.enabled && tipo == 'treino') {
+      final deadline = trainingConfirmationDeadline(evento, _deadlineSettings);
+      if (deadline == null) return '';
+      return 'Confirmação até ${DateFormat('dd/MM HH:mm').format(deadline)} '
+          '(${_deadlineSettings.hoursBefore}h antes)';
+    }
     switch (tipo) {
       case 'treino':
         return 'Edição até 3h antes';
@@ -1398,6 +1468,17 @@ enable_ride_logistics
       if (user == null) return;
       final eventId = evento['id'];
       if (aceitar) {
+        final confirmationState = trainingConfirmationState(
+          event: evento,
+          convocationStatus:
+              (evento['convocation_status'] ?? 'pending').toString(),
+          settings: _deadlineSettings,
+        );
+        if (confirmationState == TrainingConfirmationState.deadlineExpired) {
+          _showError(trainingConfirmationDeadlineExpiredMessage);
+          await _refreshEventos();
+          return;
+        }
         final tipoEvento =
             (evento['event_type'] ?? '').toString().toLowerCase().trim();
         final rideEnabled = evento['enable_ride_logistics'] == true;
@@ -1733,7 +1814,10 @@ enable_ride_logistics
       _refreshEventos();
     } catch (e) {
       if (!mounted) return;
-      _showError('Erro: $e');
+      final errorText = e.toString();
+      _showError(errorText.contains('prazo para confirmar')
+          ? trainingConfirmationDeadlineExpiredMessage
+          : 'Erro: $e');
     }
   }
 
@@ -3255,6 +3339,16 @@ enable_ride_logistics
                                                 _podeEditar(evento);
                                             final prazoInfo =
                                                 _getPrazoInfo(evento);
+                                            final confirmationState =
+                                                trainingConfirmationState(
+                                              event: evento,
+                                              convocationStatus: status,
+                                              settings: _deadlineSettings,
+                                            );
+                                            final confirmationStatusLabel =
+                                                trainingConfirmationStateLabel(
+                                              confirmationState,
+                                            );
                                             final championshipName =
                                                 (evento['championship_name'] ??
                                                         '')
@@ -3664,6 +3758,61 @@ enable_ride_logistics
                                                         ),
                                                       ),
                                                       const SizedBox(height: 6),
+                                                    ],
+                                                    if (confirmationStatusLabel
+                                                        .isNotEmpty) ...[
+                                                      Container(
+                                                        width: double.infinity,
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                          horizontal: 10,
+                                                          vertical: 8,
+                                                        ),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: confirmationState ==
+                                                                  TrainingConfirmationState
+                                                                      .deadlineExpired
+                                                              ? Colors.red[50]
+                                                              : confirmationState ==
+                                                                      TrainingConfirmationState
+                                                                          .confirmed
+                                                                  ? Colors
+                                                                      .green[50]
+                                                                  : Colors
+                                                                      .orange[50],
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(10),
+                                                        ),
+                                                        child: Text(
+                                                          confirmationState ==
+                                                                  TrainingConfirmationState
+                                                                      .deadlineExpired
+                                                              ? '$confirmationStatusLabel. '
+                                                                  '$trainingConfirmationDeadlineExpiredMessage'
+                                                              : confirmationStatusLabel,
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                            color: confirmationState ==
+                                                                    TrainingConfirmationState
+                                                                        .deadlineExpired
+                                                                ? Colors
+                                                                    .red[800]
+                                                                : confirmationState ==
+                                                                        TrainingConfirmationState
+                                                                            .confirmed
+                                                                    ? Colors.green[
+                                                                        800]
+                                                                    : Colors.orange[
+                                                                        900],
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 8),
                                                     ],
                                                     if (tipoNormalizado ==
                                                         'treino') ...[

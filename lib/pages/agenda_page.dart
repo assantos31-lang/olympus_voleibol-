@@ -11,6 +11,7 @@ import '../services/role_service.dart';
 import '../utils/event_rows_paginator.dart';
 import '../utils/manual_checkin.dart';
 import '../services/olympus_memory_cache.dart';
+import '../services/training_confirmation_deadline_service.dart';
 import '../theme/olympus_theme.dart';
 import '../widgets/event_address_link.dart';
 
@@ -25,6 +26,8 @@ class _AgendaPageState extends State<AgendaPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
   final PermissionService _permissionService = PermissionService(); // ✅ NOVO
   final RoleService _roleService = RoleService();
+  final TrainingConfirmationDeadlineService _deadlineService =
+      TrainingConfirmationDeadlineService();
 
   // ✅ NOVO: Variáveis de controle de permissão
   bool _hasPermission = true;
@@ -63,6 +66,8 @@ class _AgendaPageState extends State<AgendaPage> {
   String _filtroMes = '';
   String _filtroGenero = 'Todos';
   bool _mostrarEventosPassados = false;
+  TrainingConfirmationDeadlineSettings _deadlineSettings =
+      const TrainingConfirmationDeadlineSettings.disabled();
   Set<String> _placaresExpandidos = {}; // IDs dos placares expandidos
   // ✅ Cores do logo Olympus Voleibol
 
@@ -76,6 +81,11 @@ class _AgendaPageState extends State<AgendaPage> {
   Future<void> _initializeAgenda() async {
     await _checkPermission();
     if (!mounted || !_hasPermission) return;
+    try {
+      _deadlineSettings = await _deadlineService.load();
+    } catch (error) {
+      debugPrint('Erro ao carregar prazo de confirmação: $error');
+    }
     _restoreAgendaCache();
     await _buscarEventos();
     _listenForEventChanges();
@@ -1830,6 +1840,7 @@ class _AgendaPageState extends State<AgendaPage> {
                 .toLowerCase() ==
             'rejected';
       }).length;
+      final deadline = trainingConfirmationDeadline(evento, _deadlineSettings);
       if (mounted) {
         setState(() {
           _convocationStats[eventId] = {
@@ -1880,6 +1891,16 @@ class _AgendaPageState extends State<AgendaPage> {
                                 color: Colors.grey[600],
                               ),
                             ),
+                            if (deadline != null)
+                              Text(
+                                'Prazo: ${DateFormat('dd/MM/yyyy HH:mm').format(deadline)} '
+                                '(${_deadlineSettings.hoursBefore}h antes)',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[700],
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -1915,18 +1936,36 @@ class _AgendaPageState extends State<AgendaPage> {
                                   participante['tipo'] == 'athlete';
                               final isCoach =
                                   participante['event_role'] == 'coach';
+                              final confirmationState =
+                                  trainingConfirmationState(
+                                event: evento,
+                                convocationStatus: status,
+                                settings: _deadlineSettings,
+                              );
+                              final deadlineExpired = confirmationState ==
+                                  TrainingConfirmationState.deadlineExpired;
                               final labelStatus = isCoach
                                   ? 'Treinador'
                                   : isAceitou
-                                      ? 'Aceitou'
-                                      : (isRecusou ? 'Recusou' : 'Pendente');
+                                      ? 'Presença confirmada'
+                                      : (isRecusou
+                                          ? 'Recusou'
+                                          : deadlineExpired
+                                              ? 'Não confirmou no prazo'
+                                              : confirmationState ==
+                                                      TrainingConfirmationState
+                                                          .canConfirm
+                                                  ? 'Ainda pode confirmar'
+                                                  : 'Pendente');
                               final colorStatus = isCoach
                                   ? olympusBlue
                                   : isAceitou
                                       ? Colors.green[700]
                                       : (isRecusou
                                           ? Colors.red[700]
-                                          : Colors.grey[600]);
+                                          : deadlineExpired
+                                              ? Colors.red[800]
+                                              : Colors.grey[600]);
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 8),
                                 padding: const EdgeInsets.all(12),

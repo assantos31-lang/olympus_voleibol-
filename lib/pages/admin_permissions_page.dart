@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/olympus_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/permission_service.dart';
+import '../services/training_confirmation_deadline_service.dart';
 
 class AdminPermissionsPage extends StatefulWidget {
   const AdminPermissionsPage({Key? key}) : super(key: key);
@@ -13,18 +14,160 @@ class AdminPermissionsPage extends StatefulWidget {
 class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
   final PermissionService _permissionService = PermissionService();
+  final TrainingConfirmationDeadlineService _deadlineService =
+      TrainingConfirmationDeadlineService();
+  final TextEditingController _deadlineHoursController =
+      TextEditingController(text: '3');
 
   List<Map<String, dynamic>> _users = [];
   bool _loading = true;
   String _selectedPage = 'agenda';
 
   final Map<String, bool> _savingFilters = {};
-
+  bool _deadlineEnabled = false;
+  bool _deadlineLoading = true;
+  bool _deadlineSaving = false;
 
   @override
   void initState() {
     super.initState();
     _loadUsers();
+    _loadDeadlineSettings();
+  }
+
+  @override
+  void dispose() {
+    _deadlineHoursController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadDeadlineSettings() async {
+    try {
+      final settings = await _deadlineService.load();
+      if (!mounted) return;
+      setState(() {
+        _deadlineEnabled = settings.enabled;
+        _deadlineHoursController.text = settings.hoursBefore.toString();
+        _deadlineLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _deadlineLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao carregar prazo de confirmação: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _saveDeadlineSettings() async {
+    final hours = int.tryParse(_deadlineHoursController.text.trim());
+    if (hours == null || hours < 1 || hours > 168) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Informe um prazo entre 1 e 168 horas.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    setState(() => _deadlineSaving = true);
+    try {
+      await _deadlineService.save(
+        TrainingConfirmationDeadlineSettings(
+          enabled: _deadlineEnabled,
+          hoursBefore: hours,
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Prazo de confirmação salvo com sucesso!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao salvar prazo de confirmação: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _deadlineSaving = false);
+    }
+  }
+
+  Widget _buildDeadlineSettingsCard() {
+    if (_deadlineLoading) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: LinearProgressIndicator(),
+      );
+    }
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _deadlineEnabled,
+              activeThumbColor: olympusGold,
+              onChanged: _deadlineSaving
+                  ? null
+                  : (value) => setState(() => _deadlineEnabled = value),
+              title: const Text(
+                'Prazo para confirmar treino',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: const Text(
+                'Bloqueia a confirmação do atleta quando o prazo termina.',
+              ),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _deadlineHoursController,
+                    enabled: !_deadlineSaving,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Horas antes do treino',
+                      helperText: 'De 1 a 168 horas',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: _deadlineSaving ? null : _saveDeadlineSettings,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: olympusBlue,
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: _deadlineSaving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: const Text('Salvar'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadUsers() async {
@@ -402,6 +545,7 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
       ),
       body: Column(
         children: [
+          _buildDeadlineSettingsCard(),
           Container(
             padding: const EdgeInsets.all(16),
             color: olympusBlue.withOpacity(0.1),

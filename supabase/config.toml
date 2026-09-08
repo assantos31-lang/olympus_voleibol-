@@ -396,3 +396,6 @@ verify_jwt = true
 
 [functions.send-training-planning-reminders]
 verify_jwt = true
+
+[functions.send-training-confirmation-deadline-notifications]
+verify_jwt = true
