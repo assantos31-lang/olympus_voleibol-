@@ -3141,8 +3141,11 @@ class _AgendaPageState extends State<AgendaPage> {
       }
 
       String? selectedUserId = participantesSemCheckin.first['user_id'];
-      DateTime selectedDate = DateTime.now();
-      TimeOfDay selectedTime = TimeOfDay.now();
+      final initialCheckInDateTime = manualCheckinInitialDateTime(evento);
+      DateTime selectedDate = initialCheckInDateTime;
+      TimeOfDay selectedTime = TimeOfDay.fromDateTime(
+        initialCheckInDateTime,
+      );
       bool saving = false;
 
       ThemeData olympusPickerTheme(BuildContext pickerContext) {

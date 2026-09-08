@@ -79,6 +79,25 @@ void main() {
     expect(payload, isNot(contains('created_at')));
   });
 
+  test('check-in manual inicia na data e hora do treino', () {
+    final initial = manualCheckinInitialDateTime({
+      'event_date': '04/09/2026',
+      'event_time': '20:30',
+    });
+
+    expect(initial, DateTime(2026, 9, 4, 20, 30));
+  });
+
+  test('event_start_at prevalece como horário inicial do check-in manual', () {
+    final initial = manualCheckinInitialDateTime({
+      'event_start_at': '2026-09-04T20:30:00-03:00',
+      'event_date': '05/09/2026',
+      'event_time': '21:00',
+    });
+
+    expect(initial.toUtc(), DateTime.utc(2026, 9, 4, 23, 30));
+  });
+
   test('lista aberta passa a exibir o atleta quando chega o registro', () {
     final rows = <Map<String, dynamic>>[
       {'user_id': 'outro', 'check_in_status': 'pendente'},

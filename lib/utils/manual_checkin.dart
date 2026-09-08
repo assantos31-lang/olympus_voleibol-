@@ -11,6 +11,35 @@ Map<String, dynamic> buildManualCheckinPayload({
   };
 }
 
+DateTime manualCheckinInitialDateTime(
+  Map<String, dynamic> event, {
+  DateTime? fallback,
+}) {
+  final eventStartAt = (event['event_start_at'] ?? '').toString().trim();
+  final parsedEventStartAt = DateTime.tryParse(eventStartAt);
+  if (parsedEventStartAt != null) return parsedEventStartAt.toLocal();
+
+  final dateParts = (event['event_date'] ?? '').toString().trim().split('/');
+  final timeParts = (event['event_time'] ?? '').toString().trim().split(':');
+  if (dateParts.length == 3 && timeParts.length >= 2) {
+    final day = int.tryParse(dateParts[0]);
+    final month = int.tryParse(dateParts[1]);
+    final year = int.tryParse(dateParts[2]);
+    final hour = int.tryParse(timeParts[0]);
+    final minute = int.tryParse(timeParts[1]);
+
+    if (day != null &&
+        month != null &&
+        year != null &&
+        hour != null &&
+        minute != null) {
+      return DateTime(year, month, day, hour, minute);
+    }
+  }
+
+  return fallback ?? DateTime.now();
+}
+
 DateTime? effectiveCheckInTime(Map<String, dynamic> row) {
   for (final field in const ['checked_in_at', 'created_at']) {
     final raw = (row[field] ?? '').toString().trim();
