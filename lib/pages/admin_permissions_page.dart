@@ -621,56 +621,121 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
         children: [
           _buildDeadlineSettingsCard(),
           Container(
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             padding: const EdgeInsets.all(16),
-            color: olympusBlue.withOpacity(0.1),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: olympusBlue.withValues(alpha: 0.18),
+              ),
+            ),
             child: Column(
               children: [
-                Row(
-                  children: [
-                    Icon(Icons.pageview, color: olympusBlue),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButton<String>(
-                        value: _selectedPage,
-                        isExpanded: true,
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'agenda',
-                            child: Text('Agenda'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'birthdays',
-                            child: Text('Aniversariantes'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'ranking',
-                            child: Text('Visível no ranking'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'avaliacoes',
-                            child: Text('Visível nas avaliações'),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() => _selectedPage = value);
-                            _loadUsers();
-                          }
-                        },
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedPage,
+                  isExpanded: true,
+                  dropdownColor: Colors.white,
+                  style: TextStyle(
+                    color: olympusBlue,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Permissão',
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                    labelStyle: TextStyle(
+                      color: olympusBlue,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    floatingLabelStyle: TextStyle(
+                      color: olympusBlue,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    prefixIcon: Icon(Icons.pageview, color: olympusBlue),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(
+                        color: olympusBlue.withValues(alpha: 0.32),
                       ),
                     ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: olympusGold, width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 18,
+                    ),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'agenda', child: Text('Agenda')),
+                    DropdownMenuItem(
+                      value: 'birthdays',
+                      child: Text('Aniversariantes'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'ranking',
+                      child: Text('Visível no ranking'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'avaliacoes',
+                      child: Text('Visível nas avaliações'),
+                    ),
                   ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() => _selectedPage = value);
+                      _loadUsers();
+                    }
+                  },
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 18),
                 DropdownButtonFormField<String>(
                   initialValue: _selectedGender,
                   isExpanded: true,
-                  decoration: const InputDecoration(
+                  dropdownColor: Colors.white,
+                  style: TextStyle(
+                    color: olympusBlue,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: InputDecoration(
                     labelText: 'Filtrar por gênero',
-                    prefixIcon: Icon(Icons.transgender),
-                    border: OutlineInputBorder(),
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                    labelStyle: TextStyle(
+                      color: olympusBlue,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    floatingLabelStyle: TextStyle(
+                      color: olympusBlue,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    prefixIcon: Icon(Icons.transgender, color: olympusBlue),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(
+                        color: olympusBlue.withValues(alpha: 0.32),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: olympusGold, width: 2),
+                    ),
                     filled: true,
                     fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 18,
+                    ),
                   ),
                   items: const [
                     DropdownMenuItem(value: 'Todos', child: Text('Todos')),
