@@ -66,8 +66,10 @@ class _AgendaPageState extends State<AgendaPage> {
   String _filtroMes = '';
   String _filtroGenero = 'Todos';
   bool _mostrarEventosPassados = false;
-  TrainingConfirmationDeadlineSettings _deadlineSettings =
-      const TrainingConfirmationDeadlineSettings.disabled();
+  Map<String, TrainingConfirmationDeadlineSettings> _deadlineSettings = {
+    for (final type in confirmationDeadlineEventTypes)
+      type: const TrainingConfirmationDeadlineSettings.disabled(),
+  };
   Set<String> _placaresExpandidos = {}; // IDs dos placares expandidos
   // ✅ Cores do logo Olympus Voleibol
 
@@ -82,13 +84,22 @@ class _AgendaPageState extends State<AgendaPage> {
     await _checkPermission();
     if (!mounted || !_hasPermission) return;
     try {
-      _deadlineSettings = await _deadlineService.load();
+      _deadlineSettings = await _deadlineService.loadAll();
     } catch (error) {
       debugPrint('Erro ao carregar prazo de confirmação: $error');
     }
     _restoreAgendaCache();
     await _buscarEventos();
     _listenForEventChanges();
+  }
+
+  TrainingConfirmationDeadlineSettings _deadlineSettingsFor(
+    Map<String, dynamic> event,
+  ) {
+    final eventType =
+        (event['event_type'] ?? '').toString().trim().toLowerCase();
+    return _deadlineSettings[eventType] ??
+        const TrainingConfirmationDeadlineSettings.disabled();
   }
 
   String get _agendaCacheKey =>
@@ -1840,7 +1851,8 @@ class _AgendaPageState extends State<AgendaPage> {
                 .toLowerCase() ==
             'rejected';
       }).length;
-      final deadline = trainingConfirmationDeadline(evento, _deadlineSettings);
+      final deadlineSettings = _deadlineSettingsFor(evento);
+      final deadline = trainingConfirmationDeadline(evento, deadlineSettings);
       if (mounted) {
         setState(() {
           _convocationStats[eventId] = {
@@ -1894,7 +1906,7 @@ class _AgendaPageState extends State<AgendaPage> {
                             if (deadline != null)
                               Text(
                                 'Prazo: ${DateFormat('dd/MM/yyyy HH:mm').format(deadline)} '
-                                '(${_deadlineSettings.hoursBefore}h antes)',
+                                '(${deadlineSettings.hoursBefore}h antes)',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey[700],
@@ -1940,7 +1952,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                   trainingConfirmationState(
                                 event: evento,
                                 convocationStatus: status,
-                                settings: _deadlineSettings,
+                                settings: deadlineSettings,
                               );
                               final deadlineExpired = confirmationState ==
                                   TrainingConfirmationState.deadlineExpired;

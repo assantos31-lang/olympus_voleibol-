@@ -17,8 +17,10 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
   final PermissionService _permissionService = PermissionService();
   final TrainingConfirmationDeadlineService _deadlineService =
       TrainingConfirmationDeadlineService();
-  final TextEditingController _deadlineHoursController =
-      TextEditingController(text: '3');
+  final Map<String, TextEditingController> _deadlineHoursControllers = {
+    for (final type in confirmationDeadlineEventTypes)
+      type: TextEditingController(text: '3'),
+  };
 
   List<Map<String, dynamic>> _users = [];
   bool _loading = true;
@@ -26,7 +28,9 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
   String _selectedGender = 'Todos';
 
   final Map<String, bool> _savingFilters = {};
-  bool _deadlineEnabled = false;
+  final Map<String, bool> _deadlineEnabled = {
+    for (final type in confirmationDeadlineEventTypes) type: false,
+  };
   bool _deadlineLoading = true;
   bool _deadlineSaving = false;
 
@@ -39,17 +43,24 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
 
   @override
   void dispose() {
-    _deadlineHoursController.dispose();
+    for (final controller in _deadlineHoursControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
   Future<void> _loadDeadlineSettings() async {
     try {
-      final settings = await _deadlineService.load();
+      final settings = await _deadlineService.loadAll();
       if (!mounted) return;
       setState(() {
-        _deadlineEnabled = settings.enabled;
-        _deadlineHoursController.text = settings.hoursBefore.toString();
+        for (final type in confirmationDeadlineEventTypes) {
+          final typeSettings = settings[type] ??
+              const TrainingConfirmationDeadlineSettings.disabled();
+          _deadlineEnabled[type] = typeSettings.enabled;
+          _deadlineHoursControllers[type]!.text =
+              typeSettings.hoursBefore.toString();
+        }
         _deadlineLoading = false;
       });
     } catch (error) {
@@ -64,8 +75,9 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
     }
   }
 
-  Future<void> _saveDeadlineSettings() async {
-    final hours = int.tryParse(_deadlineHoursController.text.trim());
+  Future<void> _saveDeadlineSettings(String eventType) async {
+    final hours =
+        int.tryParse(_deadlineHoursControllers[eventType]!.text.trim());
     if (hours == null || hours < 1 || hours > 168) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -77,9 +89,10 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
     }
     setState(() => _deadlineSaving = true);
     try {
-      await _deadlineService.save(
+      await _deadlineService.saveForEventType(
+        eventType,
         TrainingConfirmationDeadlineSettings(
-          enabled: _deadlineEnabled,
+          enabled: _deadlineEnabled[eventType] ?? false,
           hoursBefore: hours,
         ),
       );
@@ -110,62 +123,85 @@ class _AdminPermissionsPageState extends State<AdminPermissionsPage> {
         child: LinearProgressIndicator(),
       );
     }
+    const labels = {
+      'treino': 'Treino',
+      'amistoso': 'Amistoso',
+      'campeonato': 'Campeonato',
+    };
     return Card(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _deadlineEnabled,
-              activeThumbColor: olympusGold,
-              onChanged: _deadlineSaving
-                  ? null
-                  : (value) => setState(() => _deadlineEnabled = value),
-              title: const Text(
-                'Prazo para confirmar treino',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: const Text(
-                'Bloqueia a confirmação do atleta quando o prazo termina.',
-              ),
+            const Text(
+              'Prazos para confirmar presença',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
             ),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _deadlineHoursController,
-                    enabled: !_deadlineSaving,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Horas antes do treino',
-                      helperText: 'De 1 a 168 horas',
-                      border: OutlineInputBorder(),
+            const SizedBox(height: 4),
+            const Text(
+              'Defina um prazo independente para cada tipo de evento.',
+            ),
+            const SizedBox(height: 8),
+            for (final eventType in confirmationDeadlineEventTypes) ...[
+              if (eventType != confirmationDeadlineEventTypes.first)
+                const Divider(height: 24),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _deadlineEnabled[eventType] ?? false,
+                activeThumbColor: olympusGold,
+                onChanged: _deadlineSaving
+                    ? null
+                    : (value) => setState(
+                          () => _deadlineEnabled[eventType] = value,
+                        ),
+                title: Text(
+                  labels[eventType]!,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text(
+                  'Após o prazo, quem não confirmou não poderá comparecer.',
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _deadlineHoursControllers[eventType],
+                      enabled: !_deadlineSaving,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Horas antes do ${labels[eventType]!.toLowerCase()}',
+                        helperText: 'De 1 a 168 horas',
+                        border: const OutlineInputBorder(),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: _deadlineSaving ? null : _saveDeadlineSettings,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: olympusBlue,
-                    foregroundColor: Colors.white,
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: _deadlineSaving
+                        ? null
+                        : () => _saveDeadlineSettings(eventType),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: olympusBlue,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: _deadlineSaving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.save_outlined),
+                    label: const Text('Salvar'),
                   ),
-                  icon: _deadlineSaving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.save_outlined),
-                  label: const Text('Salvar'),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

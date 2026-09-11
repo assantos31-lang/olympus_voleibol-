@@ -6,6 +6,31 @@ const String trainingConfirmationDeadlineExpiredMessage =
     'O prazo para confirmar sua presença neste treino expirou. '
     'Você não deverá comparecer ao treino.';
 
+const List<String> confirmationDeadlineEventTypes = [
+  'treino',
+  'amistoso',
+  'campeonato',
+];
+
+String confirmationDeadlineEventLabel(String eventType) {
+  switch (eventType.trim().toLowerCase()) {
+    case 'amistoso':
+      return 'amistoso';
+    case 'campeonato':
+      return 'campeonato';
+    default:
+      return 'treino';
+  }
+}
+
+String eventConfirmationDeadlineExpiredMessage(Map<String, dynamic> event) {
+  final label = confirmationDeadlineEventLabel(
+    (event['event_type'] ?? '').toString(),
+  );
+  return 'O prazo para confirmar sua presença neste $label expirou. '
+      'Você não deverá comparecer ao $label.';
+}
+
 class TrainingConfirmationDeadlineSettings {
   const TrainingConfirmationDeadlineSettings({
     required this.enabled,
@@ -75,7 +100,9 @@ DateTime? trainingConfirmationDeadline(
   TrainingConfirmationDeadlineSettings settings,
 ) {
   if (!settings.enabled ||
-      (event['event_type'] ?? '').toString().trim().toLowerCase() != 'treino') {
+      !confirmationDeadlineEventTypes.contains(
+        (event['event_type'] ?? '').toString().trim().toLowerCase(),
+      )) {
     return null;
   }
   return trainingEventDateTime(event)?.subtract(
@@ -90,7 +117,9 @@ TrainingConfirmationState trainingConfirmationState({
   DateTime? now,
 }) {
   if (!settings.enabled ||
-      (event['event_type'] ?? '').toString().trim().toLowerCase() != 'treino') {
+      !confirmationDeadlineEventTypes.contains(
+        (event['event_type'] ?? '').toString().trim().toLowerCase(),
+      )) {
     return TrainingConfirmationState.notApplicable;
   }
   final normalizedStatus = convocationStatus.trim().toLowerCase();
@@ -126,26 +155,56 @@ class TrainingConfirmationDeadlineService {
       : _client = client ?? Supabase.instance.client;
 
   static const String settingsKey = 'training_confirmation_deadline';
+  static const Map<String, String> settingsKeys = {
+    'treino': settingsKey,
+    'amistoso': 'friendly_confirmation_deadline',
+    'campeonato': 'championship_confirmation_deadline',
+  };
   final SupabaseClient _client;
 
   Future<TrainingConfirmationDeadlineSettings> load() async {
+    final settings = await loadAll();
+    return settings['treino'] ??
+        const TrainingConfirmationDeadlineSettings.disabled();
+  }
+
+  Future<Map<String, TrainingConfirmationDeadlineSettings>> loadAll() async {
     await OrganizationContextService.instance.initialize();
     final organizationId = OrganizationContextService.instance.currentId;
-    final row = await _client
+    final rows = await _client
         .from('organization_settings')
-        .select('value')
+        .select('key, value')
         .eq('organization_id', organizationId)
-        .eq('key', settingsKey)
-        .maybeSingle();
-    return TrainingConfirmationDeadlineSettings.fromValue(row?['value']);
+        .inFilter('key', settingsKeys.values.toList());
+    final byKey = <String, dynamic>{
+      for (final row in rows) row['key'].toString(): row['value'],
+    };
+    return {
+      for (final entry in settingsKeys.entries)
+        entry.key: TrainingConfirmationDeadlineSettings.fromValue(
+          byKey[entry.value],
+        ),
+    };
   }
 
   Future<void> save(TrainingConfirmationDeadlineSettings settings) async {
+    await saveForEventType('treino', settings);
+  }
+
+  Future<void> saveForEventType(
+    String eventType,
+    TrainingConfirmationDeadlineSettings settings,
+  ) async {
+    final normalizedType = eventType.trim().toLowerCase();
+    final key = settingsKeys[normalizedType];
+    if (key == null) {
+      throw ArgumentError.value(eventType, 'eventType', 'Tipo não suportado');
+    }
     await OrganizationContextService.instance.initialize();
     final organizationId = OrganizationContextService.instance.currentId;
     await _client.from('organization_settings').upsert({
       'organization_id': organizationId,
-      'key': settingsKey,
+      'key': key,
       'value': settings.toValue(),
       'updated_at': DateTime.now().toUtc().toIso8601String(),
       'updated_by': _client.auth.currentUser?.id,

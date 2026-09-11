@@ -56,14 +56,38 @@ void main() {
     expect(state, TrainingConfirmationState.confirmed);
   });
 
-  test('regra não é aplicada a amistoso', () {
+  test('regra é aplicada a amistoso quando configurada', () {
     final state = trainingConfirmationState(
       event: {...training, 'event_type': 'amistoso'},
       convocationStatus: 'pending',
       settings: enabled,
       now: DateTime(2026, 9, 11, 19),
     );
-    expect(state, TrainingConfirmationState.notApplicable);
+    expect(state, TrainingConfirmationState.deadlineExpired);
+    expect(
+      eventConfirmationDeadlineExpiredMessage({
+        ...training,
+        'event_type': 'amistoso',
+      }),
+      'O prazo para confirmar sua presença neste amistoso expirou. '
+      'Você não deverá comparecer ao amistoso.',
+    );
+  });
+
+  test('regra é aplicada a campeonato quando configurada', () {
+    final championship = {...training, 'event_type': 'campeonato'};
+    final state = trainingConfirmationState(
+      event: championship,
+      convocationStatus: 'pending',
+      settings: enabled,
+      now: DateTime(2026, 9, 11, 19),
+    );
+    expect(state, TrainingConfirmationState.deadlineExpired);
+    expect(
+      eventConfirmationDeadlineExpiredMessage(championship),
+      'O prazo para confirmar sua presença neste campeonato expirou. '
+      'Você não deverá comparecer ao campeonato.',
+    );
   });
 
   test('recusa explícita não é apresentada como perda de prazo', () {

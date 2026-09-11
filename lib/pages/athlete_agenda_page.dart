@@ -76,8 +76,10 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   List<String> _allowedEventTypes = ['treino', 'amistoso', 'campeonato'];
   bool _canViewConvocados = false;
   bool _canExportDadosJogo = false;
-  TrainingConfirmationDeadlineSettings _deadlineSettings =
-      const TrainingConfirmationDeadlineSettings.disabled();
+  Map<String, TrainingConfirmationDeadlineSettings> _deadlineSettings = {
+    for (final type in confirmationDeadlineEventTypes)
+      type: const TrainingConfirmationDeadlineSettings.disabled(),
+  };
   RealtimeChannel? _deadlineSettingsChannel;
   Timer? _deadlineRefreshTimer;
 
@@ -88,7 +90,9 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   void initState() {
     super.initState();
     _deadlineRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted && _deadlineSettings.enabled) setState(() {});
+      if (mounted && _deadlineSettings.values.any((value) => value.enabled)) {
+        setState(() {});
+      }
     });
     _checkPermission();
   }
@@ -147,10 +151,11 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
 
     final results = await Future.wait<dynamic>([
       _permissionService.getAgendaFilters(user.id),
-      _deadlineService.load(),
+      _deadlineService.loadAll(),
     ]);
     final filters = Map<String, dynamic>.from(results[0] as Map);
-    final deadlineSettings = results[1] as TrainingConfirmationDeadlineSettings;
+    final deadlineSettings = results[1]
+        as Map<String, TrainingConfirmationDeadlineSettings>;
 
     if (!mounted) return;
     setState(() {
@@ -171,7 +176,7 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
 
   Future<void> _loadDeadlineSettings() async {
     try {
-      final settings = await _deadlineService.load();
+      final settings = await _deadlineService.loadAll();
       if (mounted) setState(() => _deadlineSettings = settings);
       _listenForDeadlineSettings();
     } catch (error) {
@@ -182,19 +187,23 @@ class _AthleteAgendaPageState extends State<AthleteAgendaPage> {
   void _listenForDeadlineSettings() {
     if (_deadlineSettingsChannel != null) return;
     _deadlineSettingsChannel = _supabase
-        .channel('athlete-training-confirmation-deadline')
+        .channel('athlete-event-confirmation-deadline')
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'organization_settings',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'key',
-            value: TrainingConfirmationDeadlineService.settingsKey,
-          ),
           callback: (_) => _loadDeadlineSettings(),
         )
         .subscribe();
+  }
+
+  TrainingConfirmationDeadlineSettings _deadlineSettingsFor(
+    Map<String, dynamic> event,
+  ) {
+    final eventType =
+        (event['event_type'] ?? '').toString().trim().toLowerCase();
+    return _deadlineSettings[eventType] ??
+        const TrainingConfirmationDeadlineSettings.disabled();
   }
 
   void _setMesAtual() {
@@ -1027,10 +1036,11 @@ enable_ride_logistics
       );
       final now = DateTime.now();
       if (eventDateTime.isBefore(now)) return false;
-      if (_deadlineSettings.enabled && tipo == 'treino') {
+      final deadlineSettings = _deadlineSettingsFor(evento);
+      if (deadlineSettings.enabled) {
         final deadline = trainingConfirmationDeadline(
           evento,
-          _deadlineSettings,
+          deadlineSettings,
         );
         return deadline != null && now.isBefore(deadline);
       }
@@ -1056,11 +1066,12 @@ enable_ride_logistics
 
   String _getPrazoInfo(Map<String, dynamic> evento) {
     final tipo = (evento['event_type'] ?? '').toString().toLowerCase().trim();
-    if (_deadlineSettings.enabled && tipo == 'treino') {
-      final deadline = trainingConfirmationDeadline(evento, _deadlineSettings);
+    final deadlineSettings = _deadlineSettingsFor(evento);
+    if (deadlineSettings.enabled) {
+      final deadline = trainingConfirmationDeadline(evento, deadlineSettings);
       if (deadline == null) return '';
       return 'Confirmação até ${DateFormat('dd/MM HH:mm').format(deadline)} '
-          '(${_deadlineSettings.hoursBefore}h antes)';
+          '(${deadlineSettings.hoursBefore}h antes)';
     }
     switch (tipo) {
       case 'treino':
@@ -1472,10 +1483,10 @@ enable_ride_logistics
           event: evento,
           convocationStatus:
               (evento['convocation_status'] ?? 'pending').toString(),
-          settings: _deadlineSettings,
+          settings: _deadlineSettingsFor(evento),
         );
         if (confirmationState == TrainingConfirmationState.deadlineExpired) {
-          _showError(trainingConfirmationDeadlineExpiredMessage);
+          _showError(eventConfirmationDeadlineExpiredMessage(evento));
           await _refreshEventos();
           return;
         }
@@ -1816,7 +1827,7 @@ enable_ride_logistics
       if (!mounted) return;
       final errorText = e.toString();
       _showError(errorText.contains('prazo para confirmar')
-          ? trainingConfirmationDeadlineExpiredMessage
+          ? eventConfirmationDeadlineExpiredMessage(evento)
           : 'Erro: $e');
     }
   }
@@ -3343,7 +3354,8 @@ enable_ride_logistics
                                                 trainingConfirmationState(
                                               event: evento,
                                               convocationStatus: status,
-                                              settings: _deadlineSettings,
+                                              settings:
+                                                  _deadlineSettingsFor(evento),
                                             );
                                             final confirmationStatusLabel =
                                                 trainingConfirmationStateLabel(
@@ -3791,7 +3803,7 @@ enable_ride_logistics
                                                                   TrainingConfirmationState
                                                                       .deadlineExpired
                                                               ? '$confirmationStatusLabel. '
-                                                                  '$trainingConfirmationDeadlineExpiredMessage'
+                                                                  '${eventConfirmationDeadlineExpiredMessage(evento)}'
                                                               : confirmationStatusLabel,
                                                           style: TextStyle(
                                                             fontSize: 11,

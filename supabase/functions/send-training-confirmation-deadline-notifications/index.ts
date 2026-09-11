@@ -25,7 +25,7 @@ Deno.serve(async (request) => {
     auth: {persistSession: false, autoRefreshToken: false},
   })
   const {data: dueRows, error: claimError} = await client.rpc(
-    'claim_expired_training_confirmations_v1',
+    'claim_expired_event_confirmations_v2',
     {p_limit: 100},
   )
   if (claimError) return response(500, {error: claimError.message})
@@ -34,6 +34,9 @@ Deno.serve(async (request) => {
   let failed = 0
   for (const row of dueRows ?? []) {
     try {
+      const eventType = ['amistoso', 'campeonato'].includes(row.event_type)
+        ? row.event_type
+        : 'treino'
       const pushResponse = await fetch(
         `${supabaseUrl}/functions/v1/send-push-notification`,
         {
@@ -46,8 +49,8 @@ Deno.serve(async (request) => {
           body: JSON.stringify({
             userId: row.user_id,
             title: 'Prazo de confirmação encerrado',
-            body: 'O prazo para confirmar sua presença no treino expirou. Como sua presença não foi confirmada dentro do período permitido, você não deverá comparecer ao treino.',
-            type: 'training_confirmation_deadline_expired',
+            body: `O prazo para confirmar sua presença neste ${eventType} expirou. Como sua presença não foi confirmada dentro do período permitido, você não deverá comparecer ao ${eventType}.`,
+            type: 'event_confirmation_deadline_expired',
             eventId: row.event_id,
           }),
         },
