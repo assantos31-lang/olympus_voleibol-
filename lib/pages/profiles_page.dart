@@ -10,7 +10,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_masked_text2/flutter_masked_text2.dart';
 import 'dart:convert';
-import 'dart:math';
 import '../services/auth_service.dart';
 import '../services/permission_service.dart';
 import '../services/role_service.dart';
@@ -2196,16 +2195,6 @@ class _ProfilesPageState extends State<ProfilesPage> {
     }
   }
 
-  String _generateRandomPassword() {
-    const chars =
-        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#\$%^&*';
-    Random random = Random();
-    return List.generate(
-      12,
-      (index) => chars[random.nextInt(chars.length)],
-    ).join();
-  }
-
   void _showPasswordResultDialog(String password, String email) {
     showDialog(
       context: context,
@@ -2420,7 +2409,6 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         return;
                       }
 
-                      final password = _generateRandomPassword();
                       final email = emailCtrl.text.trim();
 
                       setDialogState(() => isSubmitting = true);
@@ -2440,7 +2428,7 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           body: {
                             'organization_id': organization.id,
                             'email': email,
-                            'password': password,
+                            'password_strategy': 'server_generated_v1',
                             'full_name': nameCtrl.text.trim(),
                             'phone': phoneCtrl.text.replaceAll(
                               RegExp(r'\D'),
@@ -2459,6 +2447,13 @@ class _ProfilesPageState extends State<ProfilesPage> {
                               : null;
                           throw Exception(
                             message ?? 'Usuário não foi criado.',
+                          );
+                        }
+
+                        final password = payload['password']?.toString() ?? '';
+                        if (password.isEmpty) {
+                          throw Exception(
+                            'Usuário criado, mas a senha temporária não foi retornada.',
                           );
                         }
 

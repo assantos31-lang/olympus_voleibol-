@@ -19,6 +19,33 @@ function normalizedRole(value: unknown) {
   return 'member'
 }
 
+function generateTemporaryPassword() {
+  const groups = [
+    'ABCDEFGHJKLMNPQRSTUVWXYZ',
+    'abcdefghijkmnopqrstuvwxyz',
+    '23456789',
+    '!@#$%&*',
+  ]
+  const randomIndex = (length: number) => {
+    const value = new Uint32Array(1)
+    crypto.getRandomValues(value)
+    return value[0] % length
+  }
+  const characters = groups.map((group) => group[randomIndex(group.length)])
+  const all = groups.join('')
+  while (characters.length < 12) {
+    characters.push(all[randomIndex(all.length)])
+  }
+  for (let index = characters.length - 1; index > 0; index--) {
+    const target = randomIndex(index + 1)
+    ;[characters[index], characters[target]] = [
+      characters[target],
+      characters[index],
+    ]
+  }
+  return characters.join('')
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', {headers: corsHeaders})
   if (request.method !== 'POST') return json(405, {error: 'Método não permitido.'})
@@ -44,7 +71,13 @@ Deno.serve(async (request) => {
 
   const organizationId = String(body.organization_id ?? '').trim()
   const email = String(body.email ?? '').trim().toLowerCase()
-  const password = String(body.password ?? '')
+  // New clients request server-side generation. Legacy clients still send the
+  // password they display, so their behavior remains compatible during rollout.
+  const serverGeneratedPassword =
+    body.password_strategy === 'server_generated_v1'
+  const password = serverGeneratedPassword
+    ? generateTemporaryPassword()
+    : String(body.password ?? '')
   const fullName = String(body.full_name ?? '').trim()
   const phone = String(body.phone ?? '').replace(/\D/g, '')
   const role = normalizedRole(body.user_type)
@@ -145,5 +178,11 @@ Deno.serve(async (request) => {
     return json(500, {error: 'A conta não foi criada porque não foi possível vinculá-la ao clube.'})
   }
 
-  return json(200, {success: true, user_id: userId, organization_id: organizationId, email})
+  return json(200, {
+    success: true,
+    user_id: userId,
+    organization_id: organizationId,
+    email,
+    password,
+  })
 })
