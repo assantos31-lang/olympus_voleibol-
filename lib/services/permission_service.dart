@@ -63,6 +63,9 @@ class PermissionService {
     Map<String, dynamic>? allowedFilters,
   }) async {
     try {
+      await OrganizationContextService.instance.initialize();
+      final organizationId = OrganizationContextService.instance.currentId;
+
       final existing = await _supabase
           .from('page_permissions')
           .select()
@@ -74,6 +77,7 @@ class PermissionService {
         'user_id': userId,
         'page_name': pageName,
         'can_access': canAccess,
+        'organization_id': organizationId,
         if (allowedFilters != null)
           'allowed_filters': jsonEncode(allowedFilters),
         'updated_at': DateTime.now().toIso8601String(),
