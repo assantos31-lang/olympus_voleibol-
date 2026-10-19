@@ -3299,6 +3299,9 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
     final endereco = _formatarEndereco(treino);
     final hasPlanning = treino['has_planning'] == true;
     final viewOnlyPlanning = treino['view_only_planning'] == true;
+    final canStartPlanning = !viewOnlyPlanning &&
+        treino['planning_status'] == 'enabled' &&
+        treino['assigned_planning_coach_id'] == _supabase.auth.currentUser?.id;
     final athleteCounts = Map<String, int>.from(
       treino['athlete_status_counts'] as Map? ?? const <String, int>{},
     );
@@ -3521,7 +3524,7 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: widget.agendaMode && !hasPlanning
+                    onPressed: widget.agendaMode && !hasPlanning && !canStartPlanning
                         ? null
                         : () => _abrirDetalheTreino(treino),
                     icon: Icon(
@@ -3532,7 +3535,9 @@ class _CoachTrainingSessionsPageState extends State<CoachTrainingSessionsPage> {
                     label: Text(widget.agendaMode
                         ? hasPlanning
                             ? 'Ver planejamento'
-                            : 'Planejamento pendente'
+                            : canStartPlanning
+                                ? 'Criar planejamento'
+                                : 'Planejamento pendente'
                         : viewOnlyPlanning
                             ? 'Ver planejamento'
                             : hasPlanning
